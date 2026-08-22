@@ -14,6 +14,9 @@ struct Cli {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    println!("ripbi: analysis of {} not yet implemented", cli.path.display());
+    println!(
+        "ripbi: analysis of {} not yet implemented",
+        cli.path.display()
+    );
     Ok(())
 }
