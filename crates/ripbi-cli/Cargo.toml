@@ -1,0 +1,15 @@
+[package]
+name = "ripbi-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ripbi"
+path = "src/main.rs"
+
+[dependencies]
+ripbi-core = { path = "../ripbi-core" }
+clap.workspace = true
+anyhow.workspace = true
