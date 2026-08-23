@@ -6,7 +6,7 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 ## Responsibilities
 
-- **Semantic model** (`src/model/`, `src/identity.rs`): the normalized `TabularDatabase`
+- **Semantic model** (`src/model.rs`, `src/identity.rs`): the normalized `TabularDatabase`
   AST and the case-insensitive object identity every other layer refers to objects by.
   Pure data — no parsing, no I/O.
 - **Ingestion** (`src/ingest/`): detect and parse the four source formats —
@@ -22,6 +22,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 - Handle Power BI schema drift gracefully — unknown JSON fields must never panic.
 - Ingestion output must be format-agnostic: downstream code never branches on source format.
+- Module files sit *beside* their directory (`src/model.rs` + `src/model/`), not inside it
+  as `mod.rs`. `ingest`, `dax`, and `graph` follow the same shape — with four modules a
+  crate full of `mod.rs` tabs is unnavigable.
 
 ## Routing
 
