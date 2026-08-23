@@ -234,6 +234,32 @@ impl ModelIndex {
     /// measure that lives on `Sales`, or a prefix naming a table that no longer
     /// exists — still keeps that measure alive. Marking one object used too many is
     /// safe; marking one too few deletes live code.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ripbi_core::{Measure, ModelIndex, Table, TabularDatabase};
+    /// # let db = TabularDatabase {
+    /// #     tables: vec![
+    /// #         Table {
+    /// #             name: "Sales".to_string(),
+    /// #             measures: vec![Measure { name: "Total".to_string(), ..Default::default() }],
+    /// #             ..Default::default()
+    /// #         },
+    /// #         Table { name: "Dato".to_string(), ..Default::default() },
+    /// #     ],
+    /// #     ..Default::default()
+    /// # };
+    /// // The model has one measure, `Total`, whose home table is `Sales`.
+    /// let index = ModelIndex::build(&db);
+    ///
+    /// // A stale prefix still keeps it alive: measure names are model-global.
+    /// assert!(index.resolve_qualified("Dato", "Total").is_some());
+    /// assert!(index.resolve_qualified("No Such Table", "total").is_some());
+    ///
+    /// // A name that matches nothing resolves to nothing.
+    /// assert!(index.resolve_qualified("Sales", "Nope").is_none());
+    /// ```
     #[must_use]
     pub fn resolve_qualified(&self, table: &str, name: &str) -> Option<Resolved> {
         let folded_name = fold_name(name);
@@ -255,6 +281,40 @@ impl ModelIndex {
     /// `home_table` is the row-context table of the expression the reference was
     /// found in; pass `None` where there is none. See [`UnqualifiedMatches`] for why
     /// both a measure and a column can come back at once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ripbi_core::{Column, Measure, ModelIndex, Table, TabularDatabase};
+    /// # let db = TabularDatabase {
+    /// #     tables: vec![
+    /// #         Table {
+    /// #             name: "Sales".to_string(),
+    /// #             measures: vec![Measure { name: "Antal".to_string(), ..Default::default() }],
+    /// #             ..Default::default()
+    /// #         },
+    /// #         Table {
+    /// #             name: "Dato".to_string(),
+    /// #             columns: vec![Column { name: "Antal".to_string(), ..Default::default() }],
+    /// #             ..Default::default()
+    /// #         },
+    /// #     ],
+    /// #     ..Default::default()
+    /// # };
+    /// // `Antal` is a measure on `Sales` and, separately, a column of `Dato`.
+    /// let index = ModelIndex::build(&db);
+    ///
+    /// // Inside a `Dato` row context both are live candidates, so both come back.
+    /// let ambiguous = index.resolve_unqualified("ANTAL", Some("Dato"));
+    /// assert!(ambiguous.measure.is_some());
+    /// assert!(ambiguous.column.is_some());
+    ///
+    /// // With no row context there is no column candidate to consider.
+    /// assert!(index.resolve_unqualified("antal", None).column.is_none());
+    ///
+    /// // An unknown name is data, not an error.
+    /// assert!(index.resolve_unqualified("Ukendt", Some("Dato")).is_empty());
+    /// ```
     #[must_use]
     pub fn resolve_unqualified(&self, name: &str, home_table: Option<&str>) -> UnqualifiedMatches {
         let folded_name = fold_name(name);
@@ -293,6 +353,7 @@ impl ModelIndex {
 mod tests {
     use super::*;
     use crate::model::{Column, Hierarchy, Measure, SharedExpression, Table};
+    use rstest::rstest;
 
     fn column(name: &str) -> Column {
         Column {
@@ -324,7 +385,7 @@ mod tests {
     ///
     /// "Antal" is deliberately both a measure (on `Sales`) and a column (on `Dato`):
     /// that is the ambiguity the zero-false-positive rule exists for.
-    fn fixture() -> TabularDatabase {
+    fn model() -> TabularDatabase {
         TabularDatabase {
             name: Some("Contoso".to_string()),
             tables: vec![
@@ -364,444 +425,473 @@ mod tests {
         }
     }
 
-    // --- resolve_table ---------------------------------------------------------
-
-    #[test]
-    fn resolve_table_is_case_insensitive_including_danish() {
-        let index = ModelIndex::build(&fixture());
-
-        assert_eq!(index.resolve_table("SALES"), Some(TableHandle(0)));
-        assert_eq!(index.resolve_table("Sales"), Some(TableHandle(0)));
-        assert_eq!(index.resolve_table("dato"), Some(TableHandle(1)));
-        assert_eq!(index.resolve_table("DATO"), Some(TableHandle(1)));
-        assert_eq!(index.resolve_table("DATO"), index.resolve_table("dato"));
-
-        assert_eq!(index.resolve_table("Salez"), None);
-        assert_eq!(index.resolve_table(""), None);
+    fn index() -> ModelIndex {
+        ModelIndex::build(&model())
     }
 
-    // --- resolve_qualified -----------------------------------------------------
-
-    #[test]
-    fn resolve_qualified_finds_a_column_on_the_named_table() {
-        let index = ModelIndex::build(&fixture());
-
-        assert_eq!(
-            index.resolve_qualified("sales", "AMOUNT"),
-            Some(Resolved::Column(ColumnHandle {
-                table: 0,
-                column: 0
-            }))
-        );
-        assert_eq!(
-            index.resolve_qualified("DATO", "måned"),
-            Some(Resolved::Column(ColumnHandle {
-                table: 1,
-                column: 0
-            }))
-        );
-        assert_eq!(
-            index.resolve_qualified("Dato", "MÅNED"),
-            Some(Resolved::Column(ColumnHandle {
-                table: 1,
-                column: 0
-            }))
-        );
-
-        // "Amount" is a column of Sales and not a measure anywhere, so a wrong table
-        // prefix has nothing to fall back to: not the Sales column, not anything.
-        assert_eq!(index.resolve_qualified("Dato", "Amount"), None);
-        assert_eq!(index.resolve_qualified("Sales", "Nope"), None);
+    fn column_handle(table: usize, column: usize) -> Resolved {
+        Resolved::Column(ColumnHandle { table, column })
     }
 
-    #[test]
-    fn resolve_qualified_finds_a_measure_on_its_home_table() {
-        let index = ModelIndex::build(&fixture());
-
-        assert_eq!(
-            index.resolve_qualified("SALES", "total sales"),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 0,
-                measure: 0
-            }))
-        );
-        assert_eq!(
-            index.resolve_qualified("Dato", "OMSÆTNING"),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 1,
-                measure: 0
-            }))
-        );
+    fn measure_handle(table: usize, measure: usize) -> Resolved {
+        Resolved::Measure(MeasureHandle { table, measure })
     }
 
-    #[test]
-    fn resolve_qualified_keeps_a_measure_alive_under_a_wrong_table_prefix() {
-        let index = ModelIndex::build(&fixture());
+    mod resolve_table {
+        use super::*;
 
-        // "Total Sales" lives on Sales, but is written with the Dato prefix.
-        assert_eq!(
-            index.resolve_qualified("Dato", "Total Sales"),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 0,
-                measure: 0
-            }))
-        );
-        // A prefix naming a table that does not exist at all resolves too.
-        assert_eq!(
-            index.resolve_qualified("Ukendt Tabel", "omsætning"),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 1,
-                measure: 0
-            }))
-        );
-        // But an unknown table with an unknown name stays unresolved.
-        assert_eq!(index.resolve_qualified("Ukendt Tabel", "Måned"), None);
+        #[rstest]
+        #[case::upper("SALES", 0)]
+        #[case::as_written("Sales", 0)]
+        #[case::danish_lower("dato", 1)]
+        #[case::danish_upper("DATO", 1)]
+        fn finds_a_table_ignoring_case(#[case] name: &str, #[case] expected: usize) {
+            assert_eq!(index().resolve_table(name), Some(TableHandle(expected)));
+        }
+
+        #[rstest]
+        #[case::misspelled("Salez")]
+        #[case::empty("")]
+        fn returns_none_for_an_unknown_name(#[case] name: &str) {
+            assert_eq!(index().resolve_table(name), None);
+        }
     }
 
-    #[test]
-    fn resolve_qualified_prefers_the_named_tables_column_over_a_global_measure() {
-        let index = ModelIndex::build(&fixture());
+    mod resolve_qualified {
+        use super::*;
 
-        // "Antal" is a column of Dato and a measure of Sales. Qualified by Dato it
-        // must be the column: the measure fallback is a last resort, not a shortcut.
-        assert_eq!(
-            index.resolve_qualified("Dato", "Antal"),
-            Some(Resolved::Column(ColumnHandle {
-                table: 1,
-                column: 1
-            }))
-        );
-        // Qualified by any other table there is no such column, so the measure wins.
-        assert_eq!(
-            index.resolve_qualified("Sales", "antal"),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 0,
-                measure: 1
-            }))
-        );
+        #[rstest]
+        #[case::lower_table_upper_column("sales", "AMOUNT", 0, 0)]
+        #[case::upper_table_danish_column("DATO", "måned", 1, 0)]
+        #[case::danish_column_upper("Dato", "MÅNED", 1, 0)]
+        fn finds_a_column_on_the_named_table(
+            #[case] table: &str,
+            #[case] name: &str,
+            #[case] expected_table: usize,
+            #[case] expected_column: usize,
+        ) {
+            assert_eq!(
+                index().resolve_qualified(table, name),
+                Some(column_handle(expected_table, expected_column))
+            );
+        }
+
+        /// Measure names are model-global, so a qualified reference resolves to one
+        /// even when the prefix is wrong or names a table that no longer exists —
+        /// keeping it alive rather than reporting a live measure as unused.
+        #[rstest]
+        #[case::on_its_home_table("SALES", "total sales", 0, 0)]
+        #[case::danish_on_its_home_table("Dato", "OMSÆTNING", 1, 0)]
+        #[case::under_a_wrong_table_prefix("Dato", "Total Sales", 0, 0)]
+        #[case::under_a_nonexistent_table_prefix("Ukendt Tabel", "omsætning", 1, 0)]
+        fn finds_a_measure(
+            #[case] table: &str,
+            #[case] name: &str,
+            #[case] expected_table: usize,
+            #[case] expected_measure: usize,
+        ) {
+            assert_eq!(
+                index().resolve_qualified(table, name),
+                Some(measure_handle(expected_table, expected_measure))
+            );
+        }
+
+        #[rstest]
+        // "Amount" is a column of Sales and a measure nowhere, so a wrong prefix has
+        // nothing to fall back to.
+        #[case::column_of_a_different_table("Dato", "Amount")]
+        #[case::unknown_name("Sales", "Nope")]
+        #[case::unknown_table_and_name("Ukendt Tabel", "Måned")]
+        fn returns_none_when_nothing_matches(#[case] table: &str, #[case] name: &str) {
+            assert_eq!(index().resolve_qualified(table, name), None);
+        }
+
+        /// "Antal" is a column of Dato and a measure of Sales. The measure fallback is
+        /// a last resort, not a shortcut past the named table's own columns.
+        #[test]
+        fn binds_to_the_named_tables_column_when_both_exist() {
+            assert_eq!(
+                index().resolve_qualified("Dato", "Antal"),
+                Some(column_handle(1, 1))
+            );
+        }
+
+        #[test]
+        fn binds_to_the_measure_when_the_named_table_has_no_such_column() {
+            assert_eq!(
+                index().resolve_qualified("Sales", "antal"),
+                Some(measure_handle(0, 1))
+            );
+        }
     }
 
-    // --- resolve_unqualified ---------------------------------------------------
+    mod resolve_unqualified {
+        use super::*;
 
-    #[test]
-    fn resolve_unqualified_finds_a_global_measure_without_a_home_table() {
-        let index = ModelIndex::build(&fixture());
+        /// Measures are model-global, so a Danish measure on `Dato` resolves from an
+        /// expression with no row context at all.
+        #[test]
+        fn finds_a_global_measure_without_a_home_table() {
+            assert_eq!(
+                index().resolve_unqualified("OMSÆTNING", None).measure,
+                Some(MeasureHandle {
+                    table: 1,
+                    measure: 0
+                })
+            );
+        }
 
-        // Headline: measures are model-global, so a Danish measure on Dato resolves
-        // from an expression that has no row context at all.
-        let found = index.resolve_unqualified("OMSÆTNING", None);
-        assert_eq!(
-            found.measure,
-            Some(MeasureHandle {
-                table: 1,
-                measure: 0
-            })
-        );
-        assert_eq!(found.column, None);
-        assert!(!found.is_empty());
-        assert_eq!(
-            found.primary(),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 1,
-                measure: 0
-            }))
-        );
+        #[test]
+        fn offers_no_column_candidate_without_a_home_table() {
+            assert_eq!(index().resolve_unqualified("OMSÆTNING", None).column, None);
+        }
+
+        /// `[Antal]` inside a `Dato` row context could bind to either object, so both
+        /// come back and both stay alive.
+        #[test]
+        fn returns_the_measure_candidate_for_an_ambiguous_name() {
+            assert_eq!(
+                index().resolve_unqualified("antal", Some("Dato")).measure,
+                Some(MeasureHandle {
+                    table: 0,
+                    measure: 1
+                })
+            );
+        }
+
+        #[test]
+        fn returns_the_column_candidate_for_an_ambiguous_name() {
+            assert_eq!(
+                index().resolve_unqualified("antal", Some("Dato")).column,
+                Some(ColumnHandle {
+                    table: 1,
+                    column: 1
+                })
+            );
+        }
+
+        #[test]
+        fn drops_the_column_candidate_when_there_is_no_home_table() {
+            assert_eq!(index().resolve_unqualified("antal", None).column, None);
+        }
+
+        #[test]
+        fn finds_a_column_of_the_home_table() {
+            assert_eq!(
+                index().resolve_unqualified("BELØB", Some("sales")).column,
+                Some(ColumnHandle {
+                    table: 0,
+                    column: 1
+                })
+            );
+        }
+
+        #[test]
+        fn offers_no_measure_candidate_for_a_column_only_name() {
+            assert_eq!(
+                index().resolve_unqualified("BELØB", Some("sales")).measure,
+                None
+            );
+        }
+
+        /// A column is never global: the same name against the wrong row context is
+        /// not a match.
+        #[test]
+        fn matches_nothing_against_the_wrong_home_table() {
+            let found = index().resolve_unqualified("Beløb", Some("Dato"));
+
+            assert!(found.is_empty(), "expected no candidates, got {found:?}");
+        }
+
+        #[rstest]
+        #[case::known_home_table(Some("Sales"))]
+        #[case::unknown_home_table(Some("Ukendt Tabel"))]
+        #[case::no_home_table(None)]
+        fn is_empty_for_an_unknown_name(#[case] home_table: Option<&str>) {
+            let found = index().resolve_unqualified("Ukendt", home_table);
+
+            assert!(found.is_empty(), "expected no candidates, got {found:?}");
+        }
+
+        #[test]
+        fn primary_prefers_the_measure_when_a_name_is_ambiguous() {
+            assert_eq!(
+                index().resolve_unqualified("antal", Some("Dato")).primary(),
+                Some(measure_handle(0, 1))
+            );
+        }
+
+        #[test]
+        fn primary_returns_the_column_when_there_is_no_measure() {
+            assert_eq!(
+                index()
+                    .resolve_unqualified("BELØB", Some("sales"))
+                    .primary(),
+                Some(column_handle(0, 1))
+            );
+        }
+
+        #[test]
+        fn primary_is_none_for_an_unknown_name() {
+            assert_eq!(
+                index()
+                    .resolve_unqualified("Ukendt", Some("Sales"))
+                    .primary(),
+                None
+            );
+        }
     }
 
-    #[test]
-    fn resolve_unqualified_returns_both_candidates_for_an_ambiguous_name() {
-        let index = ModelIndex::build(&fixture());
+    mod resolve_hierarchy {
+        use super::*;
 
-        // [Antal] inside a Dato row context could be either object; both must live.
-        let found = index.resolve_unqualified("antal", Some("Dato"));
-        assert_eq!(
-            found.measure,
-            Some(MeasureHandle {
-                table: 0,
-                measure: 1
-            })
-        );
-        assert_eq!(
-            found.column,
-            Some(ColumnHandle {
-                table: 1,
-                column: 1
-            })
-        );
-        assert!(!found.is_empty());
-        assert_eq!(
-            found.primary(),
-            Some(Resolved::Measure(MeasureHandle {
-                table: 0,
-                measure: 1
-            }))
-        );
+        #[rstest]
+        #[case::lower_table_upper_name("dato", "KALENDER")]
+        #[case::upper_table_as_written("DATO", "Kalender")]
+        fn finds_a_hierarchy_ignoring_case(#[case] table: &str, #[case] name: &str) {
+            assert_eq!(
+                index().resolve_hierarchy(table, name),
+                Some(HierarchyHandle {
+                    table: 1,
+                    hierarchy: 0
+                })
+            );
+        }
 
-        // Without a home table there is no column candidate to add.
-        let no_home = index.resolve_unqualified("antal", None);
-        assert_eq!(
-            no_home.measure,
-            Some(MeasureHandle {
-                table: 0,
-                measure: 1
-            })
-        );
-        assert_eq!(no_home.column, None);
+        #[rstest]
+        // Hierarchy names are unique per table only: no cross-table fallback, and no
+        // confusion with the columns or measures of the same table.
+        #[case::another_table("Sales", "Kalender")]
+        #[case::a_column_name("Dato", "Måned")]
+        #[case::unknown_table("Ukendt Tabel", "Kalender")]
+        fn returns_none(#[case] table: &str, #[case] name: &str) {
+            assert_eq!(index().resolve_hierarchy(table, name), None);
+        }
     }
 
-    #[test]
-    fn resolve_unqualified_falls_back_to_the_home_table_column() {
-        let index = ModelIndex::build(&fixture());
+    mod resolve_expression {
+        use super::*;
 
-        // "Beløb" is only ever a column of Sales.
-        let found = index.resolve_unqualified("BELØB", Some("sales"));
-        assert_eq!(
-            found.column,
-            Some(ColumnHandle {
-                table: 0,
-                column: 1
-            })
-        );
-        assert_eq!(found.measure, None);
-        assert_eq!(
-            found.primary(),
-            Some(Resolved::Column(ColumnHandle {
-                table: 0,
-                column: 1
-            }))
-        );
+        #[rstest]
+        #[case::upper("SERVER", 0)]
+        #[case::as_written("Server", 0)]
+        #[case::lower("database", 1)]
+        fn finds_an_expression_ignoring_case(#[case] name: &str, #[case] expected: usize) {
+            assert_eq!(
+                index().resolve_expression(name),
+                Some(ExpressionHandle(expected))
+            );
+        }
 
-        // The same name against the wrong row context matches nothing: a column is
-        // never global.
-        let wrong_home = index.resolve_unqualified("Beløb", Some("Dato"));
-        assert!(wrong_home.is_empty());
-        assert_eq!(wrong_home.primary(), None);
+        #[test]
+        fn returns_none_for_an_unknown_name() {
+            assert_eq!(index().resolve_expression("Ukendt"), None);
+        }
     }
 
-    #[test]
-    fn resolve_unqualified_is_empty_for_an_unknown_name() {
-        let index = ModelIndex::build(&fixture());
+    /// Tables 0 ("Sales") and 2 ("sales") fold to the same key. Duplicates are invalid
+    /// in a real model but occur in hand-edited files, so the first one wins.
+    mod build_with_duplicate_names {
+        use super::*;
 
-        let found = index.resolve_unqualified("Ukendt", Some("Sales"));
-        assert!(found.is_empty());
-        assert_eq!(found.measure, None);
-        assert_eq!(found.column, None);
-        assert_eq!(found.primary(), None);
+        #[rstest]
+        #[case::as_written("Sales")]
+        #[case::as_the_duplicate_is_spelled("sales")]
+        fn resolves_the_table_to_the_first_occurrence(#[case] name: &str) {
+            assert_eq!(index().resolve_table(name), Some(TableHandle(0)));
+        }
 
-        // An unknown home table is equally harmless.
-        assert!(index
-            .resolve_unqualified("Ukendt", Some("Ukendt Tabel"))
-            .is_empty());
+        #[test]
+        fn resolves_a_shared_column_name_to_the_first_tables_column() {
+            assert_eq!(
+                index().resolve_qualified("Sales", "Amount"),
+                Some(column_handle(0, 0))
+            );
+        }
+
+        #[test]
+        fn resolves_a_shared_column_name_unqualified_to_the_first_tables_column() {
+            assert_eq!(
+                index().resolve_unqualified("Amount", Some("SALES")).column,
+                Some(ColumnHandle {
+                    table: 0,
+                    column: 0
+                })
+            );
+        }
     }
 
-    // --- resolve_hierarchy / resolve_expression --------------------------------
+    mod accessors {
+        use super::*;
 
-    #[test]
-    fn resolve_hierarchy_is_case_insensitive_and_table_scoped() {
-        let index = ModelIndex::build(&fixture());
+        #[test]
+        fn a_resolved_table_handle_reaches_its_table() {
+            let db = model();
+            let handle = ModelIndex::build(&db).resolve_table("SALES").unwrap();
 
-        assert_eq!(
-            index.resolve_hierarchy("dato", "KALENDER"),
-            Some(HierarchyHandle {
-                table: 1,
-                hierarchy: 0
-            })
-        );
-        assert_eq!(
-            index.resolve_hierarchy("DATO", "Kalender"),
-            Some(HierarchyHandle {
-                table: 1,
-                hierarchy: 0
-            })
-        );
+            assert_eq!(db.table(handle).unwrap().name, "Sales");
+        }
 
-        // No cross-table fallback, and no confusion with columns or measures.
-        assert_eq!(index.resolve_hierarchy("Sales", "Kalender"), None);
-        assert_eq!(index.resolve_hierarchy("Dato", "Måned"), None);
-        assert_eq!(index.resolve_hierarchy("Ukendt Tabel", "Kalender"), None);
-    }
+        #[test]
+        fn a_resolved_column_handle_reaches_its_column() {
+            let db = model();
+            let Some(Resolved::Column(handle)) =
+                ModelIndex::build(&db).resolve_qualified("sales", "BELØB")
+            else {
+                panic!("expected 'sales'[BELØB] to resolve to a column");
+            };
 
-    #[test]
-    fn resolve_expression_is_case_insensitive() {
-        let index = ModelIndex::build(&fixture());
+            assert_eq!(db.column(handle).unwrap().name, "Beløb");
+        }
 
-        assert_eq!(
-            index.resolve_expression("SERVER"),
-            Some(ExpressionHandle(0))
-        );
-        assert_eq!(
-            index.resolve_expression("Server"),
-            Some(ExpressionHandle(0))
-        );
-        assert_eq!(
-            index.resolve_expression("database"),
-            Some(ExpressionHandle(1))
-        );
-        assert_eq!(index.resolve_expression("Ukendt"), None);
-    }
+        #[test]
+        fn a_resolved_measure_handle_reaches_its_measure() {
+            let db = model();
+            let handle = ModelIndex::build(&db)
+                .resolve_unqualified("omsætning", None)
+                .measure
+                .unwrap();
 
-    // --- duplicate tolerance ---------------------------------------------------
+            assert_eq!(db.measure(handle).unwrap().name, "Omsætning");
+        }
 
-    #[test]
-    fn build_keeps_the_first_of_two_duplicate_table_names() {
-        // Tables 0 ("Sales") and 2 ("sales") fold to the same key.
-        let index = ModelIndex::build(&fixture());
+        #[test]
+        fn a_resolved_hierarchy_handle_reaches_its_hierarchy() {
+            let db = model();
+            let handle = ModelIndex::build(&db)
+                .resolve_hierarchy("DATO", "kalender")
+                .unwrap();
 
-        assert_eq!(index.resolve_table("Sales"), Some(TableHandle(0)));
-        assert_eq!(index.resolve_table("sales"), Some(TableHandle(0)));
-        // The duplicate's columns must not shadow the original's either.
-        assert_eq!(
-            index.resolve_qualified("Sales", "Amount"),
-            Some(Resolved::Column(ColumnHandle {
-                table: 0,
-                column: 0
-            }))
-        );
-        assert_eq!(
-            index.resolve_unqualified("Amount", Some("SALES")).column,
-            Some(ColumnHandle {
-                table: 0,
-                column: 0
-            })
-        );
-    }
+            assert_eq!(db.hierarchy(handle).unwrap().name, "Kalender");
+        }
 
-    // --- accessors -------------------------------------------------------------
+        #[test]
+        fn a_resolved_expression_handle_reaches_its_expression() {
+            let db = model();
+            let handle = ModelIndex::build(&db)
+                .resolve_expression("DATABASE")
+                .unwrap();
 
-    #[test]
-    fn accessors_round_trip_resolved_handles() {
-        let db = fixture();
-        let index = ModelIndex::build(&db);
+            assert_eq!(db.shared_expression(handle).unwrap().name, "Database");
+        }
 
-        let table = index.resolve_table("SALES").unwrap();
-        assert_eq!(db.table(table).unwrap().name, "Sales");
+        #[test]
+        fn a_stale_table_handle_is_none() {
+            assert!(model().table(TableHandle(9)).is_none());
+        }
 
-        let Some(Resolved::Column(column)) = index.resolve_qualified("sales", "BELØB") else {
-            panic!("expected a column");
-        };
-        assert_eq!(
-            column,
-            ColumnHandle {
-                table: 0,
-                column: 1
-            }
-        );
-        assert_eq!(db.column(column).unwrap().name, "Beløb");
-
-        let measure = index
-            .resolve_unqualified("omsætning", None)
-            .measure
-            .unwrap();
-        assert_eq!(
-            measure,
-            MeasureHandle {
-                table: 1,
-                measure: 0
-            }
-        );
-        assert_eq!(db.measure(measure).unwrap().name, "Omsætning");
-
-        let hierarchy = index.resolve_hierarchy("DATO", "kalender").unwrap();
-        assert_eq!(db.hierarchy(hierarchy).unwrap().name, "Kalender");
-
-        let expression = index.resolve_expression("DATABASE").unwrap();
-        assert_eq!(expression, ExpressionHandle(1));
-        assert_eq!(db.shared_expression(expression).unwrap().name, "Database");
-        assert_eq!(
-            db.shared_expression(expression).unwrap().expression,
-            "\"AdventureWorks\""
-        );
-    }
-
-    #[test]
-    fn object_id_preserves_original_casing() {
-        let db = fixture();
-        let index = ModelIndex::build(&db);
-
-        // Looked up in upper case; the id must carry the model's own casing, because
-        // the id is what diagnostics print.
-        let measure = index.resolve_qualified("SALES", "TOTAL SALES").unwrap();
-        assert_eq!(
-            db.object_id(measure).unwrap().to_string(),
-            "'Sales'[Total Sales]"
-        );
-
-        let column = index.resolve_qualified("DATO", "MÅNED").unwrap();
-        assert_eq!(db.object_id(column).unwrap().to_string(), "'Dato'[Måned]");
-
-        // Column and measure of the same name are distinct ids, not just distinct text.
-        let antal_column = Resolved::Column(ColumnHandle {
-            table: 1,
-            column: 1,
-        });
-        let antal_measure = Resolved::Measure(MeasureHandle {
-            table: 0,
-            measure: 1,
-        });
-        assert_ne!(
-            db.object_id(antal_column).unwrap(),
-            db.object_id(antal_measure).unwrap()
-        );
-        assert_eq!(
-            db.object_id(antal_column).unwrap().to_string(),
-            "'Dato'[Antal]"
-        );
-        assert_eq!(
-            db.object_id(antal_measure).unwrap().to_string(),
-            "'Sales'[Antal]"
-        );
-    }
-
-    #[test]
-    fn accessors_return_none_for_stale_handles() {
-        let db = fixture();
-
-        assert!(db.table(TableHandle(9)).is_none());
-        assert!(db
-            .column(ColumnHandle {
+        #[test]
+        fn a_column_handle_with_an_out_of_range_table_is_none() {
+            let handle = ColumnHandle {
                 table: 9,
-                column: 9
-            })
-            .is_none());
-        // In-range table, out-of-range column.
-        assert!(db
-            .column(ColumnHandle {
+                column: 9,
+            };
+
+            assert!(model().column(handle).is_none());
+        }
+
+        #[test]
+        fn a_column_handle_with_an_out_of_range_column_is_none() {
+            let handle = ColumnHandle {
                 table: 0,
-                column: 9
-            })
-            .is_none());
-        assert!(db
-            .measure(MeasureHandle {
+                column: 9,
+            };
+
+            assert!(model().column(handle).is_none());
+        }
+
+        #[test]
+        fn a_measure_handle_with_an_out_of_range_table_is_none() {
+            let handle = MeasureHandle {
                 table: 9,
-                measure: 0
-            })
-            .is_none());
-        // Table 2 has no measures at all.
-        assert!(db
-            .measure(MeasureHandle {
+                measure: 0,
+            };
+
+            assert!(model().measure(handle).is_none());
+        }
+
+        #[test]
+        fn a_measure_handle_into_a_table_without_measures_is_none() {
+            let handle = MeasureHandle {
                 table: 2,
-                measure: 0
-            })
-            .is_none());
-        assert!(db
-            .hierarchy(HierarchyHandle {
-                table: 0,
-                hierarchy: 0
-            })
-            .is_none());
-        assert!(db.shared_expression(ExpressionHandle(9)).is_none());
+                measure: 0,
+            };
 
-        assert!(db
-            .object_id(Resolved::Column(ColumnHandle {
-                table: 9,
-                column: 9
-            }))
-            .is_none());
-        assert!(db
-            .object_id(Resolved::Measure(MeasureHandle {
-                table: 9,
-                measure: 9
-            }))
-            .is_none());
+            assert!(model().measure(handle).is_none());
+        }
+
+        #[test]
+        fn a_hierarchy_handle_into_a_table_without_hierarchies_is_none() {
+            let handle = HierarchyHandle {
+                table: 0,
+                hierarchy: 0,
+            };
+
+            assert!(model().hierarchy(handle).is_none());
+        }
+
+        #[test]
+        fn a_stale_expression_handle_is_none() {
+            assert!(model().shared_expression(ExpressionHandle(9)).is_none());
+        }
+
+        #[test]
+        fn an_object_id_for_a_stale_column_handle_is_none() {
+            assert!(model().object_id(column_handle(9, 9)).is_none());
+        }
+
+        #[test]
+        fn an_object_id_for_a_stale_measure_handle_is_none() {
+            assert!(model().object_id(measure_handle(9, 9)).is_none());
+        }
+    }
+
+    /// Ids are what diagnostics print, so they must carry the model's own casing even
+    /// when the lookup that produced them was written in another one.
+    mod object_id {
+        use super::*;
+
+        #[test]
+        fn carries_the_models_casing_for_a_measure() {
+            let db = model();
+            let resolved = ModelIndex::build(&db)
+                .resolve_qualified("SALES", "TOTAL SALES")
+                .unwrap();
+
+            assert_eq!(
+                db.object_id(resolved).unwrap().to_string(),
+                "'Sales'[Total Sales]"
+            );
+        }
+
+        #[test]
+        fn carries_the_models_casing_for_a_danish_column() {
+            let db = model();
+            let resolved = ModelIndex::build(&db)
+                .resolve_qualified("DATO", "MÅNED")
+                .unwrap();
+
+            assert_eq!(db.object_id(resolved).unwrap().to_string(), "'Dato'[Måned]");
+        }
+
+        #[test]
+        fn distinguishes_a_column_from_a_measure_of_the_same_name() {
+            let db = model();
+
+            assert_ne!(
+                db.object_id(column_handle(1, 1)).unwrap(),
+                db.object_id(measure_handle(0, 1)).unwrap()
+            );
+        }
+
+        #[rstest]
+        #[case::the_dato_column(column_handle(1, 1), "'Dato'[Antal]")]
+        #[case::the_sales_measure(measure_handle(0, 1), "'Sales'[Antal]")]
+        fn renders_each_antal_under_its_own_table(
+            #[case] resolved: Resolved,
+            #[case] expected: &str,
+        ) {
+            assert_eq!(model().object_id(resolved).unwrap().to_string(), expected);
+        }
     }
 }

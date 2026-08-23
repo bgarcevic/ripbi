@@ -68,6 +68,37 @@ pub struct Table {
 
 impl Table {
     /// A calculated table is a table whose partition source is DAX.
+    ///
+    /// There is no flag for this in TOM, and none here: the partition decides.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ripbi_core::{Partition, PartitionSource, Table};
+    ///
+    /// let top_products = Table {
+    ///     name: "Top Products".to_string(),
+    ///     partitions: vec![Partition {
+    ///         name: "Top Products".to_string(),
+    ///         source: PartitionSource::Calculated {
+    ///             expression: "TOPN(10, Products, Products[Sales])".to_string(),
+    ///         },
+    ///     }],
+    ///     ..Default::default()
+    /// };
+    /// assert!(top_products.is_calculated());
+    ///
+    /// // An imported table is not, however it was loaded.
+    /// let imported = Table {
+    ///     name: "Products".to_string(),
+    ///     partitions: vec![Partition {
+    ///         name: "Products".to_string(),
+    ///         source: PartitionSource::M { expression: "Sql.Database(...)".to_string() },
+    ///     }],
+    ///     ..Default::default()
+    /// };
+    /// assert!(!imported.is_calculated());
+    /// ```
     pub fn is_calculated(&self) -> bool {
         self.partitions
             .iter()
@@ -654,6 +685,7 @@ impl TabularDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn table_id(table: &str) -> ObjectId {
         ObjectId::Table {
@@ -689,17 +721,23 @@ mod tests {
         }
     }
 
-    /// Both expression views must stay `Copy`, which is only possible while every
-    /// field borrows. It is the structural guarantee that enumerating a model's
-    /// expressions allocates nothing but the returned `Vec` — adding an owned field
-    /// (an `ObjectId`, a `String`) breaks this and reintroduces a per-expression
-    /// allocation on the graph layer's hot path.
-    #[test]
-    fn expression_views_are_copy_so_enumeration_borrows_everything() {
-        fn assert_copy<T: Copy>() {}
-        assert_copy::<DaxExpressionRef<'_>>();
-        assert_copy::<MExpressionRef<'_>>();
-        assert_copy::<ExpressionOwner<'_>>();
+    fn expression_id(name: &str) -> ObjectId {
+        ObjectId::Expression {
+            name: NameKey::new(name),
+        }
+    }
+
+    fn role_id(role: &str) -> ObjectId {
+        ObjectId::Role {
+            role: NameKey::new(role),
+        }
+    }
+
+    fn partition(name: &str, source: PartitionSource) -> Partition {
+        Partition {
+            name: name.to_string(),
+            source,
+        }
     }
 
     /// `(kind, owner, home_table, text)` for every DAX expression, in order.
@@ -718,115 +756,12 @@ mod tests {
             .collect()
     }
 
-    fn partition(name: &str, source: PartitionSource) -> Partition {
-        Partition {
-            name: name.to_string(),
-            source,
-        }
+    fn owners(db: &TabularDatabase) -> Vec<ObjectId> {
+        dax_tuples(db)
+            .into_iter()
+            .map(|(_, owner, _, _)| owner)
+            .collect()
     }
-
-    // --- Task 1: is_calculated -------------------------------------------------
-
-    #[test]
-    fn is_calculated_is_true_only_for_a_dax_partition() {
-        let calculated = Table {
-            name: "Top Products".to_string(),
-            partitions: vec![partition(
-                "Top Products",
-                PartitionSource::Calculated {
-                    expression: "TOPN(10, 'Sales')".to_string(),
-                },
-            )],
-            ..Default::default()
-        };
-        assert!(calculated.is_calculated());
-
-        let m_sourced = Table {
-            name: "Sales".to_string(),
-            partitions: vec![partition(
-                "Sales-Part1",
-                PartitionSource::M {
-                    expression: "let Source = Sql.Database() in Source".to_string(),
-                },
-            )],
-            ..Default::default()
-        };
-        assert!(!m_sourced.is_calculated());
-
-        let direct_lake = Table {
-            name: "Facts".to_string(),
-            partitions: vec![partition(
-                "Facts",
-                PartitionSource::Other {
-                    kind: Some("entity".to_string()),
-                },
-            )],
-            ..Default::default()
-        };
-        assert!(!direct_lake.is_calculated());
-
-        let partitionless = Table {
-            name: "Time Intelligence".to_string(),
-            ..Default::default()
-        };
-        assert!(!partitionless.is_calculated());
-    }
-
-    #[test]
-    fn is_calculated_is_true_when_only_one_of_several_partitions_is_dax() {
-        let mixed = Table {
-            name: "Sales".to_string(),
-            partitions: vec![
-                partition(
-                    "Sales-2023",
-                    PartitionSource::Query {
-                        query: "SELECT * FROM dbo.Sales".to_string(),
-                    },
-                ),
-                partition(
-                    "Sales-2024",
-                    PartitionSource::Calculated {
-                        expression: "FILTER('Raw', TRUE())".to_string(),
-                    },
-                ),
-            ],
-            ..Default::default()
-        };
-        assert!(mixed.is_calculated());
-    }
-
-    // --- Tasks 2 and 3: defaults -----------------------------------------------
-
-    #[test]
-    fn relationship_default_is_active() {
-        let relationship = Relationship::default();
-        assert!(relationship.is_active);
-        assert_eq!(relationship.name, None);
-        assert_eq!(relationship.from_table, "");
-        assert_eq!(relationship.from_column, "");
-        assert_eq!(relationship.to_table, "");
-        assert_eq!(relationship.to_column, "");
-    }
-
-    #[test]
-    fn partition_source_default_is_other_with_no_kind() {
-        assert_eq!(
-            PartitionSource::default(),
-            PartitionSource::Other { kind: None }
-        );
-        assert_eq!(
-            Partition::default().source,
-            PartitionSource::Other { kind: None }
-        );
-    }
-
-    #[test]
-    fn column_kind_default_is_data() {
-        assert_eq!(ColumnKind::default(), ColumnKind::Data);
-        assert_eq!(Column::default().kind, ColumnKind::Data);
-    }
-
-    // --- Task 4: dax_expressions -----------------------------------------------
 
     /// Exercises every [`DaxExpressionKind`] exactly once, plus three objects that
     /// must contribute nothing: a `Data` column, an M partition, and a
@@ -913,174 +848,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn dax_expressions_enumerates_every_kind_with_exact_owner_home_and_text() {
-        let db = every_kind_fixture();
-        let found = dax_tuples(&db);
-
-        assert_eq!(found.len(), 12);
-        assert_eq!(
-            found,
-            vec![
-                (
-                    DaxExpressionKind::Measure,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "SUM('Sales'[Amount])",
-                ),
-                (
-                    DaxExpressionKind::MeasureFormatString,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "\"#,##0\"",
-                ),
-                (
-                    DaxExpressionKind::MeasureDetailRows,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "SELECTCOLUMNS('Sales')",
-                ),
-                (
-                    DaxExpressionKind::KpiTarget,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "[Budget]",
-                ),
-                (
-                    DaxExpressionKind::KpiStatus,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "IF([Total Sales] > 0, 1, -1)",
-                ),
-                (
-                    DaxExpressionKind::KpiTrend,
-                    measure_id("Sales", "Total Sales"),
-                    Some("Sales"),
-                    "[Total Sales] - [Prior]",
-                ),
-                (
-                    DaxExpressionKind::CalculatedColumn,
-                    column_id("Sales", "Margin"),
-                    Some("Sales"),
-                    "'Sales'[Amount] * 0.2",
-                ),
-                (
-                    DaxExpressionKind::TableDetailRows,
-                    table_id("Sales"),
-                    Some("Sales"),
-                    "SELECTCOLUMNS('Sales', \"A\", [Amount])",
-                ),
-                (
-                    DaxExpressionKind::CalculatedTable,
-                    partition_id("Top Products", "Top Products"),
-                    Some("Top Products"),
-                    "TOPN(10, 'Product', [Total Sales])",
-                ),
-                (
-                    DaxExpressionKind::CalculationItem,
-                    calc_item_id("Time Intelligence", "YTD"),
-                    Some("Time Intelligence"),
-                    "TOTALYTD(SELECTEDMEASURE(), 'Date'[Date])",
-                ),
-                (
-                    DaxExpressionKind::CalculationItemFormatString,
-                    calc_item_id("Time Intelligence", "YTD"),
-                    Some("Time Intelligence"),
-                    "\"#,##0;;\"",
-                ),
-                (
-                    DaxExpressionKind::RlsFilter,
-                    ObjectId::Role {
-                        role: NameKey::new("Reader")
-                    },
-                    Some("Sales"),
-                    "'Sales'[Amount] > 0",
-                ),
-            ]
-        );
-    }
-
-    /// `ObjectId` equality is case-insensitive, so the tuple assertion above cannot
-    /// catch an owner built from a lowercased or otherwise rewritten name.
-    #[test]
-    fn dax_expression_owners_preserve_source_casing() {
-        let db = every_kind_fixture();
-        let displayed: Vec<String> = db
-            .dax_expressions()
-            .iter()
-            .map(|e| e.owner.to_object_id().to_string())
-            .collect();
-
-        assert_eq!(
-            displayed,
-            vec![
-                "'Sales'[Total Sales]",
-                "'Sales'[Total Sales]",
-                "'Sales'[Total Sales]",
-                "'Sales'[Total Sales]",
-                "'Sales'[Total Sales]",
-                "'Sales'[Total Sales]",
-                "'Sales'[Margin]",
-                "table 'Sales'",
-                "partition 'Top Products'[Top Products]",
-                "calculation item 'Time Intelligence'[YTD]",
-                "calculation item 'Time Intelligence'[YTD]",
-                "role 'Reader'",
-            ]
-        );
-    }
-
-    #[test]
-    fn dax_expressions_excludes_data_columns_m_partitions_and_metadata_permissions() {
-        let db = every_kind_fixture();
-        let found = dax_tuples(&db);
-
-        assert!(!found
-            .iter()
-            .any(|(_, owner, _, _)| *owner == column_id("Sales", "Amount")));
-        assert!(!found
-            .iter()
-            .any(|(_, owner, _, _)| *owner == partition_id("Sales", "Sales-Part1")));
-        assert!(!found
-            .iter()
-            .any(|(_, _, _, text)| text.starts_with("let Source")));
-        assert_eq!(
-            found
-                .iter()
-                .filter(|(kind, _, _, _)| *kind == DaxExpressionKind::RlsFilter)
-                .count(),
-            1
-        );
-        assert!(!found
-            .iter()
-            .any(|(kind, _, home, _)| *kind == DaxExpressionKind::RlsFilter
-                && *home == Some("Top Products")));
-    }
-
-    #[test]
-    fn dax_expressions_is_empty_for_a_model_with_no_dax() {
-        let db = TabularDatabase {
-            tables: vec![Table {
-                name: "Sales".to_string(),
-                columns: vec![Column {
-                    name: "Amount".to_string(),
-                    ..Default::default()
-                }],
-                partitions: vec![partition(
-                    "Sales",
-                    PartitionSource::M {
-                        expression: "let Source = 1 in Source".to_string(),
-                    },
-                )],
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        assert_eq!(db.dax_expressions().len(), 0);
-    }
-
-    // --- Task 5: m_expressions -------------------------------------------------
-
     fn m_fixture() -> TabularDatabase {
         TabularDatabase {
             tables: vec![Table {
@@ -1121,126 +888,460 @@ mod tests {
         }
     }
 
-    #[test]
-    fn m_expressions_covers_m_partitions_and_shared_expressions_only() {
-        let db = m_fixture();
-        let found = m_tuples(&db);
+    mod expression_views {
+        use super::*;
 
-        assert_eq!(found.len(), 3);
-        assert_eq!(
-            found,
-            vec![
-                (
-                    partition_id("Sales", "Sales-M"),
-                    "let Source = Sql.Database(Server) in Source",
-                ),
-                (
-                    ObjectId::Expression {
-                        name: NameKey::new("Server")
-                    },
-                    "\"contoso.database.windows.net\"",
-                ),
-                (
-                    ObjectId::Expression {
-                        name: NameKey::new("Database")
-                    },
-                    "\"AdventureWorks\"",
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn query_and_other_partitions_appear_in_neither_enumeration() {
-        let db = m_fixture();
-
-        for (owner, text) in m_tuples(&db) {
-            assert_ne!(owner, partition_id("Sales", "Sales-Native"));
-            assert_ne!(owner, partition_id("Sales", "Sales-Lake"));
-            assert_ne!(text, "SELECT * FROM dbo.Sales");
+        /// Both expression views must stay `Copy`, which is only possible while every
+        /// field borrows. It is the structural guarantee that enumerating a model's
+        /// expressions allocates nothing but the returned `Vec` — adding an owned
+        /// field (an `ObjectId`, a `String`) breaks this and reintroduces a
+        /// per-expression allocation on the graph layer's hot path.
+        #[test]
+        fn are_copy_so_enumeration_borrows_everything() {
+            fn assert_copy<T: Copy>() {}
+            assert_copy::<DaxExpressionRef<'_>>();
+            assert_copy::<MExpressionRef<'_>>();
+            assert_copy::<ExpressionOwner<'_>>();
         }
-        assert_eq!(db.dax_expressions().len(), 0);
     }
 
-    #[test]
-    fn m_expressions_is_empty_for_a_model_with_no_m() {
-        let db = TabularDatabase {
-            tables: vec![Table {
-                name: "Top Products".to_string(),
-                partitions: vec![partition(
-                    "Top Products",
-                    PartitionSource::Calculated {
-                        expression: "TOPN(10, 'Product')".to_string(),
-                    },
-                )],
+    /// A calculated table is one whose partition source is DAX. There is no flag in
+    /// TOM and none here, so every other source kind — including ones this crate does
+    /// not recognize — must read as not calculated.
+    mod is_calculated {
+        use super::*;
+
+        fn table_with(source: Option<PartitionSource>) -> Table {
+            Table {
+                name: "Anything".to_string(),
+                partitions: source.into_iter().map(|s| partition("P", s)).collect(),
                 ..Default::default()
-            }],
-            ..Default::default()
-        };
-        assert_eq!(db.m_expressions().len(), 0);
+            }
+        }
+
+        #[rstest]
+        #[case::dax_partition(
+            Some(PartitionSource::Calculated { expression: "TOPN(10, 'Sales')".to_string() }),
+            true
+        )]
+        #[case::m_partition(
+            Some(PartitionSource::M { expression: "let Source = Sql.Database() in Source".to_string() }),
+            false
+        )]
+        #[case::native_query(
+            Some(PartitionSource::Query { query: "SELECT * FROM dbo.Sales".to_string() }),
+            false
+        )]
+        #[case::direct_lake_entity(
+            Some(PartitionSource::Other { kind: Some("entity".to_string()) }),
+            false
+        )]
+        #[case::unknown_future_source(Some(PartitionSource::Other { kind: None }), false)]
+        #[case::no_partitions(None, false)]
+        fn follows_the_partition_source(
+            #[case] source: Option<PartitionSource>,
+            #[case] expected: bool,
+        ) {
+            assert_eq!(table_with(source).is_calculated(), expected);
+        }
+
+        #[test]
+        fn is_true_when_only_one_of_several_partitions_is_dax() {
+            let mixed = Table {
+                name: "Sales".to_string(),
+                partitions: vec![
+                    partition(
+                        "Sales-2023",
+                        PartitionSource::Query {
+                            query: "SELECT * FROM dbo.Sales".to_string(),
+                        },
+                    ),
+                    partition(
+                        "Sales-2024",
+                        PartitionSource::Calculated {
+                            expression: "FILTER('Raw', TRUE())".to_string(),
+                        },
+                    ),
+                ],
+                ..Default::default()
+            };
+
+            assert!(
+                mixed.is_calculated(),
+                "one DAX partition makes the table calculated"
+            );
+        }
     }
 
-    // --- Task 6: deterministic order -------------------------------------------
+    mod defaults {
+        use super::*;
 
-    #[test]
-    fn dax_expressions_preserves_model_order() {
-        let db = every_kind_fixture();
-        let kinds: Vec<DaxExpressionKind> = db.dax_expressions().iter().map(|e| e.kind).collect();
+        /// TMDL omits the flag for active relationships, so a relationship built
+        /// field-by-field must come out active. A derived `Default` would silently
+        /// make every one of them inactive.
+        #[test]
+        fn a_relationship_is_active() {
+            assert!(Relationship::default().is_active);
+        }
 
-        assert_eq!(
-            kinds,
-            vec![
-                DaxExpressionKind::Measure,
-                DaxExpressionKind::MeasureFormatString,
-                DaxExpressionKind::MeasureDetailRows,
-                DaxExpressionKind::KpiTarget,
-                DaxExpressionKind::KpiStatus,
-                DaxExpressionKind::KpiTrend,
-                DaxExpressionKind::CalculatedColumn,
-                DaxExpressionKind::TableDetailRows,
-                DaxExpressionKind::CalculatedTable,
-                DaxExpressionKind::CalculationItem,
-                DaxExpressionKind::CalculationItemFormatString,
-                DaxExpressionKind::RlsFilter,
-            ]
-        );
+        #[test]
+        fn a_relationship_has_no_other_content() {
+            assert_eq!(
+                Relationship::default(),
+                Relationship {
+                    name: None,
+                    from_table: String::new(),
+                    from_column: String::new(),
+                    to_table: String::new(),
+                    to_column: String::new(),
+                    is_active: true,
+                }
+            );
+        }
+
+        /// An unparsed source must never be mistaken for a query language, or schema
+        /// drift would feed junk to the DAX lexer.
+        #[test]
+        fn a_partition_source_is_other_with_no_kind() {
+            assert_eq!(
+                PartitionSource::default(),
+                PartitionSource::Other { kind: None }
+            );
+        }
+
+        #[test]
+        fn a_partition_carries_the_default_source() {
+            assert_eq!(
+                Partition::default().source,
+                PartitionSource::Other { kind: None }
+            );
+        }
+
+        #[test]
+        fn a_column_kind_is_data() {
+            assert_eq!(ColumnKind::default(), ColumnKind::Data);
+        }
+
+        #[test]
+        fn a_column_carries_the_default_kind() {
+            assert_eq!(Column::default().kind, ColumnKind::Data);
+        }
     }
 
-    #[test]
-    fn dax_expressions_follows_table_and_measure_declaration_order() {
-        let measure = |name: &str, expression: &str| Measure {
-            name: name.to_string(),
-            expression: expression.to_string(),
-            ..Default::default()
-        };
-        let db = TabularDatabase {
-            tables: vec![
-                Table {
-                    name: "Zebra".to_string(),
-                    measures: vec![measure("M2", "2"), measure("M1", "1")],
-                    ..Default::default()
-                },
-                Table {
-                    name: "Apple".to_string(),
-                    measures: vec![measure("M3", "3")],
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        };
+    mod dax_expressions {
+        use super::*;
 
-        let found: Vec<(ObjectId, &str)> = db
-            .dax_expressions()
-            .into_iter()
-            .map(|e| (e.owner.to_object_id(), e.text))
-            .collect();
-        assert_eq!(
-            found,
-            vec![
-                (measure_id("Zebra", "M2"), "2"),
-                (measure_id("Zebra", "M1"), "1"),
-                (measure_id("Apple", "M3"), "3"),
-            ]
-        );
+        #[test]
+        fn enumerates_every_kind_with_exact_owner_home_and_text() {
+            let db = every_kind_fixture();
+
+            assert_eq!(
+                dax_tuples(&db),
+                vec![
+                    (
+                        DaxExpressionKind::Measure,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "SUM('Sales'[Amount])",
+                    ),
+                    (
+                        DaxExpressionKind::MeasureFormatString,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "\"#,##0\"",
+                    ),
+                    (
+                        DaxExpressionKind::MeasureDetailRows,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "SELECTCOLUMNS('Sales')",
+                    ),
+                    (
+                        DaxExpressionKind::KpiTarget,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "[Budget]",
+                    ),
+                    (
+                        DaxExpressionKind::KpiStatus,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "IF([Total Sales] > 0, 1, -1)",
+                    ),
+                    (
+                        DaxExpressionKind::KpiTrend,
+                        measure_id("Sales", "Total Sales"),
+                        Some("Sales"),
+                        "[Total Sales] - [Prior]",
+                    ),
+                    (
+                        DaxExpressionKind::CalculatedColumn,
+                        column_id("Sales", "Margin"),
+                        Some("Sales"),
+                        "'Sales'[Amount] * 0.2",
+                    ),
+                    (
+                        DaxExpressionKind::TableDetailRows,
+                        table_id("Sales"),
+                        Some("Sales"),
+                        "SELECTCOLUMNS('Sales', \"A\", [Amount])",
+                    ),
+                    (
+                        DaxExpressionKind::CalculatedTable,
+                        partition_id("Top Products", "Top Products"),
+                        Some("Top Products"),
+                        "TOPN(10, 'Product', [Total Sales])",
+                    ),
+                    (
+                        DaxExpressionKind::CalculationItem,
+                        calc_item_id("Time Intelligence", "YTD"),
+                        Some("Time Intelligence"),
+                        "TOTALYTD(SELECTEDMEASURE(), 'Date'[Date])",
+                    ),
+                    (
+                        DaxExpressionKind::CalculationItemFormatString,
+                        calc_item_id("Time Intelligence", "YTD"),
+                        Some("Time Intelligence"),
+                        "\"#,##0;;\"",
+                    ),
+                    (
+                        DaxExpressionKind::RlsFilter,
+                        role_id("Reader"),
+                        Some("Sales"),
+                        "'Sales'[Amount] > 0",
+                    ),
+                ]
+            );
+        }
+
+        #[test]
+        fn enumerates_one_expression_per_populated_site() {
+            assert_eq!(dax_tuples(&every_kind_fixture()).len(), 12);
+        }
+
+        /// `ObjectId` equality is case-insensitive, so the tuple assertion above
+        /// cannot catch an owner built from a lowercased or rewritten name.
+        #[test]
+        fn owners_preserve_source_casing() {
+            let db = every_kind_fixture();
+            let displayed: Vec<String> = owners(&db).iter().map(ObjectId::to_string).collect();
+
+            assert_eq!(
+                displayed,
+                vec![
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Total Sales]",
+                    "'Sales'[Margin]",
+                    "table 'Sales'",
+                    "partition 'Top Products'[Top Products]",
+                    "calculation item 'Time Intelligence'[YTD]",
+                    "calculation item 'Time Intelligence'[YTD]",
+                    "role 'Reader'",
+                ]
+            );
+        }
+
+        #[rstest]
+        #[case::a_data_column(column_id("Sales", "Amount"))]
+        #[case::an_m_partition(partition_id("Sales", "Sales-Part1"))]
+        fn excludes(#[case] unwanted: ObjectId) {
+            let db = every_kind_fixture();
+
+            assert!(
+                !owners(&db).contains(&unwanted),
+                "{unwanted} owns no DAX and must not be enumerated"
+            );
+        }
+
+        #[test]
+        fn excludes_m_partition_text() {
+            let db = every_kind_fixture();
+
+            assert!(
+                !dax_tuples(&db)
+                    .iter()
+                    .any(|(_, _, _, text)| text.starts_with("let Source")),
+                "an M query must never be handed to the DAX lexer"
+            );
+        }
+
+        /// The fixture's role filters one table and holds metadata-only permission on
+        /// another; only the filtered one is an expression.
+        #[test]
+        fn emits_one_filter_for_a_role_with_one_filtered_permission() {
+            let db = every_kind_fixture();
+
+            assert_eq!(
+                dax_tuples(&db)
+                    .iter()
+                    .filter(|(kind, _, _, _)| *kind == DaxExpressionKind::RlsFilter)
+                    .count(),
+                1
+            );
+        }
+
+        #[test]
+        fn excludes_metadata_only_permissions() {
+            let db = every_kind_fixture();
+
+            assert!(
+                !dax_tuples(&db).iter().any(|(kind, _, home, _)| {
+                    *kind == DaxExpressionKind::RlsFilter && *home == Some("Top Products")
+                }),
+                "a permission with no filter expression contributes nothing"
+            );
+        }
+
+        #[test]
+        fn is_empty_for_a_model_with_no_dax() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![Column {
+                        name: "Amount".to_string(),
+                        ..Default::default()
+                    }],
+                    partitions: vec![partition(
+                        "Sales",
+                        PartitionSource::M {
+                            expression: "let Source = 1 in Source".to_string(),
+                        },
+                    )],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            assert_eq!(db.dax_expressions().len(), 0);
+        }
+
+        /// Order is model order, so a run is deterministic and diffable.
+        #[test]
+        fn preserves_model_order_within_a_table() {
+            let db = every_kind_fixture();
+            let kinds: Vec<DaxExpressionKind> =
+                db.dax_expressions().iter().map(|e| e.kind).collect();
+
+            assert_eq!(
+                kinds,
+                vec![
+                    DaxExpressionKind::Measure,
+                    DaxExpressionKind::MeasureFormatString,
+                    DaxExpressionKind::MeasureDetailRows,
+                    DaxExpressionKind::KpiTarget,
+                    DaxExpressionKind::KpiStatus,
+                    DaxExpressionKind::KpiTrend,
+                    DaxExpressionKind::CalculatedColumn,
+                    DaxExpressionKind::TableDetailRows,
+                    DaxExpressionKind::CalculatedTable,
+                    DaxExpressionKind::CalculationItem,
+                    DaxExpressionKind::CalculationItemFormatString,
+                    DaxExpressionKind::RlsFilter,
+                ]
+            );
+        }
+
+        #[test]
+        fn follows_table_and_measure_declaration_order() {
+            let measure = |name: &str, expression: &str| Measure {
+                name: name.to_string(),
+                expression: expression.to_string(),
+                ..Default::default()
+            };
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Zebra".to_string(),
+                        measures: vec![measure("M2", "2"), measure("M1", "1")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "Apple".to_string(),
+                        measures: vec![measure("M3", "3")],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+
+            let found: Vec<(ObjectId, &str)> = db
+                .dax_expressions()
+                .into_iter()
+                .map(|e| (e.owner.to_object_id(), e.text))
+                .collect();
+
+            assert_eq!(
+                found,
+                vec![
+                    (measure_id("Zebra", "M2"), "2"),
+                    (measure_id("Zebra", "M1"), "1"),
+                    (measure_id("Apple", "M3"), "3"),
+                ]
+            );
+        }
+    }
+
+    mod m_expressions {
+        use super::*;
+
+        #[test]
+        fn covers_m_partitions_and_shared_expressions_with_exact_owner_and_text() {
+            let db = m_fixture();
+
+            assert_eq!(
+                m_tuples(&db),
+                vec![
+                    (
+                        partition_id("Sales", "Sales-M"),
+                        "let Source = Sql.Database(Server) in Source",
+                    ),
+                    (expression_id("Server"), "\"contoso.database.windows.net\""),
+                    (expression_id("Database"), "\"AdventureWorks\""),
+                ]
+            );
+        }
+
+        #[rstest]
+        #[case::a_native_query_partition(partition_id("Sales", "Sales-Native"))]
+        #[case::an_unrecognized_source_partition(partition_id("Sales", "Sales-Lake"))]
+        fn excludes(#[case] unwanted: ObjectId) {
+            let db = m_fixture();
+
+            assert!(
+                !m_tuples(&db)
+                    .into_iter()
+                    .any(|(owner, _)| owner == unwanted),
+                "{unwanted} holds no M and must not be enumerated"
+            );
+        }
+
+        /// A native query is neither M nor DAX, so it reaches no lexer at all.
+        #[test]
+        fn leaves_native_query_partitions_out_of_the_dax_enumeration_too() {
+            assert_eq!(m_fixture().dax_expressions().len(), 0);
+        }
+
+        #[test]
+        fn is_empty_for_a_model_with_no_m() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Top Products".to_string(),
+                    partitions: vec![partition(
+                        "Top Products",
+                        PartitionSource::Calculated {
+                            expression: "TOPN(10, 'Product')".to_string(),
+                        },
+                    )],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            assert_eq!(db.m_expressions().len(), 0);
+        }
     }
 }

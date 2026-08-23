@@ -44,6 +44,19 @@ impl fmt::Display for Quoted<'_> {
 /// [`std::borrow::Borrow<str>`] is deliberately **not** implemented: `Borrow` requires
 /// that the borrowed value hash and compare identically to the owner, which cannot hold
 /// when [`Eq`]/[`Hash`] use `folded` while [`as_str`](NameKey::as_str) yields `original`.
+///
+/// # Examples
+///
+/// ```
+/// use ripbi_core::NameKey;
+///
+/// // Case is irrelevant to identity, in ASCII and beyond.
+/// assert_eq!(NameKey::new("Sales"), NameKey::new("SALES"));
+/// assert_eq!(NameKey::new("MÅNED"), NameKey::new("måned"));
+///
+/// // ...but the model's own casing survives for display.
+/// assert_eq!(NameKey::new("SaLeS").as_str(), "SaLeS");
+/// ```
 #[derive(Debug, Clone)]
 pub struct NameKey {
     original: String,
@@ -124,6 +137,22 @@ impl From<String> for NameKey {
 ///
 /// Unresolved means the reference has not yet been bound to an [`ObjectId`]: `[Total]`
 /// could be a measure or a column of the current row context.
+///
+/// # Examples
+///
+/// ```
+/// use ripbi_core::{FieldRef, NameKey};
+///
+/// let qualified = FieldRef {
+///     table: Some(NameKey::new("Sales's Data")),
+///     name: NameKey::new("Amount"),
+/// };
+/// // Display re-applies DAX quoting, doubling the internal quote.
+/// assert_eq!(qualified.to_string(), "'Sales''s Data'[Amount]");
+///
+/// let unqualified = FieldRef { table: None, name: NameKey::new("Total") };
+/// assert_eq!(unqualified.to_string(), "[Total]");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldRef {
     /// Qualifying table, if the reference was written qualified.
@@ -257,107 +286,14 @@ impl fmt::Display for ObjectId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashSet;
 
-    #[test]
-    fn fold_name_lowercases_ascii_and_non_ascii() {
-        assert_eq!(fold_name("SaLeS"), "sales");
-        assert_eq!(fold_name("MÅNED"), "måned");
-        assert_eq!(fold_name("ÆRØ"), "ærø");
-    }
-
-    #[test]
-    fn name_key_eq_ignores_ascii_case() {
-        assert_eq!(NameKey::new("Sales"), NameKey::new("SALES"));
-        assert_eq!(NameKey::new("Sales"), NameKey::new("sales"));
-        assert_ne!(NameKey::new("Sales"), NameKey::new("Salez"));
-    }
-
-    #[test]
-    fn name_key_eq_ignores_non_ascii_case() {
-        assert_eq!(NameKey::new("MÅNED"), NameKey::new("måned"));
-        assert_eq!(NameKey::new("Ærø"), NameKey::new("ærø"));
-        assert_ne!(NameKey::new("Måned"), NameKey::new("Måneder"));
-    }
-
-    #[test]
-    fn name_key_hash_agrees_with_eq() {
-        let mut set: HashSet<NameKey> = HashSet::new();
-        set.insert(NameKey::new("Sales"));
-        set.insert(NameKey::new("SALES"));
-        assert_eq!(set.len(), 1);
-        set.insert(NameKey::new("Salez"));
-        assert_eq!(set.len(), 2);
-        assert!(set.contains(&NameKey::new("sAlEs")));
-        assert!(!set.contains(&NameKey::new("Sale")));
-    }
-
-    #[test]
-    fn name_key_preserves_original_casing() {
-        let key = NameKey::new("SaLeS");
-        assert_eq!(key.as_str(), "SaLeS");
-        assert_eq!(key.to_string(), "SaLeS");
-        assert_eq!(key.folded(), "sales");
-    }
-
-    #[test]
-    fn name_key_ord_is_consistent_with_eq() {
-        assert_eq!(
-            NameKey::new("ABC").cmp(&NameKey::new("abc")),
-            Ordering::Equal
-        );
-        assert_eq!(
-            NameKey::new("abc").cmp(&NameKey::new("abd")),
-            Ordering::Less
-        );
-        assert_eq!(
-            NameKey::new("ABD").cmp(&NameKey::new("abc")),
-            Ordering::Greater
-        );
-        assert!(NameKey::new("abc") < NameKey::new("abd"));
-    }
-
-    #[test]
-    fn object_id_eq_and_hash_ignore_case() {
-        let lower = ObjectId::Column {
-            table: NameKey::new("Sales"),
-            column: NameKey::new("Amount"),
-        };
-        let upper = ObjectId::Column {
-            table: NameKey::new("SALES"),
-            column: NameKey::new("AMOUNT"),
-        };
-        let other = ObjectId::Column {
-            table: NameKey::new("Sales"),
-            column: NameKey::new("Amount2"),
-        };
-        assert_eq!(lower, upper);
-        assert_ne!(lower, other);
-
-        let mut set: HashSet<ObjectId> = HashSet::new();
-        set.insert(lower);
-        set.insert(upper);
-        assert_eq!(set.len(), 1);
-        set.insert(other);
-        assert_eq!(set.len(), 2);
-    }
-
-    #[test]
-    fn object_id_variant_is_part_of_identity() {
-        let column = ObjectId::Column {
-            table: NameKey::new("Sales"),
-            column: NameKey::new("Amount"),
-        };
-        let measure = ObjectId::Measure {
-            table: NameKey::new("Sales"),
-            measure: NameKey::new("Amount"),
-        };
-        assert_ne!(column, measure);
-
-        let mut set: HashSet<ObjectId> = HashSet::new();
-        set.insert(column);
-        set.insert(measure);
-        assert_eq!(set.len(), 2);
+    fn column(table: &str, column: &str) -> ObjectId {
+        ObjectId::Column {
+            table: NameKey::new(table),
+            column: NameKey::new(column),
+        }
     }
 
     fn qualified(table: &str, name: &str) -> FieldRef {
@@ -374,103 +310,230 @@ mod tests {
         }
     }
 
-    #[test]
-    fn field_ref_display_emits_valid_dax() {
-        assert_eq!(qualified("Sales", "Amount").to_string(), "'Sales'[Amount]");
-        assert_eq!(
-            qualified("Sales's Data", "Amount").to_string(),
+    mod fold_name {
+        use super::*;
+
+        #[rstest]
+        #[case::ascii("SaLeS", "sales")]
+        #[case::danish_a_ring("MÅNED", "måned")]
+        #[case::danish_ae_and_o_slash("ÆRØ", "ærø")]
+        fn lowercases(#[case] input: &str, #[case] expected: &str) {
+            assert_eq!(fold_name(input), expected);
+        }
+    }
+
+    mod name_key {
+        use super::*;
+
+        #[rstest]
+        #[case::ascii_upper("Sales", "SALES")]
+        #[case::ascii_lower("Sales", "sales")]
+        #[case::danish_a_ring("MÅNED", "måned")]
+        #[case::danish_ae_and_o_slash("Ærø", "ærø")]
+        fn compares_equal_ignoring_case(#[case] left: &str, #[case] right: &str) {
+            assert_eq!(NameKey::new(left), NameKey::new(right));
+        }
+
+        #[rstest]
+        #[case::one_letter_apart("Sales", "Salez")]
+        #[case::danish_suffix("Måned", "Måneder")]
+        fn compares_unequal_when_letters_differ(#[case] left: &str, #[case] right: &str) {
+            assert_ne!(NameKey::new(left), NameKey::new(right));
+        }
+
+        #[test]
+        fn hashes_case_variants_into_one_entry() {
+            let set = HashSet::from([NameKey::new("Sales"), NameKey::new("SALES")]);
+
+            assert_eq!(set.len(), 1);
+        }
+
+        #[test]
+        fn hashes_distinct_names_separately() {
+            let set = HashSet::from([NameKey::new("Sales"), NameKey::new("Salez")]);
+
+            assert_eq!(set.len(), 2);
+        }
+
+        #[rstest]
+        #[case::mixed_case("sAlEs")]
+        #[case::upper("SALES")]
+        fn is_found_in_a_set_under_any_casing(#[case] probe: &str) {
+            let set = HashSet::from([NameKey::new("Sales")]);
+
+            assert!(
+                set.contains(&NameKey::new(probe)),
+                "{probe:?} should match the stored key \"Sales\""
+            );
+        }
+
+        #[test]
+        fn is_not_found_in_a_set_by_a_prefix() {
+            let set = HashSet::from([NameKey::new("Sales")]);
+
+            assert!(
+                !set.contains(&NameKey::new("Sale")),
+                "folding must not truncate: \"Sale\" is a different name"
+            );
+        }
+
+        #[test]
+        fn as_str_keeps_the_original_casing() {
+            assert_eq!(NameKey::new("SaLeS").as_str(), "SaLeS");
+        }
+
+        #[test]
+        fn display_keeps_the_original_casing() {
+            assert_eq!(NameKey::new("SaLeS").to_string(), "SaLeS");
+        }
+
+        #[test]
+        fn folded_is_the_lowercased_form() {
+            assert_eq!(NameKey::new("SaLeS").folded(), "sales");
+        }
+
+        /// `Ord` must agree with `Eq`, or `BTreeMap` and `sort` misbehave: two keys
+        /// that differ only in case have to compare `Equal`, never by their original
+        /// spelling.
+        #[rstest]
+        #[case::case_variants_are_equal("ABC", "abc", Ordering::Equal)]
+        #[case::earlier_letter_is_less("abc", "abd", Ordering::Less)]
+        #[case::later_letter_is_greater("ABD", "abc", Ordering::Greater)]
+        fn orders_by_folded_name(
+            #[case] left: &str,
+            #[case] right: &str,
+            #[case] expected: Ordering,
+        ) {
+            assert_eq!(NameKey::new(left).cmp(&NameKey::new(right)), expected);
+        }
+
+        #[test]
+        fn supports_comparison_operators() {
+            assert!(
+                NameKey::new("abc") < NameKey::new("abd"),
+                "PartialOrd must follow Ord"
+            );
+        }
+    }
+
+    mod object_id {
+        use super::*;
+
+        #[test]
+        fn compares_equal_ignoring_case() {
+            assert_eq!(column("Sales", "Amount"), column("SALES", "AMOUNT"));
+        }
+
+        #[test]
+        fn compares_unequal_when_a_name_differs() {
+            assert_ne!(column("Sales", "Amount"), column("Sales", "Amount2"));
+        }
+
+        /// A column and a measure can share a name; the variant keeps them apart.
+        #[test]
+        fn distinguishes_variants_carrying_the_same_names() {
+            let measure = ObjectId::Measure {
+                table: NameKey::new("Sales"),
+                measure: NameKey::new("Amount"),
+            };
+
+            assert_ne!(column("Sales", "Amount"), measure);
+        }
+
+        #[test]
+        fn hashes_case_variants_into_one_entry() {
+            let set = HashSet::from([column("Sales", "Amount"), column("SALES", "AMOUNT")]);
+
+            assert_eq!(set.len(), 1);
+        }
+
+        #[test]
+        fn hashes_distinct_columns_separately() {
+            let set = HashSet::from([column("Sales", "Amount"), column("Sales", "Amount2")]);
+
+            assert_eq!(set.len(), 2);
+        }
+
+        #[test]
+        fn hashes_a_column_and_a_measure_separately() {
+            let measure = ObjectId::Measure {
+                table: NameKey::new("Sales"),
+                measure: NameKey::new("Amount"),
+            };
+            let set = HashSet::from([column("Sales", "Amount"), measure]);
+
+            assert_eq!(set.len(), 2);
+        }
+    }
+
+    mod field_ref {
+        use super::*;
+
+        #[rstest]
+        #[case::qualified(qualified("Sales", "Amount"), "'Sales'[Amount]")]
+        #[case::internal_quote_is_doubled(
+            qualified("Sales's Data", "Amount"),
             "'Sales''s Data'[Amount]"
-        );
-        assert_eq!(unqualified("Total").to_string(), "[Total]");
+        )]
+        #[case::unqualified(unqualified("Total"), "[Total]")]
+        fn displays_as_valid_dax(#[case] reference: FieldRef, #[case] expected: &str) {
+            assert_eq!(reference.to_string(), expected);
+        }
+
+        #[test]
+        fn compares_equal_ignoring_case() {
+            assert_eq!(qualified("Sales", "Amount"), qualified("SALES", "AMOUNT"));
+        }
+
+        #[test]
+        fn distinguishes_a_qualified_reference_from_an_unqualified_one() {
+            assert_ne!(qualified("Sales", "Amount"), unqualified("Amount"));
+        }
     }
 
-    #[test]
-    fn field_ref_eq_ignores_case_but_not_qualification() {
-        assert_eq!(qualified("Sales", "Amount"), qualified("SALES", "AMOUNT"));
-        assert_ne!(qualified("Sales", "Amount"), unqualified("Amount"));
-    }
+    mod object_id_display {
+        use super::*;
 
-    #[test]
-    fn object_id_display_forms() {
-        assert_eq!(
-            ObjectId::Table {
-                table: NameKey::new("Sales")
-            }
-            .to_string(),
-            "table 'Sales'"
-        );
-        assert_eq!(
-            ObjectId::Column {
-                table: NameKey::new("Sales"),
-                column: NameKey::new("Amount")
-            }
-            .to_string(),
-            "'Sales'[Amount]"
-        );
-        assert_eq!(
-            ObjectId::Measure {
-                table: NameKey::new("Sales"),
-                measure: NameKey::new("Total")
-            }
-            .to_string(),
+        #[rstest]
+        #[case::table(ObjectId::Table { table: NameKey::new("Sales") }, "table 'Sales'")]
+        #[case::column(column("Sales", "Amount"), "'Sales'[Amount]")]
+        #[case::measure(
+            ObjectId::Measure { table: NameKey::new("Sales"), measure: NameKey::new("Total") },
             "'Sales'[Total]"
-        );
-        assert_eq!(
-            ObjectId::Hierarchy {
-                table: NameKey::new("Date"),
-                hierarchy: NameKey::new("Calendar")
-            }
-            .to_string(),
+        )]
+        #[case::hierarchy(
+            ObjectId::Hierarchy { table: NameKey::new("Date"), hierarchy: NameKey::new("Calendar") },
             "hierarchy 'Date'[Calendar]"
-        );
-        assert_eq!(
+        )]
+        #[case::partition(
             ObjectId::Partition {
                 table: NameKey::new("Sales"),
-                partition: NameKey::new("Sales-Part1")
-            }
-            .to_string(),
+                partition: NameKey::new("Sales-Part1"),
+            },
             "partition 'Sales'[Sales-Part1]"
-        );
-        assert_eq!(
-            ObjectId::Role {
-                role: NameKey::new("Reader")
-            }
-            .to_string(),
-            "role 'Reader'"
-        );
-        assert_eq!(
+        )]
+        #[case::role(ObjectId::Role { role: NameKey::new("Reader") }, "role 'Reader'")]
+        #[case::calculation_item(
             ObjectId::CalculationItem {
                 table: NameKey::new("Time Intelligence"),
-                item: NameKey::new("YTD")
-            }
-            .to_string(),
+                item: NameKey::new("YTD"),
+            },
             "calculation item 'Time Intelligence'[YTD]"
-        );
-        assert_eq!(
-            ObjectId::Expression {
-                name: NameKey::new("Param1")
-            }
-            .to_string(),
+        )]
+        #[case::expression(
+            ObjectId::Expression { name: NameKey::new("Param1") },
             "expression 'Param1'"
-        );
-    }
-
-    #[test]
-    fn object_id_display_escapes_quotes_and_keeps_casing() {
-        assert_eq!(
-            ObjectId::Column {
-                table: NameKey::new("Bob's 'Best' Data"),
-                column: NameKey::new("AmOuNt")
-            }
-            .to_string(),
+        )]
+        #[case::internal_quotes_are_doubled(
+            column("Bob's 'Best' Data", "AmOuNt"),
             "'Bob''s ''Best'' Data'[AmOuNt]"
-        );
-        assert_eq!(
-            ObjectId::Table {
-                table: NameKey::new("O'Brien")
-            }
-            .to_string(),
+        )]
+        #[case::quoted_name_keeps_its_casing(
+            ObjectId::Table { table: NameKey::new("O'Brien") },
             "table 'O''Brien'"
-        );
+        )]
+        fn renders(#[case] id: ObjectId, #[case] expected: &str) {
+            assert_eq!(id.to_string(), expected);
+        }
     }
 }
