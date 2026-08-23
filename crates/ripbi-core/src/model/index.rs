@@ -17,8 +17,8 @@
 //!   occur in hand-edited files; the first occurrence wins and the build never panics.
 //!   An unresolvable name is data (`None`), not an error.
 //!
-//! All keys and all lookup inputs pass through [`crate::identity::fold_name`], the
-//! single case-folding chokepoint.
+//! All keys and all lookup inputs pass through `identity::fold_name`, the single
+//! case-folding chokepoint.
 
 use std::collections::HashMap;
 

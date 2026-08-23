@@ -69,7 +69,7 @@ pub enum Error {
     UnsupportedFormat(String),
 }
 
-/// A result whose error is this crate's [`Error`].
+/// A result whose error is this crate's [`enum@Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Normalized report model: visuals, filters, and slicer bindings.
