@@ -27,7 +27,6 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 | Task | Read | Notes |
 |---|---|---|
-| Public API / error type | [src/lib.rs](src/lib.rs) | `Error`, `ReportModel`, and the crate-root re-exports |
 | Semantic model AST | [docs/semantic-model.md](docs/semantic-model.md) | What is modeled and what is not; where DAX hides. Read before changing the AST |
 | Name resolution & identity | [docs/name-resolution.md](docs/name-resolution.md) | Case-insensitivity, model-global measures, why `[Name]` resolves to *all* candidates |
 | Format specs & detection | docs/formats.md (planned) | Create when ingestion lands |
