@@ -1,1 +1,30 @@
+# Rust / Cargo
 /target
+**/*.rs.bk
+*.pdb
+
+# Cargo tooling output
+/coverage
+*.profraw
+*.profdata
+tarpaulin-report.*
+/flamegraph.svg
+/perf.data*
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors / IDEs
+/.idea
+/.vscode
+*.iml
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
