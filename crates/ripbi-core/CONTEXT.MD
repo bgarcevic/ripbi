@@ -24,6 +24,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 | Task | Read | Notes |
 |---|---|---|
-| Public API / error type | [src/lib.rs](src/lib.rs) | `Error`, `TabularDatabase`, `ReportModel` |
+| Public API / error type | [src/lib.rs](src/lib.rs) | `Error`, `ReportModel`, plus re-exports of the AST and index types |
+| Tabular AST | [src/model/mod.rs](src/model/mod.rs) | `TabularDatabase` and friends; `dax_expressions` / `m_expressions` are the only enumeration of expression sites |
+| Object identity / case folding | [src/identity.rs](src/identity.rs) | `NameKey`, `FieldRef`, `ObjectId`; `fold_name` is the one case-folding chokepoint. Shared with the future report AST |
+| Name lookup index | [src/model/index.rs](src/model/index.rs) | `ModelIndex` + handles; unqualified `[Name]` returns *all* candidates (zero false positives) |
 | Format specs & detection | docs/formats.md (planned) | Create when ingestion lands |
 | DAX token grammar | docs/dax-lexing.md (planned) | Create when lexer lands |

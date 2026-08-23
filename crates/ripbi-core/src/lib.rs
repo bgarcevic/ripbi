@@ -4,6 +4,20 @@
 //!
 //! This crate never prints or exits; all fallible operations return [`Result`].
 
+pub mod identity;
+pub mod model;
+
+pub use identity::{FieldRef, NameKey, ObjectId};
+pub use model::index::{
+    ColumnHandle, ExpressionHandle, HierarchyHandle, MeasureHandle, ModelIndex, Resolved,
+    TableHandle, UnqualifiedMatches,
+};
+pub use model::{
+    CalculationGroup, CalculationItem, Column, ColumnKind, DaxExpressionKind, DaxExpressionRef,
+    Hierarchy, HierarchyLevel, Kpi, MExpressionRef, Measure, Partition, PartitionSource,
+    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
+};
+
 use thiserror::Error;
 
 /// Errors produced by ripbi-core.
@@ -20,25 +34,6 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Normalized semantic model, regardless of source format.
-#[derive(Debug, Default)]
-pub struct TabularDatabase {
-    pub tables: Vec<Table>,
-}
-
-#[derive(Debug, Default)]
-pub struct Table {
-    pub name: String,
-    pub columns: Vec<String>,
-    pub measures: Vec<Measure>,
-}
-
-#[derive(Debug, Default)]
-pub struct Measure {
-    pub name: String,
-    pub expression: String,
-}
 
 /// Normalized report model: visuals, filters, and slicer bindings.
 #[derive(Debug, Default)]
