@@ -103,6 +103,7 @@ impl UnqualifiedMatches {
     ///
     /// The graph layer must **not** use this — it would drop a live candidate. It
     /// exists for diagnostics and for callers that only need something to display.
+    #[must_use]
     pub fn primary(&self) -> Option<Resolved> {
         match (self.measure, self.column) {
             (Some(measure), _) => Some(Resolved::Measure(measure)),
@@ -113,9 +114,25 @@ impl UnqualifiedMatches {
 
     /// True when the name matched nothing. An unresolved reference is data — a
     /// stale expression, a typo, a table removed by hand — not an error.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.measure.is_none() && self.column.is_none()
     }
+}
+
+/// One table's share of the index: everything reachable by name *within* a table.
+///
+/// Handles are stored whole rather than as bare positions because two tables can
+/// fold to the same name. The entry then belongs to the first of them, while a
+/// handle inserted from the second still points at the table it actually came from.
+#[derive(Debug, Clone, Default)]
+struct TableEntry {
+    /// Index of the first table with this folded name.
+    table: usize,
+    /// Folded column name → handle.
+    columns: HashMap<String, ColumnHandle>,
+    /// Folded hierarchy name → handle.
+    hierarchies: HashMap<String, HierarchyHandle>,
 }
 
 /// Case-insensitive lookup index over a [`TabularDatabase`].
@@ -123,17 +140,17 @@ impl UnqualifiedMatches {
 /// Build it once, after ingestion, with [`ModelIndex::build`]. Building never fails:
 /// duplicate names are invalid in a valid model but tolerated here, with the **first**
 /// occurrence kept and later ones ignored.
+///
+/// Per-table names are nested under their table rather than keyed by a
+/// `(table, name)` pair, so a lookup folds each half once and allocates no tuple —
+/// this is the DAX lexer's hot path, one call per reference in every expression.
 #[derive(Debug, Clone)]
 pub struct ModelIndex {
-    /// Folded table name → index into `db.tables`.
-    tables: HashMap<String, usize>,
-    /// (folded table name, folded column name) → column handle.
-    columns: HashMap<(String, String), ColumnHandle>,
+    /// Folded table name → that table's names.
+    tables: HashMap<String, TableEntry>,
     /// Folded measure name → measure handle. Global: measure names are unique
     /// across the whole model, not just within their home table.
     measures: HashMap<String, MeasureHandle>,
-    /// (folded table name, folded hierarchy name) → hierarchy handle.
-    hierarchies: HashMap<(String, String), HierarchyHandle>,
     /// Folded shared-expression name → expression handle.
     expressions: HashMap<String, ExpressionHandle>,
 }
@@ -141,26 +158,40 @@ pub struct ModelIndex {
 impl ModelIndex {
     /// Indexes every table, column, measure, hierarchy, and shared expression.
     ///
-    /// Runs in one pass over the model and allocates one folded `String` per name.
-    /// On a duplicate folded name the first occurrence is kept.
+    /// Runs in one pass over the model, folding each name once. On a duplicate
+    /// folded name the first occurrence is kept.
+    #[must_use]
     pub fn build(db: &TabularDatabase) -> Self {
-        let mut tables: HashMap<String, usize> = HashMap::new();
-        let mut columns: HashMap<(String, String), ColumnHandle> = HashMap::new();
+        let mut tables: HashMap<String, TableEntry> = HashMap::new();
         let mut measures: HashMap<String, MeasureHandle> = HashMap::new();
-        let mut hierarchies: HashMap<(String, String), HierarchyHandle> = HashMap::new();
         let mut expressions: HashMap<String, ExpressionHandle> = HashMap::new();
 
         for (table_idx, table) in db.tables.iter().enumerate() {
-            let folded_table = fold_name(&table.name);
-            // `or_insert` — not `insert` — is what makes the first occurrence win.
-            tables.entry(folded_table.clone()).or_insert(table_idx);
+            // `or_insert_with` — not `insert` — is what makes the first occurrence win.
+            let entry = tables
+                .entry(fold_name(&table.name))
+                .or_insert_with(|| TableEntry {
+                    table: table_idx,
+                    ..TableEntry::default()
+                });
 
             for (column_idx, column) in table.columns.iter().enumerate() {
-                columns
-                    .entry((folded_table.clone(), fold_name(&column.name)))
+                entry
+                    .columns
+                    .entry(fold_name(&column.name))
                     .or_insert(ColumnHandle {
                         table: table_idx,
                         column: column_idx,
+                    });
+            }
+
+            for (hierarchy_idx, hierarchy) in table.hierarchies.iter().enumerate() {
+                entry
+                    .hierarchies
+                    .entry(fold_name(&hierarchy.name))
+                    .or_insert(HierarchyHandle {
+                        table: table_idx,
+                        hierarchy: hierarchy_idx,
                     });
             }
 
@@ -170,15 +201,6 @@ impl ModelIndex {
                     .or_insert(MeasureHandle {
                         table: table_idx,
                         measure: measure_idx,
-                    });
-            }
-
-            for (hierarchy_idx, hierarchy) in table.hierarchies.iter().enumerate() {
-                hierarchies
-                    .entry((folded_table.clone(), fold_name(&hierarchy.name)))
-                    .or_insert(HierarchyHandle {
-                        table: table_idx,
-                        hierarchy: hierarchy_idx,
                     });
             }
         }
@@ -191,16 +213,17 @@ impl ModelIndex {
 
         Self {
             tables,
-            columns,
             measures,
-            hierarchies,
             expressions,
         }
     }
 
     /// Looks up a table by name, case-insensitively.
+    #[must_use]
     pub fn resolve_table(&self, name: &str) -> Option<TableHandle> {
-        self.tables.get(&fold_name(name)).copied().map(TableHandle)
+        self.tables
+            .get(&fold_name(name))
+            .map(|entry| TableHandle(entry.table))
     }
 
     /// Resolves a qualified reference, `Table[Name]`.
@@ -211,9 +234,14 @@ impl ModelIndex {
     /// measure that lives on `Sales`, or a prefix naming a table that no longer
     /// exists — still keeps that measure alive. Marking one object used too many is
     /// safe; marking one too few deletes live code.
+    #[must_use]
     pub fn resolve_qualified(&self, table: &str, name: &str) -> Option<Resolved> {
         let folded_name = fold_name(name);
-        if let Some(column) = self.columns.get(&(fold_name(table), folded_name.clone())) {
+        let column = self
+            .tables
+            .get(&fold_name(table))
+            .and_then(|entry| entry.columns.get(&folded_name));
+        if let Some(column) = column {
             return Some(Resolved::Column(*column));
         }
         self.measures
@@ -227,13 +255,15 @@ impl ModelIndex {
     /// `home_table` is the row-context table of the expression the reference was
     /// found in; pass `None` where there is none. See [`UnqualifiedMatches`] for why
     /// both a measure and a column can come back at once.
+    #[must_use]
     pub fn resolve_unqualified(&self, name: &str, home_table: Option<&str>) -> UnqualifiedMatches {
         let folded_name = fold_name(name);
         UnqualifiedMatches {
             measure: self.measures.get(&folded_name).copied(),
             column: home_table.and_then(|table| {
-                self.columns
-                    .get(&(fold_name(table), folded_name.clone()))
+                self.tables
+                    .get(&fold_name(table))
+                    .and_then(|entry| entry.columns.get(&folded_name))
                     .copied()
             }),
         }
@@ -242,14 +272,18 @@ impl ModelIndex {
     /// Looks up a hierarchy on a specific table, as written in `ISINSCOPE('Date'[Calendar])`
     /// or in a PBIR hierarchy binding. Hierarchy names are only unique per table, so
     /// there is no unqualified form and no cross-table fallback.
+    #[must_use]
     pub fn resolve_hierarchy(&self, table: &str, name: &str) -> Option<HierarchyHandle> {
-        self.hierarchies
-            .get(&(fold_name(table), fold_name(name)))
+        self.tables
+            .get(&fold_name(table))?
+            .hierarchies
+            .get(&fold_name(name))
             .copied()
     }
 
     /// Looks up a model-level shared M expression by name — how one M query
     /// references a parameter or another query.
+    #[must_use]
     pub fn resolve_expression(&self, name: &str) -> Option<ExpressionHandle> {
         self.expressions.get(&fold_name(name)).copied()
     }

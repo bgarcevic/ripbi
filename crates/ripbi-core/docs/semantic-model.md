@@ -65,6 +65,12 @@ a new expression-bearing field cannot be silently omitted from reachability anal
 **Adding an expression field to the AST means adding it to the enumeration** — the tests
 assert every kind is produced exactly once from a fixture that exercises all of them.
 
+Enumerated expressions borrow their owner's names rather than carrying an owned
+`ObjectId`, so walking every expression in a model allocates nothing. The graph layer
+calls `to_object_id()` once per node it actually creates, instead of once per
+expression — a measure with a format string, detail rows, and a KPI would otherwise
+pay for six identical owner keys. A test pins both views as `Copy` to keep it that way.
+
 Each enumerated expression carries a home table: the row-context table used to resolve
 unqualified references inside it. For an RLS filter that is the permission's target table,
 not anything belonging to the role. For a calculated table's partition it is the

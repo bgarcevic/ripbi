@@ -14,8 +14,8 @@ pub use model::index::{
 };
 pub use model::{
     CalculationGroup, CalculationItem, Column, ColumnKind, DaxExpressionKind, DaxExpressionRef,
-    Hierarchy, HierarchyLevel, Kpi, MExpressionRef, Measure, Partition, PartitionSource,
-    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
+    ExpressionOwner, Hierarchy, HierarchyLevel, Kpi, MExpressionRef, Measure, Partition,
+    PartitionSource, Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
 };
 
 use thiserror::Error;

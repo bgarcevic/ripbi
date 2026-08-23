@@ -335,7 +335,7 @@ mod tests {
         assert_ne!(lower, other);
 
         let mut set: HashSet<ObjectId> = HashSet::new();
-        set.insert(lower.clone());
+        set.insert(lower);
         set.insert(upper);
         assert_eq!(set.len(), 1);
         set.insert(other);

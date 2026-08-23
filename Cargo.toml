@@ -16,3 +16,16 @@ thiserror = "2"
 zip = "8"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+
+# Ch2 of the Rust best-practices handbook: declare lints here so a local
+# `cargo clippy` matches CI. `redundant_clone` and `needless_collect` are nursery
+# lints, so `-D warnings` alone never runs them — and they are exactly the
+# allocation mistakes this codebase is prone to.
+[workspace.lints.rust]
+future_incompatible = "warn"
+nonstandard_style = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = 10 }
+redundant_clone = { level = "deny", priority = 9 }
+needless_collect = { level = "deny", priority = 9 }

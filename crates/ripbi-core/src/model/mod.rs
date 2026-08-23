@@ -317,16 +317,16 @@ impl TabularDatabase {
                 let table = self.tables.get(h.table)?;
                 let column = table.columns.get(h.column)?;
                 Some(ObjectId::Column {
-                    table: NameKey::new(table.name.clone()),
-                    column: NameKey::new(column.name.clone()),
+                    table: NameKey::new(table.name.as_str()),
+                    column: NameKey::new(column.name.as_str()),
                 })
             }
             Resolved::Measure(h) => {
                 let table = self.tables.get(h.table)?;
                 let measure = table.measures.get(h.measure)?;
                 Some(ObjectId::Measure {
-                    table: NameKey::new(table.name.clone()),
-                    measure: NameKey::new(measure.name.clone()),
+                    table: NameKey::new(table.name.as_str()),
+                    measure: NameKey::new(measure.name.as_str()),
                 })
             }
         }
@@ -366,12 +366,102 @@ pub enum DaxExpressionKind {
     CalculationItemFormatString,
 }
 
+/// The model object an enumerated expression belongs to.
+///
+/// Names are borrowed from the model, so enumerating a model's expressions
+/// allocates nothing. Call [`to_object_id`](ExpressionOwner::to_object_id) to
+/// materialize a graph node key — once per node the graph actually creates, rather
+/// than once per expression.
+///
+/// The variants are exactly the objects that can own an expression, which is why
+/// there is no hierarchy here: hierarchies reference columns but define no DAX.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExpressionOwner<'a> {
+    /// A table, owning its detail-rows expression.
+    Table {
+        /// Table name.
+        table: &'a str,
+    },
+    /// A calculated column.
+    Column {
+        /// Owning table.
+        table: &'a str,
+        /// Column name.
+        column: &'a str,
+    },
+    /// A measure, owning its expression, format string, detail rows, and KPI.
+    Measure {
+        /// Home table.
+        table: &'a str,
+        /// Measure name.
+        measure: &'a str,
+    },
+    /// A partition, owning its M or DAX source query.
+    Partition {
+        /// Owning table.
+        table: &'a str,
+        /// Partition name.
+        partition: &'a str,
+    },
+    /// A security role, owning its row-level-security filters.
+    Role {
+        /// Role name.
+        role: &'a str,
+    },
+    /// A calculation item.
+    CalculationItem {
+        /// Calculation group table.
+        table: &'a str,
+        /// Calculation item name.
+        item: &'a str,
+    },
+    /// A model-level shared M expression.
+    Expression {
+        /// Expression name.
+        name: &'a str,
+    },
+}
+
+impl ExpressionOwner<'_> {
+    /// The owner's stable graph-node identity, allocating the owned name keys.
+    #[must_use]
+    pub fn to_object_id(&self) -> ObjectId {
+        match *self {
+            ExpressionOwner::Table { table } => ObjectId::Table {
+                table: NameKey::new(table),
+            },
+            ExpressionOwner::Column { table, column } => ObjectId::Column {
+                table: NameKey::new(table),
+                column: NameKey::new(column),
+            },
+            ExpressionOwner::Measure { table, measure } => ObjectId::Measure {
+                table: NameKey::new(table),
+                measure: NameKey::new(measure),
+            },
+            ExpressionOwner::Partition { table, partition } => ObjectId::Partition {
+                table: NameKey::new(table),
+                partition: NameKey::new(partition),
+            },
+            ExpressionOwner::Role { role } => ObjectId::Role {
+                role: NameKey::new(role),
+            },
+            ExpressionOwner::CalculationItem { table, item } => ObjectId::CalculationItem {
+                table: NameKey::new(table),
+                item: NameKey::new(item),
+            },
+            ExpressionOwner::Expression { name } => ObjectId::Expression {
+                name: NameKey::new(name),
+            },
+        }
+    }
+}
+
 /// Borrowed view of one DAX expression owned by a model object.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DaxExpressionRef<'a> {
     /// The object the expression belongs to — the source node of any edge derived
     /// from references found in `text`.
-    pub owner: ObjectId,
+    pub owner: ExpressionOwner<'a>,
     /// Which property of `owner` this expression is.
     pub kind: DaxExpressionKind,
     /// Context table for unqualified-column resolution by the lexer.
@@ -381,20 +471,23 @@ pub struct DaxExpressionRef<'a> {
 }
 
 /// Borrowed view of one M expression owned by a model object.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MExpressionRef<'a> {
     /// The object the expression belongs to: a partition or a shared expression.
-    pub owner: ObjectId,
+    pub owner: ExpressionOwner<'a>,
     /// The expression text, borrowed from the model.
     pub text: &'a str,
 }
 
 impl TabularDatabase {
-    /// Every DAX expression in the model, with owner identity and home-table context.
+    /// Every DAX expression in the model, with its owner and home-table context.
     ///
     /// Order follows model order (tables, then each table's measures, columns,
     /// partitions, table-level expressions and calculation items, then roles), so the
     /// result is deterministic for a given model and diffable across runs.
+    ///
+    /// Owners borrow their names, so this allocates only the returned `Vec`.
+    #[must_use]
     pub fn dax_expressions(&self) -> Vec<DaxExpressionRef<'_>> {
         let mut out = Vec::new();
 
@@ -402,46 +495,42 @@ impl TabularDatabase {
             let home = Some(table.name.as_str());
 
             for measure in &table.measures {
-                let owner = ObjectId::Measure {
-                    table: NameKey::new(table.name.clone()),
-                    measure: NameKey::new(measure.name.clone()),
+                let owner = ExpressionOwner::Measure {
+                    table: &table.name,
+                    measure: &measure.name,
                 };
-                out.push(DaxExpressionRef {
-                    owner: owner.clone(),
-                    kind: DaxExpressionKind::Measure,
-                    home_table: home,
-                    text: measure.expression.as_str(),
-                });
-                if let Some(text) = &measure.format_string_expression {
-                    out.push(DaxExpressionRef {
-                        owner: owner.clone(),
-                        kind: DaxExpressionKind::MeasureFormatString,
-                        home_table: home,
-                        text,
-                    });
-                }
-                if let Some(text) = &measure.detail_rows_expression {
-                    out.push(DaxExpressionRef {
-                        owner: owner.clone(),
-                        kind: DaxExpressionKind::MeasureDetailRows,
-                        home_table: home,
-                        text,
-                    });
-                }
-                if let Some(kpi) = &measure.kpi {
-                    for (kind, text) in [
-                        (DaxExpressionKind::KpiTarget, &kpi.target_expression),
-                        (DaxExpressionKind::KpiStatus, &kpi.status_expression),
-                        (DaxExpressionKind::KpiTrend, &kpi.trend_expression),
-                    ] {
-                        if let Some(text) = text {
-                            out.push(DaxExpressionRef {
-                                owner: owner.clone(),
-                                kind,
-                                home_table: home,
-                                text,
-                            });
-                        }
+                let kpi = measure.kpi.as_ref();
+                let sources = [
+                    (DaxExpressionKind::Measure, Some(&measure.expression)),
+                    (
+                        DaxExpressionKind::MeasureFormatString,
+                        measure.format_string_expression.as_ref(),
+                    ),
+                    (
+                        DaxExpressionKind::MeasureDetailRows,
+                        measure.detail_rows_expression.as_ref(),
+                    ),
+                    (
+                        DaxExpressionKind::KpiTarget,
+                        kpi.and_then(|kpi| kpi.target_expression.as_ref()),
+                    ),
+                    (
+                        DaxExpressionKind::KpiStatus,
+                        kpi.and_then(|kpi| kpi.status_expression.as_ref()),
+                    ),
+                    (
+                        DaxExpressionKind::KpiTrend,
+                        kpi.and_then(|kpi| kpi.trend_expression.as_ref()),
+                    ),
+                ];
+                for (kind, text) in sources {
+                    if let Some(text) = text {
+                        out.push(DaxExpressionRef {
+                            owner,
+                            kind,
+                            home_table: home,
+                            text,
+                        });
                     }
                 }
             }
@@ -449,9 +538,9 @@ impl TabularDatabase {
             for column in &table.columns {
                 if let ColumnKind::Calculated { expression } = &column.kind {
                     out.push(DaxExpressionRef {
-                        owner: ObjectId::Column {
-                            table: NameKey::new(table.name.clone()),
-                            column: NameKey::new(column.name.clone()),
+                        owner: ExpressionOwner::Column {
+                            table: &table.name,
+                            column: &column.name,
                         },
                         kind: DaxExpressionKind::CalculatedColumn,
                         home_table: home,
@@ -466,9 +555,9 @@ impl TabularDatabase {
                     // in a calculated-table expression usually belong to the source
                     // table, so this is conservative: it can only add candidate edges.
                     out.push(DaxExpressionRef {
-                        owner: ObjectId::Partition {
-                            table: NameKey::new(table.name.clone()),
-                            partition: NameKey::new(partition.name.clone()),
+                        owner: ExpressionOwner::Partition {
+                            table: &table.name,
+                            partition: &partition.name,
                         },
                         kind: DaxExpressionKind::CalculatedTable,
                         home_table: home,
@@ -479,9 +568,7 @@ impl TabularDatabase {
 
             if let Some(text) = &table.detail_rows_expression {
                 out.push(DaxExpressionRef {
-                    owner: ObjectId::Table {
-                        table: NameKey::new(table.name.clone()),
-                    },
+                    owner: ExpressionOwner::Table { table: &table.name },
                     kind: DaxExpressionKind::TableDetailRows,
                     home_table: home,
                     text,
@@ -490,12 +577,12 @@ impl TabularDatabase {
 
             if let Some(group) = &table.calculation_group {
                 for item in &group.items {
-                    let owner = ObjectId::CalculationItem {
-                        table: NameKey::new(table.name.clone()),
-                        item: NameKey::new(item.name.clone()),
+                    let owner = ExpressionOwner::CalculationItem {
+                        table: &table.name,
+                        item: &item.name,
                     };
                     out.push(DaxExpressionRef {
-                        owner: owner.clone(),
+                        owner,
                         kind: DaxExpressionKind::CalculationItem,
                         home_table: home,
                         text: item.expression.as_str(),
@@ -518,9 +605,7 @@ impl TabularDatabase {
                     // The row context of an RLS filter is the table it is applied to,
                     // not anything owned by the role.
                     out.push(DaxExpressionRef {
-                        owner: ObjectId::Role {
-                            role: NameKey::new(role.name.clone()),
-                        },
+                        owner: ExpressionOwner::Role { role: &role.name },
                         kind: DaxExpressionKind::RlsFilter,
                         home_table: Some(permission.table.as_str()),
                         text,
@@ -535,6 +620,7 @@ impl TabularDatabase {
     /// Every M expression: M partitions plus shared model expressions.
     ///
     /// `Query` and `Other` partition sources are not M and are excluded.
+    #[must_use]
     pub fn m_expressions(&self) -> Vec<MExpressionRef<'_>> {
         let mut out = Vec::new();
 
@@ -542,9 +628,9 @@ impl TabularDatabase {
             for partition in &table.partitions {
                 if let PartitionSource::M { expression } = &partition.source {
                     out.push(MExpressionRef {
-                        owner: ObjectId::Partition {
-                            table: NameKey::new(table.name.clone()),
-                            partition: NameKey::new(partition.name.clone()),
+                        owner: ExpressionOwner::Partition {
+                            table: &table.name,
+                            partition: &partition.name,
                         },
                         text: expression,
                     });
@@ -554,8 +640,8 @@ impl TabularDatabase {
 
         for expression in &self.expressions {
             out.push(MExpressionRef {
-                owner: ObjectId::Expression {
-                    name: NameKey::new(expression.name.clone()),
+                owner: ExpressionOwner::Expression {
+                    name: &expression.name,
                 },
                 text: expression.expression.as_str(),
             });
@@ -603,11 +689,24 @@ mod tests {
         }
     }
 
+    /// Both expression views must stay `Copy`, which is only possible while every
+    /// field borrows. It is the structural guarantee that enumerating a model's
+    /// expressions allocates nothing but the returned `Vec` — adding an owned field
+    /// (an `ObjectId`, a `String`) breaks this and reintroduces a per-expression
+    /// allocation on the graph layer's hot path.
+    #[test]
+    fn expression_views_are_copy_so_enumeration_borrows_everything() {
+        fn assert_copy<T: Copy>() {}
+        assert_copy::<DaxExpressionRef<'_>>();
+        assert_copy::<MExpressionRef<'_>>();
+        assert_copy::<ExpressionOwner<'_>>();
+    }
+
     /// `(kind, owner, home_table, text)` for every DAX expression, in order.
     fn dax_tuples(db: &TabularDatabase) -> Vec<(DaxExpressionKind, ObjectId, Option<&str>, &str)> {
         db.dax_expressions()
             .into_iter()
-            .map(|e| (e.kind, e.owner, e.home_table, e.text))
+            .map(|e| (e.kind, e.owner.to_object_id(), e.home_table, e.text))
             .collect()
     }
 
@@ -615,7 +714,7 @@ mod tests {
     fn m_tuples(db: &TabularDatabase) -> Vec<(ObjectId, &str)> {
         db.m_expressions()
             .into_iter()
-            .map(|e| (e.owner, e.text))
+            .map(|e| (e.owner.to_object_id(), e.text))
             .collect()
     }
 
@@ -909,7 +1008,7 @@ mod tests {
         let displayed: Vec<String> = db
             .dax_expressions()
             .iter()
-            .map(|e| e.owner.to_string())
+            .map(|e| e.owner.to_object_id().to_string())
             .collect();
 
         assert_eq!(
@@ -1133,7 +1232,7 @@ mod tests {
         let found: Vec<(ObjectId, &str)> = db
             .dax_expressions()
             .into_iter()
-            .map(|e| (e.owner, e.text))
+            .map(|e| (e.owner.to_object_id(), e.text))
             .collect();
         assert_eq!(
             found,
