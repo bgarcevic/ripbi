@@ -6,6 +6,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 ## Responsibilities
 
+- **Semantic model** (`src/model/`, `src/identity.rs`): the normalized `TabularDatabase`
+  AST and the case-insensitive object identity every other layer refers to objects by.
+  Pure data — no parsing, no I/O.
 - **Ingestion** (`src/ingest/`): detect and parse the four source formats —
   legacy `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` + `Report/Layout`),
   `.pbip` folders (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL
@@ -24,9 +27,8 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 
 | Task | Read | Notes |
 |---|---|---|
-| Public API / error type | [src/lib.rs](src/lib.rs) | `Error`, `ReportModel`, plus re-exports of the AST and index types |
-| Tabular AST | [src/model/mod.rs](src/model/mod.rs) | `TabularDatabase` and friends; `dax_expressions` / `m_expressions` are the only enumeration of expression sites |
-| Object identity / case folding | [src/identity.rs](src/identity.rs) | `NameKey`, `FieldRef`, `ObjectId`; `fold_name` is the one case-folding chokepoint. Shared with the future report AST |
-| Name lookup index | [src/model/index.rs](src/model/index.rs) | `ModelIndex` + handles; unqualified `[Name]` returns *all* candidates (zero false positives) |
+| Public API / error type | [src/lib.rs](src/lib.rs) | `Error`, `ReportModel`, and the crate-root re-exports |
+| Semantic model AST | [docs/semantic-model.md](docs/semantic-model.md) | What is modeled and what is not; where DAX hides. Read before changing the AST |
+| Name resolution & identity | [docs/name-resolution.md](docs/name-resolution.md) | Case-insensitivity, model-global measures, why `[Name]` resolves to *all* candidates |
 | Format specs & detection | docs/formats.md (planned) | Create when ingestion lands |
 | DAX token grammar | docs/dax-lexing.md (planned) | Create when lexer lands |
