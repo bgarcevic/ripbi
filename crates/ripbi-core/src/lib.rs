@@ -41,13 +41,14 @@ pub mod model;
 
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use model::index::{
-    ColumnHandle, ExpressionHandle, HierarchyHandle, MeasureHandle, ModelIndex, Resolved,
-    TableHandle, UnqualifiedMatches,
+    ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, ModelIndex,
+    Resolved, TableHandle, UnqualifiedMatches,
 };
 pub use model::{
-    CalculationGroup, CalculationItem, Column, ColumnKind, DaxExpressionKind, DaxExpressionRef,
-    ExpressionOwner, Hierarchy, HierarchyLevel, Kpi, MExpressionRef, Measure, Partition,
-    PartitionSource, Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
+    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, DaxExpressionKind,
+    DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel, Kpi, MExpressionRef,
+    Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
+    TablePermission, TabularDatabase,
 };
 
 use thiserror::Error;

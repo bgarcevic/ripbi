@@ -233,6 +233,11 @@ pub enum ObjectId {
         /// Expression name.
         name: NameKey,
     },
+    /// A user-defined DAX function (TOM function). Names are model-global.
+    Function {
+        /// Function name.
+        name: NameKey,
+    },
 }
 
 impl fmt::Display for ObjectId {
@@ -278,6 +283,9 @@ impl fmt::Display for ObjectId {
             }
             ObjectId::Expression { name } => {
                 write!(f, "expression {}", Quoted(name.as_str()))
+            }
+            ObjectId::Function { name } => {
+                write!(f, "function {}", Quoted(name.as_str()))
             }
         }
     }
@@ -523,6 +531,10 @@ mod tests {
         #[case::expression(
             ObjectId::Expression { name: NameKey::new("Param1") },
             "expression 'Param1'"
+        )]
+        #[case::function(
+            ObjectId::Function { name: NameKey::new("Sales.Margin") },
+            "function 'Sales.Margin'"
         )]
         #[case::internal_quotes_are_doubled(
             column("Bob's 'Best' Data", "AmOuNt"),

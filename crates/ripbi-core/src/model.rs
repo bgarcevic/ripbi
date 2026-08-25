@@ -21,7 +21,8 @@ pub mod index;
 
 use crate::identity::{NameKey, ObjectId};
 use crate::model::index::{
-    ColumnHandle, ExpressionHandle, HierarchyHandle, MeasureHandle, Resolved, TableHandle,
+    ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, Resolved,
+    TableHandle,
 };
 
 /// Normalized semantic model, regardless of source format (TMDL, model.bim,
@@ -39,6 +40,8 @@ pub struct TabularDatabase {
     /// Model-level shared M expressions (TMDL expressions.tmdl / TMSL
     /// model.expressions): Power Query parameters and shared queries.
     pub expressions: Vec<SharedExpression>,
+    /// User-defined DAX functions (TOM functions). Names are model-global.
+    pub functions: Vec<Function>,
 }
 
 /// A table and everything defined on it.
@@ -58,6 +61,8 @@ pub struct Table {
     pub partitions: Vec<Partition>,
     /// User-defined hierarchies.
     pub hierarchies: Vec<Hierarchy>,
+    /// Calendars (TOM calendars) binding groups of the table's columns.
+    pub calendars: Vec<Calendar>,
     /// In TOM a calculation group is a property of a table.
     pub calculation_group: Option<CalculationGroup>,
     /// DAX defaultDetailRowsDefinition (drillthrough detail rows).
@@ -118,6 +123,9 @@ pub struct Column {
     /// Name of another column in the same table (TOM sortByColumn).
     /// Liveness edge: a used column keeps its sort-by column alive.
     pub sort_by_column: Option<String>,
+    /// Names of other columns in the same table (TOM groupByColumns).
+    /// Liveness edge: a used column keeps its group-by columns alive.
+    pub group_by_columns: Vec<String>,
 }
 
 /// How a column's values are produced.
@@ -284,6 +292,15 @@ pub struct TablePermission {
 pub struct CalculationGroup {
     /// Calculation items in source order.
     pub items: Vec<CalculationItem>,
+    /// DAX evaluated when no calculation item is selected (TOM noSelectionExpression).
+    pub no_selection_expression: Option<String>,
+    /// Dynamic format string (DAX) for the no-selection case.
+    pub no_selection_format_string_expression: Option<String>,
+    /// DAX evaluated when multiple items are selected or the selection is empty
+    /// (TOM multipleOrEmptySelectionExpression).
+    pub multiple_or_empty_selection_expression: Option<String>,
+    /// Dynamic format string (DAX) for the multiple-or-empty-selection case.
+    pub multiple_or_empty_selection_format_string_expression: Option<String>,
 }
 
 /// One item of a calculation group.
@@ -304,6 +321,32 @@ pub struct SharedExpression {
     pub name: String,
     /// M expression text.
     pub expression: String,
+}
+
+/// A user-defined DAX function (TOM function). Referenced from DAX by name;
+/// its body can be the sole reference keeping another object alive — and the
+/// function itself can be dead.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Function {
+    /// Function name; model-global, as referenced from DAX.
+    pub name: String,
+    /// The function's DAX body.
+    pub expression: String,
+    /// Hidden from report authors; hidden objects are still live if referenced.
+    pub is_hidden: bool,
+}
+
+/// A calendar (TOM calendar) defined on a table, binding groups of its columns.
+///
+/// Modeled minimally — the name and the bound column names — which is all a static
+/// source file can contribute to liveness: a referenced calendar keeps its bound
+/// columns alive.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Calendar {
+    /// Calendar name.
+    pub name: String,
+    /// Names of the columns (in the owning table) the calendar binds.
+    pub columns: Vec<String>,
 }
 
 /// Handle dereferencing: turning a positional handle from
@@ -336,6 +379,11 @@ impl TabularDatabase {
     /// The shared M expression a handle points at, or `None` if the handle is stale.
     pub fn shared_expression(&self, h: ExpressionHandle) -> Option<&SharedExpression> {
         self.expressions.get(h.0)
+    }
+
+    /// The user-defined function a handle points at, or `None` if the handle is stale.
+    pub fn function(&self, h: FunctionHandle) -> Option<&Function> {
+        self.functions.get(h.0)
     }
 
     /// The stable graph-node identity of a resolved reference.
@@ -395,6 +443,16 @@ pub enum DaxExpressionKind {
     CalculationItem,
     /// A calculation item's dynamic format string.
     CalculationItemFormatString,
+    /// A calculation group's no-selection expression.
+    CalculationGroupNoSelection,
+    /// A calculation group's no-selection dynamic format string.
+    CalculationGroupNoSelectionFormatString,
+    /// A calculation group's multiple-or-empty-selection expression.
+    CalculationGroupMultipleOrEmptySelection,
+    /// A calculation group's multiple-or-empty-selection dynamic format string.
+    CalculationGroupMultipleOrEmptySelectionFormatString,
+    /// A user-defined function's body.
+    Function,
 }
 
 /// The model object an enumerated expression belongs to.
@@ -451,6 +509,11 @@ pub enum ExpressionOwner<'a> {
         /// Expression name.
         name: &'a str,
     },
+    /// A user-defined DAX function.
+    Function {
+        /// Function name.
+        name: &'a str,
+    },
 }
 
 impl ExpressionOwner<'_> {
@@ -481,6 +544,9 @@ impl ExpressionOwner<'_> {
                 item: NameKey::new(item),
             },
             ExpressionOwner::Expression { name } => ObjectId::Expression {
+                name: NameKey::new(name),
+            },
+            ExpressionOwner::Function { name } => ObjectId::Function {
                 name: NameKey::new(name),
             },
         }
@@ -514,8 +580,9 @@ impl TabularDatabase {
     /// Every DAX expression in the model, with its owner and home-table context.
     ///
     /// Order follows model order (tables, then each table's measures, columns,
-    /// partitions, table-level expressions and calculation items, then roles), so the
-    /// result is deterministic for a given model and diffable across runs.
+    /// partitions, table-level expressions, calculation items and their group's
+    /// selection expressions, then roles, then functions), so the result is
+    /// deterministic for a given model and diffable across runs.
     ///
     /// Owners borrow their names, so this allocates only the returned `Vec`.
     #[must_use]
@@ -627,6 +694,41 @@ impl TabularDatabase {
                         });
                     }
                 }
+
+                // Group-level selection expressions. The calc group is a property of
+                // its table in TOM, so — like detail rows — the table is the owner and
+                // the kind is what discriminates.
+                let group_owner = ExpressionOwner::Table { table: &table.name };
+                let sources = [
+                    (
+                        DaxExpressionKind::CalculationGroupNoSelection,
+                        group.no_selection_expression.as_ref(),
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupNoSelectionFormatString,
+                        group.no_selection_format_string_expression.as_ref(),
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupMultipleOrEmptySelection,
+                        group.multiple_or_empty_selection_expression.as_ref(),
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupMultipleOrEmptySelectionFormatString,
+                        group
+                            .multiple_or_empty_selection_format_string_expression
+                            .as_ref(),
+                    ),
+                ];
+                for (kind, text) in sources {
+                    if let Some(text) = text {
+                        out.push(DaxExpressionRef {
+                            owner: group_owner,
+                            kind,
+                            home_table: home,
+                            text,
+                        });
+                    }
+                }
             }
         }
 
@@ -643,6 +745,19 @@ impl TabularDatabase {
                     });
                 }
             }
+        }
+
+        for function in &self.functions {
+            // A function body has no row context of its own: unqualified `[Name]`
+            // references inside it can only be measures.
+            out.push(DaxExpressionRef {
+                owner: ExpressionOwner::Function {
+                    name: &function.name,
+                },
+                kind: DaxExpressionKind::Function,
+                home_table: None,
+                text: &function.expression,
+            });
         }
 
         out
@@ -723,6 +838,12 @@ mod tests {
 
     fn expression_id(name: &str) -> ObjectId {
         ObjectId::Expression {
+            name: NameKey::new(name),
+        }
+    }
+
+    fn function_id(name: &str) -> ObjectId {
+        ObjectId::Function {
             name: NameKey::new(name),
         }
     }
@@ -827,10 +948,25 @@ mod tests {
                             expression: "TOTALYTD(SELECTEDMEASURE(), 'Date'[Date])".to_string(),
                             format_string_expression: Some("\"#,##0;;\"".to_string()),
                         }],
+                        no_selection_expression: Some("SELECTEDMEASURE()".to_string()),
+                        no_selection_format_string_expression: Some(
+                            "SELECTEDMEASUREFORMATSTRING()".to_string(),
+                        ),
+                        multiple_or_empty_selection_expression: Some(
+                            "ERROR(\"Pick one item\")".to_string(),
+                        ),
+                        multiple_or_empty_selection_format_string_expression: Some(
+                            "\"General\"".to_string(),
+                        ),
                     }),
                     ..Default::default()
                 },
             ],
+            functions: vec![Function {
+                name: "Sales.NetPrice".to_string(),
+                expression: "(price: SCALAR) => price * (1 - [Discount Pct])".to_string(),
+                is_hidden: false,
+            }],
             roles: vec![Role {
                 name: "Reader".to_string(),
                 table_permissions: vec![
@@ -1105,10 +1241,40 @@ mod tests {
                         "\"#,##0;;\"",
                     ),
                     (
+                        DaxExpressionKind::CalculationGroupNoSelection,
+                        table_id("Time Intelligence"),
+                        Some("Time Intelligence"),
+                        "SELECTEDMEASURE()",
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupNoSelectionFormatString,
+                        table_id("Time Intelligence"),
+                        Some("Time Intelligence"),
+                        "SELECTEDMEASUREFORMATSTRING()",
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupMultipleOrEmptySelection,
+                        table_id("Time Intelligence"),
+                        Some("Time Intelligence"),
+                        "ERROR(\"Pick one item\")",
+                    ),
+                    (
+                        DaxExpressionKind::CalculationGroupMultipleOrEmptySelectionFormatString,
+                        table_id("Time Intelligence"),
+                        Some("Time Intelligence"),
+                        "\"General\"",
+                    ),
+                    (
                         DaxExpressionKind::RlsFilter,
                         role_id("Reader"),
                         Some("Sales"),
                         "'Sales'[Amount] > 0",
+                    ),
+                    (
+                        DaxExpressionKind::Function,
+                        function_id("Sales.NetPrice"),
+                        None,
+                        "(price: SCALAR) => price * (1 - [Discount Pct])",
                     ),
                 ]
             );
@@ -1116,7 +1282,7 @@ mod tests {
 
         #[test]
         fn enumerates_one_expression_per_populated_site() {
-            assert_eq!(dax_tuples(&every_kind_fixture()).len(), 12);
+            assert_eq!(dax_tuples(&every_kind_fixture()).len(), 17);
         }
 
         /// `ObjectId` equality is case-insensitive, so the tuple assertion above
@@ -1140,7 +1306,12 @@ mod tests {
                     "partition 'Top Products'[Top Products]",
                     "calculation item 'Time Intelligence'[YTD]",
                     "calculation item 'Time Intelligence'[YTD]",
+                    "table 'Time Intelligence'",
+                    "table 'Time Intelligence'",
+                    "table 'Time Intelligence'",
+                    "table 'Time Intelligence'",
                     "role 'Reader'",
+                    "function 'Sales.NetPrice'",
                 ]
             );
         }
@@ -1240,7 +1411,12 @@ mod tests {
                     DaxExpressionKind::CalculatedTable,
                     DaxExpressionKind::CalculationItem,
                     DaxExpressionKind::CalculationItemFormatString,
+                    DaxExpressionKind::CalculationGroupNoSelection,
+                    DaxExpressionKind::CalculationGroupNoSelectionFormatString,
+                    DaxExpressionKind::CalculationGroupMultipleOrEmptySelection,
+                    DaxExpressionKind::CalculationGroupMultipleOrEmptySelectionFormatString,
                     DaxExpressionKind::RlsFilter,
+                    DaxExpressionKind::Function,
                 ]
             );
         }

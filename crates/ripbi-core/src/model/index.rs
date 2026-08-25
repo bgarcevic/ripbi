@@ -73,6 +73,14 @@ pub struct ExpressionHandle(
     pub usize,
 );
 
+/// Positional index of a user-defined DAX function in
+/// [`TabularDatabase::functions`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FunctionHandle(
+    /// Index into [`TabularDatabase::functions`].
+    pub usize,
+);
+
 /// What a field reference resolved to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Resolved {
@@ -153,6 +161,9 @@ pub struct ModelIndex {
     measures: HashMap<String, MeasureHandle>,
     /// Folded shared-expression name → expression handle.
     expressions: HashMap<String, ExpressionHandle>,
+    /// Folded function name → function handle. Global: function names are
+    /// model-global, like measures.
+    functions: HashMap<String, FunctionHandle>,
 }
 
 impl ModelIndex {
@@ -165,6 +176,7 @@ impl ModelIndex {
         let mut tables: HashMap<String, TableEntry> = HashMap::new();
         let mut measures: HashMap<String, MeasureHandle> = HashMap::new();
         let mut expressions: HashMap<String, ExpressionHandle> = HashMap::new();
+        let mut functions: HashMap<String, FunctionHandle> = HashMap::new();
 
         for (table_idx, table) in db.tables.iter().enumerate() {
             // `or_insert_with` — not `insert` — is what makes the first occurrence win.
@@ -211,10 +223,17 @@ impl ModelIndex {
                 .or_insert(ExpressionHandle(expression_idx));
         }
 
+        for (function_idx, function) in db.functions.iter().enumerate() {
+            functions
+                .entry(fold_name(&function.name))
+                .or_insert(FunctionHandle(function_idx));
+        }
+
         Self {
             tables,
             measures,
             expressions,
+            functions,
         }
     }
 
@@ -347,12 +366,19 @@ impl ModelIndex {
     pub fn resolve_expression(&self, name: &str) -> Option<ExpressionHandle> {
         self.expressions.get(&fold_name(name)).copied()
     }
+
+    /// Looks up a user-defined DAX function by name — how a DAX expression
+    /// calls it. Function names are model-global.
+    #[must_use]
+    pub fn resolve_function(&self, name: &str) -> Option<FunctionHandle> {
+        self.functions.get(&fold_name(name)).copied()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Column, Hierarchy, Measure, SharedExpression, Table};
+    use crate::model::{Column, Function, Hierarchy, Measure, SharedExpression, Table};
     use rstest::rstest;
 
     fn column(name: &str) -> Column {
@@ -381,6 +407,7 @@ mod tests {
     ///                    hierarchies 0 "Kalender"
     /// table 2  "sales"   columns  0 "Amount"        <- duplicate of table 0
     /// expressions 0 "Server"  1 "Database"
+    /// functions   0 "Sales.NetPrice"
     /// ```
     ///
     /// "Antal" is deliberately both a measure (on `Sales`) and a column (on `Dato`):
@@ -421,6 +448,11 @@ mod tests {
                     expression: "\"AdventureWorks\"".to_string(),
                 },
             ],
+            functions: vec![Function {
+                name: "Sales.NetPrice".to_string(),
+                expression: "(price: SCALAR) => price * 0.75".to_string(),
+                is_hidden: false,
+            }],
             ..Default::default()
         }
     }
@@ -689,6 +721,27 @@ mod tests {
         }
     }
 
+    mod resolve_function {
+        use super::*;
+
+        #[rstest]
+        #[case::as_written("Sales.NetPrice")]
+        #[case::upper("SALES.NETPRICE")]
+        #[case::lower("sales.netprice")]
+        fn finds_a_function_ignoring_case(#[case] name: &str) {
+            assert_eq!(index().resolve_function(name), Some(FunctionHandle(0)));
+        }
+
+        #[rstest]
+        // A function name is not an expression name and vice versa.
+        #[case::a_shared_expression_name("Server")]
+        #[case::a_measure_name("Total Sales")]
+        #[case::unknown("Ukendt")]
+        fn returns_none(#[case] name: &str) {
+            assert_eq!(index().resolve_function(name), None);
+        }
+    }
+
     /// Tables 0 ("Sales") and 2 ("sales") fold to the same key. Duplicates are invalid
     /// in a real model but occur in hand-edited files, so the first one wins.
     mod build_with_duplicate_names {
@@ -833,6 +886,21 @@ mod tests {
         #[test]
         fn a_stale_expression_handle_is_none() {
             assert!(model().shared_expression(ExpressionHandle(9)).is_none());
+        }
+
+        #[test]
+        fn a_resolved_function_handle_reaches_its_function() {
+            let db = model();
+            let handle = ModelIndex::build(&db)
+                .resolve_function("SALES.NETPRICE")
+                .unwrap();
+
+            assert_eq!(db.function(handle).unwrap().name, "Sales.NetPrice");
+        }
+
+        #[test]
+        fn a_stale_function_handle_is_none() {
+            assert!(model().function(FunctionHandle(9)).is_none());
         }
 
         #[test]
