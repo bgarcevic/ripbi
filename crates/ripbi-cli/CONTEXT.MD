@@ -16,6 +16,5 @@ CI-friendly output, and exit codes.
 
 | Task | Read | Notes |
 |---|---|---|
-| Entry point / arg parsing | [src/main.rs](src/main.rs) | clap derive |
 | UX conventions (help, output, flags, errors) | [../../docs/cli-ux-guidelines.md](../../docs/cli-ux-guidelines.md) | Follow for every CLI change |
 | Output formats (text/JSON) | docs/output.md (planned) | Create when reporting lands |

@@ -1,0 +1,1212 @@
+createOrReplace
+
+	model Model
+		culture: en-US
+		defaultPowerBIDataSourceVersion: powerBI_V3
+		sourceQueryCulture: en-US
+		dataAccessOptions
+			legacyRedirects
+			returnErrorValuesAsNull
+
+		table Accounts
+			lineageTag: 22d72ed3-5ee0-4ff1-98ec-c82153839a11
+
+			column 'Account Name'
+				dataType: string
+				lineageTag: 3cc966b9-42cc-4fdc-af3e-169dbd480556
+				summarizeBy: none
+				sourceColumn: Account Name
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'State or Province'
+				dataType: string
+				lineageTag: 9cd3b557-bebd-4d36-8435-56a6f0b45aef
+				dataCategory: StateOrProvince
+				summarizeBy: none
+				sourceColumn: State or Province
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Country
+				dataType: string
+				lineageTag: faed6422-f3cb-4296-8a3c-2f05b5dbdf5f
+				dataCategory: Country
+				summarizeBy: none
+				sourceColumn: Country
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column AccountID
+				dataType: string
+				isHidden
+				lineageTag: 734e247c-6f68-417f-9361-1f660e427019
+				summarizeBy: none
+				sourceColumn: AccountID
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column AccountSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 66c11234-ed17-4d02-8e31-217caf9cf527
+				summarizeBy: none
+				sourceColumn: AccountSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column IndustrySeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 42a531d2-b4f2-4e3d-963e-f6dd4182afaa
+				summarizeBy: none
+				sourceColumn: IndustrySeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column AccountOwnerSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 035097c0-bdff-4cda-87cd-f5c2f5d5512c
+				summarizeBy: sum
+				sourceColumn: AccountOwnerSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'Account Number'
+				dataType: string
+				lineageTag: 629b3a4b-d0b0-4de6-9df4-43d950732fad
+				summarizeBy: none
+				sourceColumn: Account Number
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column TerritorySeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: c9a57405-b10e-41ac-96ce-cfdfbd830503
+				summarizeBy: none
+				sourceColumn: TerritorySeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			hierarchy 'Street Hierarchy'
+				lineageTag: 24a41aca-6c8c-4ec3-9ed2-28a29d29958f
+
+				level 'Account Name'
+					lineageTag: 413a12b7-cdcf-47ef-80b7-e70f319862ca
+					column: 'Account Name'
+
+				level 'State or Province'
+					lineageTag: 7c7521aa-caf0-4ade-bf81-f1883a581d46
+					column: 'State or Province'
+
+				level Country
+					lineageTag: 5f328efb-284b-4857-a962-1bba3709bf70
+					column: Country
+
+			partition Accounts-569e2118-8ef4-4f17-9647-c9b4190bc0c8 = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    AccountTbl_Table = Source{[Item="AccountTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(AccountTbl_Table,{{"AccountSeq", Int64.Type}}),
+						    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Distribution%", "DistributionAccumulation", "City"}),
+						    #"Filtered Rows" = Table.SelectRows(#"Removed Columns", each [AccountSeq] <> null and [AccountSeq] <> ""),
+						    #"Changed Type1" = Table.TransformColumnTypes(#"Filtered Rows",{{"AccountSeq", Int64.Type}, {"AccountID", type text}, {"Account Number", type text}, {"Account Name", type text},{"State or Province", type text}, {"Country", type text}, {"TerritorySeq", Int64.Type}, {"AccountOwnerSeq", Int64.Type}, {"IndustrySeq", Int64.Type}})
+						in
+						    #"Changed Type1"
+
+			annotation PBI_QueryRelationships = {"columnCount":19,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Accounts/Changed Type.{AccountSeq,0}","Section1/Accounts/Changed Type.{Account Name,1}","Section1/Accounts/Changed Type.{AccountID,2}","Section1/Accounts/Changed Type.{Street,3}","Section1/Accounts/Changed Type.{City,4}","Section1/Accounts/Changed Type.{State or Province,5}","Section1/Accounts/Changed Type.{Postal Code,6}","Section1/Accounts/Changed Type.{Country,7}","Section1/Accounts/Changed Type.{Latitude,8}","Section1/Accounts/Changed Type.{Longitude,9}","Section1/Accounts/Changed Type.{Phone,10}","Section1/Accounts/Changed Type.{Number of Employees,11}","Section1/Accounts/Changed Type.{Annual Revenue,12}","Section1/Accounts/Changed Type.{AccountOwnerSeq,13}","Section1/Accounts/Changed Type.{IndustrySeq,14}","Section1/Accounts/Changed Type.{Account Owner,15}","Section1/Accounts/Changed Type.{Industry,16}","Section1/Accounts/Changed Type.{Territory,17}","Section1/Accounts/Changed Type.{Region,18}"],"ColumnCount":19,"KeyColumnNames":[],"ColumnIdentities":["Section1/Accounts/Changed Type.{AccountSeq,0}","Section1/Accounts/Changed Type.{Account Name,1}","Section1/Accounts/Changed Type.{AccountID,2}","Section1/Accounts/Changed Type.{Street,3}","Section1/Accounts/Changed Type.{City,4}","Section1/Accounts/Changed Type.{State or Province,5}","Section1/Accounts/Changed Type.{Postal Code,6}","Section1/Accounts/Changed Type.{Country,7}","Section1/Accounts/Changed Type.{Latitude,8}","Section1/Accounts/Changed Type.{Longitude,9}","Section1/Accounts/Changed Type.{Phone,10}","Section1/Accounts/Changed Type.{Number of Employees,11}","Section1/Accounts/Changed Type.{Annual Revenue,12}","Section1/Accounts/Changed Type.{AccountOwnerSeq,13}","Section1/Accounts/Changed Type.{IndustrySeq,14}","Section1/Accounts/Changed Type.{Account Owner,15}","Section1/Accounts/Changed Type.{Industry,16}","Section1/Accounts/Changed Type.{Territory,17}","Section1/Accounts/Changed Type.{Region,18}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Industries
+			lineageTag: 46e20580-f584-47f3-9fb6-650aaf55c07d
+
+			column Industry
+				dataType: string
+				lineageTag: 8b10b876-f44a-4959-846f-ddd0db70c358
+				summarizeBy: none
+				sourceColumn: Industry
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column IndustrySeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 2b094873-0bc1-4789-8a16-fe25ba521900
+				summarizeBy: none
+				sourceColumn: IndustrySeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			partition Industries-ad0b018f-e5af-41ce-a3f4-c734e885246e = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    IndustryTbl_Table = Source{[Item="IndustryTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(IndustryTbl_Table,{{"IndustrySeq", Int64.Type}, {"Industry", type text}, {"Factor", Int64.Type}}),
+						    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Factor"})
+						in
+						    #"Removed Columns"
+
+			changedProperty = IsHidden
+
+			annotation PBI_QueryRelationships = {"columnCount":2,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Industries/Changed Type.{IndustrySeq,0}","Section1/Industries/Changed Type.{Industry,1}"],"ColumnCount":2,"KeyColumnNames":[],"ColumnIdentities":["Section1/Industries/Changed Type.{IndustrySeq,0}","Section1/Industries/Changed Type.{Industry,1}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Opportunities
+			lineageTag: 574e7ea3-1c8d-44ef-8571-714b66f865c7
+
+			measure 'Revenue Won' = ```
+					
+					 CALCULATE(
+					     SUMX(Opportunities, Opportunities[Value]),
+					     FILTER(Opportunities, Opportunities[Status] = "Won")
+					 )
+					```
+				formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+				lineageTag: 4175e2ae-8428-461a-854b-9a68cf5b5b8c
+
+				changedProperty = FormatString
+
+			measure 'Revenue In Pipeline' = ```
+					
+					VAR Revenue =
+					    CALCULATE (
+					        SUMX ( Opportunities, Opportunities[Value] ),
+					        FILTER (
+					            Opportunities,
+					            Opportunities[Status] = "Open"
+					            && VALUE(LEFT(Opportunities[Sales Stage],1)) >=2
+					        )
+					    )
+					RETURN
+					    Revenue + ( Revenue * ( 'Opportunity Forecast Adjustment'[Forecast Adjustment Value] / 100 ) )
+					
+					```
+				formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+				lineageTag: 1322f812-7712-498e-9f4d-ba6b80052388
+
+				changedProperty = FormatString
+
+			measure 'Forecast %' = (([Revenue Won]+[Revenue In Pipeline]))/ [Rev Goal]
+				formatString: #,0%;-#,0%;#,0%
+				lineageTag: 78a5c219-6674-49f8-a2c5-4da21114763d
+
+			measure Forecast = ([Revenue Won]+[Revenue In Pipeline])
+				formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+				lineageTag: f3eb5c0a-9667-445a-b762-e4e9f911c533
+
+				annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+			measure 'Opportunity Count In Pipeline' = ```
+					
+					    CALCULATE (
+					        COUNT( Opportunities[Value] ),
+					        FILTER (
+					            Opportunities,
+					            Opportunities[Status] = "Open"
+					              --  && Opportunities[PipelineStep] IN { "3-Pipeline", "4-Mandate", "5-Close" }
+					        )
+					    )
+					
+					```
+				formatString: #,0
+				lineageTag: b4effa85-1aa3-4f33-a3ef-07ec57b59c0f
+
+			measure 'Opportunity Count' =
+					
+					COUNTAX(Opportunities,TRUE())
+				formatString: #,0
+				lineageTag: f9cdd5b7-71b0-42ca-b100-d957cbdaa375
+
+			measure 'Count of Won' = ```
+					
+					COUNTAX(
+					    FILTER(
+					        KEEPFILTERS(Opportunities),Opportunities[Status] = "Won"
+					        ),
+					    Opportunities[OpportunitySeq]
+					    ) 
+					```
+				formatString: #,0
+				lineageTag: 61908284-58b6-4ce1-b980-2cd65b89fafd
+
+			measure 'Count of Lost' = ```
+					
+					COUNTAX(
+					    FILTER(
+					        KEEPFILTERS(Opportunities),Opportunities[Status] = "Lost"
+					        ),
+					    Opportunities[OpportunitySeq]
+					    ) 
+					```
+				formatString: #,0
+				lineageTag: 0995fcc4-bb40-4d35-aac9-9ecf60f69bbe
+
+			measure 'Close %' = [Count of Won]/([Count of Won]+[Count of Lost])
+				formatString: 0.0%;-0.0%;0.0%
+				lineageTag: 938be727-4972-4ef9-a507-da6a1d898703
+
+			measure 'Revenue Open' =
+					
+					VAR Revenue =
+					    CALCULATE (
+					        SUMX ( Opportunities, Opportunities[Value] ),
+					        FILTER (
+					            Opportunities,
+					            Opportunities[Status] = "Open"
+					        )
+					    )
+					RETURN
+					    Revenue + ( Revenue * ( 'Opportunity Forecast Adjustment'[Forecast Adjustment Value] / 100 ) )
+				formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+				lineageTag: d8ffa47c-94b4-4585-9170-43b31ec2dd1d
+
+				changedProperty = FormatString
+
+			measure 'Revenue Won Average Deal Size' = AVERAGEX(Opportunities,[Revenue Won])
+				formatString: \$#,0;(\$#,0);\$#,0
+				lineageTag: 959e44c7-e496-4ebb-8687-668c3c16f605
+
+				changedProperty = FormatString
+
+			measure 'Forecast by Win/Loss Ratio' = [Revenue Open] * [Close %]
+				formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+				lineageTag: 25b97fa8-199c-498f-9c14-f5e7d8cbb022
+
+				changedProperty = FormatString
+
+			column 'Purchase Process'
+				dataType: string
+				lineageTag: 00abd866-3af0-434f-8635-f746c83e5694
+				summarizeBy: none
+				sourceColumn: Purchase Process
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'Decision Maker Identified'
+				dataType: boolean
+				formatString: """TRUE"";""TRUE"";""FALSE"""
+				lineageTag: 70e6bcc8-4f3b-44c9-a8fd-c6ab1dc077e3
+				summarizeBy: none
+				sourceColumn: Decision Maker Identified
+
+				annotation SummarizationSetBy = Automatic
+
+			column Status
+				dataType: string
+				lineageTag: f9b0d395-092e-4efb-9bac-3e9c3e90267c
+				summarizeBy: none
+				sourceColumn: Status
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'Sales Stage'
+				dataType: string
+				lineageTag: 635fffe3-c82b-44dd-a7f4-fdfc182c16ba
+				summarizeBy: none
+				sourceColumn: Sales Stage
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Value
+				dataType: int64
+				isHidden
+				formatString: \$#,0;(\$#,0);\$#,0
+				lineageTag: f6ca5c5b-b98b-4e28-be48-e41e58ff1f47
+				summarizeBy: sum
+				sourceColumn: Value
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+			column 'Weeks Open' =
+					
+					ABS (
+					    DATEDIFF (
+					        Opportunities[Opportunity Created On],
+					        IF (
+					            ISBLANK ( Opportunities[CloseDate] ) = TRUE (),
+					            TODAY (),
+					            Opportunities[CloseDate]
+					        ),
+					        WEEK
+					    )
+					)
+				formatString: #,0
+				lineageTag: 306e46c3-251b-4fb0-852e-2a4a1fe836e8
+				summarizeBy: average
+
+				changedProperty = FormatString
+
+				annotation SummarizationSetBy = User
+
+			column DaysToClose
+				dataType: int64
+				formatString: 0
+				lineageTag: 75f86392-0397-4e9c-810b-4e8132ca2b51
+				summarizeBy: sum
+				sourceColumn: DaysToClose
+
+				annotation SummarizationSetBy = Automatic
+
+			column Discount
+				dataType: double
+				formatString: 0.0%;-0.0%;0.0%
+				lineageTag: 7dee90ec-9e9f-482c-886d-27ad10f69ca9
+				summarizeBy: average
+				sourceColumn: Discount
+
+				annotation SummarizationSetBy = User
+
+			column Probability
+				dataType: double
+				formatString: 0.0%;-0.0%;0.0%
+				lineageTag: 5e2b16c7-e253-45ab-b986-dc70108d374b
+				summarizeBy: average
+				sourceColumn: Probability
+
+				annotation SummarizationSetBy = User
+
+			column Rating
+				dataType: string
+				lineageTag: 04da9d56-63a7-4837-8b29-3a0af0bd068a
+				summarizeBy: none
+				sourceColumn: Rating
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'Days Remaining In Pipeline' = IF(Opportunities[Status]="Open", DATEDIFF(TODAY(),Opportunities[CloseDate],DAY),0)
+				formatString: 0
+				lineageTag: 4f4a0d24-8d74-4d68-94cc-c673541c22dd
+				summarizeBy: average
+
+				annotation SummarizationSetBy = User
+
+				annotation __PBI_SemanticLinks = [{"LinkTarget":{"TableName":"Opportunities","TableItemName":"Days Remaining In Pipeline (bins)","ObjectType":4},"LinkType":"UsedInGroup"}]
+
+			column 'Probability (raw)'
+				dataType: double
+				isHidden
+				formatString: #,0.0%;-#,0.0%;#,0.0%
+				lineageTag: 03731a21-07fc-4287-8519-0f79116053e5
+				summarizeBy: average
+				sourceColumn: Probability (raw)
+
+				changedProperty = FormatString
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = User
+
+			column AccountSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 964185da-1291-4026-a472-33f798d3a5d6
+				summarizeBy: none
+				sourceColumn: AccountSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column OpportunitySeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: c8a5e37b-7f5b-449f-a431-86bbba34a109
+				summarizeBy: sum
+				sourceColumn: OpportunitySeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column ProductSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 109d74f6-1df8-4cdb-9749-9cb58c5c8fc2
+				summarizeBy: none
+				sourceColumn: ProductSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column SystemUserSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 23825680-4031-48c9-9356-830b3ad86257
+				summarizeBy: none
+				sourceColumn: SystemUserSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column CampaignSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: b5ed8f8b-36c2-44db-b64e-e3ac67bb36b2
+				summarizeBy: none
+				sourceColumn: CampaignSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column Blank = BLANK()
+				formatString: 0
+				lineageTag: 6fae75b6-0c16-4c05-89cd-86c0df25fcb0
+				summarizeBy: sum
+
+				annotation SummarizationSetBy = Automatic
+
+			column DateDiff-Days
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 4d1a663b-0fc0-4a73-83cc-28bdeb9b85f6
+				summarizeBy: sum
+				sourceColumn: DateDiff-Days
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'Opportunity Created On'
+				dataType: dateTime
+				formatString: Short Date
+				lineageTag: 39addb4e-e78a-458d-8185-3af92a86f7d2
+				summarizeBy: none
+				sourceColumn: Opportunity Created On
+
+				changedProperty = FormatString
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation UnderlyingDateTimeDataType = Date
+
+			column CloseDate
+				dataType: dateTime
+				formatString: m/d/yyyy
+				lineageTag: cef7bbcf-416e-473e-8910-87a662b5d79a
+				summarizeBy: none
+				sourceColumn: CloseDate
+
+				changedProperty = FormatString
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation UnderlyingDateTimeDataType = Date
+
+				annotation PBI_FormatHint = {"isDateTimeCustom":true}
+
+			column 'Days Remaining In Pipeline (bins)' =
+					IF(
+					  ISBLANK('Opportunities'[Days Remaining In Pipeline]),
+					  BLANK(),
+					  INT('Opportunities'[Days Remaining In Pipeline] / 5) * 5
+					)
+				formatString: 0
+				lineageTag: 258d9f98-7e9a-4bb8-8238-fe8de818b99a
+				summarizeBy: none
+
+				extendedProperty GroupingMetadata = {"version":0,"groupedColumns":[{"Column":{"Expression":{"SourceRef":{"Entity":"Opportunities"}},"Property":"Days Remaining In Pipeline"}}],"binningMetadata":{"binSize":{"value":5.0,"unit":0}}}
+
+				annotation GroupingDesignState = {"Version":0,"Sources":[{"Name":"o","Entity":"Opportunities"}],"GroupedColumns":[{"Column":{"Expression":{"SourceRef":{"Source":"o"}},"Property":"Days Remaining In Pipeline"}}],"BinItem":{"Expression":{"Floor":{"Expression":{"Column":{"Expression":{"SourceRef":{"Source":"o"}},"Property":"Days Remaining In Pipeline"}},"Size":5.0}}}}
+
+				annotation SummarizationSetBy = Automatic
+
+			partition Opportunities-2905f1f8-aef9-42b6-b178-4b43efaa2633 = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    OpportunityTbl_Table = Source{[Item="OpportunityTbl",Kind="Table"]}[Data],
+						    #"Removed Other Columns" = Table.SelectColumns(OpportunityTbl_Table,{"OpportunitySeq", "DateDiff-Minutes", "DaysToClose", "SystemUserSeq", "AccountSeq", "ProductSeq", "CampaignSeq", "Purchase Process", "Decision Maker Identified", "Discount", "Value", "PipelineStep", "Probability (raw)", "Probability", "Rating", "Status"}),
+						    #"Integer-Divided Column" = Table.TransformColumns(#"Removed Other Columns", {{"DateDiff-Minutes", each Number.IntegerDivide(_, 1440), Int64.Type}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Integer-Divided Column",{{"DaysToClose", Int64.Type}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"DateDiff-Minutes", "DateDiff-Days"},{"PipelineStep", "Sales Stage"}}),
+						    #"Added Custom" = Table.AddColumn(#"Renamed Columns1", "CreatedonDateUTC", each Date.AddDays(DateTimeZone.UtcNow(),[#"DateDiff-Days"])),
+						    #"Added Custom2" = Table.AddColumn(#"Added Custom", "CloseDateUTC", each Date.AddDays([CreatedonDateUTC],[#"DaysToClose"])),
+						    #"Renamed Columns" = Table.RenameColumns(#"Added Custom2",{{"CreatedonDateUTC", "Opportunity Created On"}, {"CloseDateUTC", "CloseDate"}}),
+						    #"Changed Type1" = Table.TransformColumnTypes(#"Renamed Columns",{{"CloseDate", type date}, {"Opportunity Created On", type date}, {"OpportunitySeq", Int64.Type}, {"DateDiff-Days", Int64.Type}, {"DaysToClose", Int64.Type}, {"SystemUserSeq", Int64.Type}, {"AccountSeq", Int64.Type}, {"ProductSeq", Int64.Type}, {"CampaignSeq", Int64.Type}, {"Purchase Process", type text}, {"Decision Maker Identified", type logical}, {"Discount", type number}, {"Value", Int64.Type}, {"Sales Stage", type text}, {"Probability (raw)", type number}, {"Probability", type number}, {"Rating", type text}, {"Status", type text}})
+						in
+						    #"Changed Type1"
+
+			annotation PBI_QueryRelationships = {"columnCount":22,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Opportunities/Changed Type.{OpportunitySeq,0}","Section1/Opportunities/Changed Type.{CreatedonDate,1}","Section1/Opportunities/Changed Type.{DaysToClose,2}","Section1/Opportunities/Changed Type.{CloseDate,3}","Section1/Opportunities/Changed Type.{SystemUserSeq,4}","Section1/Opportunities/Changed Type.{Opportunity Owner Name,5}","Section1/Opportunities/Changed Type.{AccountSeq,6}","Section1/Opportunities/Changed Type.{ProductSeq,7}","Section1/Opportunities/Changed Type.{ProductName,8}","Section1/Opportunities/OpportunityTbl_Table.{CampaignSeq,10}","Section1/Opportunities/OpportunityTbl_Table.{Campaign Name,11}","Section1/Opportunities/Changed Type.{Budget,11}","Section1/Opportunities/Changed Type.{Topic,12}","Section1/Opportunities/Changed Type.{Purchase Process,13}","Section1/Opportunities/Changed Type.{Decision Maker Identified,14}","Section1/Opportunities/Changed Type.{Discount,15}","Section1/Opportunities/Changed Type.{Value,16}","Section1/Opportunities/Changed Type.{PipelineStep,17}","Section1/Opportunities/Changed Type.{Probability (raw),18}","Section1/Opportunities/Changed Type.{Probability,19}","Section1/Opportunities/Changed Type.{Rating,20}","Section1/Opportunities/Changed Type.{Status,21}"],"ColumnCount":22,"KeyColumnNames":[],"ColumnIdentities":["Section1/Opportunities/Changed Type.{OpportunitySeq,0}","Section1/Opportunities/Changed Type.{CreatedonDate,1}","Section1/Opportunities/Changed Type.{DaysToClose,2}","Section1/Opportunities/Changed Type.{CloseDate,3}","Section1/Opportunities/Changed Type.{SystemUserSeq,4}","Section1/Opportunities/Changed Type.{Opportunity Owner Name,5}","Section1/Opportunities/Changed Type.{AccountSeq,6}","Section1/Opportunities/Changed Type.{ProductSeq,7}","Section1/Opportunities/Changed Type.{ProductName,8}","Section1/Opportunities/OpportunityTbl_Table.{CampaignSeq,10}","Section1/Opportunities/OpportunityTbl_Table.{Campaign Name,11}","Section1/Opportunities/Changed Type.{Budget,11}","Section1/Opportunities/Changed Type.{Topic,12}","Section1/Opportunities/Changed Type.{Purchase Process,13}","Section1/Opportunities/Changed Type.{Decision Maker Identified,14}","Section1/Opportunities/Changed Type.{Discount,15}","Section1/Opportunities/Changed Type.{Value,16}","Section1/Opportunities/Changed Type.{PipelineStep,17}","Section1/Opportunities/Changed Type.{Probability (raw),18}","Section1/Opportunities/Changed Type.{Probability,19}","Section1/Opportunities/Changed Type.{Rating,20}","Section1/Opportunities/Changed Type.{Status,21}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Owners
+			lineageTag: 70f990fe-b5ba-4e53-b914-9a6dc8e15c2d
+
+			measure 'Rev Goal' = ```
+					
+					VAR RevenueInPipeline =
+					    CALCULATE (
+					        SUMX ( Opportunities, Opportunities[Value] ),
+					        FILTER (
+					            Opportunities,
+					            Opportunities[Status] = "Open"
+					            && VALUE(LEFT(Opportunities[Sales Stage],1)) >=2
+					        )
+					    )
+					VAR BaseGoal =  
+					MROUND(([Revenue Won]+ (RevenueInPipeline*.60)),1000000)    
+					RETURN
+					IF(BaseGoal > 0, BaseGoal, MROUND(([Revenue Won]+ (RevenueInPipeline*.60)),100000))
+					```
+				formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+				lineageTag: 059ac849-789a-4698-801d-a415d2de84c5
+
+				changedProperty = FormatString
+
+			column Owner
+				dataType: string
+				lineageTag: e5d3bb04-f671-4f7a-8c1f-eb98ebf219b2
+				summarizeBy: none
+				sourceColumn: Owner
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Manager
+				dataType: string
+				lineageTag: 38ded122-e7d0-40cd-8632-8086592f0019
+				summarizeBy: none
+				sourceColumn: Manager
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column SystemUserSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 78f9ac7f-d017-4e2a-a320-28ae9765282e
+				summarizeBy: none
+				sourceColumn: SystemUserSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column systemuserid
+				dataType: string
+				isHidden
+				lineageTag: d569c740-d782-460b-8b23-96a4a274fceb
+				summarizeBy: none
+				sourceColumn: systemuserid
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			partition Owners-6403f03d-aca3-423f-9155-a1097b964223 = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    OwnerTbl_Table = Source{[Item="OwnerTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(OwnerTbl_Table,{{"Owner", type text}, {"Factor", Int64.Type}}),
+						    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Factor", "ManagerSeq", "Manager Factor"}),
+						    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Columns",{{"SystemUserSeq", Int64.Type}})
+						in
+						    #"Changed Type1"
+
+			annotation PBI_QueryRelationships = {"columnCount":3,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Owners/Changed Type1.{SystemUserSeq,0}","Section1/Owners/Changed Type.{Owner,1}","Section1/Owners/OwnerTbl_Table.{Manager,2}"],"ColumnCount":3,"KeyColumnNames":[],"ColumnIdentities":["Section1/Owners/Changed Type1.{SystemUserSeq,0}","Section1/Owners/Changed Type.{Owner,1}","Section1/Owners/OwnerTbl_Table.{Manager,2}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Products
+			lineageTag: 9c41c4f3-4a44-481e-9206-e81a3e1655c5
+
+			column Product
+				dataType: string
+				lineageTag: d6442a5c-f1dd-4996-91a4-69e5f5eb03fb
+				summarizeBy: none
+				sourceColumn: Product
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column ProductSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 4aa5e17e-b539-4076-9940-6819ff184804
+				summarizeBy: none
+				sourceColumn: ProductSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'Product Category'
+				dataType: string
+				lineageTag: fee47155-c796-456f-94f9-c38bbffd2434
+				summarizeBy: none
+				sourceColumn: Product Category
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			partition Products-61d71a22-5f23-4d9d-85f8-f6f4f6c01813 = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    ProductTbl_Table = Source{[Item="ProductTbl",Kind="Table"]}[Data],
+						    #"Removed Columns" = Table.RemoveColumns(ProductTbl_Table,{"Factor", "MinOppValue", "MaxOppValue", "Distribution%", "DistributionAccumulation", "CategoryFactor", "CategorySeq"}),
+						    #"Filtered Rows" = Table.SelectRows(#"Removed Columns", each [ProductSeq] <> null and [ProductSeq] <> ""),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Filtered Rows",{{"ProductSeq", Int64.Type}, {"Product Category", type text}, {"Product", type text}})
+						in
+						    #"Changed Type"
+
+			annotation PBI_QueryRelationships = {"columnCount":5,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Products/Changed Type.{ProductSeq,0}","Section1/Products/Changed Type.{Product,1}","Section1/Products/Changed Type.{Product LOB,2}","Section1/Products/Changed Type.{MinOppValue,3}","Section1/Products/Changed Type.{MaxOppValue,4}"],"ColumnCount":5,"KeyColumnNames":[],"ColumnIdentities":["Section1/Products/Changed Type.{ProductSeq,0}","Section1/Products/Changed Type.{Product,1}","Section1/Products/Changed Type.{Product LOB,2}","Section1/Products/Changed Type.{MinOppValue,3}","Section1/Products/Changed Type.{MaxOppValue,4}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table 'Opportunity Forecast Adjustment'
+			isHidden
+			lineageTag: 5c6989c1-9cb2-49a3-92a2-02c2b7f5474e
+
+			measure 'Forecast Adjustment Value' = SELECTEDVALUE('Opportunity Forecast Adjustment'[Forecast Adjustment], 0)
+				isHidden
+				lineageTag: 30a1a858-afcc-4343-802b-5b2229eccc0e
+
+			measure 'Fcst adj slicer alt text' = CONCATENATE("Use the slicer to adjust the forecast, current value is ", 'Opportunity Forecast Adjustment'[Forecast Adjustment Value])
+				lineageTag: 7150d622-ec0d-4e6a-a1c9-f510cac30c7f
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'Forecast Adjustment'
+				isHidden
+				formatString: 0
+				lineageTag: b6bedc5c-f2c8-47f7-9a70-4016efb9b8fb
+				summarizeBy: none
+				sourceColumn: [Value]
+
+				extendedProperty ParameterMetadata =
+						{
+						  "version": 0
+						}
+
+				annotation SummarizationSetBy = User
+
+			column Blank = 1
+				isHidden
+				formatString: 0
+				lineageTag: c7777006-44ba-495c-81dc-a0fe2ba64fd1
+				summarizeBy: sum
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			partition 'Opportunity Forecast Adjustment-9797fe06-d1a1-4be5-b759-4144a437eb58' = calculated
+				mode: import
+				source = GENERATESERIES(-80, 20, 10)
+
+		table 'Opportunity Calendar'
+			lineageTag: 50bae5c7-70dc-4542-81d2-8cffdb6f465e
+
+			column Date
+				formatString: Short Date
+				lineageTag: 596a61c0-1c6a-45dc-835f-b9dcb417c739
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [Date]
+
+				changedProperty = DataType
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation UnderlyingDateTimeDataType = Date
+
+			column DAY
+				isHidden
+				formatString: Short Date
+				lineageTag: 4f1e3f79-69f8-4d5d-97ff-fd84f3d90870
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [DAY]
+
+				changedProperty = DataType
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation UnderlyingDateTimeDataType = Date
+
+			column DaySeq
+				isHidden
+				formatString: 0
+				lineageTag: 1e01ebd8-28d6-4320-b3c6-3ed05af7074b
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [DaySeq]
+
+				annotation SummarizationSetBy = Automatic
+
+			column YEAR
+				formatString: 0
+				lineageTag: eafd76ed-2181-4b8a-bafb-fe8c9b8ebd22
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [YEAR]
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'MONTH NUMBER'
+				isHidden
+				formatString: 0
+				lineageTag: ad49414f-9c42-4617-b041-d454284428b3
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [MONTH NUMBER]
+
+				annotation SummarizationSetBy = Automatic
+
+			column MONTH
+				lineageTag: c1061583-ad00-4c81-9fd3-550aca9951ca
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [MONTH]
+				sortByColumn: 'MONTH NUMBER'
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'YEAR MONTH NUMBER'
+				isHidden
+				formatString: 0
+				lineageTag: c8135c07-5195-4877-a979-ddb01d1154af
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [YEAR MONTH NUMBER]
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'YEAR MONTH'
+				lineageTag: 1eb88449-338e-490c-b19c-567811150461
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [YEAR MONTH]
+				sortByColumn: 'YEAR MONTH NUMBER'
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'YEAR WEEK'
+				lineageTag: 6fac8f80-d90b-4039-a915-9840ea96b347
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [YEAR WEEK]
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column WEEK
+				formatString: General Date
+				lineageTag: 1ee6805e-ab65-4866-8ea4-8723ae1df197
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [WEEK]
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'RELATIVE WEEK'
+				lineageTag: 5ea3ae3e-b9c4-457c-b412-625af7eea29b
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [RELATIVE WEEK]
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			column 'RELATIVE DAY'
+				formatString: General Date
+				lineageTag: 65897efe-ceef-4365-b785-0873cf27028e
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [RELATIVE DAY]
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'RELATIVE 07 DAY PERIOD'
+				lineageTag: 4e8407ba-30c6-4c43-bd8a-5962c8aa1c5c
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [RELATIVE 07 DAY PERIOD]
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			column 'RELATIVE 30 DAY PERIOD'
+				lineageTag: e7faa457-dda8-4403-99f6-626b49623a3d
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [RELATIVE 30 DAY PERIOD]
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			column 'RELATIVE MONTH'
+				formatString: 0
+				lineageTag: e3da9c05-7873-4a46-8d92-6f49b6e3f3c7
+				summarizeBy: none
+				isNameInferred
+				sourceColumn: [RELATIVE MONTH]
+
+				annotation SummarizationSetBy = Automatic
+
+			partition 'Opportunity Calendar-e59f2a98-a17b-43c5-9430-3661e3b638f8' = calculated
+				mode: import
+				source = ```
+						
+						VAR StartDate =
+						    DATE ( YEAR ( MIN ( Opportunities[CloseDate] ) ), 1, 1 )
+						VAR EndDate =
+						    DATE ( YEAR (
+						        IF (
+						            ISBLANK ( MAX (  Opportunities[CloseDate] ) ),
+						            TODAY (),
+						            MAX (  Opportunities[CloseDate] )
+						        )
+						    ), 12, 31 )
+						VAR BASECALENDAR =
+						    CALENDAR ( StartDate, EndDate )
+						RETURN
+						    GENERATE (
+						        BASECALENDAR,
+						        VAR DateSequence = DATEDIFF ( StartDate, [DATE], DAY ) + 1
+						        VAR BASEDATE = [DATE]
+						        VAR YEARDATE = YEAR ( BASEDATE )
+						        VAR MONTHNUMBER = MONTH ( BASEDATE )
+						        VAR MONTHNAME = FORMAT ( BASEDATE, "MMMM" )
+						        VAR YEARMONTHNAME = FORMAT ( BASEDATE, "MMM YYYY" )
+						        VAR YEARMONTHNUMBER = YEARDATE * 12 + ( MONTHNUMBER - 1 )
+						        VAR YEARWEEK = YEARDATE & "-W" & RIGHT ( "0" & WEEKNUM ( BASEDATE ), 2 )
+						        VAR DayNumberOfWeek = WEEKDAY ( [Date] )
+						        VAR StartOfWeek = [Date] - ( 1 * DayNumberOfWeek )
+						        VAR StartOfRelativeWeek = [Date] - WEEKDAY ( [Date] ) + 1
+						        VAR StartOfCurrentWeek = TODAY () - WEEKDAY ( TODAY () ) + 1
+						        var RelativeMonth = DATEDIFF(TODAY(),[Date],MONTH)
+						        VAR RelativeWeek = ( StartOfRelativeWeek - StartOfCurrentWeek ) / 7
+						        var RelativeDay = BASEDATE - TODAY()
+						        var Relative7DayPeriod = ROUNDDOWN(([Date] - TODAY())/7,0) + IF([Date]<TODAY(),+1,+2)
+						        var Relative30DayPeriod = ROUNDDOWN(([Date] - TODAY())/30,0) + IF([Date]>TODAY(),1,0)   
+						
+						        RETURN
+						            ROW (
+						                "DAY", BASEDATE,
+						                "DaySeq", DateSequence,
+						                "YEAR", YEARDATE,
+						                "MONTH NUMBER", MONTHNUMBER,
+						                "MONTH", MONTHNAME,
+						                "YEAR MONTH NUMBER", YEARMONTHNUMBER,
+						                "YEAR MONTH", YEARMONTHNAME,
+						                "YEAR WEEK", YEARWEEK,
+						                "WEEK", StartOfWeek,
+						                "RELATIVE MONTH", RelativeMonth,
+						                "RELATIVE WEEK", RelativeWeek,
+						                "RELATIVE DAY", RelativeDay,
+						                "RELATIVE 07 DAY PERIOD", Relative7DayPeriod,
+						                "RELATIVE 30 DAY PERIOD", Relative30DayPeriod
+						                )
+						            )
+						```
+
+		table Contacts
+			lineageTag: 59b3ba36-d753-49c2-aa4c-d326b45f4e58
+
+			column Contact
+				dataType: string
+				lineageTag: 10d57d42-d065-43d2-a0a7-3d8152532d5a
+				summarizeBy: none
+				sourceColumn: Contact
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'Job Title'
+				dataType: string
+				lineageTag: 0147b56c-14b2-4fb7-ad9b-0f079507a212
+				summarizeBy: none
+				sourceColumn: Job Title
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column ContactSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 331cccc1-5d5a-47df-ac3e-28cb2686611f
+				summarizeBy: sum
+				sourceColumn: ContactSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column AccountSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 75e0447c-0e86-4f7b-bfb3-331f701f91da
+				summarizeBy: none
+				sourceColumn: AccountSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			partition Contacts-fc28db56-6378-4de8-be05-cd265898d7ea = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    ContactTbl_Table = Source{[Item="ContactTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(ContactTbl_Table,{{"ContactSeq", Int64.Type}, {"Contact", type text}, {"AccountSeq", Int64.Type}, {"Job Title", type text}})
+						in
+						    #"Changed Type"
+
+			annotation PBI_QueryRelationships = {"columnCount":15,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Contacts/Changed Type.{ContactSeq,0}","Section1/Contacts/Changed Type.{ContactID,1}","Section1/Contacts/Changed Type.{Contact,2}","Section1/Contacts/ContactTbl_Table.{FirstName,3}","Section1/Contacts/ContactTbl_Table.{LastName,4}","Section1/Contacts/Changed Type.{AccountSeq,5}","Section1/Contacts/Changed Type.{Job Title,6}","Section1/Contacts/Changed Type.{Street,7}","Section1/Contacts/Changed Type.{City,8}","Section1/Contacts/Changed Type.{State or Province,9}","Section1/Contacts/Changed Type.{Postal Code,10}","Section1/Contacts/Changed Type.{Country,11}","Section1/Contacts/Changed Type.{Latitude,12}","Section1/Contacts/Changed Type.{Longitude,13}","Section1/Contacts/Changed Type.{Phone,14}"],"ColumnCount":15,"KeyColumnNames":[],"ColumnIdentities":["Section1/Contacts/Changed Type.{ContactSeq,0}","Section1/Contacts/Changed Type.{ContactID,1}","Section1/Contacts/Changed Type.{Contact,2}","Section1/Contacts/ContactTbl_Table.{FirstName,3}","Section1/Contacts/ContactTbl_Table.{LastName,4}","Section1/Contacts/Changed Type.{AccountSeq,5}","Section1/Contacts/Changed Type.{Job Title,6}","Section1/Contacts/Changed Type.{Street,7}","Section1/Contacts/Changed Type.{City,8}","Section1/Contacts/Changed Type.{State or Province,9}","Section1/Contacts/Changed Type.{Postal Code,10}","Section1/Contacts/Changed Type.{Country,11}","Section1/Contacts/Changed Type.{Latitude,12}","Section1/Contacts/Changed Type.{Longitude,13}","Section1/Contacts/Changed Type.{Phone,14}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Territories
+			lineageTag: 353b2fab-9798-4035-afca-a28f49c1412e
+
+			column Region
+				dataType: string
+				lineageTag: 29b6b784-efd8-4941-ad88-46a0c98942f9
+				summarizeBy: none
+				sourceColumn: Region
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Territory
+				dataType: string
+				lineageTag: d718bf26-fb5e-4e0a-bcdd-4b1089f7d40d
+				summarizeBy: none
+				sourceColumn: Territory
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Country
+				dataType: string
+				isHidden
+				lineageTag: a77c71c4-e669-48bf-a735-0b48c22d54fa
+				summarizeBy: none
+				sourceColumn: Country
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column TerritorySeq
+				dataType: string
+				isHidden
+				lineageTag: a439a7cc-f999-4b79-bd89-0cbd189169f3
+				summarizeBy: none
+				sourceColumn: TerritorySeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column 'State Or Province'
+				dataType: string
+				lineageTag: e8b12240-4547-4110-a367-52a76c2d9e0e
+				summarizeBy: none
+				sourceColumn: State Or Province
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			partition Territories-cce59963-af31-4ea3-b1a5-c2b42f20283f = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    TerritoriesTbl_Table = Source{[Item="TerritoriesTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(TerritoriesTbl_Table,{{"Country", type text}, {"State Or Province", type text}, {"Region", type text}, {"Territory", type text}}),
+						    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Factor", "ParentTerritorySeq", "ParentTerritoryFactor", "Distribution%", "DistributionAccumulation"})
+						in
+						    #"Removed Columns"
+
+			changedProperty = IsHidden
+
+			annotation PBI_QueryRelationships = {"columnCount":4,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Territories/Changed Type.{Country,0}","Section1/Territories/Changed Type.{State Or Province Abbreviation,1}","Section1/Territories/Changed Type.{Region,2}","Section1/Territories/Changed Type.{Territory,3}"],"ColumnCount":4,"KeyColumnNames":[],"ColumnIdentities":["Section1/Territories/Changed Type.{Country,0}","Section1/Territories/Changed Type.{State Or Province Abbreviation,1}","Section1/Territories/Changed Type.{Region,2}","Section1/Territories/Changed Type.{Territory,3}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		table Campaigns
+			lineageTag: c357383b-71d5-4f88-bc40-806bea44031e
+
+			column CampaignSeq
+				dataType: int64
+				isHidden
+				formatString: 0
+				lineageTag: 8de5bb95-ac36-41b8-8fb6-602db8b90018
+				summarizeBy: none
+				sourceColumn: CampaignSeq
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			column 'Campaign Type'
+				dataType: string
+				lineageTag: 6a77689f-dfb4-4d00-9f5f-e3232add37e7
+				summarizeBy: none
+				sourceColumn: Campaign Type
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			column Campaign
+				dataType: string
+				lineageTag: 7d211005-c39f-442c-95e2-b8fc5bef9ea5
+				summarizeBy: none
+				sourceColumn: Campaign
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isText":true}
+
+			partition Campaigns-3cb88e48-13a8-4187-b349-6b06275a3f32 = m
+				mode: import
+				source =
+						let
+						    Source = Excel.Workbook(Web.Contents("https://microsoft-my.sharepoint.com/personal/misewell_microsoft_com/Documents/Documents/GitHub/ContosoBI/Contoso%20-%20Sales%20-%20Current%20Release/Contoso%20-%20Dynamics%20365%20Sales%20Source%20Data.xlsx"), null, true),
+						    CampaignsTbl_Table = Source{[Item="CampaignsTbl",Kind="Table"]}[Data],
+						    #"Changed Type" = Table.TransformColumnTypes(CampaignsTbl_Table,{{"CampaignSeq", Int64.Type}, {"Type", type text}, {"Name", type text}, {"Factor", Int64.Type}}),
+						    #"Removed Columns" = Table.RemoveColumns(#"Changed Type",{"Factor", "Distribution%", "DistributionAccumulation"}),
+						    #"Renamed Columns" = Table.RenameColumns(#"Removed Columns",{{"Type", "Campaign Type"}, {"Name", "Campaign"}})
+						in
+						    #"Renamed Columns"
+
+			annotation PBI_QueryRelationships = {"columnCount":4,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Campaigns/Changed Type.{CampaignSeq,0}","Section1/Campaigns/Changed Type.{Type,1}","Section1/Campaigns/Changed Type.{Name,2}","Section1/Campaigns/Changed Type.{Factor,3}"],"ColumnCount":4,"KeyColumnNames":[],"ColumnIdentities":["Section1/Campaigns/Changed Type.{CampaignSeq,0}","Section1/Campaigns/Changed Type.{Type,1}","Section1/Campaigns/Changed Type.{Name,2}","Section1/Campaigns/Changed Type.{Factor,3}"],"RelationshipInfo":[]}
+
+			annotation PBI_ResultType = Table
+
+		relationship ab2e21ab-c232-41ff-83dc-8e3b0d908f5e
+			fromColumn: Opportunities.AccountSeq
+			toColumn: Accounts.AccountSeq
+
+		relationship 76006d0f-909a-4fb2-b452-80f483d3e919
+			fromColumn: Contacts.AccountSeq
+			toColumn: Accounts.AccountSeq
+
+		relationship f9c0c9e0-69b6-4e0b-9ad1-505c46d592a0
+			fromColumn: Accounts.IndustrySeq
+			toColumn: Industries.IndustrySeq
+
+		relationship 55523217-ba80-4483-a167-760f05c7b1bf
+			fromColumn: Opportunities.ProductSeq
+			toColumn: Products.ProductSeq
+
+		relationship c5b245c6-f533-4dbe-be32-ca0932182f37
+			fromColumn: Opportunities.SystemUserSeq
+			toColumn: Owners.SystemUserSeq
+
+		relationship eb4def86-5ce3-4711-8802-9f00f3d8b5b6
+			fromColumn: Opportunities.CampaignSeq
+			toColumn: Campaigns.CampaignSeq
+
+		relationship 0c422e57-d97e-4de8-8cc2-28589ef3ea9d
+			fromColumn: Accounts.TerritorySeq
+			toColumn: Territories.TerritorySeq
+
+		relationship 9b5e36b8-8168-42a4-9ad3-49d06a64feb2
+			fromColumn: Opportunities.CloseDate
+			toColumn: 'Opportunity Calendar'.Date
+
+		cultureInfo en-US
+
+			linguisticMetadata = {"Version":"3.1.0","Language":"en-US","Entities":{"account":{"Definition":{"Binding":{"ConceptualEntity":"Accounts"}},"State":"Generated","Terms":[{"account":{}},{"Company":{"LastModified":"2021-11-05T20:07:44.943Z"}},{"co":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"corp":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"corporation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"corps":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"employer":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"enterprise":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"business":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"conglomerate":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"co inc":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.589}},{"explanation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}}]},"account.account_name":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"Account Name"}},"State":"Generated","Terms":[{"account name":{}},{"name":{"Weight":0.97}},{"account nickname":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"account label":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"account tag":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"label":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"tag":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"acct name":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"account title":{"Type":"Noun","State":"Deleted","LastModified":"2021-11-05T20:08:11.887Z"}}],"NameType":"Name"},"account.state_or_province":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"State or Province"}},"State":"Generated","Terms":[{"state or province":{"State":"Generated"}},{"state":{"State":"Generated","Weight":0.97}},{"state province":{"State":"Generated","Weight":0.97}},{"province":{"State":"Generated","Weight":0.97}},{"location or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"province or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"territory or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"nation or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"condition or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"country or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"condition":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"location province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}],"SemanticType":"Location"},"account.country":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"Country"}},"State":"Generated","Terms":[{"country":{"State":"Generated"}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}],"SemanticType":"Location"},"account.account_ID":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"AccountID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"account ID":{"State":"Generated"}},{"AccountID":{"Type":"Noun","State":"Generated","Weight":0.99}},{"account identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"account identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"account identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"account credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}}]},"account.account_seq":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"AccountSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"account seq":{"State":"Generated"}},{"AccountSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"account.industry_seq":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"IndustrySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"industry seq":{"State":"Generated"}},{"IndustrySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"account.account_owner_seq":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"AccountOwnerSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"account owner seq":{"State":"Generated"}},{"AccountOwnerSeq":{"Type":"Noun","State":"Generated","Weight":0.99}},{"account ownership seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account holder seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account landlord seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account possessor seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account proprietor seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account shareholder seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"account titleholder seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}}]},"account.street_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","Hierarchy":"Street Hierarchy"}},"State":"Generated","Terms":[{"street hierarchy":{"State":"Generated"}},{"hierarchy":{"State":"Generated","Weight":0.97}},{"street ladder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"street grading":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"street order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"street pyramid":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"ladder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"grading":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"pyramid":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"account.street_hierarchy.account_name":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","Hierarchy":"Street Hierarchy","HierarchyLevel":"Account Name"}},"State":"Generated","Terms":[{"account name":{"State":"Generated"}},{"name":{"State":"Generated","Weight":0.97}},{"account nickname":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"account title":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"account label":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"account tag":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"acct name":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}],"NameType":"Name"},"account.territory_seq":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"TerritorySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"territory seq":{"State":"Generated"}},{"TerritorySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"account.street_hierarchy.city":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","Hierarchy":"Street Hierarchy","HierarchyLevel":"City"}},"State":"Generated","Terms":[{"city":{"State":"Generated"}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"metropolis":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"municipality":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"town":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"metropolitan":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}],"SemanticType":"Location"},"account.street_hierarchy.state_or_province":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","Hierarchy":"Street Hierarchy","HierarchyLevel":"State or Province"}},"State":"Generated","Terms":[{"state or province":{"State":"Generated"}},{"state":{"State":"Generated","Weight":0.97}},{"state province":{"State":"Generated","Weight":0.97}},{"province":{"State":"Generated","Weight":0.97}},{"location or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"province or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"territory or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"nation or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"condition or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"country or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"condition":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"location province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}],"SemanticType":"Location"},"account.street_hierarchy.country":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","Hierarchy":"Street Hierarchy","HierarchyLevel":"Country"}},"State":"Generated","Terms":[{"country":{"State":"Generated"}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}],"SemanticType":"Location"},"industry":{"Definition":{"Binding":{"ConceptualEntity":"Industries"}},"State":"Generated","Terms":[{"industry":{"State":"Generated"}},{"commerce":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"production":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"manufacturing":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"business":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"trade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"engineering":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"diligence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"productiveness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"conscientiousness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"activity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}}]},"industry.industry":{"Definition":{"Binding":{"ConceptualEntity":"Industries","ConceptualProperty":"Industry"}},"State":"Generated","Terms":[{"industry":{"State":"Generated"}},{"industry name":{"State":"Generated"}},{"commerce":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"production":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"manufacturing":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"business":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"trade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"engineering":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"diligence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"productiveness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"conscientiousness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"activity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}}],"NameType":"Name"},"industry.industry_seq":{"Definition":{"Binding":{"ConceptualEntity":"Industries","ConceptualProperty":"IndustrySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"industry seq":{"State":"Generated"}},{"IndustrySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities"}},"State":"Generated","Terms":[{"opportunity":{}},{"deal":{"LastModified":"2021-11-05T20:08:47.822Z"}},{"transaction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"agreement":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"arrangement":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"pact":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"treaty":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"chance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"occasion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"contract":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"opening":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"break":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.purchase_process":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Purchase Process"}},"State":"Generated","Terms":[{"purchase process":{"State":"Generated"}},{"process":{"State":"Generated","Weight":0.97}},{"purchase procedure":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"purchase development":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"purchase progression":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"purchase method":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"purchase manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"purchase activity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"procedure":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"development":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"progression":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"method":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}}]},"opportunity.decision_maker_identified":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Decision Maker Identified"}},"State":"Generated","Terms":[{"decision maker identified":{"State":"Generated"}},{"decision creator identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"decision manufacturer identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"decision fabricator identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"decision producer identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"decision architect identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"decision cause identified":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}}]},"opportunity.status":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Status"}},"State":"Generated","Terms":[{"status":{"State":"Generated"}},{"importance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"prestige":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"prominence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"condition":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"grade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"level":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"position":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"opportunity.pipeline_step":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Sales Stage"}},"State":"Generated","Terms":[{"sales stage":{"State":"Generated"}},{"sale stage":{"Type":"Noun","State":"Generated","Weight":0.78}},{"stage":{"State":"Generated","Weight":0.97}},{"sale juncture":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"juncture":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"sale phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"sale period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"sale step":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"sale point":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"sale leg":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"step":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.value":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Value"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"value":{"State":"Generated"}},{"assessment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"worth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"price":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"cost":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"charge":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"rate":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"importance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"significance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"usefulness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"consequence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}}]},"opportunity.weeks_open":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Weeks Open"}},"State":"Generated","Terms":[{"weeks open":{"State":"Generated"}},{"week open":{"Type":"Noun","State":"Generated","Weight":0.78}},{"open":{"State":"Generated","Weight":0.97}},{"sweeping":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.day_to_close":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"DaysToClose"}},"State":"Generated","Terms":[{"day to close":{"State":"Generated"}},{"DaysToClose":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity.discount":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Discount"}},"State":"Generated","Terms":[{"discount":{"State":"Generated"}},{"reduction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"markdown":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"concession":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"deduction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"rebate":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.probability":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Probability"}},"State":"Generated","Terms":[{"probability":{"State":"Generated"}},{"likelihood":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"possibility":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"chance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"prospect":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.rating":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Rating"}},"State":"Generated","Terms":[{"rating":{"State":"Generated"}},{"assessment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"evaluation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"score":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"grade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"ranking":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"mark":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"sailor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"seaman":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"hand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}}]},"opportunity.days_remaining_in_pipeline":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Days Remaining In Pipeline"}},"State":"Generated","Terms":[{"days remaining in pipeline":{"State":"Generated"}},{"day remaining in pipeline":{"Type":"Noun","State":"Generated","Weight":0.78}},{"pipeline":{"State":"Generated","Weight":0.97}},{"in pipeline":{"State":"Generated","Weight":0.97}},{"remaining in pipeline":{"State":"Generated","Weight":0.97}},{"remaining":{"State":"Generated","Weight":0.97}},{"days remaining":{"State":"Generated","Weight":0.97}},{"day remaining":{"Type":"Noun","State":"Generated","Weight":0.7566}},{"in conduit":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"conduit":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"in tube":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in cylinder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in channel":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in duct":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in pipe":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"tube":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"cylinder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"residual":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.probability_raw":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Probability (raw)"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"probability (raw)":{"State":"Generated"}},{"probability":{"State":"Generated","Weight":0.75}}]},"opportunity.account_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"AccountSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"account seq":{"State":"Generated"}},{"AccountSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity.opportunity_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"OpportunitySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"opportunity seq":{"State":"Generated"}},{"OpportunitySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity.product_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"ProductSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"product seq":{"State":"Generated"}},{"ProductSeq":{"Type":"Noun","State":"Generated","Weight":0.99}},{"artifact seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"item seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"merchandise seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"produce seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}}]},"opportunity.system_user_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"SystemUserSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"system user seq":{"State":"Generated"}},{"SystemUserSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity.revenue_won":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Revenue Won"}},"State":"Generated","Terms":[{"revenue won":{"State":"Generated"}},{"Rev Won":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}},{"income won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"profit won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"turnover won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"yield won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"revolution won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"rotation won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"rpm won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"cycle won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"turn won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}}]},"opportunity.revenue_in_pipeline":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Revenue In Pipeline"}},"State":"Generated","Terms":[{"revenue in pipeline":{}},{"Rev In Pipeline":{"LastModified":"2021-11-05T20:09:30.477Z"}},{"Value In Pipeline":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}},{"pipeline":{"Weight":0.97}},{"in pipeline":{"Weight":0.97}},{"revenue":{"Weight":0.97}},{"Rev":{"State":"Suggested","Weight":0.873}},{"Value":{"State":"Suggested","Weight":0.873}},{"income in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"profit in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"turnover in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"yield in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"income":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"profit":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"turnover":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"yield":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"revolution in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"rotation in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}}]},"opportunity.forecast_":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Forecast %"}},"State":"Generated","Terms":[{"forecast %":{"State":"Generated"}},{"forecast percentage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"forecast pct":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"prediction %":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"projection %":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"report %":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"estimate %":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}}]},"opportunity.forecast":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Forecast"}},"State":"Generated","Terms":[{"forecast":{"State":"Generated"}},{"prediction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"projection":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"report":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"estimate":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"opportunity.opportunity_count_in_pipeline":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Opportunity Count In Pipeline"}},"State":"Generated","Terms":[{"opportunity count in pipeline":{"State":"Generated"}},{"pipeline":{"State":"Generated","Weight":0.97}},{"in pipeline":{"State":"Generated","Weight":0.97}},{"count in pipeline":{"State":"Generated","Weight":0.97}},{"opportunity amount in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.748}},{"amount in pipeline":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"in conduit":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"conduit":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"in tube":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in cylinder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in channel":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in duct":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"in pipe":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"tube":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.opportunity_count":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Opportunity Count"}},"State":"Generated","Terms":[{"opportunity count":{"State":"Generated"}},{"Open Opportunities":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}},{"Opportunities":{"State":"Suggested","Weight":0.873}},{"opportunity amount":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"open chance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"open occasion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"open opening":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"open break":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"open prospect":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"chance":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"occasion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"opening":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"break":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"opportunity.count_of_won":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Count of Won"}},"State":"Generated","Terms":[{"count of won":{"State":"Generated"}},{"number of won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.746}},{"amount of won":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}}]},"opportunity.count_of_lost":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Count of Lost"}},"State":"Generated","Terms":[{"count of lost":{"State":"Generated"}},{"number of lost":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.746}},{"amount of lost":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}}]},"opportunity.close_":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Close %"}},"State":"Generated","Terms":[{"close %":{"State":"Generated"}},{"close percentage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"close pct":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}}]},"opportunity.revenue_open":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Revenue Open"}},"State":"Generated","Terms":[{"revenue open":{"State":"Generated"}},{"open":{"State":"Generated","Weight":0.97}},{"income open":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"profit open":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"turnover open":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"yield open":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"sweeping":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"owner":{"Definition":{"Binding":{"ConceptualEntity":"Owners"}},"State":"Generated","Terms":[{"owner":{"State":"Generated"}},{"ownership":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"holder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"landlord":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"possessor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"proprietor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"shareholder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"titleholder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}]},"owner.owner":{"Definition":{"Binding":{"ConceptualEntity":"Owners","ConceptualProperty":"Owner"}},"State":"Generated","Terms":[{"owner":{"State":"Generated"}},{"owner name":{"State":"Generated"}},{"ownership":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"holder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"landlord":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"possessor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"proprietor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"shareholder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"titleholder":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}],"NameType":"Name"},"owner.manager":{"Definition":{"Binding":{"ConceptualEntity":"Owners","ConceptualProperty":"Manager"}},"State":"Generated","Terms":[{"manager":{"State":"Generated"}},{"director":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"administrator":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"supervisor":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"leader":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"boss":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"executive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"chief":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"superior":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"owner.system_user_seq":{"Definition":{"Binding":{"ConceptualEntity":"Owners","ConceptualProperty":"SystemUserSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"system user seq":{"State":"Generated"}},{"SystemUserSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"owner.owner_goal":{"Definition":{"Binding":{"ConceptualEntity":"Owners","ConceptualProperty":"Rev Goal"}},"State":"Generated","Terms":[{"rev goal":{"State":"Generated"}},{"goal":{"State":"Generated","Weight":0.97}},{"rev goalmouth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"goalmouth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"rev box":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"rev area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.485}},{"box":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"rev aspiration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.475}},{"aspiration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"rev objective":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.461}},{"rev aim":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.461}}]},"product":{"Definition":{"Binding":{"ConceptualEntity":"Products"}},"State":"Generated","Terms":[{"product":{"State":"Generated"}},{"artifact":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"item":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"merchandise":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"produce":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"product.product":{"Definition":{"Binding":{"ConceptualEntity":"Products","ConceptualProperty":"Product"}},"State":"Generated","Terms":[{"product":{"State":"Generated"}},{"product name":{"State":"Generated"}},{"artifact":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"item":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"merchandise":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"produce":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}],"NameType":"Name"},"product.product_seq":{"Definition":{"Binding":{"ConceptualEntity":"Products","ConceptualProperty":"ProductSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"product seq":{"State":"Generated"}},{"ProductSeq":{"Type":"Noun","State":"Generated","Weight":0.99}},{"artifact seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"item seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"merchandise seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"produce seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}}]},"opportunity_forecast_adjustment":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Forecast Adjustment"}},"State":"Generated","Visibility":{"Value":"Hidden","State":"Authored"},"Terms":[{"opportunity forecast adjustment":{"State":"Generated"}},{"adjustment":{"State":"Generated","Weight":0.97}},{"forecast adjustment":{"State":"Generated","Weight":0.97}},{"opportunity prediction adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"opportunity projection adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"prediction adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"projection adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"opportunity report adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.591}},{"opportunity estimate adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.591}},{"report adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"estimate adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"opportunity forecast alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"opportunity forecast modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}}]},"opportunity_forecast_adjustment.forecast_adjustment":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Forecast Adjustment","ConceptualProperty":"Forecast Adjustment"}},"State":"Generated","Visibility":{"Value":"Hidden","State":"Authored"},"Terms":[{"forecast adjustment":{"State":"Generated"}},{"adjustment":{"State":"Generated","Weight":0.97}},{"prediction adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"projection adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"report adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"estimate adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"forecast alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast regulation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast correction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast amendment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast variation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}}]},"opportunity_forecast_adjustment.forecast_adjustment_value":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Forecast Adjustment","ConceptualProperty":"Forecast Adjustment Value"}},"State":"Generated","Visibility":{"Value":"Hidden","State":"Authored"},"Terms":[{"forecast adjustment value":{"State":"Generated"}},{"value":{"State":"Generated","Weight":0.97}},{"adjustment value":{"State":"Generated","Weight":0.97}},{"prediction adjustment value":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"projection adjustment value":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"report adjustment value":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.591}},{"estimate adjustment value":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.591}},{"forecast adjustment assessment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.508}},{"adjustment assessment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"forecast adjustment worth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"forecast adjustment price":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"forecast adjustment cost":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"forecast adjustment charge":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}}]},"opportunity_calendar":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar"}},"State":"Generated","Terms":[{"opportunity calendar":{"State":"Generated"}},{"calendar":{"State":"Generated","Weight":0.97}},{"opportunity almanac":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"opportunity datebook":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"opportunity agenda":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"opportunity logbook":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"opportunity diary":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"almanac":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"datebook":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"agenda":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"logbook":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"diary":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}}]},"opportunity_calendar.date":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"Date"}},"State":"Generated","Terms":[{"date":{"State":"Generated"}},{"moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"opportunity_calendar.day":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"DAY"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"day":{"State":"Generated"}}],"SemanticType":"Time"},"opportunity_calendar.day_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"DaySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"day seq":{"State":"Generated"}},{"DaySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity_calendar.year":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"YEAR"}},"State":"Generated","Terms":[{"year":{"State":"Generated"}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"opportunity_calendar.month_number":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"MONTH NUMBER"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"month number":{"State":"Generated"}},{"month no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"mth number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}]},"opportunity_calendar.month":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"MONTH"}},"State":"Generated","Terms":[{"month":{"State":"Generated"}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}]},"opportunity_calendar.year_month_number":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"YEAR MONTH NUMBER"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"year month number":{"State":"Generated"}},{"month number":{"State":"Generated","Weight":0.97}},{"year month no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"month no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"yr month number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"year mth number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.609}},{"mth number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}]},"opportunity_calendar.year_month":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"YEAR MONTH"}},"State":"Generated","Terms":[{"year month":{"State":"Generated"}},{"year mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"yr month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}]},"opportunity_calendar.year_week":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"YEAR WEEK"}},"State":"Generated","Terms":[{"year week":{"State":"Generated"}},{"yr week":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}]},"opportunity_calendar.week":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"WEEK"}},"State":"Generated","Terms":[{"week":{"State":"Generated"}}],"SemanticType":"Time"},"opportunity_calendar.relative_week":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"RELATIVE WEEK"}},"State":"Generated","Terms":[{"relative week":{"State":"Generated"}}]},"opportunity_calendar.relative_day":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"RELATIVE DAY"}},"State":"Generated","Terms":[{"relative day":{"State":"Generated"}}],"SemanticType":"Time"},"opportunity_calendar.relative_07_day_period":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"RELATIVE 07 DAY PERIOD"}},"State":"Generated","Terms":[{"relative 07 day period":{"State":"Generated"}},{"period":{"State":"Generated","Weight":0.97}},{"day period":{"State":"Generated","Weight":0.97}},{"07 day period":{"State":"Generated","Weight":0.97}},{"relative 07 day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.489}},{"relative 07 day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.489}},{"07 day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.482}},{"07 day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.482}},{"day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.475}},{"day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.475}},{"relative 07 day age":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"relative 07 day stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"relative 07 day phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"07 day age":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.468}}]},"opportunity_calendar.relative_30_day_period":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"RELATIVE 30 DAY PERIOD"}},"State":"Generated","Terms":[{"relative 30 day period":{"State":"Generated"}},{"period":{"State":"Generated","Weight":0.97}},{"day period":{"State":"Generated","Weight":0.97}},{"30 day period":{"State":"Generated","Weight":0.97}},{"relative 30 day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.489}},{"relative 30 day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.489}},{"30 day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.482}},{"30 day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.482}},{"day era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.475}},{"day epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.475}},{"relative 30 day age":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"relative 30 day stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"relative 30 day phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.474}},{"30 day age":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.468}}]},"opportunity_calendar.relative_month":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Calendar","ConceptualProperty":"RELATIVE MONTH"}},"State":"Generated","Terms":[{"relative month":{"State":"Generated"}},{"relative mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}}]},"contact":{"Definition":{"Binding":{"ConceptualEntity":"Contacts"}},"State":"Generated","Terms":[{"contact":{"State":"Generated"}},{"connection":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"interaction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"phone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"telephone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"communication":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"e-mail":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"link":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"reach":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"e mail":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.589}},{"phone number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.571}}]},"contact.contact":{"Definition":{"Binding":{"ConceptualEntity":"Contacts","ConceptualProperty":"Contact"}},"State":"Generated","Terms":[{"contact":{"State":"Generated"}},{"contact name":{"State":"Generated"}},{"connection":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"interaction":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"phone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"telephone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"communication":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"e-mail":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"link":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"reach":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"e mail":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.589}},{"phone number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.571}}],"NameType":"Name"},"contact.job_title":{"Definition":{"Binding":{"ConceptualEntity":"Contacts","ConceptualProperty":"Job Title"}},"State":"Generated","Terms":[{"job title":{"State":"Generated"}},{"title":{"State":"Generated","Weight":0.97}},{"job designation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"designation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"job name":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"job award":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"job call":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"job heading":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"job label":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"award":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"call":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"heading":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"contact.contact_seq":{"Definition":{"Binding":{"ConceptualEntity":"Contacts","ConceptualProperty":"ContactSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"contact seq":{"State":"Generated"}},{"ContactSeq":{"Type":"Noun","State":"Generated","Weight":0.99}},{"connection seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"interaction seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}},{"phone seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"telephone seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"communication seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"e-mail seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"link seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"reach seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.582}},{"e mail seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.486}},{"phone number seq":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.471}}]},"contact.account_seq":{"Definition":{"Binding":{"ConceptualEntity":"Contacts","ConceptualProperty":"AccountSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"account seq":{"State":"Generated"}},{"AccountSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"territory":{"Definition":{"Binding":{"ConceptualEntity":"Territories"}},"State":"Generated","Terms":[{"territory":{"State":"Generated","Weight":0.87}},{"terrain":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"land":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"ground":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"zone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"place":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"space":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"domain":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"district":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}}]},"territory.region":{"Definition":{"Binding":{"ConceptualEntity":"Territories","ConceptualProperty":"Region"}},"State":"Generated","Terms":[{"region":{"State":"Generated"}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.818}},{"area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"district":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"section":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"zone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"continent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"territory.territory":{"Definition":{"Binding":{"ConceptualEntity":"Territories","ConceptualProperty":"Territory"}},"State":"Generated","Terms":[{"territory":{"State":"Generated"}},{"terrain":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"land":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"ground":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"zone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"place":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"space":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"domain":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.466}},{"district":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}}]},"territory.country":{"Definition":{"Binding":{"ConceptualEntity":"Territories","ConceptualProperty":"Country"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"country":{"State":"Generated"}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}}]},"opportunity.campaign_seq":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"CampaignSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"campaign seq":{"State":"Generated"}},{"CampaignSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"campaign":{"Definition":{"Binding":{"ConceptualEntity":"Campaigns"}},"State":"Generated","Terms":[{"campaign":{"State":"Generated"}},{"movement":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"operation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"promotion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"crusade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"drive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"fight":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"battle":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"war":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}]},"campaign.campaign_seq":{"Definition":{"Binding":{"ConceptualEntity":"Campaigns","ConceptualProperty":"CampaignSeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"campaign seq":{"State":"Generated"}},{"CampaignSeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"campaign.type":{"Definition":{"Binding":{"ConceptualEntity":"Campaigns","ConceptualProperty":"Campaign Type"}},"State":"Generated","Terms":[{"campaign type":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"campaign category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"campaign genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"campaign manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"campaign variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"campaign brand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"campaign class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"campaign kind":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}}]},"campaign.name":{"Definition":{"Binding":{"ConceptualEntity":"Campaigns","ConceptualProperty":"Campaign"}},"State":"Generated","Terms":[{"campaign":{"State":"Generated"}},{"campaign name":{"State":"Generated"}},{"movement":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"operation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"promotion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.491}},{"crusade":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"drive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"fight":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"battle":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"war":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}}],"NameType":"Name"},"account.account_number":{"Definition":{"Binding":{"ConceptualEntity":"Accounts","ConceptualProperty":"Account Number"}},"State":"Generated","Terms":[{"account number":{}},{"account no":{"Type":"Noun","LastModified":"2021-11-05T20:08:03.163Z"}}],"NameType":"Identifier"},"opportunity.blank":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Blank"}},"State":"Generated","Visibility":{"Value":"Hidden","State":"Authored"},"Terms":[{"blank":{"State":"Generated"}},{"absolute":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"straight-out":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"uncomprehending":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}},{"empty":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}}]},"opportunity.DateDiffday":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"DateDiff-Days"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"DateDiff-day":{"State":"Generated"}},{"DateDiff day":{"State":"Generated","Weight":0.97}}]},"opportunity.opportunity_created_on":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Opportunity Created On"}},"State":"Generated","Terms":[{"opportunity created on":{"State":"Generated"}},{"date":{"State":"Generated","Weight":0.7}},{"chance created on":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"occasion created on":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"opening created on":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"break created on":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}},{"prospect created on":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.492}}],"SemanticType":"Time"},"opportunity.close_date":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"CloseDate"}},"State":"Generated","Terms":[{"close date":{"State":"Generated"}},{"CloseDate":{"Type":"Noun","State":"Generated","Weight":0.99}},{"date":{"State":"Generated","Weight":0.7}},{"close moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"close period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}}],"SemanticType":"Time"},"opportunity.days_remaining_in_pipeline_bins":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Days Remaining In Pipeline (bins)"}},"State":"Generated","Terms":[{"days remaining in pipeline (bins)":{"State":"Generated"}},{"day remaining in pipeline (bin)":{"Type":"Noun","State":"Generated","Weight":0.78}},{"days remaining in pipeline":{"State":"Generated","Weight":0.75}}]},"territory.territory_seq":{"Definition":{"Binding":{"ConceptualEntity":"Territories","ConceptualProperty":"TerritorySeq"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"territory seq":{"State":"Generated"}},{"TerritorySeq":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"opportunity.revenue_won_average_deal_size":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Revenue Won Average Deal Size"}},"State":"Generated","Terms":[{"revenue won average deal size":{"State":"Generated"}},{"income won average deal size":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.624}},{"profit won average deal size":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.605}},{"turnover won average deal size":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.605}},{"yield won average deal size":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.605}},{"revenue won average deal extent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.52}},{"revenue won average deal magnitude":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.52}},{"revenue won average deal scope":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.504}},{"revenue won average deal volume":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.494}},{"revenue won average deal dimension":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.479}},{"revenue won average deal mass":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.479}}]},"opportunity.forecast_by_win_loss_ratio":{"Definition":{"Binding":{"ConceptualEntity":"Opportunities","ConceptualProperty":"Forecast by Win/Loss Ratio"}},"State":"Generated","Terms":[{"forecast by win/loss ratio":{"State":"Generated"}},{"forecast by win":{"State":"Generated","Weight":0.97}},{"forecast by win loss ratio":{"State":"Generated","Weight":0.97}},{"loss ratio":{"State":"Generated","Weight":0.97}},{"ratio":{"State":"Generated","Weight":0.97}},{"prediction by win loss ratio":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.78}},{"projection by win loss ratio":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.78}},{"prediction by win":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"projection by win":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"report by win loss ratio":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.757}},{"estimate by win loss ratio":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.757}},{"report by win":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"estimate by win":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"loss relation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}},{"loss percentage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.5}}]},"owner.systemuserid":{"Definition":{"Binding":{"ConceptualEntity":"Owners","ConceptualProperty":"systemuserid"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"systemuserid":{"State":"Generated"}}]},"product.product_category":{"Definition":{"Binding":{"ConceptualEntity":"Products","ConceptualProperty":"Product Category"}},"State":"Generated","Terms":[{"product category":{"State":"Generated"}},{"category":{"State":"Generated","Weight":0.97}},{"product classification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.75}},{"classification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"product class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"product group":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"product type":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"product grouping":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"product kind":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.727}},{"class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"grouping":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"kind":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}}]},"opportunity_forecast_adjustment.blank":{"Definition":{"Binding":{"ConceptualEntity":"Opportunity Forecast Adjustment","ConceptualProperty":"Blank"}},"State":"Generated","Visibility":{"Value":"Hidden","State":"Authored"},"Terms":[{"blank":{"State":"Generated"}},{"absolute":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"straight-out":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.476}},{"uncomprehending":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}},{"empty":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.452}}]},"territory.state_or_province":{"Definition":{"Binding":{"ConceptualEntity":"Territories","ConceptualProperty":"State Or Province"}},"State":"Generated","Terms":[{"state or province":{"State":"Generated"}},{"state":{"State":"Generated","Weight":0.97}},{"state province":{"State":"Generated","Weight":0.97}},{"province":{"State":"Generated","Weight":0.97}},{"location or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"province or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"territory or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"nation or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.762}},{"condition or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"country or province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.739}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"nation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.736}},{"condition":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.714}},{"location province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"OfficeThesaurus"},"Weight":0.6}}]}},"Relationships":{"opportunity_is_win":{"Binding":{"ConceptualEntity":"Opportunities"},"Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.status":{"Target":{"Entity":"opportunity.status"}}},"Conditions":[{"Target":{"Role":"opportunity.status"},"Operator":"Equals","Value":{"Text":["Won"]}}],"Phrasings":[{"Noun":{"Subject":{"Role":"opportunity"},"Nouns":[{"win":{"LastModified":"2020-02-07T17:04:29.8024148Z"}}]}}]},"opportunity_has_owner":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"owner":{"Target":{"Entity":"owner"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"owner"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"owner"},"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.99},{"Verb":{"Subject":{"Role":"owner"},"Verbs":[{"own":{"State":"Generated"}}],"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.75}]},"opportunity_has_product":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"product":{"Target":{"Entity":"product"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"product"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"product"},"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.99}]},"opportunity_has_account":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"account":{"Target":{"Entity":"account"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"account"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.99}]},"account_has_territory":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"territory":{"Target":{"Entity":"territory"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"territory"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"territory"},"Object":{"Role":"account"}},"State":"Generated","Weight":0.99}]},"account_has_industry":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"industry":{"Target":{"Entity":"industry"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"industry"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"industry"},"Object":{"Role":"account"}},"State":"Generated","Weight":0.99}]},"territory_has_state_or_province":{"Binding":{"ConceptualEntity":"Territories"},"State":"Generated","Roles":{"territory":{"Target":{"Entity":"territory"}},"territory.state_or_province":{"Target":{"Entity":"territory.state_or_province"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"territory"},"Object":{"Role":"territory.state_or_province"}},"State":"Generated","Weight":0.99},{"Verb":{"Subject":{"Role":"territory"},"Verbs":[{"state":{"State":"Generated"}}],"PrepositionalPhrases":[{"Prepositions":[{"or":{"State":"Generated"}}],"Object":{"Role":"territory.state_or_province"}}]},"State":"Generated","Weight":0.95}]},"product_has_product_category":{"Binding":{"ConceptualEntity":"Products"},"State":"Generated","Roles":{"product":{"Target":{"Entity":"product"}},"product.product_category":{"Target":{"Entity":"product.product_category"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"product"},"Object":{"Role":"product.product_category"}},"State":"Generated","Weight":0.99}]},"opportunity_has_forecast_by_win_loss_ratio":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.forecast_by_win_loss_ratio":{"Target":{"Entity":"opportunity.forecast_by_win_loss_ratio"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.forecast_by_win_loss_ratio"}},"State":"Generated","Weight":0.99}]},"opportunity_has_revenue_won_average_deal_size":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.revenue_won_average_deal_size":{"Target":{"Entity":"opportunity.revenue_won_average_deal_size"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.revenue_won_average_deal_size"}},"State":"Generated","Weight":0.99}]},"opportunity_has_days_remaining_in_pipeline_bins":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.days_remaining_in_pipeline_bins":{"Target":{"Entity":"opportunity.days_remaining_in_pipeline_bins"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.days_remaining_in_pipeline_bins"}},"State":"Generated","Weight":0.99}]},"opportunity_has_close_date":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.close_date":{"Target":{"Entity":"opportunity.close_date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.close_date"}},"State":"Generated","Weight":0.99}]},"opportunity_has_opportunity_created_on":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.opportunity_created_on":{"Target":{"Entity":"opportunity.opportunity_created_on"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.opportunity_created_on"}},"State":"Generated","Weight":0.99}]},"account_has_account_number":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.account_number":{"Target":{"Entity":"account.account_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.account_number"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"account"},"Name":{"Role":"account.account_number"}},"State":"Generated","Weight":0.99}]},"campaign_has_name":{"Binding":{"ConceptualEntity":"Campaigns"},"State":"Generated","Roles":{"campaign":{"Target":{"Entity":"campaign"}},"campaign.name":{"Target":{"Entity":"campaign.name"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"campaign"},"Object":{"Role":"campaign.name"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"campaign"},"Name":{"Role":"campaign.name"}},"State":"Generated","Weight":0.99}]},"campaign_has_type":{"Binding":{"ConceptualEntity":"Campaigns"},"State":"Generated","Roles":{"campaign":{"Target":{"Entity":"campaign"}},"campaign.type":{"Target":{"Entity":"campaign.type"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"campaign"},"Object":{"Role":"campaign.type"}},"State":"Generated","Weight":0.99}]},"territory_has_territory":{"Binding":{"ConceptualEntity":"Territories"},"State":"Generated","Roles":{"territory":{"Target":{"Entity":"territory"}},"territory.territory":{"Target":{"Entity":"territory.territory"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"territory"},"Object":{"Role":"territory.territory"}},"State":"Generated","Weight":0.99}]},"territory_has_region":{"Binding":{"ConceptualEntity":"Territories"},"State":"Generated","Roles":{"territory":{"Target":{"Entity":"territory"}},"territory.region":{"Target":{"Entity":"territory.region"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"territory"},"Object":{"Role":"territory.region"}},"State":"Generated","Weight":0.99}]},"contact_has_job_title":{"Binding":{"ConceptualEntity":"Contacts"},"State":"Generated","Roles":{"contact":{"Target":{"Entity":"contact"}},"contact.job_title":{"Target":{"Entity":"contact.job_title"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"contact"},"Object":{"Role":"contact.job_title"}},"State":"Generated","Weight":0.99}]},"contact_has_contact":{"Binding":{"ConceptualEntity":"Contacts"},"State":"Generated","Roles":{"contact":{"Target":{"Entity":"contact"}},"contact.contact":{"Target":{"Entity":"contact.contact"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"contact"},"Object":{"Role":"contact.contact"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"contact"},"Name":{"Role":"contact.contact"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_relative_month":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.relative_month":{"Target":{"Entity":"opportunity_calendar.relative_month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.relative_month"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_relative_30_day_period":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.relative_30_day_period":{"Target":{"Entity":"opportunity_calendar.relative_30_day_period"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.relative_30_day_period"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_relative_07_day_period":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.relative_07_day_period":{"Target":{"Entity":"opportunity_calendar.relative_07_day_period"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.relative_07_day_period"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_relative_day":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.relative_day":{"Target":{"Entity":"opportunity_calendar.relative_day"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.relative_day"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_relative_week":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.relative_week":{"Target":{"Entity":"opportunity_calendar.relative_week"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.relative_week"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_week":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.week":{"Target":{"Entity":"opportunity_calendar.week"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.week"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_year_week":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.year_week":{"Target":{"Entity":"opportunity_calendar.year_week"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.year_week"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_year_month":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.year_month":{"Target":{"Entity":"opportunity_calendar.year_month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.year_month"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_month":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.month":{"Target":{"Entity":"opportunity_calendar.month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.month"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_year":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.year":{"Target":{"Entity":"opportunity_calendar.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.year"}},"State":"Generated","Weight":0.99}]},"opportunity_calendar_has_date":{"Binding":{"ConceptualEntity":"Opportunity Calendar"},"State":"Generated","Roles":{"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}},"opportunity_calendar.date":{"Target":{"Entity":"opportunity_calendar.date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity_calendar.date"}},"State":"Generated","Weight":0.99}]},"product_has_product":{"Binding":{"ConceptualEntity":"Products"},"State":"Generated","Roles":{"product":{"Target":{"Entity":"product"}},"product.product":{"Target":{"Entity":"product.product"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"product"},"Object":{"Role":"product.product"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"product"},"Name":{"Role":"product.product"}},"State":"Generated","Weight":0.99}]},"owner_has_owner_goal":{"Binding":{"ConceptualEntity":"Owners"},"State":"Generated","Roles":{"owner":{"Target":{"Entity":"owner"}},"owner.owner_goal":{"Target":{"Entity":"owner.owner_goal"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"owner"},"Object":{"Role":"owner.owner_goal"}},"State":"Generated","Weight":0.99}]},"owner_has_manager":{"Binding":{"ConceptualEntity":"Owners"},"State":"Generated","Roles":{"owner":{"Target":{"Entity":"owner"}},"owner.manager":{"Target":{"Entity":"owner.manager"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"owner"},"Object":{"Role":"owner.manager"}},"State":"Generated","Weight":0.99},{"Verb":{"Subject":{"Role":"owner.manager"},"Verbs":[{"manage":{"State":"Generated"}}],"Object":{"Role":"owner"}},"State":"Generated","Weight":0.75},{"Attribute":{"Subject":{"Role":"owner.manager"},"Object":{"Role":"owner"}},"State":"Generated","Weight":0.99}]},"owner_has_owner":{"Binding":{"ConceptualEntity":"Owners"},"State":"Generated","Roles":{"owner":{"Target":{"Entity":"owner"}},"owner.owner":{"Target":{"Entity":"owner.owner"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"owner"},"Object":{"Role":"owner.owner"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"owner"},"Name":{"Role":"owner.owner"}},"State":"Generated","Weight":0.99}]},"opportunity_has_revenue_open":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.revenue_open":{"Target":{"Entity":"opportunity.revenue_open"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.revenue_open"}},"State":"Generated","Weight":0.99}]},"opportunity_has_close_":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.close_":{"Target":{"Entity":"opportunity.close_"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.close_"}},"State":"Generated","Weight":0.99}]},"opportunity_has_count_of_lost":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.count_of_lost":{"Target":{"Entity":"opportunity.count_of_lost"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.count_of_lost"}},"State":"Generated","Weight":0.99}]},"opportunity_has_count_of_won":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.count_of_won":{"Target":{"Entity":"opportunity.count_of_won"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.count_of_won"}},"State":"Generated","Weight":0.99}]},"opportunity_has_opportunity_count":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.opportunity_count":{"Target":{"Entity":"opportunity.opportunity_count"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.opportunity_count"}},"State":"Generated","Weight":0.99}]},"opportunity_has_opportunity_count_in_pipeline":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.opportunity_count_in_pipeline":{"Target":{"Entity":"opportunity.opportunity_count_in_pipeline"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.opportunity_count_in_pipeline"}},"State":"Generated","Weight":0.99}]},"opportunity_has_forecast":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.forecast":{"Target":{"Entity":"opportunity.forecast"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.forecast"}},"State":"Generated","Weight":0.99}]},"opportunity_has_forecast_":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.forecast_":{"Target":{"Entity":"opportunity.forecast_"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.forecast_"}},"State":"Generated","Weight":0.99}]},"opportunity_has_revenue_in_pipeline":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.revenue_in_pipeline":{"Target":{"Entity":"opportunity.revenue_in_pipeline"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.revenue_in_pipeline"}},"State":"Generated","Weight":0.99}]},"opportunity_has_revenue_won":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.revenue_won":{"Target":{"Entity":"opportunity.revenue_won"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.revenue_won"}},"State":"Generated","Weight":0.99}]},"opportunity_has_days_remaining_in_pipeline":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.days_remaining_in_pipeline":{"Target":{"Entity":"opportunity.days_remaining_in_pipeline"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.days_remaining_in_pipeline"}},"State":"Generated","Weight":0.99}]},"opportunity_has_rating":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.rating":{"Target":{"Entity":"opportunity.rating"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.rating"}},"State":"Generated","Weight":0.99}]},"opportunity_has_probability":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.probability":{"Target":{"Entity":"opportunity.probability"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.probability"}},"State":"Generated","Weight":0.99}]},"opportunity_has_discount":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.discount":{"Target":{"Entity":"opportunity.discount"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.discount"}},"State":"Generated","Weight":0.99}]},"opportunity_has_day_to_close":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.day_to_close":{"Target":{"Entity":"opportunity.day_to_close"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.day_to_close"}},"State":"Generated","Weight":0.99}]},"opportunity_has_weeks_open":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.weeks_open":{"Target":{"Entity":"opportunity.weeks_open"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.weeks_open"}},"State":"Generated","Weight":0.99}]},"opportunity_has_pipeline_step":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.pipeline_step":{"Target":{"Entity":"opportunity.pipeline_step"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.pipeline_step"}},"State":"Generated","Weight":0.99}]},"opportunity_has_status":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.status":{"Target":{"Entity":"opportunity.status"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.status"}},"State":"Generated","Weight":0.99}]},"opportunity_has_decision_maker_identified":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.decision_maker_identified":{"Target":{"Entity":"opportunity.decision_maker_identified"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.decision_maker_identified"}},"State":"Generated","Weight":0.99}]},"opportunity_has_purchase_process":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.purchase_process":{"Target":{"Entity":"opportunity.purchase_process"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity.purchase_process"}},"State":"Generated","Weight":0.99}]},"industry_has_industry":{"Binding":{"ConceptualEntity":"Industries"},"State":"Generated","Roles":{"industry":{"Target":{"Entity":"industry"}},"industry.industry":{"Target":{"Entity":"industry.industry"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"industry"},"Object":{"Role":"industry.industry"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"industry"},"Name":{"Role":"industry.industry"}},"State":"Generated","Weight":0.99}]},"account_has_street_hierarchy":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.street_hierarchy"}},"State":"Generated","Weight":0.99}]},"account_has_country":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.country":{"Target":{"Entity":"account.country"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.country"}},"State":"Generated","Weight":0.99}]},"account_has_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.state_or_province":{"Target":{"Entity":"account.state_or_province"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.state_or_province"}},"State":"Generated","Weight":0.99},{"Verb":{"Subject":{"Role":"account"},"Verbs":[{"state":{"State":"Generated"}}],"PrepositionalPhrases":[{"Prepositions":[{"or":{"State":"Generated"}}],"Object":{"Role":"account.state_or_province"}}]},"State":"Generated","Weight":0.95}]},"account_has_city":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.city":{"Target":{"Entity":"account.city"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.city"}},"State":"Generated","Weight":0.99}]},"account_has_account_name":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.account_name":{"Target":{"Entity":"account.account_name"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"account.account_name"}},"State":"Generated","Weight":0.99},{"Name":{"Subject":{"Role":"account"},"Name":{"Role":"account.account_name"}},"State":"Generated","Weight":0.99}]},"territory_in_state_or_province":{"Binding":{"ConceptualEntity":"Territories"},"State":"Generated","Roles":{"territory":{"Target":{"Entity":"territory"}},"territory.state_or_province":{"Target":{"Entity":"territory.state_or_province"}}},"SemanticSlots":{"Where":{"Role":"territory.state_or_province"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"territory"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"territory.state_or_province"}},"State":"Generated","Weight":0.99}]},"territory_in_region":{"Binding":{"ConceptualEntity":"Territories"},"State":"Generated","Roles":{"territory":{"Target":{"Entity":"territory"}},"territory.region":{"Target":{"Entity":"territory.region"}}},"SemanticSlots":{"Where":{"Role":"territory.region"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"territory"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"territory.region"}},"State":"Generated","Weight":0.99}]},"account_in_street_hierarchy_country":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy.country":{"Target":{"Entity":"account.street_hierarchy.country"}}},"SemanticSlots":{"Where":{"Role":"account.street_hierarchy.country"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.country"}},"State":"Generated","Weight":0.99}]},"account_in_street_hierarchy_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy.state_or_province":{"Target":{"Entity":"account.street_hierarchy.state_or_province"}}},"SemanticSlots":{"Where":{"Role":"account.street_hierarchy.state_or_province"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.state_or_province"}},"State":"Generated","Weight":0.99}]},"account_in_street_hierarchy_city":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy.city":{"Target":{"Entity":"account.street_hierarchy.city"}}},"SemanticSlots":{"Where":{"Role":"account.street_hierarchy.city"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.city"}},"State":"Generated","Weight":0.99}]},"account_in_street_hierarchy":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}}},"SemanticSlots":{"Where":{"Role":"account.street_hierarchy"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy"}},"State":"Generated","Weight":0.99}]},"account_in_country":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.country":{"Target":{"Entity":"account.country"}}},"SemanticSlots":{"Where":{"Role":"account.country"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.country"}},"State":"Generated","Weight":0.99}]},"account_in_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.state_or_province":{"Target":{"Entity":"account.state_or_province"}}},"SemanticSlots":{"Where":{"Role":"account.state_or_province"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.state_or_province"}},"State":"Generated","Weight":0.99}]},"account_in_city":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.city":{"Target":{"Entity":"account.city"}}},"SemanticSlots":{"Where":{"Role":"account.city"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"account"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.city"}},"State":"Generated","Weight":0.99}]},"account_states_or_street_hierarchy_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy.state_or_province":{"Target":{"Entity":"account.street_hierarchy.state_or_province"}}},"Phrasings":[{"Verb":{"Subject":{"Role":"account"},"Verbs":[{"state":{"State":"Generated"}}],"PrepositionalPhrases":[{"Prepositions":[{"or":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.state_or_province"}}]},"State":"Generated","Weight":0.95}]},"opportunity_is_closed_on_close_date":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.close_date":{"Target":{"Entity":"opportunity.close_date"}}},"SemanticSlots":{"When":{"Role":"opportunity.close_date"}},"Phrasings":[{"Verb":{"Verbs":[{"close":{"State":"Generated"}}],"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.9}]},"opportunity_is_created_on_opportunity_created_on":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.opportunity_created_on":{"Target":{"Entity":"opportunity.opportunity_created_on"}}},"SemanticSlots":{"When":{"Role":"opportunity.opportunity_created_on"}},"Phrasings":[{"Verb":{"Verbs":[{"create":{"State":"Generated"}}],"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.9}]},"opportunity_is_decision_maker_identified":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity.decision_maker_identified":{"Target":{"Entity":"opportunity.decision_maker_identified"}}},"Conditions":[{"Target":{"Role":"opportunity.decision_maker_identified"},"Operator":"Equals","Value":{"Boolean":[true]}}],"Phrasings":[{"Adjective":{"Subject":{"Role":"opportunity"},"Adjectives":[{"decision maker identified":{"State":"Generated"}},{"decision-maker-identified":{"State":"Generated"}}]},"State":"Generated","Weight":0.99}]},"account_is_named_street_hierarchy_account_name":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account":{"Target":{"Entity":"account"}},"account.street_hierarchy.account_name":{"Target":{"Entity":"account.street_hierarchy.account_name"}}},"Phrasings":[{"Name":{"Subject":{"Role":"account"},"Name":{"Role":"account.street_hierarchy.account_name"}},"State":"Generated","Weight":0.99}]},"opportunity_has_campaign":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"campaign":{"Target":{"Entity":"campaign"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"campaign"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"campaign"},"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.99}]},"opportunity_has_opportunity_calendar":{"Binding":{"ConceptualEntity":"Opportunities"},"State":"Generated","Roles":{"opportunity":{"Target":{"Entity":"opportunity"}},"opportunity_calendar":{"Target":{"Entity":"opportunity_calendar"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"opportunity"},"Object":{"Role":"opportunity_calendar"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"opportunity_calendar"},"Object":{"Role":"opportunity"}},"State":"Generated","Weight":0.99}]},"contact_has_account":{"Binding":{"ConceptualEntity":"Contacts"},"State":"Generated","Roles":{"contact":{"Target":{"Entity":"contact"}},"account":{"Target":{"Entity":"account"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"contact"},"Object":{"Role":"account"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"account"},"Object":{"Role":"contact"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_has_account_name":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}},"account.street_hierarchy.account_name":{"Target":{"Entity":"account.street_hierarchy.account_name"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy"},"Object":{"Role":"account.street_hierarchy.account_name"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_has_city":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}},"account.street_hierarchy.city":{"Target":{"Entity":"account.street_hierarchy.city"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy"},"Object":{"Role":"account.street_hierarchy.city"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_has_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}},"account.street_hierarchy.state_or_province":{"Target":{"Entity":"account.street_hierarchy.state_or_province"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy"},"Object":{"Role":"account.street_hierarchy.state_or_province"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_has_country":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy":{"Target":{"Entity":"account.street_hierarchy"}},"account.street_hierarchy.country":{"Target":{"Entity":"account.street_hierarchy.country"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy"},"Object":{"Role":"account.street_hierarchy.country"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_account_name_has_account_street_hierarchy_city":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy.account_name":{"Target":{"Entity":"account.street_hierarchy.account_name"}},"account.street_hierarchy.city":{"Target":{"Entity":"account.street_hierarchy.city"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy.account_name"},"Object":{"Role":"account.street_hierarchy.city"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"account.street_hierarchy.city"},"Object":{"Role":"account.street_hierarchy.account_name"}},"State":"Generated","Weight":0.99},{"Preposition":{"Subject":{"Role":"account.street_hierarchy.city"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.account_name"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_city_has_account_street_hierarchy_state_or_province":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy.city":{"Target":{"Entity":"account.street_hierarchy.city"}},"account.street_hierarchy.state_or_province":{"Target":{"Entity":"account.street_hierarchy.state_or_province"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy.city"},"Object":{"Role":"account.street_hierarchy.state_or_province"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"account.street_hierarchy.state_or_province"},"Object":{"Role":"account.street_hierarchy.city"}},"State":"Generated","Weight":0.99},{"Preposition":{"Subject":{"Role":"account.street_hierarchy.state_or_province"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.city"}},"State":"Generated","Weight":0.99}]},"account_street_hierarchy_state_or_province_has_account_street_hierarchy_country":{"Binding":{"ConceptualEntity":"Accounts"},"State":"Generated","Roles":{"account.street_hierarchy.state_or_province":{"Target":{"Entity":"account.street_hierarchy.state_or_province"}},"account.street_hierarchy.country":{"Target":{"Entity":"account.street_hierarchy.country"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"account.street_hierarchy.state_or_province"},"Object":{"Role":"account.street_hierarchy.country"}},"State":"Generated","Weight":0.99},{"Attribute":{"Subject":{"Role":"account.street_hierarchy.country"},"Object":{"Role":"account.street_hierarchy.state_or_province"}},"State":"Generated","Weight":0.99},{"Preposition":{"Subject":{"Role":"account.street_hierarchy.country"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"account.street_hierarchy.state_or_province"}},"State":"Generated","Weight":0.99}]}}}
+				contentType: json
+
+		annotation __PBI_TimeIntelligenceEnabled = 0
+
+		annotation PBI_QueryOrder = ["Accounts","Industries","Opportunities","Owners","Products","Contacts","Territories","Campaigns"]
+

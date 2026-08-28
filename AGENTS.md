@@ -21,6 +21,7 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 
 | Task | Go to | Read | Notes/skills |
 |---|---|---|---|
+| Semantic model AST / object identity | [crates/ripbi-core/](crates/ripbi-core/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Pure data; identity shared with the report AST |
 | Format ingestion (.pbix/.pbip/PBIR/TMDL) | [crates/ripbi-core/](crates/ripbi-core/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Normalize all formats to the same AST |
 | DAX lexing / reference discovery | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Zero-copy `&str` slices |
 | Dependency graph / reachability | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | `petgraph` DAG, BFS from report roots |

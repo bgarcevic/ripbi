@@ -1,0 +1,15 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "ReportSectionaad1fe93e01b608cbcaa",
+  "displayName": "Tooltip",
+  "displayOption": "FitToPage",
+  "height": 450,
+  "width": 600,
+  "pageBinding": {
+    "name": "Pod5",
+    "type": "Default",
+    "parameters": []
+  },
+  "visibility": "HiddenInViewMode",
+  "type": "Tooltip"
+}

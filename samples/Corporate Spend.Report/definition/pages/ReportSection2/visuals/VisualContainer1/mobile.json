@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.8.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 821,
+    "z": 1000,
+    "height": 405,
+    "width": 324,
+    "tabOrder": 10
+  },
+  "objects": {
+    "labels": [],
+    "mapControls": [
+      {
+        "properties": {
+          "zoom": {
+            "expr": {
+              "Literal": {
+                "Value": "1.89D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "bubbleLayer": [],
+    "filledMap": [],
+    "dataPoint": []
+  }
+}

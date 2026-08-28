@@ -1,0 +1,57 @@
+/// Dimension categorizing spend by IT Area and IT Sub Area (IT Area rolls up several IT Sub Areas). Joined to the Calculations fact table on IT Sub Area ID.
+table 'IT Area'
+	lineageTag: f6a83a88-1c66-48e7-9c60-58f3afc2dc3d
+
+	/// Label helper for drilling into the IT hierarchy. Returns 'AreaName (Area) SubAreaName (Sub Area)' when both levels are in scope, or just the level that is in scope. Handy as a title or tooltip when a visual can be at either level.
+	measure 'IT Area/Sub Area' = ```
+			
+			SWITCH ( TRUE(),
+			    ISINSCOPE('IT Area'[IT Area]) && ISINSCOPE('IT Area'[IT Sub Area]),
+			        SELECTEDVALUE('IT Area'[IT Area]) & " (Area) " & SELECTEDVALUE('IT Area'[IT Sub Area]) & " (Sub Area)",
+			    ISINSCOPE('IT Area'[IT Area]), SELECTEDVALUE('IT Area'[IT Area]),
+			    ISINSCOPE('IT Area'[IT Sub Area]), SELECTEDVALUE('IT Area'[IT Sub Area]),
+			    BLANK()
+			)
+			
+			```
+		lineageTag: 328d558c-9f07-4c15-8aab-fbf1c6527601
+
+	/// Top level of the IT taxonomy (e.g. Infrastructure, Applications). Rolls up several IT Sub Areas.
+	column 'IT Area'
+		dataType: string
+		lineageTag: 638341bc-5826-4291-b5b2-099fc233fbde
+		summarizeBy: none
+		sourceColumn: IT Area
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Detailed IT category that rolls up into IT Area (e.g. Networking, ERP).
+	column 'IT Sub Area'
+		dataType: string
+		lineageTag: 77d1b1bd-2a84-4815-8f37-7b473b18b213
+		summarizeBy: none
+		sourceColumn: IT Sub Area
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Surrogate key that joins IT Area to the Calculations fact table.
+	column 'IT Sub Area ID'
+		dataType: double
+		lineageTag: 192535ae-4927-48c8-8716-37807bd0f8ba
+		summarizeBy: none
+		sourceColumn: IT Sub Area ID
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition 'IT Area' = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\mad\Dropbox\Work\Obvience\IP\IT\Data\Clean\Data.xlsx"), null, true),
+				    Sheet = Source{[Item="IT Area",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(Sheet),
+				    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers", {{"IT Area", "IT Area"}, {"IT Sub Area", "IT Sub Area"}, {"IT Sub Area ID", "IT Sub Area ID"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"IT Area", type text}, {"IT Sub Area", type text}, {"IT Sub Area ID", type number}})
+				 in
+				    #"Changed Type"
+

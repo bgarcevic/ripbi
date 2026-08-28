@@ -1,0 +1,37 @@
+/// Calc group: apply YTD, MTD, PY, YoY, etc. to any measure.
+table 'Time Intelligence'
+	lineageTag: 1c5a08b7-26f3-4b85-a262-e4dd8e1f0db0
+
+	/// Time intelligence calculations applied to base measures
+	calculationGroup
+		precedence: 100
+
+		calculationItem Current = SELECTEDMEASURE()
+
+		calculationItem MTD = CALCULATE(SELECTEDMEASURE(), DATESMTD('Date'[Date]))
+
+		calculationItem QTD = CALCULATE(SELECTEDMEASURE(), DATESQTD('Date'[Date]))
+
+		calculationItem YTD = CALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))
+
+		calculationItem PY = CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date]))
+
+		calculationItem 'PY MTD' = CALCULATE(SELECTEDMEASURE(), DATESMTD(SAMEPERIODLASTYEAR('Date'[Date])))
+
+		calculationItem 'PY QTD' = CALCULATE(SELECTEDMEASURE(), DATESQTD(SAMEPERIODLASTYEAR('Date'[Date])))
+
+		calculationItem 'PY YTD' = CALCULATE(SELECTEDMEASURE(), DATESYTD(SAMEPERIODLASTYEAR('Date'[Date])))
+
+		calculationItem YoY = SELECTEDMEASURE() - CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date]))
+
+		calculationItem 'YoY %' = VAR __py = CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date])) RETURN DIVIDE(SELECTEDMEASURE() - __py, __py)
+
+			formatStringDefinition = "0%;-0%;0%"
+
+	/// Pick Current, MTD, QTD, YTD, PY, YoY, YoY %, etc. to transform any measure.
+	column 'Time Intelligence'
+		dataType: string
+		lineageTag: 24ec3353-688d-4afa-88f0-04056a8a59ba
+
+	partition 'Partition_Time Intelligence' = calculationGroup
+

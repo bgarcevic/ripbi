@@ -1,0 +1,52 @@
+/// Field parameter. Lets a report user switch a visual between showing variance to plan as an absolute dollar amount ([Var to Plan]) or as a percentage ([Var to Plan %]). Drop the '# / %' column onto a slicer and use it as the value on a chart to swap the metric without duplicating visuals.
+table 'Toggle for variance to plan'
+	lineageTag: a0876241-1374-4c73-b0ae-782609e1b196
+
+	/// The choice shown to users: '#' selects the dollar-value variance measure, '%' selects the percentage variance measure.
+	column '# / %'
+		lineageTag: 1c9795fa-7059-4ba4-a868-997afa64bfe8
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'Parameter Order'
+
+		relatedColumnDetails
+			groupByColumn: 'Parameter Fields'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Holds the NAMEOF() references to [Var to Plan] and [Var to Plan %] - Power BI substitutes the chosen measure at query time.
+	column 'Parameter Fields'
+		isHidden
+		lineageTag: f76d8237-bc39-4e75-9adf-fba3de2af982
+		summarizeBy: none
+		sourceColumn: [Value2]
+		sortByColumn: 'Parameter Order'
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 3,
+				  "kind": 2
+				}
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Sort order used to keep '#' before '%' in the slicer.
+	column 'Parameter Order'
+		isHidden
+		formatString: 0
+		lineageTag: 59a2ced8-fcdb-4425-9357-7a0d6eac57bf
+		summarizeBy: sum
+		sourceColumn: [Value3]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Toggle for variance to plan' = calculated
+		mode: import
+		source =
+				{
+				    ("Var to Plan", NAMEOF('Calculations'[Var to Plan]), 0),
+				    ("Var to Plan %", NAMEOF('Calculations'[Var to Plan %]), 1)
+				}
+
+	annotation PBI_Id = 64368a62398a4b8499e08068cdbe8f1b
+

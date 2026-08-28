@@ -1,0 +1,32 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 96,
+    "y": 131,
+    "z": 9000,
+    "height": 37,
+    "width": 223,
+    "tabOrder": 20
+  },
+  "objects": {
+    "general": [
+      {
+        "properties": {
+          "paragraphs": [
+            {
+              "textRuns": [
+                {
+                  "value": "Revenue Source Breakdown",
+                  "textStyle": {
+                    "fontSize": "12pt",
+                    "color": "#ffffff"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

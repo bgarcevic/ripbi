@@ -1,0 +1,189 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "CSAT - KEY - Low",
+  "name": "Bookmark8ff52be0ad40adcc11be",
+  "options": {
+    "applyOnlyToTargetVisuals": true,
+    "targetVisualNames": [
+      "85426b4385860054e0b1",
+      "eaf236615d4da7a60808",
+      "9bf340b827d05993a023",
+      "11e637939247d7ac3e07",
+      "f9f9cbd0761195a7dc50",
+      "8422cc7f55e078747dd6",
+      "648cc3b31d30ca16c027",
+      "93b35df243c1100ac01c",
+      "b5524a70b03108600607",
+      "9e3317b2eb312b87c370",
+      "affbefe1e90bce1980d1",
+      "22fce3867da06da8299c",
+      "13d11359103a71eda3e8",
+      "53fac1c01a302920a700",
+      "34d21fb000c00066757d",
+      "82d2d64c97b8e7911b6b",
+      "035287382eb2e3c89bed",
+      "7f04e601e5ed1237c312",
+      "d76a99b0aa984a739430",
+      "5ec33d30559614a9560b",
+      "cd051563e77a2a08dd49"
+    ],
+    "suppressData": true
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "ReportSectiond15514b08e969e968be1",
+    "sections": {
+      "ReportSectiond15514b08e969e968be1": {
+        "filters": {
+          "byExpr": [
+            {
+              "name": "Filter",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Industries"
+                    }
+                  },
+                  "Property": "Industry"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter6",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Owners"
+                    }
+                  },
+                  "Property": "Manager"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter5",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Owners"
+                    }
+                  },
+                  "Property": "Owner"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter3",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Products"
+                    }
+                  },
+                  "Property": "Product LOB"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter2",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Products"
+                    }
+                  },
+                  "Property": "Product"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter1",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Cases"
+                    }
+                  },
+                  "Property": "Subject"
+                }
+              },
+              "howCreated": 1
+            }
+          ]
+        },
+        "visualContainers": {},
+        "visualContainerGroups": {
+          "b536f6878a960dbc0c30": {
+            "isHidden": false,
+            "children": {
+              "2d98408f1e10542e3d29": {
+                "isHidden": false
+              },
+              "318dc4a6001572168c74": {
+                "isHidden": false
+              }
+            }
+          },
+          "85426b4385860054e0b1": {
+            "isHidden": false,
+            "children": {
+              "9bf340b827d05993a023": {
+                "isHidden": true
+              },
+              "9e3317b2eb312b87c370": {
+                "isHidden": false
+              },
+              "82d2d64c97b8e7911b6b": {
+                "isHidden": true
+              }
+            }
+          },
+          "6d852eabc105ee118887": {
+            "isHidden": false
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              },
+              "visible": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

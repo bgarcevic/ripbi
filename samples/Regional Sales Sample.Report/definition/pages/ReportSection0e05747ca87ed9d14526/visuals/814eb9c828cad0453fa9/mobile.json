@@ -1,0 +1,53 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 902,
+    "z": 1000,
+    "height": 249,
+    "width": 324,
+    "tabOrder": 10
+  },
+  "objects": {
+    "values": [],
+    "columnFormatting": [],
+    "grid": [],
+    "columnHeaders": [
+      {
+        "properties": {}
+      }
+    ],
+    "subTotals": [],
+    "rowHeaders": [
+      {
+        "properties": {
+          "unfrozen": {
+            "expr": {
+              "Literal": {
+                "Value": "true"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rowTotal": [],
+    "columnTotal": [],
+    "columnWidth": [
+      {
+        "properties": {
+          "value": {
+            "expr": {
+              "Literal": {
+                "Value": "200D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Industries.Industry"
+        }
+      }
+    ]
+  }
+}

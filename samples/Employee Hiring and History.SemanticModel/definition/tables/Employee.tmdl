@@ -1,0 +1,312 @@
+/// The workforce record that powers this model. It tracks who worked where each month and captures every hire and separation, so the business can answer questions about headcount, turnover, hiring, tenure, and workforce mix over time.
+table Employee
+	isHidden
+	lineageTag: 63799ae9-1b99-4762-ae04-59d4f66ad037
+
+	/// Total headcount for the period in scope.
+	measure Employees = CALCULATE(COUNT([EmplID]), FILTER(ALL('Date'[Period number]), 'Date'[Period number] = MAX('Date'[Period number])))
+		formatString: #,0
+		lineageTag: 01210a97-c3dc-4030-af85-0df92bea1155
+
+	/// Number of employees who left the company in the period.
+	measure Separations = CALCULATE(COUNT([EmplID]), FILTER(Employee, NOT(ISBLANK(Employee[TermDate]))))
+		formatString: #,0
+		lineageTag: 9cee6ad0-4ed6-4060-9d0a-99e6620b2a36
+
+	/// Number of employees still working at the end of the period.
+	measure Actives = CALCULATE([Employees], FILTER(Employee, ISBLANK(Employee[TermDate])))
+		formatString: #,0
+		lineageTag: 85d7360e-4032-4f77-9e4f-ebb90f83c025
+
+	/// Number of employees hired in the period.
+	measure 'New Hires' = SUM([isNewHire])
+		formatString: #,0
+		lineageTag: 2150a28c-fd38-4cd0-8461-b8529472f84a
+
+	/// Average employee tenure, in days.
+	measure 'AVG Tenure Days' = AVERAGE([TenureDays])
+		formatString: #,0
+		lineageTag: 847843f6-d136-4485-a733-e5d6591ae5cf
+
+	/// Average employee tenure, in months.
+	measure 'AVG Tenure Months' = ROUND([AVG Tenure Days]/30, 1)-1
+		formatString: 0
+		lineageTag: 6dba930b-1a70-4cbe-b4e6-1068100e9f78
+
+	/// Average employee age.
+	measure 'AVG Age' = ROUND(AVERAGE([Age]), 0)
+		lineageTag: 04f0331c-57d6-4523-af61-5612ecf2ed20
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Number of new hires in the same period one year ago - the comparison point for year-over-year hiring.
+	measure 'New Hires SPLY' = CALCULATE([New Hires],SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		lineageTag: d53f7711-4e53-4bb7-ba5a-8fd82e1404c6
+
+	/// Active headcount in the same period one year ago - the comparison point for year-over-year workforce size.
+	measure 'Actives SPLY' = CALCULATE([Actives],SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		lineageTag: 84bdbb48-7b97-4285-9774-c747379163f6
+
+	/// Separations in the same period one year ago - the comparison point for year-over-year attrition.
+	measure 'Seps SPLY' = CALCULATE([Separations],SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		lineageTag: 74a51ca4-495d-49ba-a27c-e74cf32c23db
+
+	/// Total headcount in the same period one year ago.
+	measure 'Employees SPLY' = CALCULATE(COUNT([EmplID]), FILTER(ALL('Date'[Period number]), 'Date'[Period number] = MAX('Date'[Period number])),SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		lineageTag: 5d72d359-a2ce-4e62-8c82-605f5d8879fb
+
+	/// Change in separations vs. the same period last year (positive = more people leaving).
+	measure 'Seps YoY Var' = [Separations]-[Seps SPLY]
+		formatString: #,0
+		lineageTag: 4e89664a-40aa-412e-b07b-40b99f6f552d
+
+	/// Change in active headcount vs. the same period last year (positive = workforce grew).
+	measure 'Actives YoY Var' = [Actives]-[Actives SPLY]
+		formatString: #,0
+		lineageTag: ac589e5a-1a95-4e42-94ee-0ed615fa540e
+
+	/// Change in new hires vs. the same period last year (positive = more hiring).
+	measure 'New Hires YoY Var' = [New Hires]-[New Hires SPLY]
+		formatString: #,0
+		lineageTag: fd1f1b05-5d56-4bad-81e1-dd49cc74aa84
+
+	/// Percent change in separations vs. the same period last year - shows whether attrition is trending up or down.
+	measure 'Seps YoY % Change' = DIVIDE([Seps YoY Var], [Seps SPLY])
+		formatString: #,0.0%;-#,0.0%;#,0.0%
+		lineageTag: 3a109bb7-2c23-4391-a6ce-20ce978286c3
+
+	/// Percent change in active headcount vs. the same period last year - shows workforce growth or shrinkage.
+	measure 'Actives YoY % Change' = DIVIDE([Actives YoY Var], [Actives SPLY])
+		formatString: #,0.0%;-#,0.0%;#,0.0%
+		lineageTag: de0d73ca-3cfe-4e93-a63b-1a6643c2ed9a
+
+	/// Percent change in new hires vs. the same period last year - shows whether hiring is accelerating or slowing.
+	measure 'New Hires YoY % Change' = DIVIDE([New Hires YoY Var], [New Hires SPLY])
+		formatString: #,0.0%;-#,0.0%;#,0.0%
+		lineageTag: 72d2e96f-621a-43df-8a76-ca8273685080
+
+	/// Bad hires in the same period one year ago - the comparison point for early-attrition trends.
+	measure 'Bad Hires SPLY' = CALCULATE([Bad hires],SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		lineageTag: 0b1de625-75ec-4294-a714-8f57065c755a
+
+	/// Change in bad hires vs. the same period last year (positive = more people leaving within their first 60 days).
+	measure 'Bad Hires YoY Var' = [Bad hires]-[Bad Hires SPLY]
+		formatString: #,0
+		lineageTag: e9706dd4-704e-4702-b54f-a998cf479e5f
+
+	/// Percent change in bad hires vs. the same period last year - shows whether early-attrition of new hires is getting worse.
+	measure 'Bad Hires YoY % Change' = DIVIDE([Bad Hires YoY Var], [Bad Hires SPLY])
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: dfb9718f-7919-4d21-b555-602025a508e0
+
+	/// Turnover rate: share of the active workforce that separated in the period.
+	measure 'Sep % of Active' = DIVIDE([Separations],[Actives])
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: fbff1435-b8f2-4999-ba10-0c3daa356a0f
+
+	/// Turnover rate for the same period one year ago - the comparison point for [Sep % of Active].
+	measure 'Sep % of SMLY Actives' = DIVIDE([Seps SPLY],[Actives SPLY])
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 8abf85c3-a19f-4e2d-9487-42e34b28e913
+
+	/// Bad-hire rate: share of the active workforce that came in as a bad hire.
+	measure 'Bad hires % of actives' = DIVIDE([Bad hires],[Actives])
+		formatString: 0%;-0%;0%
+		lineageTag: e4c439c2-f503-4c90-a2b4-3e1138baf3dc
+
+	/// Bad-hire rate for the same period one year ago - the comparison point for [Bad hires % of actives].
+	measure 'Bad hires % of Active SPLY' = DIVIDE([Bad Hires SPLY],[Actives SPLY])
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 1fc9db3d-1852-4b1a-8b0f-ae52d85a7f5f
+
+	/// Number of hires who left within 60 days - the standard measure of failed hires.
+	measure 'Bad hires' = sum(Employee[BadHires])
+		formatString: #,0
+		lineageTag: 5d15966c-bc08-419e-9053-9360c16aab7e
+
+	/// The snapshot month this employee record applies to.
+	column date
+		dataType: dateTime
+		isHidden
+		formatString: dd-mmm-yyyy
+		lineageTag: b592a58d-3842-4a55-8945-59e53f471cdc
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Unique employee identifier.
+	column EmplID
+		dataType: int64
+		isHidden
+		lineageTag: 051997eb-138d-40ef-8553-615cfbd581fc
+		summarizeBy: count
+		sourceColumn: EmplID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Employee's gender.
+	column Gender
+		dataType: string
+		isHidden
+		lineageTag: 5737742d-f701-48dd-8e2a-e21ce261dbd6
+		summarizeBy: none
+		sourceColumn: Gender
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Employee's age.
+	column Age
+		dataType: int64
+		isHidden
+		lineageTag: 93554c39-0b06-429b-88b2-f50fedf69c07
+		summarizeBy: sum
+		sourceColumn: Age
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Employee's ethnicity.
+	column EthnicGroup
+		dataType: string
+		isHidden
+		lineageTag: b02fa421-ff80-4cb6-9985-921c0d2a7481
+		summarizeBy: none
+		sourceColumn: EthnicGroup
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Whether the employee is Full-Time or Part-Time.
+	column FP
+		dataType: string
+		isHidden
+		lineageTag: 1d6b87b0-336b-44da-a4ac-70cd56accd30
+		summarizeBy: none
+		sourceColumn: FP
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Date the employee left the company. Empty if they were still active in the month.
+	column TermDate
+		dataType: dateTime
+		isHidden
+		formatString: dd-mmm-yyyy
+		lineageTag: 72be8ca7-8f53-496c-9ba8-a83249e90f06
+		summarizeBy: none
+		sourceColumn: TermDate
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Flag that marks the row for the month an employee was hired.
+	column isNewHire = IF(YEAR([date]) = YEAR([HireDate]) && MONTH([date])=MONTH([HireDate]), 1)
+		isHidden
+		lineageTag: ba9f7d94-e997-4d30-9273-714e4c123732
+		summarizeBy: sum
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Business unit the employee works in.
+	column BU
+		dataType: string
+		isHidden
+		lineageTag: b4fdff84-3fed-44b4-8d9a-d98666fcd583
+		summarizeBy: none
+		sourceColumn: BU
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Date the employee originally joined the company.
+	column HireDate
+		dataType: dateTime
+		isHidden
+		formatString: dd-mmm-yyyy
+		lineageTag: 4859e447-cd4c-4683-9373-43c6da347411
+		summarizeBy: none
+		sourceColumn: HireDate
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Whether the employee is paid Hourly or Salaried.
+	column PayTypeID
+		dataType: string
+		isHidden
+		lineageTag: 2f2f5131-def6-4aac-b3a5-7b238793ec49
+		summarizeBy: none
+		sourceColumn: PayTypeID
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Reason the employee left the company (only populated for separations).
+	column TermReason
+		dataType: string
+		isHidden
+		lineageTag: 5fffba74-245a-4b8d-83c3-b13d6e5a1804
+		summarizeBy: none
+		sourceColumn: TermReason
+
+		annotation SummarizationSetBy = Automatic
+
+	/// The age band the employee falls into.
+	column AgeGroupID = IF([Age]<30, 1, IF([Age]<50, 2, 3))
+		isHidden
+		lineageTag: 7a1ddc46-6870-4a4f-9e17-8eb3f7cf59d1
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// How long the employee has been with the company, in days.
+	column TenureDays = IF([date]-[HireDate]<0,[HireDate]-[date],[date]-[HireDate])
+		dataType: double
+		isHidden
+		lineageTag: 0bed3c87-3132-4c86-9ca9-062d49879474
+		summarizeBy: sum
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// How long the employee has been with the company, in months.
+	column TenureMonths = CEILING([TenureDays]/30, 1) -1
+		isHidden
+		lineageTag: 43a317e1-28a2-4655-846d-5ae946edbf7b
+		summarizeBy: sum
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Flag that marks a hire who left within 60 days - used to track early attrition of new employees.
+	column BadHires = IF(OR((([HireDate]-[TermDate])*-1)>=61,ISBLANK([TermDate])),0,1)
+		dataType: double
+		isHidden
+		lineageTag: f241b622-e9b2-44c2-b073-8124979b22c6
+		summarizeBy: sum
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition Employee = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="SELECT dateadd(year, 1, d.date) Date#(lf)  ,Market BU#(lf)  ,[EmplID]#(lf)  ,iif([Gender]='M', 'C', 'D') Gender --  ,iif([Gender]='M', 'F', 'M') Gender#(lf)  ,[Age] - (2013 - year(d.date)) Age#(lf)  ,[EthnicGroup]#(lf)  ,[FP]#(lf)  ,dateadd(year, 1, [SenDate]) HireDate#(lf)  ,p.PayTypeID#(lf)  ,null [TermDate]#(lf)  ,null [TermReason]#(lf) FROM [IP].[HR].[AllEmps] E , [HR].[Date] d , [HR].[BU] b , hr.PayGroup p --, hr.TermReason t#(lf) where d.day = 1 and e.SenDate <= d.MonthEndDate and isnull(e.termdate, '9999-01-01') >= d.MonthEndDate and d.Date < '2014-01-01'#(lf)  and p.PayGroup = e.PayGroup#(lf)  and b.UNIT = e.Unit and [EmplID] % 2 = 0#(lf)union all#(lf)--seps#(lf)SELECT dateadd(year, 1, d.date) Date#(lf)    ,Market BU#(lf)      ,[EmplID]#(lf)      ,iif([Gender]='M', 'C', 'D') Gender#(lf)      ,[Age] - (2013 - year(d.date)) Age#(lf)      ,[EthnicGroup]#(lf)      ,[FP]#(lf)      ,dateadd(year, 1,[SenDate]) HireDate#(lf)      ,p.PayTypeID#(lf)      ,dateadd(year, 1, [TermDate]) [TermDate]#(lf)      ,t.[SeparationTypeID] [TermReason]#(lf)  FROM [IP].[HR].[AllEmps] E, [HR].[Date] d , [HR].[BU] b, hr.PayGroup p , hr.TermReason t#(lf) where d.day = 1 and e.TermDate <= d.MonthEndDate and e.TermDate >= d.MonthStartDate and d.Date < '2014-01-01'#(lf)  and p.PayGroup = e.PayGroup #(lf)  and t.[Term-Discharge]= e.[Term-Discharge]#(lf)  and b.UNIT = e.Unit and [EmplID] % 2 = 0"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"date", "date"}, {"EmplID", "EmplID"}, {"Gender", "Gender"}, {"Age", "Age"}, {"EthnicGroup", "EthnicGroup"}, {"FP", "FP"}, {"TermDate", "TermDate"}, {"BU", "BU"}, {"HireDate", "HireDate"}, {"PayTypeID", "PayTypeID"}, {"TermReason", "TermReason"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"date", type datetime}, {"EmplID", Int64.Type}, {"Gender", type text}, {"Age", Int64.Type}, {"EthnicGroup", type text}, {"FP", type text}, {"TermDate", type datetime}, {"BU", type text}, {"HireDate", type datetime}, {"PayTypeID", type text}, {"TermReason", type text}})
+				in
+				    #"Changed Type"
+

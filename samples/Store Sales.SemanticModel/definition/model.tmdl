@@ -1,0 +1,24 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_QueryOrder = ["Store","Sales","Item","Fiscal calendar","District"]
+
+annotation PBI_ProTooling = ["MCP-PBIModeling","DevMode"]
+
+ref table Store
+ref table Sales
+ref table Item
+ref table 'Fiscal calendar'
+ref table District
+ref table 'ClusterMappingTable 2'
+ref table Date
+
+ref cultureInfo en-US
+

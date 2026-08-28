@@ -1,0 +1,55 @@
+/// Field parameter. Lets a report user pick which dimension to break a visual down by - Business Area, Country/Region, Sales Region, IT Area, or IT Sub Area. Put the 'Breakdown by' column on a chart axis and expose it as a slicer so one visual can pivot across many dimensions.
+table 'Toggle for breakdown'
+	lineageTag: 7491e5de-3380-41eb-aa7c-1180533b7a2f
+
+	/// The choice shown to users - Business Area, Country / Region, Sales Region, IT Area, or IT Sub Area - controlling which dimension a visual is broken down by.
+	column 'Breakdown by'
+		lineageTag: c59fdba0-17e1-4c57-8b21-0f6a3b4dc2c1
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'Parameter Order'
+
+		relatedColumnDetails
+			groupByColumn: 'Parameter Fields'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Holds the NAMEOF() references to each candidate dimension column - Power BI substitutes the chosen column at query time.
+	column 'Parameter Fields'
+		isHidden
+		lineageTag: 2907acc9-127d-4bea-a37b-2f8c56a21a59
+		summarizeBy: none
+		sourceColumn: [Value2]
+		sortByColumn: 'Parameter Order'
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 3,
+				  "kind": 2
+				}
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Sort order that keeps the dimensions in the intended sequence in the slicer.
+	column 'Parameter Order'
+		isHidden
+		formatString: 0
+		lineageTag: de312b17-1f9e-4c55-a0e0-ef624ea22fe3
+		summarizeBy: sum
+		sourceColumn: [Value3]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Toggle for breakdown' = calculated
+		mode: import
+		source =
+				{
+				    ("Business Area", NAMEOF('Business Area'[Business Area]), 0),
+				    ("Country / Region", NAMEOF('Country Region'[Country / Region]), 1),
+				    ("Sales Region", NAMEOF('Country Region'[Sales Region]), 2),
+				    ("IT Area", NAMEOF('IT Area'[IT Area]), 3),
+				    ("IT Sub Area", NAMEOF('IT Area'[IT Sub Area]), 4)
+				}
+
+	annotation PBI_Id = 962160c6457e487f80041af6757ab5cf
+

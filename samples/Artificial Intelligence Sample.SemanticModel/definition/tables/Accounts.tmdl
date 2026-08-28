@@ -1,0 +1,225 @@
+table Accounts
+	lineageTag: 22d72ed3-5ee0-4ff1-98ec-c82153839a11
+
+	column 'Account Name'
+		dataType: string
+		lineageTag: 3cc966b9-42cc-4fdc-af3e-169dbd480556
+		summarizeBy: none
+		sourceColumn: Account Name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Street
+		dataType: string
+		lineageTag: ed257708-4559-4704-a277-a67e5437a1ca
+		dataCategory: Address
+		summarizeBy: none
+		sourceColumn: Street
+
+		annotation SummarizationSetBy = Automatic
+
+	column City
+		dataType: string
+		lineageTag: 03fe1662-8e1f-438b-8060-9d043b9046e6
+		dataCategory: City
+		summarizeBy: none
+		sourceColumn: City
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'State or Province'
+		dataType: string
+		lineageTag: 9cd3b557-bebd-4d36-8435-56a6f0b45aef
+		dataCategory: StateOrProvince
+		summarizeBy: none
+		sourceColumn: State or Province
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Postal Code'
+		dataType: string
+		lineageTag: a1b5e9dc-c868-4097-bc86-8e542af90fcf
+		dataCategory: PostalCode
+		summarizeBy: none
+		sourceColumn: Postal Code
+
+		annotation SummarizationSetBy = Automatic
+
+	column Country
+		dataType: string
+		lineageTag: faed6422-f3cb-4296-8a3c-2f05b5dbdf5f
+		dataCategory: Country
+		summarizeBy: none
+		sourceColumn: Country
+
+		annotation SummarizationSetBy = Automatic
+
+	column Latitude
+		dataType: double
+		lineageTag: 6a08bf2c-bac5-425d-9811-eb63471aa479
+		dataCategory: Latitude
+		summarizeBy: none
+		sourceColumn: Latitude
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Longitude
+		dataType: double
+		lineageTag: daa13962-4554-442c-9385-64ca1ad34c46
+		dataCategory: Longitude
+		summarizeBy: none
+		sourceColumn: Longitude
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Phone
+		dataType: string
+		lineageTag: 6f78c8ae-95a1-4323-a728-bedd2d4c5e80
+		summarizeBy: none
+		sourceColumn: Phone
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Annual Revenue'
+		dataType: int64
+		formatString: 0
+		lineageTag: 2fcab8fe-6812-49ee-838d-0d55ed6b8a6d
+		summarizeBy: average
+		sourceColumn: Annual Revenue
+
+		annotation SummarizationSetBy = User
+
+	column 'Number of Employees'
+		dataType: int64
+		formatString: 0
+		lineageTag: 07e2d22a-7340-45b8-8a3f-d92467630ecf
+		summarizeBy: average
+		sourceColumn: Number of Employees
+
+		annotation SummarizationSetBy = User
+
+	column 'Account Owner'
+		dataType: string
+		isHidden
+		lineageTag: 3871f038-ee1a-403b-99a9-73ca3386dc05
+		summarizeBy: none
+		sourceColumn: Account Owner
+
+		annotation SummarizationSetBy = Automatic
+
+	column AccountID
+		dataType: string
+		lineageTag: 734e247c-6f68-417f-9361-1f660e427019
+		summarizeBy: none
+		sourceColumn: AccountID
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Industry Lookup' = LOOKUPVALUE(Industries[Industry], Industries[IndustrySeq],Accounts[IndustrySeq])
+		lineageTag: 2e717be5-31d7-4c23-8754-37f4174d134c
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column Territory
+		dataType: string
+		lineageTag: ba6df94e-b493-4e72-aaa6-9e31d515b863
+		summarizeBy: none
+		sourceColumn: Territory
+
+		annotation SummarizationSetBy = Automatic
+
+	column Region
+		dataType: string
+		lineageTag: 671dfa7b-d786-43aa-888c-93ecbb82b688
+		summarizeBy: none
+		sourceColumn: Region
+
+		annotation SummarizationSetBy = Automatic
+
+	column AccountSeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 66c11234-ed17-4d02-8e31-217caf9cf527
+		summarizeBy: none
+		sourceColumn: AccountSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column IndustrySeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 42a531d2-b4f2-4e3d-963e-f6dd4182afaa
+		summarizeBy: none
+		sourceColumn: IndustrySeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column AccountOwnerSeq
+		dataType: int64
+		formatString: 0
+		lineageTag: 035097c0-bdff-4cda-87cd-f5c2f5d5512c
+		summarizeBy: sum
+		sourceColumn: AccountOwnerSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column Industry
+		dataType: string
+		lineageTag: 84420d7c-fca7-4239-b7b2-69c44a46d862
+		summarizeBy: none
+		sourceColumn: Industry
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Account Number'
+		dataType: string
+		lineageTag: 629b3a4b-d0b0-4de6-9df4-43d950732fad
+		summarizeBy: none
+		sourceColumn: Account Number
+
+		annotation SummarizationSetBy = Automatic
+
+	hierarchy 'Location Hierarchy'
+		lineageTag: 24a41aca-6c8c-4ec3-9ed2-28a29d29958f
+
+		level Country
+			lineageTag: 5f328efb-284b-4857-a962-1bba3709bf70
+			column: Country
+
+		level 'State or Province'
+			lineageTag: 7c7521aa-caf0-4ade-bf81-f1883a581d46
+			column: 'State or Province'
+
+		level City
+			lineageTag: 8f99a6a0-3f50-40c1-bc4f-469d96abb2ba
+			column: City
+
+		level Street
+			lineageTag: da170510-06a6-473f-bd79-24065b8893f9
+			column: Street
+
+		level 'Account Name'
+			lineageTag: 413a12b7-cdcf-47ef-80b7-e70f319862ca
+			column: 'Account Name'
+
+	partition Accounts-569e2118-8ef4-4f17-9647-c9b4190bc0c8 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\misewell\OneDrive - Microsoft\Documents\GitHub\ContosoBI\Contoso - Generic\Contoso - PowerBI Source Data.xlsx"), null, true),
+				    AccountTbl_Table = Source{[Item="AccountTbl",Kind="Table"]}[Data],
+				    #"Changed Type" = Table.TransformColumnTypes(AccountTbl_Table,{{"AccountSeq", Int64.Type}, {"AccountID", type text}, {"Account Name", type text}, {"Street", type text}, {"City", type text}, {"State or Province", type any}, {"Postal Code", type text}, {"Country", type text}, {"Latitude", type number}, {"Longitude", type number}, {"Territory", type text}, {"Region", type text}, {"Phone", type text}, {"Number of Employees", Int64.Type}, {"Annual Revenue", Int64.Type}, {"IndustrySeq", Int64.Type}, {"Industry", type text}, {"AccountOwnerSeq", Int64.Type}, {"Account Owner", type text}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_QueryRelationships = {"columnCount":19,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Accounts/Changed Type.{AccountSeq,0}","Section1/Accounts/Changed Type.{Account Name,1}","Section1/Accounts/Changed Type.{AccountID,2}","Section1/Accounts/Changed Type.{Street,3}","Section1/Accounts/Changed Type.{City,4}","Section1/Accounts/Changed Type.{State or Province,5}","Section1/Accounts/Changed Type.{Postal Code,6}","Section1/Accounts/Changed Type.{Country,7}","Section1/Accounts/Changed Type.{Latitude,8}","Section1/Accounts/Changed Type.{Longitude,9}","Section1/Accounts/Changed Type.{Phone,10}","Section1/Accounts/Changed Type.{Number of Employees,11}","Section1/Accounts/Changed Type.{Annual Revenue,12}","Section1/Accounts/Changed Type.{AccountOwnerSeq,13}","Section1/Accounts/Changed Type.{IndustrySeq,14}","Section1/Accounts/Changed Type.{Account Owner,15}","Section1/Accounts/Changed Type.{Industry,16}","Section1/Accounts/Changed Type.{Territory,17}","Section1/Accounts/Changed Type.{Region,18}"],"ColumnCount":19,"KeyColumnNames":[],"ColumnIdentities":["Section1/Accounts/Changed Type.{AccountSeq,0}","Section1/Accounts/Changed Type.{Account Name,1}","Section1/Accounts/Changed Type.{AccountID,2}","Section1/Accounts/Changed Type.{Street,3}","Section1/Accounts/Changed Type.{City,4}","Section1/Accounts/Changed Type.{State or Province,5}","Section1/Accounts/Changed Type.{Postal Code,6}","Section1/Accounts/Changed Type.{Country,7}","Section1/Accounts/Changed Type.{Latitude,8}","Section1/Accounts/Changed Type.{Longitude,9}","Section1/Accounts/Changed Type.{Phone,10}","Section1/Accounts/Changed Type.{Number of Employees,11}","Section1/Accounts/Changed Type.{Annual Revenue,12}","Section1/Accounts/Changed Type.{AccountOwnerSeq,13}","Section1/Accounts/Changed Type.{IndustrySeq,14}","Section1/Accounts/Changed Type.{Account Owner,15}","Section1/Accounts/Changed Type.{Industry,16}","Section1/Accounts/Changed Type.{Territory,17}","Section1/Accounts/Changed Type.{Region,18}"],"RelationshipInfo":[]}
+
+	annotation PBI_ResultType = Table
+

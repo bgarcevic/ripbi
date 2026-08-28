@@ -1,0 +1,233 @@
+/// Central library of report measures. Organized by folder: Base Metrics, Time Intelligence, Market Performance, and Sentiment.
+table Calculations
+	lineageTag: fd98b0ae-17ff-45e5-a08f-691f202f65ea
+
+	/// Total sales revenue in the current filter context.
+	measure Revenue = SUM('Sales'[Revenue])
+		formatString: $#,0;($#,0);$0
+		displayFolder: Base Metrics
+		lineageTag: be462855-45b9-40df-946c-b9122b40699a
+
+	/// Total units sold in the current filter context.
+	measure 'Units Sold' = SUM('Sales'[Units])
+		formatString: #,0
+		displayFolder: Base Metrics
+		lineageTag: 2197c75d-e4c6-4c2a-88ed-e34ff2a01420
+
+	/// Average revenue generated per unit sold.
+	measure 'Average Revenue per Unit' = DIVIDE([Revenue], [Units Sold])
+		formatString: $#,0.00;($#,0.00);$0.00
+		displayFolder: Base Metrics
+		lineageTag: feccd8e7-d94a-40c8-ae0b-119810718e07
+
+	/// Distinct count of products with sales in the current filter context.
+	measure 'Products Sold' = DISTINCTCOUNT('Sales'[ProductID])
+		formatString: #,0
+		displayFolder: Base Metrics
+		lineageTag: 7e785b3b-c791-4963-a5d7-dd24dd19fdcd
+
+	/// Count of sales fact rows in the current filter context.
+	measure 'Sales Records' = COUNTROWS('Sales')
+		formatString: #,0
+		displayFolder: Base Metrics
+		lineageTag: beb3b070-75fd-43fa-83cf-3705ca9f458e
+
+	/// Revenue accumulated from the start of the year through the current date context.
+	measure 'Revenue YTD' = TOTALYTD([Revenue], 'Date'[Date])
+		formatString: $#,0;($#,0);$0
+		displayFolder: Time Intelligence\Revenue
+		lineageTag: 8824e44d-35a9-4c2b-a532-b06eb9492e60
+
+	/// Revenue for the equivalent period in the previous year.
+	measure 'Revenue Previous Year' = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: $#,0;($#,0);$0
+		displayFolder: Time Intelligence\Revenue
+		lineageTag: 1a54d248-5630-494e-bb1a-826a677a84a7
+
+	/// Absolute change in revenue vs. the equivalent prior-year period. When no date/year context is applied, compares the latest sales year to the prior year.
+	measure 'Revenue YoY Change' =
+			VAR HasDateContext = ISCROSSFILTERED ( 'Date' )
+			VAR LatestSalesYear = YEAR ( CALCULATE ( MAX ( 'Sales'[Date] ), REMOVEFILTERS () ) )
+			VAR CurrentRev =
+			    IF (
+			        HasDateContext,
+			        [Revenue],
+			        CALCULATE ( [Revenue], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear )
+			    )
+			VAR PrevRev =
+			    IF (
+			        HasDateContext,
+			        [Revenue Previous Year],
+			        CALCULATE ( [Revenue], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear - 1 )
+			    )
+			RETURN
+			    IF ( ISBLANK ( CurrentRev ) || ISBLANK ( PrevRev ), BLANK (), CurrentRev - PrevRev )
+		formatString: $#,0;($#,0);$0
+		displayFolder: Time Intelligence\Revenue
+		lineageTag: 3b505517-2064-4070-a73f-b0fa0e2a2b07
+
+	/// Percentage change in revenue vs. the equivalent prior-year period. When no date/year context is applied, compares the latest sales year to the prior year.
+	measure 'Revenue YoY Change %' =
+			VAR HasDateContext = ISCROSSFILTERED ( 'Date' )
+			VAR LatestSalesYear = YEAR ( CALCULATE ( MAX ( 'Sales'[Date] ), REMOVEFILTERS () ) )
+			VAR CurrentRev =
+			    IF (
+			        HasDateContext,
+			        [Revenue],
+			        CALCULATE ( [Revenue], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear )
+			    )
+			VAR PrevRev =
+			    IF (
+			        HasDateContext,
+			        [Revenue Previous Year],
+			        CALCULATE ( [Revenue], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear - 1 )
+			    )
+			RETURN
+			    IF (
+			        ISBLANK ( CurrentRev ) || ISBLANK ( PrevRev ),
+			        BLANK (),
+			        DIVIDE ( CurrentRev - PrevRev, PrevRev )
+			    )
+		formatString: 0.0%;-0.0%;0.0%
+		displayFolder: Time Intelligence\Revenue
+		lineageTag: 34cd76d1-6491-49b0-8e6e-15279ef262a7
+
+	/// Revenue over the trailing 12-month period ending on the latest date in context.
+	measure 'Revenue Rolling 12 Months' = CALCULATE([Revenue], DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -12, MONTH))
+		formatString: $#,0;($#,0);$0
+		displayFolder: Time Intelligence\Revenue
+		lineageTag: e2202979-8706-471e-97ee-1dbc1ab18809
+
+	/// Units sold for the equivalent period in the previous year.
+	measure 'Units Previous Year' = CALCULATE([Units Sold], SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: #,0
+		displayFolder: Time Intelligence\Units
+		lineageTag: 37635dad-73d7-4e71-9c37-756d67815f22
+
+	/// Absolute change in units sold vs. the equivalent prior-year period. When no date/year context is applied, compares the latest sales year to the prior year.
+	measure 'Units YoY Change' =
+			VAR HasDateContext = ISCROSSFILTERED ( 'Date' )
+			VAR LatestSalesYear = YEAR ( CALCULATE ( MAX ( 'Sales'[Date] ), REMOVEFILTERS () ) )
+			VAR CurrentUnits =
+			    IF (
+			        HasDateContext,
+			        [Units Sold],
+			        CALCULATE ( [Units Sold], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear )
+			    )
+			VAR PrevUnits =
+			    IF (
+			        HasDateContext,
+			        [Units Previous Year],
+			        CALCULATE ( [Units Sold], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear - 1 )
+			    )
+			RETURN
+			    IF ( ISBLANK ( CurrentUnits ) || ISBLANK ( PrevUnits ), BLANK (), CurrentUnits - PrevUnits )
+		formatString: #,0;(#,0);0
+		displayFolder: Time Intelligence\Units
+		lineageTag: 9fecf502-da37-4d5b-9283-af0a46b38adf
+
+	/// Percentage change in units sold vs. the equivalent prior-year period. When no date/year context is applied, compares the latest sales year to the prior year.
+	measure 'Units YoY Change %' =
+			VAR HasDateContext = ISCROSSFILTERED ( 'Date' )
+			VAR LatestSalesYear = YEAR ( CALCULATE ( MAX ( 'Sales'[Date] ), REMOVEFILTERS () ) )
+			VAR CurrentUnits =
+			    IF (
+			        HasDateContext,
+			        [Units Sold],
+			        CALCULATE ( [Units Sold], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear )
+			    )
+			VAR PrevUnits =
+			    IF (
+			        HasDateContext,
+			        [Units Previous Year],
+			        CALCULATE ( [Units Sold], REMOVEFILTERS ( 'Date' ), 'Date'[Year] = LatestSalesYear - 1 )
+			    )
+			RETURN
+			    IF (
+			        ISBLANK ( CurrentUnits ) || ISBLANK ( PrevUnits ),
+			        BLANK (),
+			        DIVIDE ( CurrentUnits - PrevUnits, PrevUnits )
+			    )
+		formatString: 0.0%;-0.0%;0.0%
+		displayFolder: Time Intelligence\Units
+		lineageTag: 5207ce3a-3b11-465b-b7e8-0520a16dd5da
+
+	/// Total market revenue while retaining non-manufacturer filters such as date, geography, and category.
+	measure 'Market Revenue' = CALCULATE([Revenue], REMOVEFILTERS('Manufacturer'), REMOVEFILTERS('Product'[Manufacturer]), REMOVEFILTERS('Product'[isVanArsdel]))
+		formatString: $#,0;($#,0);$0
+		displayFolder: Market Performance
+		lineageTag: b3dabe44-63eb-48fe-a5e8-b3b03c4ece8d
+
+	/// VanArsdel revenue while retaining non-manufacturer filters.
+	measure 'VanArsdel Revenue' = CALCULATE([Revenue], REMOVEFILTERS('Manufacturer'), REMOVEFILTERS('Product'[Manufacturer]), REMOVEFILTERS('Product'[isVanArsdel]), 'Product'[isVanArsdel] = "Yes")
+		formatString: $#,0;($#,0);$0
+		displayFolder: Market Performance
+		lineageTag: b25fc608-7434-4e3a-bf45-d9b843fa5c31
+
+	/// Combined competitor revenue while retaining non-manufacturer filters.
+	measure 'Competitor Revenue' = CALCULATE([Revenue], REMOVEFILTERS('Manufacturer'), REMOVEFILTERS('Product'[Manufacturer]), REMOVEFILTERS('Product'[isVanArsdel]), 'Product'[isVanArsdel] = "No")
+		formatString: $#,0;($#,0);$0
+		displayFolder: Market Performance
+		lineageTag: b5a44e95-99da-4f5a-996c-870a8465733c
+
+	/// VanArsdel revenue as a percentage of total market revenue.
+	measure 'VanArsdel Revenue Share' = DIVIDE([VanArsdel Revenue], [Market Revenue])
+		formatString: 0.0%;-0.0%;0.0%
+		displayFolder: Market Performance
+		lineageTag: 2e9b4028-462b-4aba-99f7-8e29c8b80b17
+
+	/// Average sentiment score in the current filter context.
+	measure 'Average Sentiment Score' = AVERAGE('Sentiment'[Score])
+		formatString: 0.0
+		displayFolder: Sentiment
+		lineageTag: af93959d-a12a-46a8-b139-4206489ef3d6
+
+	/// Average sentiment score for VanArsdel while retaining date and geography filters.
+	measure 'VanArsdel Sentiment Score' = CALCULATE([Average Sentiment Score], REMOVEFILTERS('Manufacturer'), 'Manufacturer'[Manufacturer] = "VanArsdel")
+		formatString: 0.0
+		displayFolder: Sentiment
+		lineageTag: e99e7f5b-062f-477d-b269-2d7f63e09235
+
+	/// Average sentiment score across competitors while retaining date and geography filters.
+	measure 'Competitor Sentiment Score' = CALCULATE([Average Sentiment Score], REMOVEFILTERS('Manufacturer'), 'Manufacturer'[Manufacturer] <> "VanArsdel")
+		formatString: 0.0
+		displayFolder: Sentiment
+		lineageTag: d0c282d9-4d75-4cc9-ae81-0deb37d5a19c
+
+	/// Difference between VanArsdel and competitor average sentiment scores; positive values favor VanArsdel.
+	measure 'VanArsdel Sentiment Advantage' = [VanArsdel Sentiment Score] - [Competitor Sentiment Score]
+		formatString: 0.0;-0.0;0.0
+		displayFolder: Sentiment
+		lineageTag: 6a6b8d46-2617-459d-a47e-f0ca6874b57a
+
+	/// Semantic status token driven by Units YoY Change %. Returns 'good' when > 10%, 'neutral' when between 0% and 10% inclusive, 'bad' when < 0%, and blank when there is no YoY value.
+	measure 'Units YoY Status' =
+			VAR YoY = [Units YoY Change %]
+			RETURN
+			    SWITCH (
+			        TRUE (),
+			        ISBLANK ( YoY ), "midColor",
+			        YoY > 0.10, "good",
+			        YoY >= 0, "neutral",
+			        "bad"
+			    )
+		displayFolder: Time Intelligence\Units
+		lineageTag: 8990a973-dd3e-4021-add2-21609407b5ee
+
+	/// Placeholder column so the calculations table exists. Not intended for reporting.
+	column Value
+		isHidden
+		formatString: 0
+		lineageTag: 22caaac9-142b-4269-b14b-4fefb7cbb4e5
+		summarizeBy: sum
+		isNameInferred
+		sourceColumn: [Value]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Calculations = calculated
+		mode: import
+		source = {1}
+
+	annotation PBI_Id = 759f24a2a9694bbbba47c75fe51a5583
+

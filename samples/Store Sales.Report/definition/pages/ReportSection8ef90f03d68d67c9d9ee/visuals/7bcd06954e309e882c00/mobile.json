@@ -1,0 +1,70 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 872,
+    "z": 1000,
+    "height": 512,
+    "width": 324,
+    "tabOrder": 2000
+  },
+  "objects": {
+    "grid": [],
+    "columnHeaders": [
+      {
+        "properties": {}
+      }
+    ],
+    "rowHeaders": [
+      {
+        "properties": {
+          "unfrozen": {
+            "expr": {
+              "Literal": {
+                "Value": "true"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "values": [],
+    "subTotals": [],
+    "columnFormatting": [],
+    "rowTotal": [],
+    "columnTotal": [],
+    "general": [],
+    "columnWidth": []
+  },
+  "visualContainerObjects": {
+    "title": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "10D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "background": [],
+    "stylePreset": [],
+    "visualHeader": [],
+    "subTitle": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

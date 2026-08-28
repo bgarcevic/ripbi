@@ -28,3 +28,7 @@ tarpaulin-report.*
 # Environment
 .env
 .env.local
+
+# Agent tooling — skills are tracked, scratch state is not
+/.claude/worktrees
+/.claude/settings.local.json

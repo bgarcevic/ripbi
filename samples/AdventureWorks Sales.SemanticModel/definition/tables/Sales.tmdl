@@ -1,0 +1,303 @@
+/// Sales fact table — one row per order line.
+table Sales
+	lineageTag: 4f6804ef-cf70-4c42-96c1-d1155891935b
+
+	/// Sales by promised due date.
+	measure 'Sales by Due Date' = CALCULATE([Sales], 'Date Role'[Date Role] = "By Due Date")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Date Role
+		lineageTag: c2fe3283-9d89-4bee-b219-09de50cc38c5
+
+	/// Total cost of goods sold.
+	measure Cost = SUM('Sales'[Total Product Cost])
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Core
+		lineageTag: fa78facf-eae9-47d9-bd0f-90d4e4651631
+
+	/// Sales minus Cost.
+	measure Profit = [Sales] - [Cost]
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Core
+		lineageTag: c892c8ee-eab9-4d1b-b4e8-80e9a996ea2e
+
+	/// Profit as a % of Sales.
+	measure 'Profit %' = DIVIDE([Profit], [Sales])
+		formatString: 0%;-0%;0%
+		displayFolder: Core
+		lineageTag: 14803ab6-35fb-42a1-8b94-84fe2dfe5fe8
+
+	/// Distinct sales orders.
+	measure Orders = DISTINCTCOUNT('Sales Order'[Sales Order])
+		formatString: #,0
+		displayFolder: Core
+		lineageTag: 01942245-ff6d-4e27-831e-be9f07a8cecd
+
+	/// Average revenue per order.
+	measure 'Average Sales per Order' = DIVIDE([Sales], [Orders])
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Core
+		lineageTag: 2771640c-f6f7-4c0a-acb2-dbe73f4e544a
+
+	/// Distinct customers who purchased.
+	measure Customers = DISTINCTCOUNT('Sales'[CustomerKey])
+		formatString: #,0
+		displayFolder: Core
+		lineageTag: 722190eb-c4ad-4fb8-8870-c1b7ac182285
+
+	/// Distinct products sold.
+	measure Products = DISTINCTCOUNT('Sales'[ProductKey])
+		formatString: #,0
+		displayFolder: Core
+		lineageTag: 2a7ad207-e5f4-4ada-aeac-190076b6011c
+
+	/// Sales from Jan 1 through current date.
+	measure 'Sales YTD' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "YTD")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Time Intelligence
+		lineageTag: 12e38b59-1f03-4a92-b663-dcaa2fe60b84
+
+	/// Sales from start of quarter through current date.
+	measure 'Sales QTD' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "QTD")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Time Intelligence
+		lineageTag: bc67b91b-1786-45ee-ba48-908527101fdd
+
+	/// Sales from start of month through current date.
+	measure 'Sales MTD' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "MTD")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Time Intelligence
+		lineageTag: d70a70f2-70e5-4db8-9e4c-e4ad76c20caa
+
+	/// Sales for the same period last year.
+	measure 'Sales PY' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "PY")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Time Intelligence
+		lineageTag: a3d0ec8d-d83a-4500-b90e-0dc1660ebfc8
+
+	/// Sales change vs last year.
+	measure 'Sales YoY' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "YoY")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Time Intelligence
+		lineageTag: e9d70977-9003-490b-9091-80cbc3dbe879
+
+	/// Year-over-year growth rate.
+	measure 'Sales YoY %' = CALCULATE([Sales], 'Time Intelligence'[Time Intelligence] = "YoY %")
+		formatString: 0%;-0%;0%
+		displayFolder: Time Intelligence
+		lineageTag: ec280a08-5b1e-4ff6-b8c5-5eebafb7c360
+
+	/// Total sales revenue.
+	measure Sales = SUM('Sales'[Sales Amount])
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Core
+		lineageTag: 0ad0aff2-1b17-4648-ac9d-7a86a29d946e
+
+	/// Units sold.
+	measure 'Order Quantity' = SUM('Sales'[Order Quantity (base)])
+		formatString: #,0
+		displayFolder: Core
+		lineageTag: eeda5e5b-f7c1-4ac2-99ac-f60731537f63
+
+	/// Sales by order date (default).
+	measure 'Sales by Order Date' = CALCULATE([Sales], 'Date Role'[Date Role] = "By Order Date")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Date Role
+		lineageTag: bdaef24e-54c9-451f-b9bd-aba1dc6ab8d7
+
+	/// Sales by ship date.
+	measure 'Sales by Ship Date' = CALCULATE([Sales], 'Date Role'[Date Role] = "By Ship Date")
+		formatString: "$"#,0;("$"#,0);"$"#,0
+		displayFolder: Date Role
+		lineageTag: cacb6f16-1ea2-4a0c-85dc-b83d434b45a2
+
+	/// Share of customers in the current visual (respects slicers).
+	measure 'Customers %' = DIVIDE([Customers], CALCULATE([Customers], ALLSELECTED()))
+		formatString: 0.0%;-0.0%;0.0%
+		displayFolder: Core
+		lineageTag: 916e3a72-2e05-4374-b671-f663ce481b03
+
+	column SalesOrderLineKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 8736298f-ee01-472f-b2bd-0741a6fa8425
+		summarizeBy: none
+		sourceColumn: SalesOrderLineKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column ResellerKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: bdfe23a5-0c8e-4c2d-b9b7-7abc64bc86fa
+		summarizeBy: none
+		sourceColumn: ResellerKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column CustomerKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 6bdb2403-cb9d-477b-8f6a-8a9043ae942a
+		summarizeBy: none
+		sourceColumn: CustomerKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column ProductKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 07f0420f-2e93-42b4-9536-57197a666357
+		summarizeBy: none
+		sourceColumn: ProductKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column OrderDateKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: d2133126-ba41-45e1-963f-d78a5d4d6517
+		summarizeBy: none
+		sourceColumn: OrderDateKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column DueDateKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 41d491d2-f303-44e0-8b0d-9ef3c309b588
+		summarizeBy: count
+		sourceColumn: DueDateKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column ShipDateKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 65239c70-f0a2-44d6-86bb-0504b4067881
+		summarizeBy: count
+		sourceColumn: ShipDateKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column SalesTerritoryKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: d534b7e0-9098-48db-b545-1c6dfdd99dbf
+		summarizeBy: none
+		sourceColumn: SalesTerritoryKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Order Quantity (base)'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 2dfbad20-d8b8-40e0-a1de-78c677804314
+		summarizeBy: sum
+		sourceColumn: Order Quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Unit Price'
+		dataType: double
+		isHidden
+		lineageTag: d377517e-e4b8-4f2c-b69a-0ca12b34d4a7
+		summarizeBy: sum
+		sourceColumn: Unit Price
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Extended Amount'
+		dataType: double
+		isHidden
+		lineageTag: 9f3636c7-6870-48d0-aa50-41cb5c49284c
+		summarizeBy: sum
+		sourceColumn: Extended Amount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Unit Price Discount Pct'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 7407afe7-f305-45da-8562-9f3e23af959a
+		summarizeBy: sum
+		sourceColumn: Unit Price Discount Pct
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Product Standard Cost'
+		dataType: double
+		isHidden
+		lineageTag: 9aeaf31a-022e-413e-bde5-11ae9dea0c43
+		summarizeBy: sum
+		sourceColumn: Product Standard Cost
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Total Product Cost'
+		dataType: double
+		isHidden
+		lineageTag: a8067440-5938-4b5d-90c4-7d3e04120c1f
+		summarizeBy: sum
+		sourceColumn: Total Product Cost
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'Sales Amount'
+		dataType: double
+		isHidden
+		lineageTag: de9763d5-b29f-4743-8ed4-7fcfe6768abd
+		summarizeBy: sum
+		sourceColumn: Sales Amount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition Sales-12135db7-a44d-4ce1-8b1f-bf4fa607dc66 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\jterh\OneDrive - Microsoft\_Corp Era\Power BI\AW2020 Sample\Sales\AdventureWorks Sales.xlsx"), null, true),
+				    Sales_Table = Source{[Item="Sales",Kind="Table"]}[Data],
+				    #"Changed Type" = Table.TransformColumnTypes(Sales_Table,{{"SalesOrderLineKey", Int64.Type}, {"ResellerKey", Int64.Type}, {"CustomerKey", Int64.Type}, {"ProductKey", Int64.Type}, {"OrderDateKey", Int64.Type}, {"DueDateKey", Int64.Type}, {"ShipDateKey", Int64.Type}, {"SalesTerritoryKey", Int64.Type}, {"Order Quantity", Int64.Type}, {"Unit Price", type number}, {"Extended Amount", type number}, {"Unit Price Discount Pct", Int64.Type}, {"Product Standard Cost", type number}, {"Total Product Cost", type number}, {"Sales Amount", type number}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

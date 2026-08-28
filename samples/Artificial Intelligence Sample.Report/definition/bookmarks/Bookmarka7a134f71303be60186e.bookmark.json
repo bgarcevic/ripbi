@@ -1,0 +1,150 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "Services - KPI2 - Chart",
+  "name": "Bookmarka7a134f71303be60186e",
+  "options": {
+    "targetVisualNames": [
+      "bc002eac89308303219d",
+      "3f0a5798ee4701426281",
+      "38e9bfc160ca0c7cda18",
+      "9698f07c0c1c7a42978c",
+      "386f15146d3bdca3000b",
+      "24f7ea5fbaec74e6ce25",
+      "2edcd9dad320970585d6",
+      "9ab7af17a78a23195be0",
+      "5fadf47599d7303942a4",
+      "20a7df1ecc8e7a2ba022",
+      "de6bf09c00a67d7d0a02"
+    ],
+    "suppressData": true
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "ReportSectionf8c72c41984d7c16e45c",
+    "sections": {
+      "ReportSectionf8c72c41984d7c16e45c": {
+        "filters": {
+          "byName": {
+            "Filter": {
+              "name": "Filter",
+              "type": "Categorical",
+              "filter": {
+                "Version": 2,
+                "From": [
+                  {
+                    "Name": "c",
+                    "Entity": "Case Calendar",
+                    "Type": 0
+                  }
+                ],
+                "Where": [
+                  {
+                    "Condition": {
+                      "In": {
+                        "Expressions": [
+                          {
+                            "Column": {
+                              "Expression": {
+                                "SourceRef": {
+                                  "Source": "c"
+                                }
+                              },
+                              "Property": "RELATIVE 30 DAY PERIOD"
+                            }
+                          }
+                        ],
+                        "Values": [
+                          [
+                            {
+                              "Literal": {
+                                "Value": "0D"
+                              }
+                            }
+                          ]
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Case Calendar"
+                    }
+                  },
+                  "Property": "RELATIVE 30 DAY PERIOD"
+                }
+              },
+              "howCreated": 1
+            }
+          }
+        },
+        "visualContainers": {},
+        "visualContainerGroups": {
+          "d94c641bce690d0c3ac2": {
+            "isHidden": true,
+            "children": {
+              "fe42cc03272537064000": {
+                "isHidden": true
+              },
+              "4441ca2a07d9e340315a": {
+                "isHidden": false
+              }
+            }
+          },
+          "bc002eac89308303219d": {
+            "isHidden": false,
+            "children": {
+              "3f0a5798ee4701426281": {
+                "isHidden": false
+              },
+              "2edcd9dad320970585d6": {
+                "isHidden": true
+              }
+            }
+          },
+          "1bdc02b90a9995739d22": {
+            "isHidden": false,
+            "children": {
+              "72fabc6168831b7e5d46": {
+                "isHidden": false
+              },
+              "9646780fcdc870970be0": {
+                "isHidden": false
+              }
+            }
+          },
+          "3e40f625197c739b0d0e": {
+            "isHidden": false
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              },
+              "visible": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "version": "1.1.0",
+  "diagrams": [
+    {
+      "ordinal": 0,
+      "scrollPosition": {
+        "x": 0,
+        "y": 39.098771367539257
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 595.29698925959678,
+            "y": 243.56891282667488
+          },
+          "nodeIndex": "Accounts",
+          "size": {
+            "height": 228,
+            "width": 284
+          },
+          "zIndex": 2
+        },
+        {
+          "location": {
+            "x": 0,
+            "y": 0
+          },
+          "nodeIndex": "Campaigns",
+          "size": {
+            "height": 183.13665819759916,
+            "width": 234
+          },
+          "zIndex": 3
+        },
+        {
+          "location": {
+            "x": 1414.6083222144516,
+            "y": 952.6104513554767
+          },
+          "nodeIndex": "Case Calendar",
+          "size": {
+            "height": 115,
+            "width": 251
+          },
+          "zIndex": 4
+        },
+        {
+          "location": {
+            "x": 1114.7744258590233,
+            "y": 349.24524865430374
+          },
+          "nodeIndex": "Cases",
+          "size": {
+            "height": 543,
+            "width": 262
+          },
+          "zIndex": 5
+        },
+        {
+          "location": {
+            "x": 572.68320252214687,
+            "y": 516.9933516250743
+          },
+          "nodeIndex": "Contacts",
+          "size": {
+            "height": 369,
+            "width": 277
+          },
+          "zIndex": 6
+        },
+        {
+          "location": {
+            "x": 368.71645122205479,
+            "y": 113.91321476638797
+          },
+          "nodeIndex": "Industries",
+          "size": {
+            "height": 115,
+            "width": 274
+          },
+          "zIndex": 7
+        },
+        {
+          "location": {
+            "x": 111.20099536718826,
+            "y": 324.27684134652793
+          },
+          "nodeIndex": "Opportunities",
+          "size": {
+            "height": 527,
+            "width": 256
+          },
+          "zIndex": 8
+        },
+        {
+          "location": {
+            "x": 0,
+            "y": 993.005961742672
+          },
+          "nodeIndex": "Opportunity Calendar",
+          "size": {
+            "height": 415.34413391196858,
+            "width": 277
+          },
+          "zIndex": 9
+        },
+        {
+          "location": {
+            "x": 1461.6408909644024,
+            "y": 0
+          },
+          "nodeIndex": "Opportunity Forecast Adjustment",
+          "size": {
+            "height": 129,
+            "width": 261
+          },
+          "zIndex": 10
+        },
+        {
+          "location": {
+            "x": 737.06207223119281,
+            "y": 0
+          },
+          "nodeIndex": "Owners",
+          "size": {
+            "height": 163,
+            "width": 292
+          },
+          "zIndex": 11
+        },
+        {
+          "location": {
+            "x": 602.49222319715329,
+            "y": 957.183874715871
+          },
+          "nodeIndex": "Products",
+          "size": {
+            "height": 187,
+            "width": 270
+          },
+          "zIndex": 12
+        },
+        {
+          "location": {
+            "x": 1456.6476912516864,
+            "y": 164.38190685190287
+          },
+          "nodeIndex": "Territories",
+          "size": {
+            "height": 153,
+            "width": 266
+          },
+          "zIndex": 13
+        }
+      ],
+      "name": "All tables",
+      "zoomValue": 73.740347133795083,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    }
+  ],
+  "selectedDiagram": "All tables",
+  "defaultDiagram": "All tables"
+}

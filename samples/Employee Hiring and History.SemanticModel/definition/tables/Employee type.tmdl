@@ -1,0 +1,38 @@
+/// Whether an employee is Full-Time or Part-Time. Lets reports compare workforce and hiring trends by employment status.
+table 'Employee type'
+	lineageTag: 2abe1b74-5b40-4ff6-bdf2-5ffae70039ee
+
+	/// Employee type code.
+	column 'Employee type ID'
+		dataType: string
+		isHidden
+		lineageTag: 285f005e-893b-4160-b3a5-e5f12906c30c
+		summarizeBy: none
+		sourceColumn: Employee type ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Whether the employee is Full-Time or Part-Time.
+	column 'Employee type'
+		dataType: string
+		lineageTag: 5134b507-0a27-4299-8469-af46844d374b
+		summarizeBy: none
+		sourceColumn: Employee type
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Employee type' = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="SELECT [HR].[FP].*   FROM [HR].[FP]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"FP", "FP"}, {"FPDesc", "FPDesc"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"FP", type text}, {"FPDesc", type text}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"FP", "Employee type ID"}, {"FPDesc", "Employee type"}})
+				in
+				    #"Renamed Columns1"
+
+	changedProperty = Name
+

@@ -1,0 +1,36 @@
+/// Whether an employee is paid Hourly or Salaried. Lets reports compare workforce and turnover patterns across pay structures.
+table 'Pay type'
+	lineageTag: c4c6031b-bd3a-4a72-854f-d8d9adc39500
+
+	/// Pay type code.
+	column 'Pay type ID'
+		dataType: string
+		isHidden
+		lineageTag: 8fd518c2-13e5-4b3c-bac0-8b6803ef856c
+		summarizeBy: none
+		sourceColumn: Pay type ID
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Whether the employee is paid Hourly or Salaried.
+	column 'Pay type'
+		dataType: string
+		lineageTag: 6c2fd68e-2357-4584-b27c-a0567306082d
+		summarizeBy: none
+		sourceColumn: Pay type
+
+		annotation SummarizationSetBy = Automatic
+
+	partition PayGroup = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="select distinct PayTypeID, [Hrly-Salaried] PayType#(lf)from [HR].[PayGroup]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"PayTypeID", "PayTypeID"}, {"PayType", "PayType"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"PayTypeID", type text}, {"PayType", type text}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"PayType", "Pay type"}, {"PayTypeID", "Pay type ID"}})
+				in
+				    #"Renamed Columns1"
+
+	changedProperty = Name
+

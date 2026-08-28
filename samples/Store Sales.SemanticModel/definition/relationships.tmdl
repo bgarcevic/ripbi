@@ -1,0 +1,21 @@
+relationship 3eef198b-ca6c-4ee3-a0bd-9e35b5c725b8
+	fromColumn: Store.DistrictID
+	toColumn: District.DistrictID
+
+relationship 4e8a6ba0-ddf4-46af-996a-c4b2b4dbe2bf
+	fromColumn: Sales.LocationID
+	toColumn: Store.LocationID
+
+relationship e16ca2b4-d139-4ef8-9a00-5b7616ecc5ac
+	fromColumn: Sales.ItemID
+	toColumn: Item.ItemID
+
+relationship d3e1e755-e88f-4569-bd13-f1041030ae98
+	isActive: false
+	fromColumn: Sales.ReportingPeriodID
+	toColumn: 'Fiscal calendar'.ReportingPeriodID
+
+relationship Sales_ReportingPeriodID_Date_DateKey
+	fromColumn: Sales.ReportingPeriodID
+	toColumn: Date.DateKey
+

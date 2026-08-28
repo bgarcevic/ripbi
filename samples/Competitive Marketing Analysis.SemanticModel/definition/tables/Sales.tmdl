@@ -1,0 +1,80 @@
+/// Point-of-sale fact table. One row per product/date/ZIP with units sold and revenue.
+table Sales
+	isHidden
+	lineageTag: 8ee8f468-9491-410d-a68f-7eca29929b2d
+
+	/// Foreign key to Product. Not intended for reporting.
+	column ProductID
+		dataType: int64
+		isHidden
+		lineageTag: 3cec1401-9ddd-4ebd-b03f-ff2ec2e25f1e
+		summarizeBy: none
+		sourceColumn: ProductID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Date the sale occurred.
+	column Date
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 341ae319-6880-4eaf-9c5f-8f11d78c2c8a
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// ZIP code where the sale occurred. Joins to Geo for city, state, region, and district.
+	column Zip
+		dataType: string
+		isHidden
+		lineageTag: 0db92edc-0fd9-46ee-8b82-d7915787e440
+		dataCategory: PostalCode
+		summarizeBy: none
+		sourceColumn: Zip
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Number of units sold on this transaction row.
+	column Units
+		dataType: int64
+		isHidden
+		lineageTag: 4e21c6a1-fd5c-451e-b215-ccddbbe94e92
+		summarizeBy: sum
+		sourceColumn: Units
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Sales revenue for this transaction row, in USD.
+	column Revenue
+		dataType: decimal
+		isHidden
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: b3bb9dfb-47ff-4d27-aaa3-ba9b350c919d
+		summarizeBy: sum
+		sourceColumn: Revenue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="SELECT [ProductID], dateadd(month, 6, [DATE]) [Date], [Zip], [Units], [Revenue]  FROM [SalesAndMarketing].[SalesFact]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"ProductID", "ProductID"}, {"Date", "Date"}, {"Zip", "Zip"}, {"Units", "Units"}, {"Revenue", "Revenue"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"ProductID", Int64.Type}, {"Date", type datetime}, {"Zip", type text}, {"Units", Int64.Type}, {"Revenue", type number}})
+				in
+				    #"Changed Type"
+
+	changedProperty = Name
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Exception
+

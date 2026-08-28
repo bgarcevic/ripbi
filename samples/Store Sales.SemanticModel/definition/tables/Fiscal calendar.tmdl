@@ -1,0 +1,94 @@
+/// Legacy fiscal calendar. Do not use for new visuals — use the Date table (with Fiscal Hierarchy) instead.
+table 'Fiscal calendar'
+	isHidden
+	lineageTag: 02873c55-97f7-426f-9383-442ff57c2696
+	dataCategory: Time
+
+	column ReportingPeriodID
+		dataType: int64
+		isHidden
+		lineageTag: 9a89d37d-1d78-4039-87d2-47791eb47fd0
+		summarizeBy: none
+		sourceColumn: ReportingPeriodID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Fiscal reporting period.
+	column Period
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: ed22c43e-ddd8-4208-9836-f3ca0452ed3a
+		summarizeBy: none
+		sourceColumn: Period
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Fiscal year.
+	column FiscalYear
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: ea60fd43-2d9d-4ca6-baa0-6064824be0cd
+		dataCategory: Year
+		summarizeBy: none
+		sourceColumn: FiscalYear
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Fiscal month name.
+	column FiscalMonth
+		dataType: string
+		isHidden
+		lineageTag: b092b02f-4352-49c5-8448-ac21b55b33ec
+		dataCategory: Month
+		summarizeBy: none
+		sourceColumn: FiscalMonth
+		sortByColumn: Period
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// First day of the fiscal month (month grain).
+	column Month
+		dataType: dateTime
+		isHidden
+		isKey
+		formatString: mmm-yyyy
+		lineageTag: 8338e3fb-f793-4261-bd75-3698991b7c4b
+		summarizeBy: none
+		sourceColumn: Month
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isDateTimeCustom":true}
+
+	partition 'Fiscal calendar' = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "RetailBIDW", [Query="select distinct#(lf)concat(year(dateadd(year, 2, [BusinessDayDate] )),RIGHT('0'+cast(month(dateadd(year, 2, [BusinessDayDate] )) as varchar(2)), 2), RIGHT('0'+cast(day(dateadd(year, 2, [BusinessDayDate] )) as varchar(2)), 2) ) ReportingPeriodID, #(lf)  month(dateadd(year, 2, [BusinessDayDate] )) Period, #(lf)  left(DATENAME(month, dateadd(year, 2, [BusinessDayDate] )), 3) FiscalMonth, #(lf)  year(dateadd(year, 2, [BusinessDayDate] ) ) FiscalYear, #(lf)  dateadd(year, 2, [BusinessDayDate] ) [BusinessDayDate]#(lf)from [Time_Dimension]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"ReportingPeriodID", "ReportingPeriodID"}, {"Period", "Period"}, {"FiscalYear", "FiscalYear"}, {"FiscalMonth", "FiscalMonth"}, {"BusinessDayDate", "Month"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"ReportingPeriodID", Int64.Type}, {"Period", Int64.Type}, {"FiscalYear", Int64.Type}, {"FiscalMonth", type text}, {"Month", type datetime}})
+				in
+				    #"Changed Type"
+
+	changedProperty = Name
+
+	changedProperty = IsHidden
+
