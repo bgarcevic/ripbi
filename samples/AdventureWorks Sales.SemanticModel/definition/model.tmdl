@@ -1,0 +1,28 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	discourageImplicitMeasures
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation PBI_QueryOrder = ["Customer","Date","Product","Reseller","Sales","Sales Order","Sales Territory","Category"]
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_ProTooling = ["MCP-PBIModeling","DevMode"]
+
+ref table Customer
+ref table Date
+ref table Product
+ref table Reseller
+ref table Sales
+ref table 'Sales Order'
+ref table 'Sales Territory'
+ref table Category
+ref table 'Time Intelligence'
+ref table 'Date Role'
+
+ref cultureInfo en-US
+

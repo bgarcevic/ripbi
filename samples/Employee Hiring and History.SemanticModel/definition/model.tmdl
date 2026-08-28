@@ -1,0 +1,26 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_QueryOrder = ["Business unit","Employee type","Pay type","Separation reason","Date","Employee","Ethnicity","Gender","Age"]
+
+annotation PBI_ProTooling = ["TMDLView_Desktop","MCP-PBIModeling","DevMode"]
+
+ref table 'Business unit'
+ref table 'Employee type'
+ref table 'Pay type'
+ref table 'Separation reason'
+ref table Date
+ref table Employee
+ref table Ethnicity
+ref table Gender
+ref table Age
+
+ref cultureInfo en-US
+

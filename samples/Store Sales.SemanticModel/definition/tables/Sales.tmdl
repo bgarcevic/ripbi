@@ -1,0 +1,297 @@
+/// Measure group. All sales measures live here (revenue, units, gross margin, YoY comparisons). Pick measures from this table — do not use raw columns directly.
+table Sales
+	isHidden
+	lineageTag: d14a8b76-0b9b-4daf-9df5-064bdb47e7fa
+
+	/// Sales revenue from regular (non-markdown) product sales. Respects filters and date slicers on the page.
+	measure 'Regular Sales $' = SUM([Sum_Regular_Sales_Dollars])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 4eead230-877e-4b3c-84d9-88e3c872ddf1
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Sales revenue from markdown (discounted) product sales. Respects filters and date slicers on the page.
+	measure 'Markdown Sales $' = SUM([Sum_Markdown_Sales_Dollars])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 701f562d-0e6c-4fa3-b026-10d9d0f73a20
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Total sales revenue (regular + markdown). Use as the primary revenue KPI on cards and as the value in most sales visuals.
+	measure Sales = [Regular Sales $]+[Markdown Sales $]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: f260b8d5-afd7-49da-a807-c91a810699af
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Total sales revenue for the same period one year ago. Duplicate of [Last Year Sales] — either works; prefer [Last Year Sales] for consistency.
+	measure 'Sales LY' = CALCULATE([Sales], Sales[ScenarioID]=2)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 5d66fb8f-f6f9-4bbb-bc9d-2b6cd0175b6e
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Gross margin dollars for the current selection. Pair with [Gross Margin This Year %] on the same visual.
+	measure 'Gross Margin This Year' = CALCULATE(SUM([Sum_GrossMarginAmount]), Sales[ScenarioID]=1)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 07bf192d-51d4-4c5e-9ace-3483e93553bc
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Gross margin as a percentage of sales for the current selection. Use on cards or as a target line.
+	measure 'Gross Margin This Year %' = [Gross Margin This Year]/[Sales TY]
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 5f7b86d7-d266-4dc7-be3d-d0e3fae4e17c
+
+	/// Gross margin dollars for the same period one year ago. Use for YoY margin comparisons.
+	measure 'Gross Margin Last Year' = CALCULATE(SUM([Sum_GrossMarginAmount]), Sales[ScenarioID]=2)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 8581ccb3-df82-418b-82de-116bc0f356ba
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Gross margin as a percentage of sales for the same period one year ago. Use for YoY margin % comparisons.
+	measure 'Gross Margin Last Year %' = [Gross Margin Last Year]/[Sales LY]
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 5bc65f34-eb45-471d-9300-d073c0f2212e
+
+	/// Units sold at regular price. Respects filters and date slicers on the page.
+	measure 'Regular Sales #' = SUM([Sum_Regular_Sales_Units])
+		formatString: #,0
+		lineageTag: f200ec42-04a3-412e-a344-7b01f0c17a8c
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Units sold at markdown price. Respects filters and date slicers on the page.
+	measure 'Markdown Sales #' = SUM([Sum_Markdown_Sales_Units])
+		formatString: #,0
+		lineageTag: e5a07e52-4418-4bfe-ba26-ec7da49505c6
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Total units sold (regular + markdown). Use as the primary units KPI on cards and as the value in most units visuals.
+	measure Units = [Regular Sales #]+[Markdown Sales #]
+		formatString: #,0
+		lineageTag: b269d0ea-8e1d-473c-b3b2-e6f367d0262b
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Total units sold in the same period one year ago. Use for YoY unit comparisons.
+	measure 'Units LY' = CALCULATE([Units], Sales[ScenarioID]=2)
+		formatString: #,0
+		lineageTag: 9b620973-d7dc-4615-8715-0c7d494def8f
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Total units sold for the current selection. Duplicate of [TotalUnits] — either works.
+	measure 'Units TY' = CALCULATE([Units], Sales[ScenarioID]=1)
+		formatString: #,0
+		lineageTag: fc2c6460-f275-45af-881f-f3f15ce05042
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Average revenue per unit for the current selection ($ per unit).
+	measure 'Avg $/Unit TY' = IF([Units TY]<>0, [Sales TY]/[Units TY], BLANK())
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 00d193e4-3abb-40b3-8e53-26bfdd7ad89c
+
+		annotation __PBI_SemanticLinks = [{"LinkTarget":{"TableName":"Item","TableItemName":"Category (clusters) 2","ObjectType":4},"LinkType":"UsedInGroup"}]
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Average revenue per unit for the same period one year ago ($ per unit).
+	measure 'Avg $/Unit LY' = IF([Units LY]<>0, [Sales LY]/[Units LY], BLANK())
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: d1eb5dd6-143e-4765-8289-8ae8b2dd6719
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Sales dollars minus last-year sales dollars. Duplicate of [Total Sales Variance] — either works; prefer [Total Sales Variance].
+	measure 'Total Sales Var' = [Sales TY]-[Sales LY]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 65306a23-e8f7-4306-ac67-e7cd12ecc2d9
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Sales variance vs. last year as a percentage of last year sales. Duplicate of [Total Sales Variance %] — either works; prefer [Total Sales Variance %].
+	measure 'Total Sales Var %' = IF([Sales LY]<>0, [Total Sales Var]/[Sales LY], BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 2865ae74-6bbd-4c52-8d88-43728c1a939f
+
+	/// Sales dollars per square foot of selling area. Use on cards or as a bar axis to compare store productivity.
+	measure 'Sales Per Sq Ft' = ([Sales TY]/(DISTINCTCOUNT([MonthID])*SUM(Store[SellingAreaSize])))*12
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: c186b2e3-4d3e-4e4e-acbc-3b077e7b2dc9
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Total sales revenue for the same period one year ago. Use for YoY sales comparisons.
+	measure 'Last Year Sales' = [Sales LY]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 45ac21b1-6762-477b-9f28-34af91f41b93
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Sales dollars minus last-year sales dollars. Use on cards or bar charts to show YoY dollar change.
+	measure 'Total Sales Variance' = [Total Sales Var]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 59da46ac-f0aa-4eb2-9731-dd64641a131d
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Sales variance vs. last year as a percentage of last year sales. Use on cards or as conditional formatting.
+	measure 'Total Sales Variance %' = [Total Sales Var %]
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 636e039f-be99-4bc2-9bb0-6cd5a812b9ac
+
+		annotation __PBI_SemanticLinks = [{"LinkTarget":{"TableName":"Item","TableItemName":"Category (clusters) 2","ObjectType":4},"LinkType":"UsedInGroup"}]
+
+	/// Number of stores with sales in the current selection. Use on cards or as a denominator in per-store calculations.
+	measure 'Store Count' = DISTINCTCOUNT([LocationID])
+		formatString: #,0
+		lineageTag: 1804bc3a-a1e6-461a-b001-13e43de810b2
+
+	/// Average selling price per unit for the current selection.
+	measure 'Average Unit Price' = [Avg $/Unit TY]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 3fee08d0-031c-47fa-aef5-13e4fad10528
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Average selling price per unit for the same period one year ago.
+	measure 'Average Unit Price Last Year' = [Avg $/Unit LY]
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 3dc89775-3219-4c25-906e-548f73ba6aa1
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Total sales revenue for the current selection. Duplicate of [TotalSales] and [This Year Sales] — either works; prefer [TotalSales].
+	measure 'Sales TY' = CALCULATE([Sales], Sales[ScenarioID]=1)
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: c7c793be-75ee-432c-8643-0a246531b565
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Total sales revenue for the current selection. Duplicate of [TotalSales] — either works; prefer [TotalSales].
+	measure 'This Year Sales' = [Sales TY]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: dedc0174-5268-4401-84b8-5e4131a60ce2
+
+		annotation __PBI_SemanticLinks = [{"LinkTarget":{"TableName":"Item","TableItemName":"Category (clusters) 2","ObjectType":4},"LinkType":"UsedInGroup"}]
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	column MonthID
+		dataType: int64
+		isHidden
+		lineageTag: baab3ccb-a5ff-4517-8c31-7e6f7a3e0e2b
+		summarizeBy: count
+		sourceColumn: MonthID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ItemID
+		dataType: int64
+		isHidden
+		lineageTag: 3853282e-2a0c-4a36-ac4c-ff4ce0aba510
+		summarizeBy: none
+		sourceColumn: ItemID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column LocationID
+		dataType: int64
+		isHidden
+		lineageTag: c62b04a9-e442-4fd6-8f61-f7d8b537c9b3
+		summarizeBy: none
+		sourceColumn: LocationID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Sum_GrossMarginAmount
+		dataType: double
+		isHidden
+		lineageTag: 07cbb4f5-e176-4525-938e-d8af1d6b5b23
+		summarizeBy: sum
+		sourceColumn: Sum_GrossMarginAmount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Sum_Regular_Sales_Dollars
+		dataType: double
+		isHidden
+		lineageTag: d5374e80-00f1-466c-a274-6b3cc51d9443
+		summarizeBy: sum
+		sourceColumn: Sum_Regular_Sales_Dollars
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Sum_Markdown_Sales_Dollars
+		dataType: double
+		isHidden
+		lineageTag: 1f3e455b-8050-4033-8de2-77264b5ecbd1
+		summarizeBy: sum
+		sourceColumn: Sum_Markdown_Sales_Dollars
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ScenarioID
+		dataType: int64
+		isHidden
+		lineageTag: b6908274-3bd5-4b34-b81c-eff659be3788
+		summarizeBy: count
+		sourceColumn: ScenarioID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ReportingPeriodID = [MonthID]&"01"
+		isHidden
+		lineageTag: f96c3082-dfd8-4e0c-842b-563a8fd46899
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column Sum_Regular_Sales_Units
+		dataType: double
+		isHidden
+		lineageTag: 7d34a1e2-4729-420b-a693-71c2b26b3744
+		summarizeBy: sum
+		sourceColumn: Sum_Regular_Sales_Units
+
+		annotation SummarizationSetBy = Automatic
+
+	column Sum_Markdown_Sales_Units
+		dataType: double
+		isHidden
+		lineageTag: 815bad44-11e0-4d8f-b83a-e68aaf4866d0
+		summarizeBy: sum
+		sourceColumn: Sum_Markdown_Sales_Units
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "RetailBIDW", [Query="SELECT s.[MonthID]+200 MonthID#(lf)      ,s.[ItemID]#(lf)      ,s.[LocationID]#(lf)      ,s.[Sum_GrossMarginAmount]#(lf)      ,s.[Sum_Regular_Sales_Dollars]#(lf)      ,s.[Sum_Markdown_Sales_Dollars]#(lf)      ,s.[Sum_Regular_Sales_Units]#(lf)      ,s.[Sum_Markdown_Sales_Units]#(lf)      ,s.[ScenarioID]#(lf)  FROM [dbo].[Monthly_sales] s tablesample (10 percent), IP.[Retail].[StoreDim] d #(lf)  where s.LocationID = d.[LocationID]#(lf) and MonthID+200>=concat(year(d.opendate ),RIGHT('0'+cast(month(d.opendate ) as varchar(2)), 2) )"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"MonthID", "MonthID"}, {"ItemID", "ItemID"}, {"LocationID", "LocationID"}, {"Sum_GrossMarginAmount", "Sum_GrossMarginAmount"}, {"Sum_Regular_Sales_Dollars", "Sum_Regular_Sales_Dollars"}, {"Sum_Markdown_Sales_Dollars", "Sum_Markdown_Sales_Dollars"}, {"ScenarioID", "ScenarioID"}, {"Sum_Regular_Sales_Units", "Sum_Regular_Sales_Units"}, {"Sum_Markdown_Sales_Units", "Sum_Markdown_Sales_Units"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"MonthID", Int64.Type}, {"ItemID", Int64.Type}, {"LocationID", Int64.Type}, {"Sum_GrossMarginAmount", type number}, {"Sum_Regular_Sales_Dollars", type number}, {"Sum_Markdown_Sales_Dollars", type number}, {"ScenarioID", Int64.Type}, {"Sum_Regular_Sales_Units", type number}, {"Sum_Markdown_Sales_Units", type number}})
+				in
+				    #"Changed Type"
+
+	annotation __PBI_SemanticLinks = [{"LinkTarget":{"TableName":"Item","TableItemName":"Category (clusters) 2","ObjectType":4},"LinkType":"UsedInGroup"}]
+

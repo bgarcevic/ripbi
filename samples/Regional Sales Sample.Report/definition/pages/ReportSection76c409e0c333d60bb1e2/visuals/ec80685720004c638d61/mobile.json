@@ -1,0 +1,28 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 339,
+    "z": 2000,
+    "height": 461,
+    "width": 324,
+    "tabOrder": 5
+  },
+  "objects": {
+    "keyDrivers": [
+      {
+        "properties": {
+          "selectedAnalysis": {
+            "expr": {
+              "Literal": {
+                "Value": "'keyInfluencers'"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "keyDriversDrillVisual": [],
+    "keyInfluencersVisual": []
+  }
+}

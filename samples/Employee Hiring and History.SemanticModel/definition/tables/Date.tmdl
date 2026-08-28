@@ -1,0 +1,156 @@
+/// The calendar the model runs on. Enables trending, year-over-year comparisons, and any time-based slicing (year, quarter, month, day).
+table Date
+	lineageTag: fcf95b56-e617-491e-893f-00e4597e641c
+	dataCategory: Time
+
+	/// The specific calendar day.
+	column Date
+		dataType: dateTime
+		isKey
+		formatString: dd-mmm-yyyy
+		lineageTag: ad72503a-626e-4f7f-bf6b-30637a1c5dea
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Month name (Jan, Feb, ...) for grouping and trending.
+	column Month
+		dataType: string
+		lineageTag: 44a9ad95-6530-4678-b989-9749fe691670
+		summarizeBy: none
+		sourceColumn: Month
+		sortByColumn: 'Month number'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Month of the year as a number (1-12).
+	column 'Month number'
+		dataType: int64
+		lineageTag: 69138651-3695-4545-afd4-a647cb122e7b
+		summarizeBy: none
+		sourceColumn: Month number
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Year and month combined into a reporting period label.
+	column Period
+		dataType: string
+		lineageTag: fa550177-7149-47fa-be77-554d299f042f
+		summarizeBy: none
+		sourceColumn: Period
+		sortByColumn: 'Period number'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Numeric version of the reporting period, used to keep periods in chronological order.
+	column 'Period number'
+		dataType: int64
+		lineageTag: 8234d3c8-1d33-4df9-8a6a-daaaa459afc2
+		summarizeBy: none
+		sourceColumn: Period number
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Quarter of the year as a number (1-4).
+	column Qtr
+		dataType: int64
+		lineageTag: 1fb80d69-2b87-4e88-97a9-2c3b60e7aace
+		summarizeBy: none
+		sourceColumn: Qtr
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Quarter label (Q1, Q2, ...).
+	column 'Qtr number'
+		dataType: string
+		lineageTag: 09e4ae29-92ea-42c4-a7d8-97de8dc81e21
+		summarizeBy: none
+		sourceColumn: Qtr number
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar year.
+	column Year
+		dataType: int64
+		lineageTag: 56b46769-d33d-4aa8-82f9-9824fd146251
+		summarizeBy: none
+		sourceColumn: Year
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Day of the month.
+	column Day
+		dataType: int64
+		lineageTag: 4fd1f5a8-500e-4603-b019-5e60fb3163ea
+		summarizeBy: none
+		sourceColumn: Day
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// First day of the month a date falls in.
+	column 'Month start date'
+		dataType: dateTime
+		formatString: dd-mmm-yyyy
+		lineageTag: b406a759-c35f-4f27-9ae3-c13f61f49d9c
+		summarizeBy: none
+		sourceColumn: Month start date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Last day of the month a date falls in.
+	column 'Month end date'
+		dataType: dateTime
+		formatString: dd-mmm-yyyy
+		lineageTag: 94efa1ef-6993-47f0-8e98-adbdb6de4029
+		summarizeBy: none
+		sourceColumn: Month end date
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Sequential month counter that runs across years - handy for continuous trend lines that shouldn't restart each January.
+	column 'Month increment number' = ([Year]-MIN([Year]))*12 +[Month number]
+		isHidden
+		lineageTag: c01f1989-027f-4f34-9698-4efdcc269f00
+		summarizeBy: none
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	hierarchy YQM
+		lineageTag: 2d0ba6c3-0b1b-4cea-93bd-688956e54a7c
+
+		level Year
+			lineageTag: 58deddc6-f101-4863-9fe3-151b3d07f5cb
+			column: Year
+
+		level 'Qtr number'
+			lineageTag: f4b7f26d-f884-4068-9bef-e6f1d625c3a5
+			column: 'Qtr number'
+
+		level 'Period number'
+			lineageTag: c00652af-af6c-42e5-a2a6-d408f7f8cbe8
+			column: 'Period number'
+
+	partition Date = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="SELECT [HR].[Date].*   FROM [HR].[Date]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"Date", "Date"}, {"Month", "Month"}, {"MonthNumber", "MonthNumber"}, {"Period", "Period"}, {"PeriodNumber", "PeriodNumber"}, {"Qtr", "Qtr"}, {"QtrNumber", "QtrNumber"}, {"Year", "Year"}, {"Day", "Day"}, {"MonthStartDate", "MonthStartDate"}, {"MonthEndDate", "MonthEndDate"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"Date", type datetime}, {"Month", type text}, {"MonthNumber", Int64.Type}, {"Period", type text}, {"PeriodNumber", Int64.Type}, {"Qtr", Int64.Type}, {"QtrNumber", type text}, {"Year", Int64.Type}, {"Day", Int64.Type}, {"MonthStartDate", type datetime}, {"MonthEndDate", type datetime}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"MonthEndDate", "Month end date"}, {"MonthNumber", "Month number"}, {"MonthStartDate", "Month start date"}, {"PeriodNumber", "Period number"}, {"QtrNumber", "Qtr number"}})
+				in
+				    #"Renamed Columns1"
+

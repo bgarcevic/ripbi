@@ -1,0 +1,40 @@
+/// Why someone left the company - voluntary vs. involuntary. Lets reports understand what's driving separations.
+table 'Separation reason'
+	lineageTag: 5de7782d-aec5-479c-ab3c-4d7827e6fce3
+
+	/// Separation reason code.
+	column 'Separation reason ID'
+		dataType: string
+		isHidden
+		lineageTag: a356f7f1-fb4c-4481-8758-f347246bdcf6
+		summarizeBy: none
+		sourceColumn: Separation reason ID
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Whether a departure was Voluntary or Involuntary.
+	column 'Separation reason'
+		dataType: string
+		lineageTag: d8f39dbc-5fa7-46ae-bdc9-2c855ac027b5
+		summarizeBy: none
+		sourceColumn: Separation reason
+
+		annotation SummarizationSetBy = Automatic
+
+	partition TermReason = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="SELECT distinct SeparationTypeID, [Vol-Invol] SeparationReason#(lf)  FROM [IP].[HR].[TermReason]"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"SeparationTypeID", "SeparationTypeID"}, {"SeparationReason", "SeparationReason"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"SeparationTypeID", type text}, {"SeparationReason", type text}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"SeparationReason", "Separation reason"}, {"SeparationTypeID", "Separation reason ID"}})
+				in
+				    #"Renamed Columns1"
+
+	changedProperty = Name
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Exception
+

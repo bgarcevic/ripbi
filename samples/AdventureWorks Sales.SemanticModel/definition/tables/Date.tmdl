@@ -1,0 +1,145 @@
+/// Calendar table for date slicing and time intelligence.
+table Date
+	lineageTag: 95ee9294-10b2-4f13-b9c3-b9a8775dcb91
+	dataCategory: Time
+
+	measure 'Latest year' = min('Date'[Year])
+		lineageTag: 11116018-9d8b-49e6-b8b0-31761497debd
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column DateKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 2df0955d-0bd2-4a4f-a693-64784c81ca89
+		summarizeBy: none
+		sourceColumn: DateKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar date at day grain.
+	column Date
+		dataType: dateTime
+		isKey
+		formatString: Long Date
+		lineageTag: 7b9827f8-455b-4d90-8f76-f8ab0bb01085
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	/// Fiscal year label.
+	column 'Fiscal Year'
+		dataType: string
+		lineageTag: 5244dd33-7737-41cf-8084-73d5a1048a4e
+		summarizeBy: none
+		sourceColumn: Fiscal Year
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Fiscal quarter label.
+	column 'Fiscal Quarter'
+		dataType: string
+		lineageTag: a27ddb3b-e5e2-4fa3-b72b-e8a19aba9e3d
+		summarizeBy: none
+		sourceColumn: Fiscal Quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Month + year for trend charts.
+	column Month
+		dataType: dateTime
+		formatString: mmm, yyyy
+		lineageTag: f1968792-0be4-44ab-a4ea-bd4660234ee2
+		summarizeBy: none
+		sourceColumn: Month
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation PBI_FormatHint = {"isCustom":true}
+
+	/// Long-format date for detail tables.
+	column 'Full Date'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 8f2811f4-5d52-463a-ba0a-ab55112dde9c
+		summarizeBy: none
+		sourceColumn: Full Date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column MonthKey
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 3471bbd6-6da2-44e6-8388-539d2f836aa8
+		summarizeBy: count
+		sourceColumn: MonthKey
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column Mth = FORMAT('Date'[Date],"MMM")
+		lineageTag: af400857-9481-423d-84f5-0d47080398bf
+		summarizeBy: none
+		sortByColumn: 'Mth of year'
+
+		changedProperty = SortByColumn
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Mth of year' = month([Date])
+		formatString: 0
+		lineageTag: 28bf2fba-633f-4711-8816-7389e166205f
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column Year = year('Date'[Date])
+		formatString: 0
+		lineageTag: a60eb368-503b-4677-a273-1d5262896c4c
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	hierarchy Fiscal
+		lineageTag: 2afdb215-375e-4ac4-9ba4-7541cab5d927
+
+		level Year
+			lineageTag: 25389b68-79cf-430e-b667-871a5586e0d2
+			column: 'Fiscal Year'
+
+		level Quarter
+			lineageTag: 3066c7ac-2d56-40e6-b115-fdc290d7c0c5
+			column: 'Fiscal Quarter'
+
+		level Month
+			lineageTag: 16d7fd9e-a8d1-4028-bed0-a9a5d4f6cccd
+			column: Month
+
+		level Date
+			lineageTag: ce9f58fc-7722-402e-8ba2-b88ac1b588b3
+			column: Date
+
+	partition Date-e73647eb-1ddf-4b64-b31e-61b185515f84 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\jterh\OneDrive - Microsoft\_Corp Era\Power BI\AW2020 Sample\Sales\AdventureWorks Sales.xlsx"), null, true),
+				    Date_Table = Source{[Item="Date",Kind="Table"]}[Data],
+				    #"Changed Type" = Table.TransformColumnTypes(Date_Table,{{"DateKey", Int64.Type}, {"Date", type date}, {"Fiscal Year", type text}, {"Fiscal Quarter", type text}, {"Month", type date}, {"Full Date", type date}, {"MonthKey", Int64.Type}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_ResultType = Table
+

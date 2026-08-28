@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Corporate Spend"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "20e5b535-4743-4d31-bc06-1a21c3ed81e2"
+  }
+}

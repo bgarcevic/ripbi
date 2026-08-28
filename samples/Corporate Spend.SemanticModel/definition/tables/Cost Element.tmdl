@@ -1,0 +1,53 @@
+/// Dimension describing what money was spent on, organized as a Cost Element Group -> Cost Element Sub Group -> Cost element name hierarchy. Joined to the Calculations fact table on Cost Element ID.
+table 'Cost Element'
+	lineageTag: e780de12-1106-4fac-be79-10d263008b86
+
+	/// Lowest level of the cost taxonomy - the individual line item shown in reports.
+	column 'Cost element name'
+		dataType: string
+		lineageTag: 315594ed-0daa-47bf-be41-d08ed0fb0005
+		summarizeBy: none
+		sourceColumn: Cost element name
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Top level of the cost hierarchy (e.g. Hardware, Software, Services).
+	column 'Cost Element Group'
+		dataType: string
+		lineageTag: 1c2bde5a-1b2d-438b-b550-b77303ce2a1e
+		summarizeBy: none
+		sourceColumn: Cost Element Group
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Middle level of the cost hierarchy; rolls up into Cost Element Group and is made up of Cost element name items.
+	column 'Cost Element Sub Group'
+		dataType: string
+		lineageTag: 7d6417fd-b119-4d00-96a0-31afae897568
+		summarizeBy: none
+		sourceColumn: Cost Element Sub Group
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Surrogate key that joins Cost Element to the Calculations fact table.
+	column 'Cost Element ID'
+		dataType: double
+		isHidden
+		lineageTag: cd9ae72d-6157-4e93-84c0-ab5ef803d48c
+		summarizeBy: none
+		sourceColumn: Cost Element ID
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Cost Element' = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\mad\Dropbox\Work\Obvience\IP\IT\Data\Clean\Data.xlsx"), null, true),
+				    Sheet = Source{[Item="Cost Element",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(Sheet),
+				    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers", {{"Cost element name", "Cost element name"}, {"Cost Element Group", "Cost Element Group"}, {"Cost Element Sub Group", "Cost Element Sub Group"}, {"Cost Element ID", "Cost Element ID"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"Cost element name", type text}, {"Cost Element Group", type text}, {"Cost Element Sub Group", type text}, {"Cost Element ID", type number}})
+				 in
+				    #"Changed Type"
+

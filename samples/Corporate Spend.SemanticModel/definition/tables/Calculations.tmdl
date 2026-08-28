@@ -1,0 +1,244 @@
+/// Fact table containing the corporate spend records. Each row is one scenario/day/dimension combination, with Value holding the raw amount. This table also hosts every reporting measure (Actual, Plan, LE1-3, variances, KPI helpers) and when only measure a visible it converts to a measure group and shows at the top of the Data pane so users can find it easily.
+table Calculations
+	lineageTag: 0d7c81d2-5b89-4a77-981d-d352c6981b6d
+
+	/// Year-to-date sum of the raw fact Value, scaled by 0.3 for this demo dataset. This is the base building block that every scenario measure (Actual, Plan, LE1-3) wraps with a CALCULATE filter.
+	measure Amount = TOTALYTD(SUM([Value]), 'Date'[Date])*.3
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 7f557542-cc38-46ec-b9cb-0be2dcdb9983
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// YTD spend for the Actual scenario. Equivalent to [Amount] filtered to ScenarioDescription = 'Actual'.
+	measure Actual = CALCULATE([Amount], Scenario[ScenarioDescription]="Actual")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 19e8393c-8c13-4477-b42a-d72778269933
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// YTD spend for Latest Estimate 1 (LE1) - the first in-year re-forecast. Equivalent to [Amount] filtered to ScenarioDescription = 'Latest Estimate 1'.
+	measure LE1 = CALCULATE([Amount], Scenario[ScenarioDescription]="Latest Estimate 1")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: aa7e7c78-b64b-4090-be4e-be8625265010
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// YTD spend for Latest Estimate 2 (LE2) - the second in-year re-forecast. Equivalent to [Amount] filtered to ScenarioDescription = 'Latest Estimate 2'.
+	measure LE2 = CALCULATE([Amount], Scenario[ScenarioDescription]="Latest Estimate 2")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: ff3feaee-2a0d-47f1-94e2-85f98426ad17
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// YTD spend for Latest Estimate 3 (LE3) - the third in-year re-forecast. Equivalent to [Amount] filtered to ScenarioDescription = 'Latest Estimate 3'.
+	measure LE3 = CALCULATE([Amount], Scenario[ScenarioDescription]="Latest Estimate 3")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: ea92843d-0ccb-424c-b494-486ee5a31616
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// YTD spend for the original Plan (budget) - [Amount] filtered to ScenarioDescription = 'Plan'.
+	measure Plan = CALCULATE([Amount], Scenario[ScenarioDescription]="Plan")
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 9c98b4d7-1a23-4652-8943-e426fc46bee0
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Dollar variance of Actual vs. the first Latest Estimate (LE1) forecast: [Actual] - [LE1]. Positive means Actual came in above the LE1 forecast.
+	measure 'Var to LE1' = [Actual]-[LE1]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 77f56a52-abea-46a1-b1fd-ac4b1edabf0f
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Dollar variance of Actual vs. the second Latest Estimate (LE2) forecast: [Actual] - [LE2]. Positive means Actual came in above the LE2 forecast.
+	measure 'Var to LE2' = [Actual]-[LE2]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 3e08a45a-a2dd-40f2-b0cc-2519bd7bfe97
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Dollar variance of Actual vs. the third Latest Estimate (LE3) forecast: [Actual] - [LE3]. Positive means Actual came in above the LE3 forecast.
+	measure 'Var to LE3' = [Actual]-[LE3]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: a0b3065d-cd50-4e00-84ca-be7e18a37e6f
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Dollar variance of Actual vs. Plan: [Actual] - [Plan]. Positive = overspent vs. budget, negative = under budget.
+	measure 'Var to Plan' = [Actual]-[Plan]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 250ac8af-9da5-488d-a94e-fd4de4f48f5c
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Percentage variance of Actual vs. the first Latest Estimate (LE1) forecast: [Var to LE1] / [LE1]. Safely returns blank when LE1 is 0.
+	measure 'Var to LE1 %' = DIVIDE([Var to LE1],[LE1], BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: cfce41e8-563d-4ca9-84e3-9c9704ce97c9
+
+	/// Percentage variance of Actual vs. the second Latest Estimate (LE2) forecast: [Var to LE2] / [LE2]. Safely returns blank when LE2 is 0.
+	measure 'Var to LE2 %' = DIVIDE([Var to LE2],[LE2], BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 85ff3109-1565-4ac4-82ab-5a4479354905
+
+	/// Percentage variance of Actual vs. the third Latest Estimate (LE3) forecast: [Var to LE3] / [LE3]. Safely returns blank when LE3 is 0.
+	measure 'Var to LE3 %' = DIVIDE([Var to LE3],[LE3], BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: ce6160dc-805b-495c-b207-fa5a1f470c75
+
+	/// Percentage variance of Actual vs. Plan: [Var to Plan] / [Plan]. This is the value the '# / %' field parameter picks when the user chooses '%'.
+	measure 'Var to Plan %' = DIVIDE([Var to Plan],[Plan], BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: 49a8a760-2193-4b12-9511-a8f7ec2bf5db
+
+	/// KPI measure. Value is [Actual]; target is [Plan]. Status turns green when Actual/Plan < 1 (under budget), yellow up to 1.1 (up to 10% over), red above 1.1 - shown via the 'Traffic Light - Single' KPI graphic.
+	measure Actual/Plan = [Actual]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: c1dad914-8a2f-4ee6-be9e-3eded0cda840
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Returns [Actual] only when the current context is over plan (Var to Plan % > 0); otherwise blank. Used to color/highlight the overspent portion of a chart or KPI.
+	measure 'Actual overspent' = if([Var to Plan %]>0, [Actual],blank())
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 0e10eaf2-8aab-4651-8ed8-0a13b7c9c29c
+
+	/// Returns [Actual] only when the current context is at or under plan (Var to Plan % <= 0); otherwise blank. Pair with [Actual overspent] to color a chart green/red by budget status. (Name kept as spelled in source model.)
+	measure 'Acutal within plan' = if([Var to Plan %]<=0, [Actual],blank())
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+		lineageTag: 61da5b32-0d65-45c9-bab7-896692658e66
+
+	/// Dynamic text for a card/title. Reads 'Overall, we are within our planned spending by $X' when [Var to Plan] <= 0, otherwise 'Overall, we have overspent by $X'.
+	measure 'Actual vs Plan title' = ```
+			
+			IF([Var to Plan %]<=0, 
+			"Overall, we are within our planned spending by ",
+			"Overall, we have overspent by ")
+			& format([Var to Plan], "$#,##0")
+			```
+		lineageTag: cb2d076b-ae7f-44e0-aa4f-ad4c60c97334
+
+	/// Date the spend was booked on. Hidden - use the Date dimension in reports so time intelligence works.
+	column Date
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 34a63622-82f2-4972-995d-545388835da0
+		summarizeBy: none
+		sourceColumn: Date
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Raw spend amount for the row. Hidden - report through the [Actual], [Plan], [LE1-3] measures which apply the YTD and scenario logic.
+	column Value
+		dataType: double
+		isHidden
+		lineageTag: 71e11e69-a844-4c50-b80b-001db73178e9
+		summarizeBy: sum
+		sourceColumn: Value
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Foreign key to the Department dimension.
+	column Department
+		dataType: double
+		isHidden
+		lineageTag: 4de25641-a3af-4e73-88de-0b3ff9eeb95d
+		summarizeBy: none
+		sourceColumn: Department
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Foreign key to the Cost Element dimension.
+	column 'Cost Element ID'
+		dataType: string
+		isHidden
+		lineageTag: 546e437e-8294-4390-9dff-2acce68c9195
+		summarizeBy: none
+		sourceColumn: Cost Element ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Foreign key to the Country Region dimension.
+	column 'Country/Region ID'
+		dataType: double
+		isHidden
+		lineageTag: 454d8b15-195b-4b06-bac6-7919fb950e9e
+		summarizeBy: none
+		sourceColumn: Country/Region ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Foreign key to the Business Area dimension.
+	column 'Business Area ID'
+		dataType: double
+		isHidden
+		lineageTag: 291194a1-f134-467a-8a1b-041df96a29fa
+		summarizeBy: none
+		sourceColumn: Business Area ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Foreign key to the IT Area dimension (joined at the sub-area grain).
+	column 'IT Sub Area ID'
+		dataType: double
+		isHidden
+		lineageTag: 92f4a1ed-e08d-47ec-a637-02a82bb33484
+		summarizeBy: none
+		sourceColumn: IT Sub Area ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Foreign key to the Scenario dimension; distinguishes Actual vs. Plan vs. Latest Estimate rows.
+	column 'Scenario ID'
+		dataType: double
+		isHidden
+		lineageTag: 6b4a4458-c250-4016-9c59-0aef15142370
+		summarizeBy: none
+		sourceColumn: Scenario ID
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition Calculations = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\mad\Dropbox\Work\Obvience\IP\IT\Data\Clean\Data.xlsx"), null, true),
+				    Sheet = Source{[Item="Fact",Kind="Sheet"]}[Data],
+				    #"Promoted Headers" = Table.PromoteHeaders(Sheet),
+				    #"Renamed Columns" = Table.RenameColumns(#"Promoted Headers", {{"Date", "Date"}, {"Value", "Value"}, {"Department", "Department"}, {"Cost Element ID", "Cost Element ID"}, {"Country ID", "Country/Region ID"}, {"Business Area ID", "Business Area ID"}, {"IT Sub Area ID", "IT Sub Area ID"}, {"Scenario ID", "Scenario ID"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"Date", type datetime}, {"Value", type number}, {"Department", type number}, {"Cost Element ID", type text}, {"Country/Region ID", type number}, {"Business Area ID", type number}, {"IT Sub Area ID", type number}, {"Scenario ID", type number}})
+				 in
+				    #"Changed Type"
+
+	changedProperty = Name
+

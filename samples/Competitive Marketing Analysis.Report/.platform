@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Competitive Marketing Analysis"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "51546c91-431b-44a0-877a-20b3802a4c83"
+  }
+}

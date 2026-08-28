@@ -1,0 +1,815 @@
+createOrReplace
+
+	model Model
+		culture: en-US
+		defaultPowerBIDataSourceVersion: powerBI_V3
+		sourceQueryCulture: en-US
+		dataAccessOptions
+			legacyRedirects
+			returnErrorValuesAsNull
+
+		/// The business units the company organizes work around. Lets reports break the workforce down by market, region, and the VP who owns it.
+		table 'Business unit'
+			lineageTag: b0e8fd57-87f1-48ee-b325-bc99770c8833
+
+			/// Name of the business unit / market.
+			column BU
+				dataType: string
+				isHidden
+				lineageTag: 06acea7b-1a5c-4b04-a6e5-d6cfb3875cf8
+				summarizeBy: none
+				sourceColumn: BU
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Region label with a leading sort code so regions appear in a chosen order rather than alphabetically.
+			column 'Region with order'
+				dataType: string
+				isHidden
+				lineageTag: cb33be0a-af4e-4cf3-903c-8b0a6b1d39c8
+				summarizeBy: none
+				sourceColumn: Region with order
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			/// VP (Market Director) who owns the business unit.
+			column VP
+				dataType: string
+				lineageTag: 95aed9fa-d65f-4922-918b-00ba44d387d4
+				summarizeBy: none
+				sourceColumn: VP
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Region the business unit belongs to (Americas, EMEA, APAC, ...).
+			column Region = mid([Region with order], 3,15)
+				lineageTag: efdd656d-19d2-47a1-81b1-d7c47ef78b7f
+				summarizeBy: none
+				sortByColumn: 'Region with order'
+
+				annotation SummarizationSetBy = Automatic
+
+			partition 'Business unit' = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="select distinct market BU,#(lf)  REGIONTITLE Region,#(lf)  MARKETDIRECTOR VP#(lf)from hr.bu"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"BU", "BU"}, {"Region", "RegionSeq"}, {"VP", "VP"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"BU", type text}, {"RegionSeq", type text}, {"VP", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"RegionSeq", "Region with order"}})
+						in
+						    #"Renamed Columns1"
+
+			changedProperty = Name
+
+			annotation PBI_NavigationStepName = Navigation
+
+			annotation PBI_ResultType = Exception
+
+		/// Whether an employee is Full-Time or Part-Time. Lets reports compare workforce and hiring trends by employment status.
+		table 'Employee type'
+			lineageTag: 2abe1b74-5b40-4ff6-bdf2-5ffae70039ee
+
+			/// Employee type code.
+			column 'Employee type ID'
+				dataType: string
+				isHidden
+				lineageTag: 285f005e-893b-4160-b3a5-e5f12906c30c
+				summarizeBy: none
+				sourceColumn: Employee type ID
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Whether the employee is Full-Time or Part-Time.
+			column 'Employee type'
+				dataType: string
+				lineageTag: 5134b507-0a27-4299-8469-af46844d374b
+				summarizeBy: none
+				sourceColumn: Employee type
+
+				annotation SummarizationSetBy = Automatic
+
+			partition 'Employee type' = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="SELECT [HR].[FP].*   FROM [HR].[FP]"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"FP", "FP"}, {"FPDesc", "FPDesc"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"FP", type text}, {"FPDesc", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"FP", "Employee type ID"}, {"FPDesc", "Employee type"}})
+						in
+						    #"Renamed Columns1"
+
+			changedProperty = Name
+
+		/// Whether an employee is paid Hourly or Salaried. Lets reports compare workforce and turnover patterns across pay structures.
+		table 'Pay type'
+			lineageTag: c4c6031b-bd3a-4a72-854f-d8d9adc39500
+
+			/// Pay type code.
+			column 'Pay type ID'
+				dataType: string
+				isHidden
+				lineageTag: 8fd518c2-13e5-4b3c-bac0-8b6803ef856c
+				summarizeBy: none
+				sourceColumn: Pay type ID
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Whether the employee is paid Hourly or Salaried.
+			column 'Pay type'
+				dataType: string
+				lineageTag: 6c2fd68e-2357-4584-b27c-a0567306082d
+				summarizeBy: none
+				sourceColumn: Pay type
+
+				annotation SummarizationSetBy = Automatic
+
+			partition PayGroup = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="select distinct PayTypeID, [Hrly-Salaried] PayType#(lf)from [HR].[PayGroup]"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"PayTypeID", "PayTypeID"}, {"PayType", "PayType"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"PayTypeID", type text}, {"PayType", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"PayType", "Pay type"}, {"PayTypeID", "Pay type ID"}})
+						in
+						    #"Renamed Columns1"
+
+			changedProperty = Name
+
+		/// Why someone left the company - voluntary vs. involuntary. Lets reports understand what's driving separations.
+		table 'Separation reason'
+			lineageTag: 5de7782d-aec5-479c-ab3c-4d7827e6fce3
+
+			/// Separation reason code.
+			column 'Separation reason ID'
+				dataType: string
+				isHidden
+				lineageTag: a356f7f1-fb4c-4481-8758-f347246bdcf6
+				summarizeBy: none
+				sourceColumn: Separation reason ID
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Whether a departure was Voluntary or Involuntary.
+			column 'Separation reason'
+				dataType: string
+				lineageTag: d8f39dbc-5fa7-46ae-bdc9-2c855ac027b5
+				summarizeBy: none
+				sourceColumn: Separation reason
+
+				annotation SummarizationSetBy = Automatic
+
+			partition TermReason = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="SELECT distinct SeparationTypeID, [Vol-Invol] SeparationReason#(lf)  FROM [IP].[HR].[TermReason]"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"SeparationTypeID", "SeparationTypeID"}, {"SeparationReason", "SeparationReason"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"SeparationTypeID", type text}, {"SeparationReason", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"SeparationReason", "Separation reason"}, {"SeparationTypeID", "Separation reason ID"}})
+						in
+						    #"Renamed Columns1"
+
+			changedProperty = Name
+
+			annotation PBI_NavigationStepName = Navigation
+
+			annotation PBI_ResultType = Exception
+
+		/// The calendar the model runs on. Enables trending, year-over-year comparisons, and any time-based slicing (year, quarter, month, day).
+		table Date
+			lineageTag: fcf95b56-e617-491e-893f-00e4597e641c
+			dataCategory: Time
+
+			/// The specific calendar day.
+			column Date
+				dataType: dateTime
+				isKey
+				formatString: General Date
+				lineageTag: ad72503a-626e-4f7f-bf6b-30637a1c5dea
+				summarizeBy: none
+				sourceColumn: Date
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Month name (Jan, Feb, ...) for grouping and trending.
+			column Month
+				dataType: string
+				lineageTag: 44a9ad95-6530-4678-b989-9749fe691670
+				summarizeBy: none
+				sourceColumn: Month
+				sortByColumn: 'Month number'
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Month of the year as a number (1-12).
+			column 'Month number'
+				dataType: int64
+				lineageTag: 69138651-3695-4545-afd4-a647cb122e7b
+				summarizeBy: sum
+				sourceColumn: Month number
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Year and month combined into a reporting period label.
+			column Period
+				dataType: string
+				lineageTag: fa550177-7149-47fa-be77-554d299f042f
+				summarizeBy: none
+				sourceColumn: Period
+				sortByColumn: 'Period number'
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Numeric version of the reporting period, used to keep periods in chronological order.
+			column 'Period number'
+				dataType: int64
+				lineageTag: 8234d3c8-1d33-4df9-8a6a-daaaa459afc2
+				summarizeBy: sum
+				sourceColumn: Period number
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Quarter of the year as a number (1-4).
+			column Qtr
+				dataType: int64
+				lineageTag: 1fb80d69-2b87-4e88-97a9-2c3b60e7aace
+				summarizeBy: sum
+				sourceColumn: Qtr
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Quarter label (Q1, Q2, ...).
+			column QtrNumber
+				dataType: string
+				lineageTag: 09e4ae29-92ea-42c4-a7d8-97de8dc81e21
+				summarizeBy: none
+				sourceColumn: QtrNumber
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Calendar year.
+			column Year
+				dataType: int64
+				lineageTag: 56b46769-d33d-4aa8-82f9-9824fd146251
+				summarizeBy: sum
+				sourceColumn: Year
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Day of the month.
+			column Day
+				dataType: int64
+				lineageTag: 4fd1f5a8-500e-4603-b019-5e60fb3163ea
+				summarizeBy: sum
+				sourceColumn: Day
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// First day of the month a date falls in.
+			column 'Month start date'
+				dataType: dateTime
+				formatString: General Date
+				lineageTag: b406a759-c35f-4f27-9ae3-c13f61f49d9c
+				summarizeBy: none
+				sourceColumn: Month start date
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Last day of the month a date falls in.
+			column 'Month end date'
+				dataType: dateTime
+				formatString: General Date
+				lineageTag: 94efa1ef-6993-47f0-8e98-adbdb6de4029
+				summarizeBy: none
+				sourceColumn: Month end date
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Sequential month counter that runs across years - handy for continuous trend lines that shouldn't restart each January.
+			column MonthIncrementNumber = ([Year]-MIN([Year]))*12 +[Month number]
+				isHidden
+				lineageTag: c01f1989-027f-4f34-9698-4efdcc269f00
+				summarizeBy: sum
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			hierarchy YQM
+				lineageTag: 2d0ba6c3-0b1b-4cea-93bd-688956e54a7c
+
+				level Year
+					lineageTag: 58deddc6-f101-4863-9fe3-151b3d07f5cb
+					column: Year
+
+				level QtrNumber
+					lineageTag: f4b7f26d-f884-4068-9bef-e6f1d625c3a5
+					column: QtrNumber
+
+				level 'Period number'
+					lineageTag: c00652af-af6c-42e5-a2a6-d408f7f8cbe8
+					column: 'Period number'
+
+			partition Date = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="SELECT [HR].[Date].*   FROM [HR].[Date]"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"Date", "Date"}, {"Month", "Month"}, {"MonthNumber", "MonthNumber"}, {"Period", "Period"}, {"PeriodNumber", "PeriodNumber"}, {"Qtr", "Qtr"}, {"QtrNumber", "QtrNumber"}, {"Year", "Year"}, {"Day", "Day"}, {"MonthStartDate", "MonthStartDate"}, {"MonthEndDate", "MonthEndDate"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"Date", type datetime}, {"Month", type text}, {"MonthNumber", Int64.Type}, {"Period", type text}, {"PeriodNumber", Int64.Type}, {"Qtr", Int64.Type}, {"QtrNumber", type text}, {"Year", Int64.Type}, {"Day", Int64.Type}, {"MonthStartDate", type datetime}, {"MonthEndDate", type datetime}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"MonthEndDate", "Month end date"}, {"MonthNumber", "Month number"}, {"MonthStartDate", "Month start date"}, {"PeriodNumber", "Period number"}})
+						in
+						    #"Renamed Columns1"
+
+		/// The workforce record that powers this model. It tracks who worked where each month and captures every hire and separation, so the business can answer questions about headcount, turnover, hiring, tenure, and workforce mix over time.
+		table Employee
+			isHidden
+			lineageTag: 63799ae9-1b99-4762-ae04-59d4f66ad037
+
+			/// Total headcount for the period in scope.
+			measure Employees = CALCULATE(COUNT([EmplID]), FILTER(ALL('Date'[Period number]), 'Date'[Period number] = MAX('Date'[Period number])))
+				formatString: #,0
+				lineageTag: 01210a97-c3dc-4030-af85-0df92bea1155
+
+			/// Number of employees who left the company in the period.
+			measure Separations = CALCULATE(COUNT([EmplID]), FILTER(Employee, NOT(ISBLANK(Employee[TermDate]))))
+				formatString: #,0
+				lineageTag: 9cee6ad0-4ed6-4060-9d0a-99e6620b2a36
+
+			/// Number of employees still working at the end of the period.
+			measure Actives = CALCULATE([Employees], FILTER(Employee, ISBLANK(Employee[TermDate])))
+				formatString: #,0
+				lineageTag: 85d7360e-4032-4f77-9e4f-ebb90f83c025
+
+			/// Number of employees hired in the period.
+			measure 'New Hires' = SUM([isNewHire])
+				formatString: #,0
+				lineageTag: 2150a28c-fd38-4cd0-8461-b8529472f84a
+
+			/// Average employee tenure, in days.
+			measure 'AVG Tenure Days' = AVERAGE([TenureDays])
+				formatString: #,0
+				lineageTag: 847843f6-d136-4485-a733-e5d6591ae5cf
+
+			/// Average employee tenure, in months.
+			measure 'AVG Tenure Months' = ROUND([AVG Tenure Days]/30, 1)-1
+				formatString: 0
+				lineageTag: 6dba930b-1a70-4cbe-b4e6-1068100e9f78
+
+			/// Average employee age.
+			measure 'AVG Age' = ROUND(AVERAGE([Age]), 0)
+				lineageTag: 04f0331c-57d6-4523-af61-5612ecf2ed20
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Number of new hires in the same period one year ago - the comparison point for year-over-year hiring.
+			measure 'New Hires SPLY' = CALCULATE([New Hires],SAMEPERIODLASTYEAR('Date'[Date]))
+				formatString: #,0
+				lineageTag: d53f7711-4e53-4bb7-ba5a-8fd82e1404c6
+
+			/// Active headcount in the same period one year ago - the comparison point for year-over-year workforce size.
+			measure 'Actives SPLY' = CALCULATE([Actives],SAMEPERIODLASTYEAR('Date'[Date]))
+				formatString: #,0
+				lineageTag: 84bdbb48-7b97-4285-9774-c747379163f6
+
+			/// Separations in the same period one year ago - the comparison point for year-over-year attrition.
+			measure 'Seps SPLY' = CALCULATE([Separations],SAMEPERIODLASTYEAR('Date'[Date]))
+				formatString: #,0
+				lineageTag: 74a51ca4-495d-49ba-a27c-e74cf32c23db
+
+			/// Total headcount in the same period one year ago.
+			measure 'Employees SPLY' = CALCULATE(COUNT([EmplID]), FILTER(ALL('Date'[Period number]), 'Date'[Period number] = MAX('Date'[Period number])),SAMEPERIODLASTYEAR('Date'[Date]))
+				formatString: #,0
+				lineageTag: 5d72d359-a2ce-4e62-8c82-605f5d8879fb
+
+			/// Change in separations vs. the same period last year (positive = more people leaving).
+			measure 'Seps YoY Var' = [Separations]-[Seps SPLY]
+				formatString: #,0
+				lineageTag: 4e89664a-40aa-412e-b07b-40b99f6f552d
+
+			/// Change in active headcount vs. the same period last year (positive = workforce grew).
+			measure 'Actives YoY Var' = [Actives]-[Actives SPLY]
+				formatString: #,0
+				lineageTag: ac589e5a-1a95-4e42-94ee-0ed615fa540e
+
+			/// Change in new hires vs. the same period last year (positive = more hiring).
+			measure 'New Hires YoY Var' = [New Hires]-[New Hires SPLY]
+				formatString: #,0
+				lineageTag: fd1f1b05-5d56-4bad-81e1-dd49cc74aa84
+
+			/// Percent change in separations vs. the same period last year - shows whether attrition is trending up or down.
+			measure 'Seps YoY % Change' = DIVIDE([Seps YoY Var], [Seps SPLY])
+				formatString: #,0.0%;-#,0.0%;#,0.0%
+				lineageTag: 3a109bb7-2c23-4391-a6ce-20ce978286c3
+
+			/// Percent change in active headcount vs. the same period last year - shows workforce growth or shrinkage.
+			measure 'Actives YoY % Change' = DIVIDE([Actives YoY Var], [Actives SPLY])
+				formatString: #,0.0%;-#,0.0%;#,0.0%
+				lineageTag: de0d73ca-3cfe-4e93-a63b-1a6643c2ed9a
+
+			/// Percent change in new hires vs. the same period last year - shows whether hiring is accelerating or slowing.
+			measure 'New Hires YoY % Change' = DIVIDE([New Hires YoY Var], [New Hires SPLY])
+				formatString: #,0.0%;-#,0.0%;#,0.0%
+				lineageTag: 72d2e96f-621a-43df-8a76-ca8273685080
+
+			/// Bad hires in the same period one year ago - the comparison point for early-attrition trends.
+			measure 'Bad Hires SPLY' = CALCULATE([Bad hires],SAMEPERIODLASTYEAR('Date'[Date]))
+				formatString: #,0
+				lineageTag: 0b1de625-75ec-4294-a714-8f57065c755a
+
+			/// Change in bad hires vs. the same period last year (positive = more people leaving within their first 60 days).
+			measure 'Bad Hires YoY Var' = [Bad hires]-[Bad Hires SPLY]
+				formatString: #,0
+				lineageTag: e9706dd4-704e-4702-b54f-a998cf479e5f
+
+			/// Percent change in bad hires vs. the same period last year - shows whether early-attrition of new hires is getting worse.
+			measure 'Bad Hires YoY % Change' = DIVIDE([Bad Hires YoY Var], [Bad Hires SPLY])
+				formatString: #,0%;-#,0%;#,0%
+				lineageTag: dfb9718f-7919-4d21-b555-602025a508e0
+
+			/// Turnover rate: share of the active workforce that separated in the period.
+			measure 'Sep % of Active' = DIVIDE([Separations],[Actives])
+				formatString: 0.00%;-0.00%;0.00%
+				lineageTag: fbff1435-b8f2-4999-ba10-0c3daa356a0f
+
+			/// Turnover rate for the same period one year ago - the comparison point for [Sep % of Active].
+			measure 'Sep % of SMLY Actives' = DIVIDE([Seps SPLY],[Actives SPLY])
+				formatString: 0.00%;-0.00%;0.00%
+				lineageTag: 8abf85c3-a19f-4e2d-9487-42e34b28e913
+
+			/// Bad-hire rate: share of the active workforce that came in as a bad hire.
+			measure 'Bad hires % of actives' = DIVIDE([Bad hires],[Actives])
+				formatString: 0%;-0%;0%
+				lineageTag: e4c439c2-f503-4c90-a2b4-3e1138baf3dc
+
+			/// Bad-hire rate for the same period one year ago - the comparison point for [Bad hires % of actives].
+			measure 'Bad hires % of Active SPLY' = DIVIDE([Bad Hires SPLY],[Actives SPLY])
+				formatString: 0.00%;-0.00%;0.00%
+				lineageTag: 1fc9db3d-1852-4b1a-8b0f-ae52d85a7f5f
+
+			/// Number of hires who left within 60 days - the standard measure of failed hires.
+			measure 'Bad hires' = sum(Employee[BadHires])
+				formatString: #,0
+				lineageTag: 5d15966c-bc08-419e-9053-9360c16aab7e
+
+			/// The snapshot month this employee record applies to.
+			column date
+				dataType: dateTime
+				isHidden
+				formatString: General Date
+				lineageTag: b592a58d-3842-4a55-8945-59e53f471cdc
+				summarizeBy: none
+				sourceColumn: date
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Unique employee identifier.
+			column EmplID
+				dataType: int64
+				isHidden
+				lineageTag: 051997eb-138d-40ef-8553-615cfbd581fc
+				summarizeBy: count
+				sourceColumn: EmplID
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Employee's gender.
+			column Gender
+				dataType: string
+				isHidden
+				lineageTag: 5737742d-f701-48dd-8e2a-e21ce261dbd6
+				summarizeBy: none
+				sourceColumn: Gender
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Employee's age.
+			column Age
+				dataType: int64
+				isHidden
+				lineageTag: 93554c39-0b06-429b-88b2-f50fedf69c07
+				summarizeBy: sum
+				sourceColumn: Age
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Employee's ethnicity.
+			column EthnicGroup
+				dataType: string
+				isHidden
+				lineageTag: b02fa421-ff80-4cb6-9985-921c0d2a7481
+				summarizeBy: none
+				sourceColumn: EthnicGroup
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Whether the employee is Full-Time or Part-Time.
+			column FP
+				dataType: string
+				isHidden
+				lineageTag: 1d6b87b0-336b-44da-a4ac-70cd56accd30
+				summarizeBy: none
+				sourceColumn: FP
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Date the employee left the company. Empty if they were still active in the month.
+			column TermDate
+				dataType: dateTime
+				isHidden
+				formatString: General Date
+				lineageTag: 72be8ca7-8f53-496c-9ba8-a83249e90f06
+				summarizeBy: none
+				sourceColumn: TermDate
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Flag that marks the row for the month an employee was hired.
+			column isNewHire = IF(YEAR([date]) = YEAR([HireDate]) && MONTH([date])=MONTH([HireDate]), 1)
+				isHidden
+				lineageTag: ba9f7d94-e997-4d30-9273-714e4c123732
+				summarizeBy: sum
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Business unit the employee works in.
+			column BU
+				dataType: string
+				isHidden
+				lineageTag: b4fdff84-3fed-44b4-8d9a-d98666fcd583
+				summarizeBy: none
+				sourceColumn: BU
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Date the employee originally joined the company.
+			column HireDate
+				dataType: dateTime
+				isHidden
+				lineageTag: 4859e447-cd4c-4683-9373-43c6da347411
+				summarizeBy: none
+				sourceColumn: HireDate
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Whether the employee is paid Hourly or Salaried.
+			column PayTypeID
+				dataType: string
+				isHidden
+				lineageTag: 2f2f5131-def6-4aac-b3a5-7b238793ec49
+				summarizeBy: none
+				sourceColumn: PayTypeID
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Reason the employee left the company (only populated for separations).
+			column TermReason
+				dataType: string
+				isHidden
+				lineageTag: 5fffba74-245a-4b8d-83c3-b13d6e5a1804
+				summarizeBy: none
+				sourceColumn: TermReason
+
+				annotation SummarizationSetBy = Automatic
+
+			/// The age band the employee falls into.
+			column AgeGroupID = IF([Age]<30, 1, IF([Age]<50, 2, 3))
+				isHidden
+				lineageTag: 7a1ddc46-6870-4a4f-9e17-8eb3f7cf59d1
+				summarizeBy: none
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// How long the employee has been with the company, in days.
+			column TenureDays = IF([date]-[HireDate]<0,[HireDate]-[date],[date]-[HireDate])
+				dataType: double
+				isHidden
+				lineageTag: 0bed3c87-3132-4c86-9ca9-062d49879474
+				summarizeBy: sum
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// How long the employee has been with the company, in months.
+			column TenureMonths = CEILING([TenureDays]/30, 1) -1
+				isHidden
+				lineageTag: 43a317e1-28a2-4655-846d-5ae946edbf7b
+				summarizeBy: sum
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Flag that marks a hire who left within 60 days - used to track early attrition of new employees.
+			column BadHires = IF(OR((([HireDate]-[TermDate])*-1)>=61,ISBLANK([TermDate])),0,1)
+				dataType: double
+				isHidden
+				lineageTag: f241b622-e9b2-44c2-b073-8124979b22c6
+				summarizeBy: sum
+
+				changedProperty = IsHidden
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			partition Employee = m
+				mode: import
+				source =
+						let
+						    Source = Sql.Database(".", "IP", [Query="SELECT dateadd(year, 1, d.date) Date#(lf)  ,Market BU#(lf)  ,[EmplID]#(lf)  ,iif([Gender]='M', 'C', 'D') Gender --  ,iif([Gender]='M', 'F', 'M') Gender#(lf)  ,[Age] - (2013 - year(d.date)) Age#(lf)  ,[EthnicGroup]#(lf)  ,[FP]#(lf)  ,dateadd(year, 1, [SenDate]) HireDate#(lf)  ,p.PayTypeID#(lf)  ,null [TermDate]#(lf)  ,null [TermReason]#(lf) FROM [IP].[HR].[AllEmps] E , [HR].[Date] d , [HR].[BU] b , hr.PayGroup p --, hr.TermReason t#(lf) where d.day = 1 and e.SenDate <= d.MonthEndDate and isnull(e.termdate, '9999-01-01') >= d.MonthEndDate and d.Date < '2014-01-01'#(lf)  and p.PayGroup = e.PayGroup#(lf)  and b.UNIT = e.Unit and [EmplID] % 2 = 0#(lf)union all#(lf)--seps#(lf)SELECT dateadd(year, 1, d.date) Date#(lf)    ,Market BU#(lf)      ,[EmplID]#(lf)      ,iif([Gender]='M', 'C', 'D') Gender#(lf)      ,[Age] - (2013 - year(d.date)) Age#(lf)      ,[EthnicGroup]#(lf)      ,[FP]#(lf)      ,dateadd(year, 1,[SenDate]) HireDate#(lf)      ,p.PayTypeID#(lf)      ,dateadd(year, 1, [TermDate]) [TermDate]#(lf)      ,t.[SeparationTypeID] [TermReason]#(lf)  FROM [IP].[HR].[AllEmps] E, [HR].[Date] d , [HR].[BU] b, hr.PayGroup p , hr.TermReason t#(lf) where d.day = 1 and e.TermDate <= d.MonthEndDate and e.TermDate >= d.MonthStartDate and d.Date < '2014-01-01'#(lf)  and p.PayGroup = e.PayGroup #(lf)  and t.[Term-Discharge]= e.[Term-Discharge]#(lf)  and b.UNIT = e.Unit and [EmplID] % 2 = 0"]),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"date", "date"}, {"EmplID", "EmplID"}, {"Gender", "Gender"}, {"Age", "Age"}, {"EthnicGroup", "EthnicGroup"}, {"FP", "FP"}, {"TermDate", "TermDate"}, {"BU", "BU"}, {"HireDate", "HireDate"}, {"PayTypeID", "PayTypeID"}, {"TermReason", "TermReason"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"date", type datetime}, {"EmplID", Int64.Type}, {"Gender", type text}, {"Age", Int64.Type}, {"EthnicGroup", type text}, {"FP", type text}, {"TermDate", type datetime}, {"BU", type text}, {"HireDate", type datetime}, {"PayTypeID", type text}, {"TermReason", type text}})
+						in
+						    #"Changed Type"
+
+		/// The ethnicity categories used to measure workforce diversity and representation.
+		table Ethnicity
+			lineageTag: 4fd48a5c-5827-40a6-8ffb-b34cfd53452c
+
+			/// Ethnicity code.
+			column 'Ethnicity group ID'
+				dataType: string
+				isHidden
+				lineageTag: ab87f76e-fba8-42f3-8c09-ce383c8a7238
+				summarizeBy: none
+				sourceColumn: Ethnicity group ID
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Ethnicity group used for diversity reporting.
+			column 'Ethnicity group'
+				dataType: string
+				lineageTag: 6b45c284-0d80-4a8c-bffa-fc5cf0a622fa
+				summarizeBy: none
+				sourceColumn: Ethnicity group
+
+				annotation SummarizationSetBy = Automatic
+
+			partition Ethnicity = m
+				mode: import
+				source =
+						let
+						    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMlTSUXIvyi8tUHBUitWJVjKC853AfGM43xnMN4HzXcB8UzjfFcw3g/PdwHxzON9dKTYWAA==", BinaryEncoding.Base64), Compression.Deflate))),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"Column1", "Ethnic Group"}, {"Column2", "Ethnicity"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"Ethnic Group", type text}, {"Ethnicity", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"Ethnic Group", "Ethnicity group ID"}, {"Ethnicity", "Ethnicity group"}})
+						 in
+						    #"Renamed Columns1"
+
+		/// The gender categories used to measure workforce diversity and representation.
+		table Gender
+			lineageTag: cebb9aff-1e4d-41a5-b81b-f0dad4997576
+
+			/// Gender code.
+			column 'Gender ID'
+				dataType: string
+				isHidden
+				lineageTag: 8f9c1e9b-a13c-44f5-a0f0-04f22350f1f3
+				summarizeBy: none
+				sourceColumn: Gender ID
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Gender used for diversity reporting.
+			column Gender
+				dataType: string
+				lineageTag: 0d449b3b-cd7c-42d5-ab9c-a97e6a23b0c8
+				summarizeBy: none
+				sourceColumn: Gender
+				sortByColumn: Sort
+
+				annotation SummarizationSetBy = Automatic
+
+			/// Controls the display order of the Gender labels.
+			column Sort
+				dataType: int64
+				isHidden
+				lineageTag: d93908f6-36c0-4fcb-a18e-0657075bd578
+				summarizeBy: none
+				sourceColumn: Sort
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			partition Gender = m
+				mode: import
+				source =
+						let
+						    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WclHSUfJNzEkFUoZKsTrRSs5AlltqLkTISCk2FgA=", BinaryEncoding.Base64), Compression.Deflate))),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"Column1", "ID"}, {"Column2", "Gender"}, {"Column3", "Sort"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"ID", type text}, {"Gender", type text}, {"Sort", Int64.Type}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"ID", "Gender ID"}})
+						 in
+						    #"Renamed Columns1"
+
+		/// The age bands used to look at the workforce demographically without exposing individual ages.
+		table Age
+			lineageTag: 19e499df-938d-474e-ace1-e03c53b88427
+
+			/// Age band code.
+			column 'Age group ID'
+				dataType: int64
+				isHidden
+				lineageTag: dfcd6f30-cace-4e7b-8d6a-fa2ae554b597
+				summarizeBy: none
+				sourceColumn: Age group ID
+
+				annotation SummarizationSetBy = Automatic
+
+				annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+			/// Age band used to look at the workforce demographically (e.g. <25, 25-34, 35-44).
+			column 'Age group'
+				dataType: string
+				lineageTag: b3ba583d-e7f6-4f0c-9d73-0013800b19f5
+				summarizeBy: none
+				sourceColumn: Age group
+
+				annotation SummarizationSetBy = Automatic
+
+			partition Age = m
+				mode: import
+				source =
+						let
+						    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMlTSUYopNTAwTjY2UIrViVYyAgoYG+iaWIJ5xkCeqYG2UmwsAA==", BinaryEncoding.Base64), Compression.Deflate))),
+						    #"Renamed Columns" = Table.RenameColumns(Source, {{"Column1", "AgeGroupID"}, {"Column2", "AgeGroup"}}),
+						    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"AgeGroupID", Int64.Type}, {"AgeGroup", type text}}),
+						    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"AgeGroup", "Age group"}, {"AgeGroupID", "Age group ID"}})
+						 in
+						    #"Renamed Columns1"
+
+			changedProperty = Name
+
+		relationship 7ddd41c5-a1f5-477b-9712-84fdc7313c7d
+			fromColumn: Employee.date
+			toColumn: Date.Date
+
+		relationship 497871a2-f5e1-40ff-90d7-6f980ca1119a
+			fromColumn: Employee.FP
+			toColumn: 'Employee type'.'Employee type ID'
+
+		relationship 20c07ef2-2c50-4fd4-ad56-8b0e0e36ddc4
+			fromColumn: Employee.EthnicGroup
+			toColumn: Ethnicity.'Ethnicity group ID'
+
+		relationship 539493ca-f3e3-4c1f-b14e-54cba661f036
+			fromColumn: Employee.Gender
+			toColumn: Gender.'Gender ID'
+
+		relationship 7c262a8a-d56f-4c97-95db-c0f56177e4cd
+			fromColumn: Employee.PayTypeID
+			toColumn: 'Pay type'.'Pay type ID'
+
+		relationship edfe54b9-43d8-4c14-a29d-f17ddb0dd421
+			fromColumn: Employee.BU
+			toColumn: 'Business unit'.BU
+
+		relationship 35cbfa94-d30d-4da9-8fb6-e7d469edb9bb
+			fromColumn: Employee.AgeGroupID
+			toColumn: Age.'Age group ID'
+
+		relationship 1c53ee81-f20a-40a6-a5bd-97e57652fc88
+			fromColumn: Employee.TermReason
+			toColumn: 'Separation reason'.'Separation reason ID'
+
+		cultureInfo en-US
+
+			linguisticMetadata = {"Version":"4.1.0","Language":"en-US","Entities":{"employee.actives_YoY__change":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Actives YoY % Change"}},"State":"Generated","Terms":[{"actives YoY % change":{"State":"Generated"}},{"active yoy percentage change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"active yoy pct change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.599}},{"active yoy % alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % variation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % transformation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % revolution":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % conversion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"active yoy % amendment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"Actives YoY":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}}]},"employee.seps_YoY__change":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Seps YoY % Change"}},"State":"Generated","Terms":[{"seps YoY % change":{"State":"Generated"}},{"sep yoy percentage change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"sep yoy pct change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.599}},{"sep yoy % alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % variation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % transformation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % revolution":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % conversion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"sep yoy % amendment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.514}},{"Seps YoY":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}}]},"employee.actives_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Actives SPLY"}},"State":"Generated","Terms":[{"actives SPLY":{"State":"Generated"}},{"SPLY":{"State":"Generated","Weight":0.97}},{"Act SPLY":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}}]},"business_unit":{"Definition":{"Binding":{"ConceptualEntity":"Business unit"}},"State":"Generated","Terms":[{"business unit":{"State":"Generated"}},{"unit":{"State":"Generated","Weight":0.97}},{"business module":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"business element":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"business entity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"module":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"element":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"entity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"business group":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"business component":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"business constituent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"business item":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"business_unit.bu":{"Definition":{"Binding":{"ConceptualEntity":"Business unit","ConceptualProperty":"BU"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"bu":{"State":"Generated"}}]},"business_unit.region_with_order":{"Definition":{"Binding":{"ConceptualEntity":"Business unit","ConceptualProperty":"Region with order"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"region with order":{"State":"Generated"}},{"location with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"province with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"area with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"district with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"section with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"zone with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"continent with order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}}]},"business_unit.vp":{"Definition":{"Binding":{"ConceptualEntity":"Business unit","ConceptualProperty":"VP"}},"State":"Generated","Terms":[{"vp":{"State":"Generated"}}]},"business_unit.region":{"Definition":{"Binding":{"ConceptualEntity":"Business unit","ConceptualProperty":"Region"}},"State":"Generated","Terms":[{"region":{"State":"Generated"}},{"location":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.818}},{"province":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"area":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}},{"district":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}},{"section":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}},{"zone":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}},{"continent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}}]},"employee_type":{"Definition":{"Binding":{"ConceptualEntity":"Employee type"}},"State":"Generated","Terms":[{"employee type":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"employee category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"employee brand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"employee class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"employee_type.employee_type_ID":{"Definition":{"Binding":{"ConceptualEntity":"Employee type","ConceptualProperty":"Employee type ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"employee type ID":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"type ID":{"State":"Generated","Weight":0.97}},{"employee type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"employee type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"employee type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee type credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}]},"employee_type.employee_type":{"Definition":{"Binding":{"ConceptualEntity":"Employee type","ConceptualProperty":"Employee type"}},"State":"Generated","Terms":[{"employee type":{"State":"Generated"}},{"employee type name":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"employee category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"employee variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"employee brand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"employee class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"NameType":"Name"},"pay_type":{"Definition":{"Binding":{"ConceptualEntity":"Pay type"}},"State":"Generated","Terms":[{"pay type":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"pay category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"pay brand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"pay class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"pay_type.pay_type_ID":{"Definition":{"Binding":{"ConceptualEntity":"Pay type","ConceptualProperty":"Pay type ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"pay type ID":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"type ID":{"State":"Generated","Weight":0.97}},{"pay type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"pay type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"pay type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay type credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}]},"pay_type.pay_type":{"Definition":{"Binding":{"ConceptualEntity":"Pay type","ConceptualProperty":"Pay type"}},"State":"Generated","Terms":[{"pay type":{"State":"Generated"}},{"pay type name":{"State":"Generated"}},{"type":{"State":"Generated","Weight":0.97}},{"pay category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"pay brand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"pay class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"NameType":"Name"},"separation_reason":{"Definition":{"Binding":{"ConceptualEntity":"Separation reason"}},"State":"Generated","Terms":[{"separation reason":{"State":"Generated"}},{"reason":{"State":"Generated","Weight":0.97}},{"separation motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"separation intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"separation aim":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation motive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation cause":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation goal":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation purpose":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation object":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}}]},"separation_reason.separation_reason_ID":{"Definition":{"Binding":{"ConceptualEntity":"Separation reason","ConceptualProperty":"Separation reason ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"separation reason ID":{"State":"Generated"}},{"reason":{"State":"Generated","Weight":0.97}},{"reason ID":{"State":"Generated","Weight":0.97}},{"separation reason identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"separation reason identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"separation reason identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"reason identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"reason identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"reason identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"separation reason credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"reason credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}}]},"separation_reason.separation_reason":{"Definition":{"Binding":{"ConceptualEntity":"Separation reason","ConceptualProperty":"Separation reason"}},"State":"Generated","Terms":[{"separation reason":{"State":"Generated"}},{"separation reason name":{"State":"Generated"}},{"reason":{"State":"Generated","Weight":0.97}},{"separation motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"separation intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"separation aim":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation motive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation cause":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation goal":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation purpose":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"separation object":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}}],"NameType":"Name"},"date":{"Definition":{"Binding":{"ConceptualEntity":"Date"}},"State":"Generated","Terms":[{"date":{"State":"Generated","Weight":0.87}},{"moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}]},"date.date":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Date"}},"State":"Generated","Terms":[{"date":{"State":"Generated"}},{"moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"date.date.date_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"Date","VariationSet":"Variation","Hierarchy":"Date Hierarchy"}},"State":"Generated","Terms":[{"date hierarchy":{"State":"Generated","Weight":0.97}}],"SemanticType":"Time"},"date.date.year":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"Date","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Year"}},"State":"Generated","Terms":[{"year":{"State":"Generated"}},{"date year":{"State":"Generated"}},{"date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"moment year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"period year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}}],"SemanticType":"Time"},"date.date.quarter":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"Date","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Quarter"}},"State":"Generated","Terms":[{"quarter":{"State":"Generated"}},{"date quarter":{"State":"Generated"}},{"date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.833}},{"moment quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"period quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}}],"SemanticType":"Time"},"date.date.month":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"Date","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Month"}},"State":"Generated","Terms":[{"month":{"State":"Generated"}},{"date month":{"State":"Generated"}},{"date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"moment month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"period month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}}],"SemanticType":"Time"},"date.date.day":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"Date","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Day"}},"State":"Generated","Terms":[{"day":{"State":"Generated"}},{"date day":{"State":"Generated"}},{"moment day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"period day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}}],"SemanticType":"Time"},"date.month":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Month"}},"State":"Generated","Terms":[{"month":{"State":"Generated"}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}]},"date.month_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Month number"}},"State":"Generated","Terms":[{"month number":{"State":"Generated"}},{"MonthNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"month no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"mth number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}}]},"date.period":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Period"}},"State":"Generated","Terms":[{"period":{"State":"Generated"}},{"era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}},{"epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}},{"stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.452}},{"phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.452}}]},"date.period_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Period number"}},"State":"Generated","Terms":[{"period number":{"State":"Generated"}},{"PeriodNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"period no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"date.qtr":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Qtr"}},"State":"Generated","Terms":[{"qtr":{"State":"Generated"}}]},"date.qtr_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"QtrNumber"}},"State":"Generated","Terms":[{"qtr number":{"State":"Generated"}},{"QtrNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"qtr no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"date.year":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Year"}},"State":"Generated","Terms":[{"year":{"State":"Generated"}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"date.day":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Day"}},"State":"Generated","Terms":[{"day":{"State":"Generated"}}]},"date.month_start_date":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Month start date"}},"State":"Generated","Terms":[{"month start date":{"State":"Generated"}},{"MonthStartDate":{"Type":"Noun","State":"Generated","Weight":0.99}},{"start date":{"State":"Generated","Weight":0.97}},{"month start moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"start moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"month start period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"start period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"month commencement date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"month inception date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"month kickoff date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"mth start date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"commencement date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"inception date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}}],"SemanticType":"Time"},"date.month_start_date.date_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthStartDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy"}},"State":"Generated","Terms":[{"month start date hierarchy":{"State":"Generated"}},{"date hierarchy":{"State":"Generated","Weight":0.97}},{"start date hierarchy":{"State":"Generated","Weight":0.97}}],"SemanticType":"Time"},"date.month_start_date.year":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthStartDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Year"}},"State":"Generated","Terms":[{"month start year":{"State":"Generated"}},{"year":{"State":"Generated"}},{"month start date year":{"State":"Generated"}},{"start year":{"State":"Generated","Weight":0.97}},{"start date year":{"State":"Generated","Weight":0.97}},{"month start date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.771}},{"month start yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"start date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"start yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"month commencement date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month inception date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month kickoff date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth start date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month start moment year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}}],"SemanticType":"Time"},"date.month_start_date.quarter":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthStartDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Quarter"}},"State":"Generated","Terms":[{"month start quarter":{"State":"Generated"}},{"quarter":{"State":"Generated"}},{"month start date quarter":{"State":"Generated"}},{"start quarter":{"State":"Generated","Weight":0.97}},{"start date quarter":{"State":"Generated","Weight":0.97}},{"month start date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.857}},{"month start qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"start date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"start qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.833}},{"month commencement date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month inception date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month kickoff date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth start date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month start moment quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"commencement date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}}],"SemanticType":"Time"},"date.month_start_date.month":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthStartDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Month"}},"State":"Generated","Terms":[{"month start month":{"State":"Generated"}},{"month":{"State":"Generated"}},{"month start date month":{"State":"Generated"}},{"start month":{"State":"Generated","Weight":0.97}},{"start date month":{"State":"Generated","Weight":0.97}},{"month start date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.771}},{"month start mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"start date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"start mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"month commencement date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month inception date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month kickoff date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth start date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month start moment month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}}],"SemanticType":"Time"},"date.month_start_date.day":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthStartDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Day"}},"State":"Generated","Terms":[{"month start day":{"State":"Generated"}},{"day":{"State":"Generated"}},{"month start date day":{"State":"Generated"}},{"start day":{"State":"Generated","Weight":0.97}},{"start date day":{"State":"Generated","Weight":0.97}},{"month commencement date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month inception date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"month kickoff date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth start date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month start moment day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"commencement date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"inception date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"kickoff date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"month beginning date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.61}},{"month first date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.61}}],"SemanticType":"Time"},"date.month_end_date":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"Month end date"}},"State":"Generated","Terms":[{"month end date":{"State":"Generated"}},{"MonthEndDate":{"Type":"Noun","State":"Generated","Weight":0.99}},{"end date":{"State":"Generated","Weight":0.97}},{"month end moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"end moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"month end period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"end period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"month culmination date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"mth end date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"month completion date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"month conclusion date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"month expiration date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"culmination date":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}}],"SemanticType":"Time"},"date.month_end_date.date_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthEndDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy"}},"State":"Generated","Terms":[{"month end date hierarchy":{"State":"Generated"}},{"date hierarchy":{"State":"Generated","Weight":0.97}},{"end date hierarchy":{"State":"Generated","Weight":0.97}}],"SemanticType":"Time"},"date.month_end_date.year":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthEndDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Year"}},"State":"Generated","Terms":[{"month end year":{"State":"Generated"}},{"year":{"State":"Generated"}},{"month end date year":{"State":"Generated"}},{"end year":{"State":"Generated","Weight":0.97}},{"end date year":{"State":"Generated","Weight":0.97}},{"month end date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.771}},{"month end yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"end date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"end yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"month culmination date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth end date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month completion date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month conclusion date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month expiration date year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}}],"SemanticType":"Time"},"date.month_end_date.quarter":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthEndDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Quarter"}},"State":"Generated","Terms":[{"month end quarter":{"State":"Generated"}},{"quarter":{"State":"Generated"}},{"month end date quarter":{"State":"Generated"}},{"end quarter":{"State":"Generated","Weight":0.97}},{"end date quarter":{"State":"Generated","Weight":0.97}},{"month end date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.857}},{"month end qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"end date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"end qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.833}},{"month culmination date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth end date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month completion date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month conclusion date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month expiration date quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month end moment quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}}],"SemanticType":"Time"},"date.month_end_date.month":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthEndDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Month"}},"State":"Generated","Terms":[{"month end month":{"State":"Generated"}},{"month":{"State":"Generated"}},{"month end date month":{"State":"Generated"}},{"end month":{"State":"Generated","Weight":0.97}},{"end date month":{"State":"Generated","Weight":0.97}},{"month end date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.771}},{"month end mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"end date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"end mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"month culmination date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth end date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month completion date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month conclusion date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month expiration date month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}}],"SemanticType":"Time"},"date.month_end_date.day":{"Definition":{"Binding":{"ConceptualEntity":"Date","VariationSource":"MonthEndDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Day"}},"State":"Generated","Terms":[{"month end day":{"State":"Generated"}},{"day":{"State":"Generated"}},{"month end date day":{"State":"Generated"}},{"end day":{"State":"Generated","Weight":0.97}},{"end date day":{"State":"Generated","Weight":0.97}},{"month culmination date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.629}},{"mth end date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month completion date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month conclusion date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month expiration date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"month end moment day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.617}},{"culmination date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.615}},{"month cease date day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.61}},{"month end time day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.61}},{"mth end day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}}],"SemanticType":"Time"},"date.month_increment_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","ConceptualProperty":"MonthIncrementNumber"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"month increment number":{"State":"Generated"}},{"MonthIncrementNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"increment number":{"State":"Generated","Weight":0.97}},{"month increment no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"increment no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"mth increment number":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}}]},"date.yqm":{"Definition":{"Binding":{"ConceptualEntity":"Date","Hierarchy":"YQM"}},"State":"Generated","Terms":[{"yqm":{"State":"Generated"}}],"SemanticType":"Time"},"date.yqm.year":{"Definition":{"Binding":{"ConceptualEntity":"Date","Hierarchy":"YQM","HierarchyLevel":"Year"}},"State":"Generated","Terms":[{"year":{"State":"Generated"}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"date.yqm.qtr_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","Hierarchy":"YQM","HierarchyLevel":"QtrNumber"}},"State":"Generated","Terms":[{"qtr number":{"State":"Generated"}},{"QtrNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"qtr no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"SemanticType":"Time"},"date.yqm.period_number":{"Definition":{"Binding":{"ConceptualEntity":"Date","Hierarchy":"YQM","HierarchyLevel":"PeriodNumber"}},"State":"Generated","Terms":[{"period number":{"State":"Generated"}},{"PeriodNumber":{"Type":"Noun","State":"Generated","Weight":0.99}},{"period no":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"SemanticType":"Time"},"employee":{"Definition":{"Binding":{"ConceptualEntity":"Employee"}},"State":"Generated","Terms":[{"employee":{"State":"Generated"}},{"worker":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"servant":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"member":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"underling":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"operative":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"hand":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}}]},"employee.date":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"date"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"date":{"Type":"Noun","State":"Generated"}},{"moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}],"SemanticType":"Time"},"employee.empl_ID":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"EmplID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"empl ID":{"State":"Generated"}},{"EmplID":{"Type":"Noun","State":"Generated","Weight":0.99}},{"empl identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"empl identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"empl identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"empl credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"employee.gender":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Gender"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"gender":{"State":"Generated"}},{"sexuality":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"sex":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}}]},"employee.age":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Age"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"age":{"State":"Generated"}},{"oldness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}},{"epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}}]},"employee.ethnic_group":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"EthnicGroup"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"ethnic group":{"State":"Generated"}},{"EthnicGroup":{"Type":"Noun","State":"Generated","Weight":0.99}},{"ethnic category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"ethnic organization":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"ethnic bracket":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnic class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnic crew":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnic team":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"employee.fp":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"FP"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"fp":{"State":"Generated"}}]},"employee.term_date":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"TermDate"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term date":{"State":"Generated"}},{"TermDate":{"Type":"Noun","State":"Generated","Weight":0.99}},{"date":{"State":"Generated","Weight":0.7}},{"term moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"term period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"SemanticType":"Time"},"employee.term_date.date_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"TermDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term date hierarchy":{"State":"Generated"}},{"date hierarchy":{"State":"Generated","Weight":0.97}}],"SemanticType":"Time"},"employee.term_date.year":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"TermDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Year"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term year":{"State":"Generated"}},{"year":{"State":"Generated"}},{"term date year":{"State":"Generated"}},{"term date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"term yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"term moment year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"term period year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.term_date.quarter":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"TermDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Quarter"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term quarter":{"State":"Generated"}},{"quarter":{"State":"Generated"}},{"term date quarter":{"State":"Generated"}},{"term date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"term qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.833}},{"term moment quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"term period quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.term_date.month":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"TermDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Month"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term month":{"State":"Generated"}},{"month":{"State":"Generated"}},{"term date month":{"State":"Generated"}},{"term date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"term mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"term moment month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"term period month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.term_date.day":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"TermDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Day"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term day":{"State":"Generated"}},{"day":{"State":"Generated"}},{"term date day":{"State":"Generated"}},{"term moment day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"term period day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.is_new_hire":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"isNewHire"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"is new hire":{"State":"Generated"}},{"isNewHire":{"Type":"Noun","State":"Generated","Weight":0.99}},{"is new rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"is new rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"is new leasing":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"is new letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"is new chartering":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"is new lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}}]},"employee.bu":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"BU"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"bu":{"State":"Generated"}}]},"employee.hire_date":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"HireDate"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire date":{"State":"Generated"}},{"HireDate":{"Type":"Noun","State":"Generated","Weight":0.99}},{"date":{"State":"Generated","Weight":0.7}},{"hire moment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"hire period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}],"SemanticType":"Time"},"employee.hire_date.date_hierarchy":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"HireDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire date hierarchy":{"State":"Generated"}},{"date hierarchy":{"State":"Generated","Weight":0.97}}],"SemanticType":"Time"},"employee.hire_date.year":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"HireDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Year"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire year":{"State":"Generated"}},{"year":{"State":"Generated"}},{"hire date year":{"State":"Generated"}},{"hire date yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"hire yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"yr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"hire moment year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"hire period year":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.hire_date.quarter":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"HireDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Quarter"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire quarter":{"State":"Generated"}},{"quarter":{"State":"Generated"}},{"hire date quarter":{"State":"Generated"}},{"hire date qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.846}},{"hire qtr":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.833}},{"hire moment quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"hire period quarter":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.hire_date.month":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"HireDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Month"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire month":{"State":"Generated"}},{"month":{"State":"Generated"}},{"hire date month":{"State":"Generated"}},{"hire date mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"hire mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"hire moment month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"hire period month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.hire_date.day":{"Definition":{"Binding":{"ConceptualEntity":"Employee","VariationSource":"HireDate","VariationSet":"Variation","Hierarchy":"Date Hierarchy","HierarchyLevel":"Day"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"hire day":{"State":"Generated"}},{"day":{"State":"Generated"}},{"hire date day":{"State":"Generated"}},{"hire moment day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"hire period day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}],"SemanticType":"Time"},"employee.pay_type_ID":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"PayTypeID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"pay type ID":{"State":"Generated"}},{"PayTypeID":{"Type":"Noun","State":"Generated","Weight":0.99}},{"type":{"State":"Generated","Weight":0.97}},{"type ID":{"State":"Generated","Weight":0.97}},{"pay type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"pay type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"pay type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"type identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"type identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"pay type credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"genre":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"manner":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}}]},"employee.term_reason":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"TermReason"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"term reason":{"State":"Generated"}},{"TermReason":{"Type":"Noun","State":"Generated","Weight":0.99}},{"reason":{"State":"Generated","Weight":0.97}},{"term motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"term intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"motivation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"intention":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"term aim":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"term motive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"term cause":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"term goal":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"term purpose":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"term object":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}}]},"employee.age_group_ID":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"AgeGroupID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"age group ID":{"State":"Generated"}},{"AgeGroupID":{"Type":"Noun","State":"Generated","Weight":0.99}},{"group ID":{"State":"Generated","Weight":0.97}},{"age group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"age group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"age group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"age group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"age category id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"age organization id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}}]},"employee.tenure_day":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"TenureDays"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"tenure day":{"State":"Generated"}},{"TenureDays":{"Type":"Noun","State":"Generated","Weight":0.99}}]},"employee.tenure_month":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"TenureMonths"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"tenure month":{"State":"Generated"}},{"TenureMonths":{"Type":"Noun","State":"Generated","Weight":0.99}},{"tenure mth":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}}]},"employee.bad_hire":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"BadHires"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"bad hire":{"State":"Generated"}},{"BadHires":{"Type":"Noun","State":"Generated","Weight":0.99}},{"hire":{"State":"Generated","Weight":0.97}},{"bad rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad leasing":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad chartering":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"leasing":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}}]},"employee.emp_count":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Employees"}},"State":"Generated","Terms":[{"emp count":{"State":"Generated"}},{"EmpCount":{"Type":"Noun","State":"Generated","Weight":0.99}},{"emp amount":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"employee.separations":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Separations"}},"State":"Generated","Terms":[{"separations":{"State":"Generated"}}]},"employee.actives":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Actives"}},"State":"Generated","Terms":[{"actives":{"State":"Generated"}}]},"employee.new_hires":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"New Hires"}},"State":"Generated","Terms":[{"new hires":{"State":"Generated"}},{"hires":{"State":"Generated","Weight":0.97}},{"new rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"new rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"new letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"new lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}}]},"employee.AVG_tenure_days":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"AVG Tenure Days"}},"State":"Generated","Terms":[{"AVG tenure days":{"State":"Generated"}},{"tenure days":{"State":"Generated","Weight":0.97}},{"average tenure day":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}},{"avg tenure existence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.508}},{"tenure existence":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"avg tenure being":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"avg tenure living":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.492}},{"tenure being":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"tenure living":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"avg tenure eras":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.482}},{"avg tenure generation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.482}},{"avg tenure epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.482}}]},"employee.AVG_tenure_months":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"AVG Tenure Months"}},"State":"Generated","Terms":[{"AVG tenure months":{"State":"Generated"}},{"tenure months":{"State":"Generated","Weight":0.97}},{"average tenure month":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}]},"employee.AVG_age":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"AVG Age"}},"State":"Generated","Terms":[{"AVG age":{"State":"Generated"}},{"average age":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}},{"avg oldness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.5}},{"avg stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"avg phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"avg era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.475}},{"avg epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.475}},{"avg period":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.461}}]},"employee.new_hires_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"New Hires SPLY"}},"State":"Generated","Terms":[{"new hires SPLY":{"State":"Generated"}},{"SPLY":{"State":"Generated","Weight":0.97}},{"hires SPLY":{"State":"Generated","Weight":0.97}}]},"employee.seps_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Seps SPLY"}},"State":"Generated","Terms":[{"seps SPLY":{"State":"Generated"}}]},"employee.EmpCount_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Employees SPLY"}},"State":"Generated","Terms":[{"EmpCount SPLY":{"State":"Generated"}}]},"employee.seps_YoY_var":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Seps YoY Var"}},"State":"Generated","Terms":[{"seps YoY var":{"State":"Generated"}}]},"employee.actives_YoY_var":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Actives YoY Var"}},"State":"Generated","Terms":[{"actives YoY var":{"State":"Generated"}}]},"employee.new_hires_YoY_var":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"New Hires YoY Var"}},"State":"Generated","Terms":[{"new hires YoY var":{"State":"Generated"}}]},"employee.new_hires_YoY__change":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"New Hires YoY % Change"}},"State":"Generated","Terms":[{"new hires YoY % change":{"State":"Generated"}},{"new hire yoy percentage change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.624}},{"new hire yoy pct change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.605}},{"new hire yoy % alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % variation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % transformation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % revolution":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % conversion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"new hire yoy % amendment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}}]},"employee.bad_hires_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad Hires SPLY"}},"State":"Generated","Terms":[{"bad hires SPLY":{"State":"Generated"}},{"SPLY":{"State":"Generated","Weight":0.97}},{"hires SPLY":{"State":"Generated","Weight":0.97}}]},"employee.bad_hires_YoY_var":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad Hires YoY Var"}},"State":"Generated","Terms":[{"bad hires YoY var":{"State":"Generated"}}]},"employee.bad_hires_YoY__change":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad Hires YoY % Change"}},"State":"Generated","Terms":[{"bad hires YoY % change":{"State":"Generated"}},{"bad hire yoy percentage change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.624}},{"bad hire yoy pct change":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.605}},{"bad hire yoy % alteration":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % modification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % variation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % transformation":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % revolution":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % conversion":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % adjustment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}},{"bad hire yoy % amendment":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.52}}]},"employee.sepofActive":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Sep % of Active"}},"State":"Generated","Terms":[{"sep%ofActive":{"State":"Generated"}},{"sep percentage ofactive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"sep pct ofactive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}]},"employee.sepofSMLYActives":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Sep % of SMLY Actives"}},"State":"Generated","Terms":[{"sep%ofSMLYActives":{"State":"Generated"}},{"sep percentage ofsmlyactive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"sep pct ofsmlyactive":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.591}}]},"employee.bad_hires__of_actives":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad hires % of actives"}},"State":"Generated","Terms":[{"bad hires % of actives":{"State":"Generated"}},{"bad hire percentage of active":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.78}},{"bad hire pct of active":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.757}},{"%":{"State":"Suggested","Source":{"Type":"External","Agent":"PowerBI.VisualColumnRename"},"Weight":0.9}}]},"employee.bad_hires__of_active_SPLY":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad hires % of Active SPLY"}},"State":"Generated","Terms":[{"bad hires % of active SPLY":{"State":"Generated"}}]},"ethnicity":{"Definition":{"Binding":{"ConceptualEntity":"Ethnicity"}},"State":"Generated","Terms":[{"ethnicity":{"State":"Generated"}},{"civilization":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"society":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"origin":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"background":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"culture":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}}]},"ethnicity.ethnicity_group_ID":{"Definition":{"Binding":{"ConceptualEntity":"Ethnicity","ConceptualProperty":"Ethnicity group ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"ethnicity group ID":{"State":"Generated"}},{"group ID":{"State":"Generated","Weight":0.97}},{"ethnicity group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"ethnicity group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"ethnicity group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"ethnicity group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnicity category id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"ethnicity organization id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}}]},"ethnicity.ethnicity_group":{"Definition":{"Binding":{"ConceptualEntity":"Ethnicity","ConceptualProperty":"Ethnicity group"}},"State":"Generated","Terms":[{"ethnicity group":{"State":"Generated"}},{"ethnicity category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"ethnicity organization":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"ethnicity bracket":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnicity class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnicity crew":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"ethnicity team":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"gender":{"Definition":{"Binding":{"ConceptualEntity":"Gender"}},"State":"Generated","Terms":[{"gender":{"State":"Generated"}},{"sexuality":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"sex":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}}]},"gender.gender_ID":{"Definition":{"Binding":{"ConceptualEntity":"Gender","ConceptualProperty":"Gender ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"gender ID":{"State":"Generated"}},{"gender identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"gender identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"gender identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"gender credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"sexuality id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.6}},{"sex id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.582}}]},"gender.gender":{"Definition":{"Binding":{"ConceptualEntity":"Gender","ConceptualProperty":"Gender"}},"State":"Generated","Terms":[{"gender":{"State":"Generated"}},{"gender name":{"State":"Generated"}},{"sexuality":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.736}},{"sex":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.714}}],"NameType":"Name"},"gender.sort":{"Definition":{"Binding":{"ConceptualEntity":"Gender","ConceptualProperty":"Sort"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"sort":{"State":"Generated"}},{"category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"genus":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"species":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"variety":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"nature":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"kind":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"ilk":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"order":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"person":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}}]},"age":{"Definition":{"Binding":{"ConceptualEntity":"Age"}},"State":"Generated","Terms":[{"age":{"State":"Generated"}},{"oldness":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.491}},{"stage":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"phase":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"era":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}},{"epoch":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.466}}]},"age.age_group_ID":{"Definition":{"Binding":{"ConceptualEntity":"Age","ConceptualProperty":"Age group ID"}},"State":"Generated","Visibility":{"Value":"Hidden"},"Terms":[{"age group ID":{"State":"Generated"}},{"group ID":{"State":"Generated","Weight":0.97}},{"age group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"age group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"age group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.762}},{"group identification":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identity":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"group identifier":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"age group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.739}},{"group credential":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"age category id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}},{"age organization id":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.609}}]},"age.age_group":{"Definition":{"Binding":{"ConceptualEntity":"Age","ConceptualProperty":"Age group"}},"State":"Generated","Terms":[{"age group":{"State":"Generated"}},{"age category":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"age organization":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.75}},{"age bracket":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"age class":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"age crew":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}},{"age team":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.727}}]},"employee.bad_hires":{"Definition":{"Binding":{"ConceptualEntity":"Employee","ConceptualProperty":"Bad hires"}},"State":"Generated","Terms":[{"bad hires":{"State":"Generated"}},{"hires":{"State":"Generated","Weight":0.97}},{"bad rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"bad lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.485}},{"rental":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"rent":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"letting":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}},{"lease":{"Type":"Noun","State":"Suggested","Source":{"Agent":"Thesaurus"},"Weight":0.476}}]}},"Relationships":{"date_month_end_date_date_hierarchy_has_date_month_end_date_quarter":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_end_date.date_hierarchy":{"Target":{"Entity":"date.month_end_date.date_hierarchy"}},"date.month_end_date.quarter":{"Target":{"Entity":"date.month_end_date.quarter"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_end_date.date_hierarchy"},"Object":{"Role":"date.month_end_date.quarter"}},"State":"Generated","Weight":0.99,"ID":"month_end_date_hierarchies_have_month_end_quarters"}]},"date_month_end_date_date_hierarchy_has_date_month_end_date_year":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_end_date.date_hierarchy":{"Target":{"Entity":"date.month_end_date.date_hierarchy"}},"date.month_end_date.year":{"Target":{"Entity":"date.month_end_date.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_end_date.date_hierarchy"},"Object":{"Role":"date.month_end_date.year"}},"State":"Generated","Weight":0.99,"ID":"month_end_date_hierarchies_have_month_end_years"}]},"date_month_end_date_has_date_hierarchy":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_end_date":{"Target":{"Entity":"date.month_end_date"}},"date.month_end_date.date_hierarchy":{"Target":{"Entity":"date.month_end_date.date_hierarchy"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_end_date"},"Object":{"Role":"date.month_end_date.date_hierarchy"}},"State":"Generated","Weight":0.99,"ID":"month_end_dates_have_month_end_date_hierarchies"}]},"date_month_start_date_date_hierarchy_has_date_month_start_date_day":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_start_date.date_hierarchy":{"Target":{"Entity":"date.month_start_date.date_hierarchy"}},"date.month_start_date.day":{"Target":{"Entity":"date.month_start_date.day"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_start_date.date_hierarchy"},"Object":{"Role":"date.month_start_date.day"}},"State":"Generated","Weight":0.99,"ID":"month_start_date_hierarchies_have_month_start_days"}]},"date_month_start_date_date_hierarchy_has_date_month_start_date_month":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_start_date.date_hierarchy":{"Target":{"Entity":"date.month_start_date.date_hierarchy"}},"date.month_start_date.month":{"Target":{"Entity":"date.month_start_date.month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_start_date.date_hierarchy"},"Object":{"Role":"date.month_start_date.month"}},"State":"Generated","Weight":0.99,"ID":"month_start_date_hierarchies_have_month_start_months"}]},"date_month_start_date_date_hierarchy_has_date_month_start_date_quarter":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_start_date.date_hierarchy":{"Target":{"Entity":"date.month_start_date.date_hierarchy"}},"date.month_start_date.quarter":{"Target":{"Entity":"date.month_start_date.quarter"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_start_date.date_hierarchy"},"Object":{"Role":"date.month_start_date.quarter"}},"State":"Generated","Weight":0.99,"ID":"month_start_date_hierarchies_have_month_start_quarters"}]},"date_month_start_date_date_hierarchy_has_date_month_start_date_year":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_start_date.date_hierarchy":{"Target":{"Entity":"date.month_start_date.date_hierarchy"}},"date.month_start_date.year":{"Target":{"Entity":"date.month_start_date.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_start_date.date_hierarchy"},"Object":{"Role":"date.month_start_date.year"}},"State":"Generated","Weight":0.99,"ID":"month_start_date_hierarchies_have_month_start_years"}]},"date_month_start_date_has_date_hierarchy":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_start_date":{"Target":{"Entity":"date.month_start_date"}},"date.month_start_date.date_hierarchy":{"Target":{"Entity":"date.month_start_date.date_hierarchy"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_start_date"},"Object":{"Role":"date.month_start_date.date_hierarchy"}},"State":"Generated","Weight":0.99,"ID":"month_start_dates_have_month_start_date_hierarchies"}]},"date_date_date_hierarchy_has_date_date_day":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.date.date_hierarchy":{"Target":{"Entity":"date.date.date_hierarchy"}},"date.date.day":{"Target":{"Entity":"date.date.day"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.date.date_hierarchy"},"Object":{"Role":"date.date.day"}},"State":"Generated","Weight":0.99,"ID":"date_hierarchies_have_days"}]},"date_date_date_hierarchy_has_date_date_month":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.date.date_hierarchy":{"Target":{"Entity":"date.date.date_hierarchy"}},"date.date.month":{"Target":{"Entity":"date.date.month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.date.date_hierarchy"},"Object":{"Role":"date.date.month"}},"State":"Generated","Weight":0.99,"ID":"date_hierarchies_have_months"}]},"date_date_date_hierarchy_has_date_date_quarter":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.date.date_hierarchy":{"Target":{"Entity":"date.date.date_hierarchy"}},"date.date.quarter":{"Target":{"Entity":"date.date.quarter"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.date.date_hierarchy"},"Object":{"Role":"date.date.quarter"}},"State":"Generated","Weight":0.99,"ID":"date_hierarchies_have_quarters"}]},"date_date_date_hierarchy_has_date_date_year":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.date.date_hierarchy":{"Target":{"Entity":"date.date.date_hierarchy"}},"date.date.year":{"Target":{"Entity":"date.date.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.date.date_hierarchy"},"Object":{"Role":"date.date.year"}},"State":"Generated","Weight":0.99,"ID":"date_hierarchies_have_years"}]},"date_date_has_date_hierarchy":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.date":{"Target":{"Entity":"date.date"}},"date.date.date_hierarchy":{"Target":{"Entity":"date.date.date_hierarchy"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.date"},"Object":{"Role":"date.date.date_hierarchy"}},"State":"Generated","Weight":0.99,"ID":"dates_have_date_hierarchies"}]},"employee_has_separation_reason":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"separation_reason":{"Target":{"Entity":"separation_reason"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"separation_reason"}},"State":"Generated","Weight":0.99,"ID":"employees_have_separation_reasons"},{"Attribute":{"Subject":{"Role":"separation_reason"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"separation_reasons_have_employees"}]},"employee_has_age":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"age":{"Target":{"Entity":"age"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"age"}},"State":"Generated","Weight":0.99,"ID":"employees_have_ages"},{"Attribute":{"Subject":{"Role":"age"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"ages_have_employees"}]},"employee_has_business_unit":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"business_unit":{"Target":{"Entity":"business_unit"},"Nouns":[{"bu":{"State":"Generated"}}]}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"business_unit"}},"State":"Generated","Weight":0.99,"ID":"employees_have_business_units"},{"Attribute":{"Subject":{"Role":"business_unit"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"business_units_have_employees"}]},"employee_has_pay_type":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"pay_type":{"Target":{"Entity":"pay_type"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"pay_type"}},"State":"Generated","Weight":0.99,"ID":"employees_have_pay_types"},{"Attribute":{"Subject":{"Role":"pay_type"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"pay_types_have_employees"}]},"employee_has_gender":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"gender":{"Target":{"Entity":"gender"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"gender"}},"State":"Generated","Weight":0.99,"ID":"employees_have_genders"},{"Attribute":{"Subject":{"Role":"gender"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"genders_have_employees"}]},"employee_has_ethnicity":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"ethnicity":{"Target":{"Entity":"ethnicity"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"ethnicity"}},"State":"Generated","Weight":0.99,"ID":"employees_have_ethnicities"},{"Attribute":{"Subject":{"Role":"ethnicity"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"ethnicities_have_employees"}]},"employee_has_employee_type":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee_type":{"Target":{"Entity":"employee_type"},"Nouns":[{"fp":{"State":"Generated"}}]}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee_type"}},"State":"Generated","Weight":0.99,"ID":"employees_have_employee_types"},{"Attribute":{"Subject":{"Role":"employee_type"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"employee_types_have_employees"}]},"employee_has_date":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"date":{"Target":{"Entity":"date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"date"}},"State":"Generated","Weight":0.99,"ID":"employees_have_dates"},{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"employee"}},"State":"Generated","Weight":0.99,"ID":"dates_have_employees"}]},"separation_reason_has_separation_reason1":{"Binding":{"ConceptualEntity":"Separation reason"},"State":"Generated","Roles":{"separation_reason":{"Target":{"Entity":"separation_reason"}},"separation_reason1":{"Target":{"Entity":"separation_reason1"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"separation_reason"},"Object":{"Role":"separation_reason1"}},"State":"Generated","Weight":0.99,"ID":"separation_reasons_have_separation_reasons1"}]},"employee_has_bad_hires":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires":{"Target":{"Entity":"employee.bad_hires"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires"}]},"separation_reason_has_separations_tooltip":{"Binding":{"ConceptualEntity":"Separation reason"},"State":"Generated","Roles":{"separation_reason":{"Target":{"Entity":"separation_reason"}},"separation_reason.separations_tooltip":{"Target":{"Entity":"separation_reason.separations_tooltip"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"separation_reason"},"Object":{"Role":"separation_reason.separations_tooltip"}},"State":"Generated","Weight":0.99,"ID":"separation_reasons_have_separations_tooltip"}]},"age_has_age_group":{"Binding":{"ConceptualEntity":"Age"},"State":"Generated","Roles":{"age":{"Target":{"Entity":"age"}},"age.age_group":{"Target":{"Entity":"age.age_group"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"age"},"Object":{"Role":"age.age_group"}},"State":"Generated","Weight":0.99,"ID":"ages_have_age_groups"}]},"gender_has_gender":{"Binding":{"ConceptualEntity":"Gender"},"State":"Generated","Roles":{"gender":{"Target":{"Entity":"gender"}},"gender.gender":{"Target":{"Entity":"gender.gender"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"gender"},"Object":{"Role":"gender.gender"}},"State":"Generated","Weight":0.99,"ID":"genders_have_genders"},{"Name":{"Subject":{"Role":"gender"},"Name":{"Role":"gender.gender"}},"State":"Generated","Weight":0.99,"ID":"genders_are_names_IDs_of_genders"}]},"ethnicity_has_ethnicity_group":{"Binding":{"ConceptualEntity":"Ethnicity"},"State":"Generated","Roles":{"ethnicity":{"Target":{"Entity":"ethnicity"}},"ethnicity.ethnicity_group":{"Target":{"Entity":"ethnicity.ethnicity_group"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"ethnicity"},"Object":{"Role":"ethnicity.ethnicity_group"}},"State":"Generated","Weight":0.99,"ID":"ethnicities_have_ethnicity_groups"}]},"employee_has_blank":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.blank":{"Target":{"Entity":"employee.blank"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.blank"}},"State":"Generated","Weight":0.99,"ID":"employees_have_blank"}]},"employee_has_bad_hires__of_active_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires__of_active_SPLY":{"Target":{"Entity":"employee.bad_hires__of_active_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires__of_active_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires__of_active_SPLY"}]},"employee_has_bad_hires__of_actives":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires__of_actives":{"Target":{"Entity":"employee.bad_hires__of_actives"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires__of_actives"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires__of_actives"}]},"employee_has_sepofSMLYActives":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.sepofSMLYActives":{"Target":{"Entity":"employee.sepofSMLYActives"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.sepofSMLYActives"}},"State":"Generated","Weight":0.99,"ID":"employees_have_sepofSMLYActives"}]},"employee_has_sepofActive":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.sepofActive":{"Target":{"Entity":"employee.sepofActive"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.sepofActive"}},"State":"Generated","Weight":0.99,"ID":"employees_have_sepofActive"}]},"employee_has_TO__var":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.TO__var":{"Target":{"Entity":"employee.TO__var"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.TO__var"}},"State":"Generated","Weight":0.99,"ID":"employees_have_TO__var"}]},"employee_has_TO__norm":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.TO__norm":{"Target":{"Entity":"employee.TO__norm"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.TO__norm"}},"State":"Generated","Weight":0.99,"ID":"employees_have_TO__norm"}]},"employee_has_to_":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.to_":{"Target":{"Entity":"employee.to_"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.to_"}},"State":"Generated","Weight":0.99,"ID":"employees_have_to_"}]},"employee_has_bad_hires_YoY__change":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires_YoY__change":{"Target":{"Entity":"employee.bad_hires_YoY__change"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires_YoY__change"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires_YoY__change"}]},"employee_has_bad_hires_YoY_var":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires_YoY_var":{"Target":{"Entity":"employee.bad_hires_YoY_var"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires_YoY_var"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires_YoY_var"}]},"employee_has_bad_hires_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.bad_hires_SPLY":{"Target":{"Entity":"employee.bad_hires_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.bad_hires_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_bad_hires_SPLY"}]},"employee_has_new_hires_YoY__change":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.new_hires_YoY__change":{"Target":{"Entity":"employee.new_hires_YoY__change"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.new_hires_YoY__change"}},"State":"Generated","Weight":0.99,"ID":"employees_have_new_hires_YoY__change"}]},"employee_has_new_hires_YoY_var":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.new_hires_YoY_var":{"Target":{"Entity":"employee.new_hires_YoY_var"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.new_hires_YoY_var"}},"State":"Generated","Weight":0.99,"ID":"employees_have_new_hires_YoY_var"}]},"employee_has_actives_YoY_var":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.actives_YoY_var":{"Target":{"Entity":"employee.actives_YoY_var"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.actives_YoY_var"}},"State":"Generated","Weight":0.99,"ID":"employees_have_actives_YoY_var"}]},"employee_has_seps_YoY_var":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.seps_YoY_var":{"Target":{"Entity":"employee.seps_YoY_var"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.seps_YoY_var"}},"State":"Generated","Weight":0.99,"ID":"employees_have_seps_YoY_var"}]},"employee_has_EmpCount_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.EmpCount_SPLY":{"Target":{"Entity":"employee.EmpCount_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.EmpCount_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_EmpCount_SPLY"}]},"employee_has_seps_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.seps_SPLY":{"Target":{"Entity":"employee.seps_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.seps_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_seps_SPLY"}]},"employee_has_new_hires_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.new_hires_SPLY":{"Target":{"Entity":"employee.new_hires_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.new_hires_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_new_hires_SPLY"}]},"employee_has_sum_of_BadHires":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.sum_of_BadHires":{"Target":{"Entity":"employee.sum_of_BadHires"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.sum_of_BadHires"}},"State":"Generated","Weight":0.99,"ID":"employees_have_sum_of_BadHires"}]},"employee_has_AVG_age":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.AVG_age":{"Target":{"Entity":"employee.AVG_age"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.AVG_age"}},"State":"Generated","Weight":0.99,"ID":"employees_have_AVG_age"}]},"employee_has_AVG_tenure_months":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.AVG_tenure_months":{"Target":{"Entity":"employee.AVG_tenure_months"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.AVG_tenure_months"}},"State":"Generated","Weight":0.99,"ID":"employees_have_AVG_tenure_months"}]},"employee_has_AVG_tenure_days":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.AVG_tenure_days":{"Target":{"Entity":"employee.AVG_tenure_days"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.AVG_tenure_days"}},"State":"Generated","Weight":0.99,"ID":"employees_have_AVG_tenure_days"}]},"employee_has_new_hires":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.new_hires":{"Target":{"Entity":"employee.new_hires"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.new_hires"}},"State":"Generated","Weight":0.99,"ID":"employees_have_new_hires"}]},"employee_has_actives":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.actives":{"Target":{"Entity":"employee.actives"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.actives"}},"State":"Generated","Weight":0.99,"ID":"employees_have_actives"}]},"employee_has_separations":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.separations":{"Target":{"Entity":"employee.separations"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.separations"}},"State":"Generated","Weight":0.99,"ID":"employees_have_separations"}]},"employee_has_emp_count":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.emp_count":{"Target":{"Entity":"employee.emp_count"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.emp_count"}},"State":"Generated","Weight":0.99,"ID":"employees_have_emp_count"}]},"date_has_yqm":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.yqm":{"Target":{"Entity":"date.yqm"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.yqm"}},"State":"Generated","Weight":0.99,"ID":"dates_have_yqms"}]},"date_has_count_of_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.count_of_date":{"Target":{"Entity":"date.count_of_date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.count_of_date"}},"State":"Generated","Weight":0.99,"ID":"dates_have_count_of_date"}]},"date_has_month_end_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month_end_date":{"Target":{"Entity":"date.month_end_date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.month_end_date"}},"State":"Generated","Weight":0.99,"ID":"dates_have_month_end_dates"}]},"date_has_month_start_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month_start_date":{"Target":{"Entity":"date.month_start_date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.month_start_date"}},"State":"Generated","Weight":0.99,"ID":"dates_have_month_start_dates"}]},"date_has_day":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.day":{"Target":{"Entity":"date.day"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.day"}},"State":"Generated","Weight":0.99,"ID":"dates_have_days"}]},"date_has_year":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.year":{"Target":{"Entity":"date.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.year"}},"State":"Generated","Weight":0.99,"ID":"dates_have_years"}]},"date_has_qtr_number":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.qtr_number":{"Target":{"Entity":"date.qtr_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.qtr_number"}},"State":"Generated","Weight":0.99,"ID":"dates_have_qtr_numbers"}]},"date_has_qtr":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.qtr":{"Target":{"Entity":"date.qtr"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.qtr"}},"State":"Generated","Weight":0.99,"ID":"dates_have_qtrs"}]},"date_has_period_number":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.period_number":{"Target":{"Entity":"date.period_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.period_number"}},"State":"Generated","Weight":0.99,"ID":"dates_have_period_numbers"}]},"date_has_period":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.period":{"Target":{"Entity":"date.period"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.period"}},"State":"Generated","Weight":0.99,"ID":"dates_have_periods"}]},"date_has_month_number":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month_number":{"Target":{"Entity":"date.month_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.month_number"}},"State":"Generated","Weight":0.99,"ID":"dates_have_month_numbers"}]},"date_has_month":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month":{"Target":{"Entity":"date.month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.month"}},"State":"Generated","Weight":0.99,"ID":"dates_have_months"}]},"date_has_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.date":{"Target":{"Entity":"date.date"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date"},"Object":{"Role":"date.date"}},"State":"Generated","Weight":0.99,"ID":"dates_have_dates"}]},"separation_reason_has_separation_reason":{"Binding":{"ConceptualEntity":"Separation reason"},"State":"Generated","Roles":{"separation_reason":{"Target":{"Entity":"separation_reason"}},"separation_reason.separation_reason":{"Target":{"Entity":"separation_reason.separation_reason"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"separation_reason"},"Object":{"Role":"separation_reason.separation_reason"}},"State":"Generated","Weight":0.99,"ID":"separation_reasons_have_separation_reasons3"},{"Name":{"Subject":{"Role":"separation_reason"},"Name":{"Role":"separation_reason.separation_reason"}},"State":"Generated","Weight":0.99,"ID":"separation_reasons_are_names_IDs_of_separation_reasons1"}]},"pay_type_has_pay_type":{"Binding":{"ConceptualEntity":"Pay type"},"State":"Generated","Roles":{"pay_type":{"Target":{"Entity":"pay_type"}},"pay_type.pay_type":{"Target":{"Entity":"pay_type.pay_type"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"pay_type"},"Object":{"Role":"pay_type.pay_type"}},"State":"Generated","Weight":0.99,"ID":"pay_types_have_pay_types"},{"Name":{"Subject":{"Role":"pay_type"},"Name":{"Role":"pay_type.pay_type"}},"State":"Generated","Weight":0.99,"ID":"pay_types_are_names_IDs_of_pay_types"}]},"employee_type_has_employee_type":{"Binding":{"ConceptualEntity":"Employee type"},"State":"Generated","Roles":{"employee_type":{"Target":{"Entity":"employee_type"}},"employee_type.employee_type":{"Target":{"Entity":"employee_type.employee_type"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee_type"},"Object":{"Role":"employee_type.employee_type"}},"State":"Generated","Weight":0.99,"ID":"employee_types_have_employee_types"},{"Name":{"Subject":{"Role":"employee_type"},"Name":{"Role":"employee_type.employee_type"}},"State":"Generated","Weight":0.99,"ID":"employee_types_are_names_IDs_of_employee_types"}]},"business_unit_has_count_of_BU":{"Binding":{"ConceptualEntity":"Business unit"},"State":"Generated","Roles":{"business_unit":{"Target":{"Entity":"business_unit"}},"business_unit.count_of_BU":{"Target":{"Entity":"business_unit.count_of_BU"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"business_unit"},"Object":{"Role":"business_unit.count_of_BU"}},"State":"Generated","Weight":0.99,"ID":"business_units_have_count_of_BU"}]},"business_unit_has_region":{"Binding":{"ConceptualEntity":"Business unit"},"State":"Generated","Roles":{"business_unit":{"Target":{"Entity":"business_unit"}},"business_unit.region":{"Target":{"Entity":"business_unit.region"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"business_unit"},"Object":{"Role":"business_unit.region"}},"State":"Generated","Weight":0.99,"ID":"business_units_have_regions"}]},"business_unit_has_vp":{"Binding":{"ConceptualEntity":"Business unit"},"State":"Generated","Roles":{"business_unit":{"Target":{"Entity":"business_unit"}},"business_unit.vp":{"Target":{"Entity":"business_unit.vp"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"business_unit"},"Object":{"Role":"business_unit.vp"}},"State":"Generated","Weight":0.99,"ID":"business_units_have_vps"}]},"employee_has_actives_SPLY":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.actives_SPLY":{"Target":{"Entity":"employee.actives_SPLY"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.actives_SPLY"}},"State":"Generated","Weight":0.99,"ID":"employees_have_actives_SPLY"}]},"employee_has_seps_YoY__change":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.seps_YoY__change":{"Target":{"Entity":"employee.seps_YoY__change"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.seps_YoY__change"}},"State":"Generated","Weight":0.99,"ID":"employees_have_seps_YoY__change"}]},"employee_has_actives_YoY__change":{"Binding":{"ConceptualEntity":"Employee"},"State":"Generated","Roles":{"employee":{"Target":{"Entity":"employee"}},"employee.actives_YoY__change":{"Target":{"Entity":"employee.actives_YoY__change"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"employee"},"Object":{"Role":"employee.actives_YoY__change"}},"State":"Generated","Weight":0.99,"ID":"employees_have_actives_YoY__change"}]},"business_unit_in_region":{"Binding":{"ConceptualEntity":"Business unit"},"State":"Generated","Roles":{"business_unit":{"Target":{"Entity":"business_unit"}},"business_unit.region":{"Target":{"Entity":"business_unit.region"}}},"SemanticSlots":{"Where":{"Role":"business_unit.region"}},"Phrasings":[{"Preposition":{"Subject":{"Role":"business_unit"},"Prepositions":[{"in":{"State":"Generated"}}],"Object":{"Role":"business_unit.region"}},"State":"Generated","Weight":0.99,"ID":"business_units_are_in_regions"}]},"date_is_ended_on_month_end_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month_end_date":{"Target":{"Entity":"date.month_end_date"}}},"SemanticSlots":{"When":{"Role":"date.month_end_date"}},"Phrasings":[{"Verb":{"Verbs":[{"end":{"State":"Generated"}}],"Object":{"Role":"date"}},"State":"Generated","Weight":0.9,"ID":"dates_are_ended_on_month_end_dates"}]},"date_is_started_on_month_start_date":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date":{"Target":{"Entity":"date"}},"date.month_start_date":{"Target":{"Entity":"date.month_start_date"}}},"SemanticSlots":{"When":{"Role":"date.month_start_date"}},"Phrasings":[{"Verb":{"Verbs":[{"start":{"State":"Generated"}}],"Object":{"Role":"date"}},"State":"Generated","Weight":0.9,"ID":"dates_are_started_on_month_start_dates"}]},"date_month_end_date_date_hierarchy_has_date_month_end_date_month":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_end_date.date_hierarchy":{"Target":{"Entity":"date.month_end_date.date_hierarchy"}},"date.month_end_date.month":{"Target":{"Entity":"date.month_end_date.month"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_end_date.date_hierarchy"},"Object":{"Role":"date.month_end_date.month"}},"State":"Generated","Weight":0.99,"ID":"month_end_date_hierarchies_have_month_end_months"}]},"date_month_end_date_date_hierarchy_has_date_month_end_date_day":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.month_end_date.date_hierarchy":{"Target":{"Entity":"date.month_end_date.date_hierarchy"}},"date.month_end_date.day":{"Target":{"Entity":"date.month_end_date.day"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.month_end_date.date_hierarchy"},"Object":{"Role":"date.month_end_date.day"}},"State":"Generated","Weight":0.99,"ID":"month_end_date_hierarchies_have_month_end_days"}]},"date_yqm_has_year":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.yqm":{"Target":{"Entity":"date.yqm"}},"date.yqm.year":{"Target":{"Entity":"date.yqm.year"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.yqm"},"Object":{"Role":"date.yqm.year"}},"State":"Generated","Weight":0.99,"ID":"yqms_have_years"}]},"date_yqm_has_qtr_number":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.yqm":{"Target":{"Entity":"date.yqm"}},"date.yqm.qtr_number":{"Target":{"Entity":"date.yqm.qtr_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.yqm"},"Object":{"Role":"date.yqm.qtr_number"}},"State":"Generated","Weight":0.99,"ID":"yqms_have_qtr_numbers"}]},"date_yqm_has_period_number":{"Binding":{"ConceptualEntity":"Date"},"State":"Generated","Roles":{"date.yqm":{"Target":{"Entity":"date.yqm"}},"date.yqm.period_number":{"Target":{"Entity":"date.yqm.period_number"}}},"Phrasings":[{"Attribute":{"Subject":{"Role":"date.yqm"},"Object":{"Role":"date.yqm.period_number"}},"State":"Generated","Weight":0.99,"ID":"yqms_have_period_numbers"}]}},"Agents":{"Internal":{"Version":"1.1.0"}}}
+				contentType: json
+
+		annotation __PBI_TimeIntelligenceEnabled = 0
+
+		annotation PBI_QueryOrder = ["Business unit","Employee type","Pay type","Separation reason","Date","Employee","Ethnicity","Gender","Age"]
+
+		annotation PBI_ProTooling = ["TMDLView_Desktop","MCP-PBIModeling"]
+

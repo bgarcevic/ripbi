@@ -1,0 +1,185 @@
+/// Central home for the model's measures — KPIs and calculations used across reports (revenue, forecast, counts, win rate, etc.).
+table Calculations
+	lineageTag: 01654a17-2a6b-4133-8447-b87947a93358
+
+	/// Win rate: Won opportunities as a percentage of closed opportunities (Won + Lost).
+	measure 'Close %' = [Count of Won]/([Count of Won]+[Count of Lost])
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: 938be727-4972-4ef9-a507-da6a1d898703
+
+	/// Number of opportunities that closed as Lost.
+	measure 'Count of Lost' = ```
+			
+			COUNTAX(
+			    FILTER(
+			        KEEPFILTERS(Opportunities),Opportunities[Status] = "Lost"
+			        ),
+			    Opportunities[OpportunitySeq]
+			    ) 
+			```
+		formatString: #,0
+		lineageTag: 0995fcc4-bb40-4d35-aac9-9ecf60f69bbe
+
+	/// Number of opportunities that closed as Won.
+	measure 'Count of Won' = ```
+			
+			COUNTAX(
+			    FILTER(
+			        KEEPFILTERS(Opportunities),Opportunities[Status] = "Won"
+			        ),
+			    Opportunities[OpportunitySeq]
+			    ) 
+			```
+		formatString: #,0
+		lineageTag: 61908284-58b6-4ce1-b980-2cd65b89fafd
+
+	/// Descriptive label shown alongside the forecast adjustment slicer.
+	measure 'Forecast Adjustment Slicer Alt Text' = CONCATENATE("Use the slicer to adjust the forecast, current value is ", [Forecast Adjustment Value])
+		lineageTag: 7150d622-ec0d-4e6a-a1c9-f510cac30c7f
+
+		annotation PBI_FormatHint = {"isText":true}
+
+	/// Projected revenue combining won revenue with weighted pipeline revenue.
+	measure Forecast = ([Revenue Won]+[Revenue In Pipeline])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: f3eb5c0a-9667-445a-b762-e4e9f911c533
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	/// Forecasted revenue as a percentage of the revenue goal.
+	measure 'Forecast %' = (([Revenue Won]+[Revenue In Pipeline]))/ [Rev Goal]
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: 78a5c219-6674-49f8-a2c5-4da21114763d
+
+	/// Selected adjustment value from the what-if forecast slicer.
+	measure 'Forecast Adjustment Value' = SELECTEDVALUE('Opportunity Forecast Adjustment'[Forecast Adjustment], 0)
+		isHidden
+		lineageTag: 30a1a858-afcc-4343-802b-5b2229eccc0e
+
+	/// Forecast revenue weighted by the historical win-to-loss ratio instead of stated probability.
+	measure 'Forecast by Win/Loss Ratio' = [Revenue Open] * [Close %]
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 25b97fa8-199c-498f-9c14-f5e7d8cbb022
+
+		changedProperty = FormatString
+
+	/// Total number of opportunities regardless of status.
+	measure 'Opportunity Count' =
+			
+			COUNTAX(Opportunities,TRUE())
+		formatString: #,0
+		lineageTag: f9cdd5b7-71b0-42ca-b100-d957cbdaa375
+
+	/// Number of open opportunities currently in the pipeline.
+	measure 'Opportunity Count In Pipeline' = ```
+			
+			    CALCULATE (
+			        COUNT( Opportunities[Value] ),
+			        FILTER (
+			            Opportunities,
+			            Opportunities[Status] = "Open"
+			              --  && Opportunities[PipelineStep] IN { "3-Pipeline", "4-Mandate", "5-Close" }
+			        )
+			    )
+			
+			```
+		formatString: #,0
+		lineageTag: b4effa85-1aa3-4f33-a3ef-07ec57b59c0f
+
+	/// Revenue goal assigned to each sales owner for the period.
+	measure 'Rev Goal' = ```
+			
+			VAR RevenueInPipeline =
+			    CALCULATE (
+			        SUMX ( Opportunities, Opportunities[Value] ),
+			        FILTER (
+			            Opportunities,
+			            Opportunities[Status] = "Open"
+			            && VALUE(LEFT(Opportunities[Sales Stage],1)) >=2
+			        )
+			    )
+			VAR BaseGoal =  
+			MROUND(([Revenue Won]+ (RevenueInPipeline*.60)),1000000)    
+			RETURN
+			IF(BaseGoal > 0, BaseGoal, MROUND(([Revenue Won]+ (RevenueInPipeline*.60)),100000))
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 059ac849-789a-4698-801d-a415d2de84c5
+
+		changedProperty = FormatString
+
+	/// Probability-weighted revenue from open opportunities (opportunity value multiplied by win probability).
+	measure 'Revenue In Pipeline' = ```
+			
+			VAR Revenue =
+			    CALCULATE (
+			        SUMX ( Opportunities, Opportunities[Value] ),
+			        FILTER (
+			            Opportunities,
+			            Opportunities[Status] = "Open"
+			            && VALUE(LEFT(Opportunities[Sales Stage],1)) >=2
+			        )
+			    )
+			RETURN
+			    Revenue + ( Revenue * ( [Forecast Adjustment Value] / 100 ) )
+			
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 1322f812-7712-498e-9f4d-ba6b80052388
+
+		changedProperty = FormatString
+
+	/// Total unweighted value of open opportunities in the pipeline.
+	measure 'Revenue Open' =
+			
+			VAR Revenue =
+			    CALCULATE (
+			        SUMX ( Opportunities, Opportunities[Value] ),
+			        FILTER (
+			            Opportunities,
+			            Opportunities[Status] = "Open"
+			        )
+			    )
+			RETURN
+			    Revenue + ( Revenue * ( [Forecast Adjustment Value] / 100 ) )
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: d8ffa47c-94b4-4585-9170-43b31ec2dd1d
+
+		changedProperty = FormatString
+
+	/// Total revenue from opportunities with a Won status.
+	measure 'Revenue Won' = ```
+			
+			 CALCULATE(
+			     SUMX(Opportunities, Opportunities[Value]),
+			     FILTER(Opportunities, Opportunities[Status] = "Won")
+			 )
+			```
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 4175e2ae-8428-461a-854b-9a68cf5b5b8c
+
+		changedProperty = FormatString
+
+	/// Average revenue per Won opportunity (Revenue Won divided by Count of Won).
+	measure 'Revenue Won Average Deal Size' = AVERAGEX(Opportunities,[Revenue Won])
+		formatString: \$#,0;(\$#,0);\$#,0
+		lineageTag: 959e44c7-e496-4ebb-8687-668c3c16f605
+
+		changedProperty = FormatString
+
+	column Value
+		isHidden
+		formatString: 0
+		lineageTag: 44a67b95-fbe8-4e77-8a8a-7f419c2d163f
+		summarizeBy: sum
+		isNameInferred
+		sourceColumn: [Value]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Calculations = calculated
+		mode: import
+		source = {1}
+
+	annotation PBI_Id = 895297ba8b8044f7bc6077f55bb7a44c
+

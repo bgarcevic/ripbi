@@ -1,0 +1,231 @@
+table 'Case Calendar'
+	lineageTag: 3d29bbf8-05ff-43e8-afd2-23b65886b6af
+	dataCategory: Time
+
+	column Date
+		isKey
+		formatString: Short Date
+		lineageTag: bd392572-91e7-4e01-b79a-a8a75836b79a
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Date]
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column DAY
+		lineageTag: e4beda1d-d527-4f27-b90d-1a65dac43d54
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [DAY]
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation PBI_FormatHint = {"isDateTimeCustom":true}
+
+	column DaySeq
+		formatString: 0
+		lineageTag: 196cb9d0-77e2-4287-b784-fbee4ccfaedb
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [DaySeq]
+
+		annotation SummarizationSetBy = Automatic
+
+	column YEAR
+		formatString: 0
+		lineageTag: 365082c6-dc19-431a-8d14-788800d18bc6
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [YEAR]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'MONTH NUMBER'
+		isHidden
+		formatString: 0
+		lineageTag: 2a70519c-493c-47bc-8a2d-72eb81428b4b
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [MONTH NUMBER]
+
+		annotation SummarizationSetBy = Automatic
+
+	column MONTH
+		lineageTag: caa27111-20a1-4460-bc17-e4bf41d7940e
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [MONTH]
+		sortByColumn: 'MONTH NUMBER'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'YEAR MONTH NUMBER'
+		isHidden
+		formatString: 0
+		lineageTag: a525da12-f602-4707-842f-e57f2001f886
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [YEAR MONTH NUMBER]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'YEAR MONTH'
+		lineageTag: 6d027508-1c7b-462b-ab25-310834331633
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [YEAR MONTH]
+		sortByColumn: 'YEAR MONTH NUMBER'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'YEAR WEEK'
+		lineageTag: 85659452-056d-413e-9409-bf8c19214142
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [YEAR WEEK]
+
+		annotation SummarizationSetBy = Automatic
+
+	column WEEK
+		formatString: General Date
+		lineageTag: f6d72ec5-ec18-4222-a396-7455d3a518b5
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [WEEK]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'RELATIVE WEEK'
+		lineageTag: a9e357f7-3a12-463b-9bfb-0d3eb4451f51
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [RELATIVE WEEK]
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'RELATIVE DAY'
+		dataType: int64
+		formatString: 0
+		lineageTag: 6b65630b-0008-4f2c-8645-2127ccb257ed
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [RELATIVE DAY]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'RELATIVE 07 DAY PERIOD'
+		lineageTag: e9eeea40-eefa-464a-b8fb-f9f8a598ad15
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [RELATIVE 07 DAY PERIOD]
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'RELATIVE 30 DAY PERIOD'
+		lineageTag: f2df36c1-6d24-4312-b708-dcba3c0ee166
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [RELATIVE 30 DAY PERIOD]
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column 'RELATIVE MONTH'
+		formatString: 0
+		lineageTag: af30d3be-489e-4ee3-8c3a-7b9febb13db0
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [RELATIVE MONTH]
+
+		annotation SummarizationSetBy = Automatic
+
+	column Weekday
+		lineageTag: 9f32d7a0-a4e7-4cdf-9fcc-6d8de577a5dc
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Weekday]
+		sortByColumn: WeekdaySeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column WeekdaySeq
+		isHidden
+		formatString: 0
+		lineageTag: dd455160-05f7-4722-8590-1389c70dd213
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [WeekdaySeq]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Case Calendar-96256751-6179-4beb-9ebf-db4b65e3ee47' = calculated
+		mode: import
+		source = ```
+				
+				VAR StartDate =
+				    DATE ( YEAR ( MIN ( 'Cases'[Case Created On] ) ), 1, 1 )
+				VAR EndDate =
+				    DATE ( YEAR (
+				        IF (
+				            ISBLANK ( MAX ( 'Cases'[Case Created On] ) ),
+				            TODAY (),
+				            MAX ( 'Cases'[Case Created On] )
+				        )
+				    ), 12, 31 )
+				VAR BASECALENDAR =
+				    CALENDAR ( StartDate, EndDate )
+				RETURN
+				    GENERATE (
+				        BASECALENDAR,
+				        VAR DateSequence = DATEDIFF ( StartDate, [DATE], DAY ) + 1
+				        VAR BASEDATE = [DATE]
+				        VAR YEARDATE = YEAR ( BASEDATE )
+				        VAR MONTHNUMBER = MONTH ( BASEDATE )
+				        VAR MONTHNAME = FORMAT ( BASEDATE, "MMMM" )
+				        VAR YEARMONTHNAME = FORMAT ( BASEDATE, "MMM YYYY" )
+				        VAR YEARMONTHNUMBER = YEARDATE * 12 + ( MONTHNUMBER - 1 )
+				        VAR YEARWEEK = YEARDATE & "-W" & RIGHT ( "0" & WEEKNUM ( BASEDATE ), 2 )
+				        VAR DayNumberOfWeek = WEEKDAY ( [Date] )
+				        VAR StartOfWeek = [Date] - ( 1 * DayNumberOfWeek )
+				        VAR StartOfRelativeWeek = [Date] - WEEKDAY ( [Date] ) + 1
+				        VAR StartOfCurrentWeek = TODAY () - WEEKDAY ( TODAY () ) + 1
+				        var RelativeMonth = DATEDIFF(TODAY(),[Date],MONTH)
+				        VAR RelativeWeek = ( StartOfRelativeWeek - StartOfCurrentWeek ) / 7
+				        var RelativeDay = BASEDATE - TODAY()
+				        var Relative7DayPeriod = ROUNDDOWN(([Date] - TODAY())/7,0) + IF([Date]<TODAY(),+1,+2)
+				        var Relative30DayPeriod = ROUNDDOWN(([Date] - TODAY())/30,0) + IF([Date]>TODAY(),1,0)   
+				        var WeekdaySeq = WEEKDAY(BASEDATE,1)
+				        var Weekday = FORMAT(BASEDATE,"DDDD")
+				        RETURN
+				            ROW (
+				                "DAY", BASEDATE,
+				                "DaySeq", DateSequence,
+				                "YEAR", YEARDATE,
+				                "MONTH NUMBER", MONTHNUMBER,
+				                "MONTH", MONTHNAME,
+				                "YEAR MONTH NUMBER", YEARMONTHNUMBER,
+				                "YEAR MONTH", YEARMONTHNAME,
+				                "YEAR WEEK", YEARWEEK,
+				                "WEEK", StartOfWeek,
+				                "RELATIVE MONTH", RelativeMonth,
+				                "RELATIVE WEEK", RelativeWeek,
+				                "RELATIVE DAY", RelativeDay,
+				                "RELATIVE 07 DAY PERIOD", Relative7DayPeriod,
+				                "RELATIVE 30 DAY PERIOD", Relative30DayPeriod,
+				                "WeekdaySeq", WeekdaySeq,
+				                "Weekday", Weekday
+				                )
+				            )
+				```
+

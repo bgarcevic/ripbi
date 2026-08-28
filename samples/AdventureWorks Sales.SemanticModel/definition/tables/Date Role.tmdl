@@ -1,0 +1,21 @@
+/// Calc group: switch measures between Order, Due, or Ship date.
+table 'Date Role'
+	lineageTag: 27176968-26a9-4f40-98e3-69e0c136781d
+
+	/// Switches the active relationship between Sales and Date for role-playing dates
+	calculationGroup
+		precedence: 200
+
+		calculationItem 'By Order Date' = SELECTEDMEASURE()
+
+		calculationItem 'By Due Date' = CALCULATE(SELECTEDMEASURE(), USERELATIONSHIP('Sales'[DueDateKey], 'Date'[DateKey]))
+
+		calculationItem 'By Ship Date' = CALCULATE(SELECTEDMEASURE(), USERELATIONSHIP('Sales'[ShipDateKey], 'Date'[DateKey]))
+
+	/// Pick By Order Date, By Due Date, or By Ship Date to re-align measures.
+	column 'Date Role'
+		dataType: string
+		lineageTag: 9d659b86-1cd8-4ec6-b938-04df6e6ccd7a
+
+	partition 'Partition_Date Role' = calculationGroup
+

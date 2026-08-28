@@ -1,0 +1,334 @@
+table Cases
+	lineageTag: e1332845-db9f-4fd5-bdd8-1975aba5f89c
+
+	measure 'Case Count' = ```
+			
+			    COUNTROWS('Cases')
+			```
+		formatString: #,0
+		lineageTag: 630119c6-8b94-4bac-9e02-622657830537
+
+	measure Escalations = DIVIDE(CALCULATE(COUNTROWS('Cases'),'Cases'[Is Escalated] = TRUE()) , [Case Count],0)
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: dfcdb20a-e5c2-4ff9-a079-e2b5cbf200df
+
+	measure 'SLA Compliance' = DIVIDE(CALCULATE(COUNTROWS('Cases'),'Cases'[Is SLA Violation] = FALSE()) , [Case Count],0)
+		formatString: #,0%;-#,0%;#,0%
+		lineageTag: 42499aa2-43d2-4bbd-a15c-0127fe4f803d
+
+	measure 'Cases MoM%' =
+			
+			VAR __PREV_MONTH = CALCULATE([Case Count], DATEADD('Case Calendar'[Date], -1, MONTH))
+			RETURN
+				DIVIDE([Case Count] - __PREV_MONTH, __PREV_MONTH)
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: bdada272-d3c7-43e5-a184-8ad4ff2fd286
+
+		extendedProperty MeasureTemplate =
+				{
+				  "version": 0,
+				  "daxTemplateName": "MonthOverMonth"
+				}
+
+	measure 'Cases % by Product' =
+			
+			DIVIDE(
+			        [Case Count],
+			        CALCULATE(
+			            [Case Count],All('Products')
+			        )
+			    )
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: f95e8dcf-717e-4747-afda-373172afe456
+
+	measure 'Cases % by Subject' =
+			
+			DIVIDE(
+			        [Case Count],
+			        CALCULATE(
+			            [Case Count],All('Cases'[Subject])
+			        )
+			    )
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: b82dcd07-3b84-410e-b1ac-70eb6ce9c060
+
+	measure 'CSAT Impact' =
+			
+			VAR FactorAvg =
+			    AVERAGE ( 'Cases'[CSAT] )
+			VAR AllAvg =
+			    CALCULATE ( AVERAGE ( 'Cases'[CSAT] ), ALL ( 'Cases' ) )
+			VAR AllAvgExcept =
+			    CALCULATE (
+			        AVERAGE ( 'Cases'[CSAT] ),
+			        FILTER ( ALL ( 'Cases' ), 'Cases'[Topic] <> SELECTEDVALUE ( 'Cases'[Topic] ) )
+			    )
+			RETURN
+			    1 - ( AllAvgExcept / AllAvg )
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: e842c1f9-9e35-412e-9ddf-af466920099a
+
+	measure 'CSAT Impact - Subject' =
+			
+			VAR FactorAvg =
+			    AVERAGE ( 'Cases'[CSAT] )
+			VAR AllAvg =
+			    CALCULATE ( AVERAGE ( 'Cases'[CSAT] ), ALL ( 'Cases' ) )
+			VAR AllAvgExcept =
+			    CALCULATE (
+			        AVERAGE ( 'Cases'[CSAT] ),
+			        FILTER ( ALL ( 'Cases' ), 'Cases'[Subject] <> SELECTEDVALUE ( 'Cases'[Subject] ) )
+			    )
+			RETURN
+			    1 - ( AllAvgExcept / AllAvg )
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: d6ad9465-2088-4d63-8ada-cc860779dfd6
+
+	measure 'CSAT Impact - Products' =
+			
+			VAR FactorAvg =
+			    AVERAGE ( 'Cases'[CSAT] )
+			VAR AllAvg =
+			    CALCULATE ( AVERAGE ( 'Cases'[CSAT] ), ALL ( 'Cases' ) )
+			VAR AllAvgExcept =
+			    CALCULATE (
+			        AVERAGE ( 'Cases'[CSAT] ),
+			        FILTER ( ALL ( 'Cases' ), 'Cases'[ProductSeq] <> SELECTEDVALUE ( 'Cases'[ProductSeq] )  )
+			    )
+			RETURN
+			    1 - ( AllAvgExcept / AllAvg )
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: f4feed20-bd0a-43c4-8be5-23d9f3273f9b
+
+	measure 'CSAT Impact - Agent' =
+			
+			VAR FactorAvg =
+			    AVERAGE ( 'Cases'[CSAT] )
+			VAR AllAvg =
+			    CALCULATE ( AVERAGE ( 'Cases'[CSAT] ), ALL ( 'Cases' ) )
+			VAR AllAvgExcept =
+			    CALCULATE (
+			        AVERAGE ( 'Cases'[CSAT] ),
+			        FILTER ( ALL ( 'Cases' ), 'Cases'[Agent] <> SELECTEDVALUE ( 'Cases'[Agent] ) )
+			    )
+			RETURN
+			    1 - ( AllAvgExcept / AllAvg )
+		formatString: 0.00%;-0.00%;0.00%
+		lineageTag: ef6d8fce-51f5-4936-9423-a0488c22c86d
+
+	column 'Case Created On'
+		dataType: dateTime
+		isHidden
+		lineageTag: 8d66fdac-438e-43b5-be54-b472762f40b7
+		summarizeBy: none
+		sourceColumn: Case Created On
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+		annotation PBI_FormatHint = {"isDateTimeCustom":true}
+
+	column Status
+		dataType: string
+		lineageTag: d3b915d2-5e59-40f5-9a49-5324cd62b738
+		summarizeBy: none
+		sourceColumn: Status
+
+		annotation SummarizationSetBy = Automatic
+
+	column Agent
+		dataType: string
+		lineageTag: 58eb8a8a-2b03-4516-a6b8-1f9595bbc184
+		summarizeBy: none
+		sourceColumn: Agent
+
+		annotation SummarizationSetBy = Automatic
+
+	column Title
+		dataType: string
+		lineageTag: f2431a4a-f90a-42a5-8cfa-97ee266cd0f8
+		summarizeBy: none
+		sourceColumn: Title
+
+		annotation SummarizationSetBy = Automatic
+
+	column Origin
+		dataType: string
+		lineageTag: 8de93ff5-b24c-4ab5-9dcb-bfd0ac47935c
+		summarizeBy: none
+		sourceColumn: Origin
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is Escalated'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 173584ba-ed33-464f-91c8-6f54ffcd440c
+		summarizeBy: none
+		sourceColumn: Is Escalated
+
+		annotation SummarizationSetBy = Automatic
+
+	column Subject
+		dataType: string
+		lineageTag: 1dc3837f-8c40-4514-955d-9443c22509fb
+		summarizeBy: none
+		sourceColumn: Subject
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'CSAT Label'
+		dataType: string
+		lineageTag: 4bf55f5a-744a-4d9b-9b01-9d866e2b120b
+		summarizeBy: none
+		sourceColumn: CSAT Label
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Resolution Minutes'
+		dataType: int64
+		formatString: #,0.0
+		lineageTag: 152a8951-1c9b-4def-956c-a8eba0162494
+		summarizeBy: average
+		sourceColumn: Resolution Minutes
+
+		annotation SummarizationSetBy = User
+
+	column Severity
+		dataType: string
+		lineageTag: 83daf971-0b1d-42ff-a784-23007ceccdef
+		summarizeBy: none
+		sourceColumn: Severity
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Is SLA Violation'
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: f6cbbaa8-ffab-4f97-a2c2-616e73849a02
+		summarizeBy: none
+		sourceColumn: Is SLA Violation
+
+		annotation SummarizationSetBy = Automatic
+
+	column CSAT
+		dataType: int64
+		formatString: 0
+		lineageTag: a64fac90-8ee4-43d3-88dd-1a6b50be43c7
+		summarizeBy: average
+		sourceColumn: CSAT
+
+		annotation SummarizationSetBy = User
+
+	column 'SLA Compliance Goal' = .90
+		formatString: 0%;-0%;0%
+		lineageTag: 9b02edda-6fec-463d-b39b-03df1141602c
+		summarizeBy: average
+
+		annotation SummarizationSetBy = User
+
+	column 'Resolution Minutes Goal' = 120
+		formatString: 0
+		lineageTag: 2f2c9d20-516c-435a-9b48-9bec3b2a0e21
+		summarizeBy: average
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isDecimal":true}
+
+	column 'CSAT Goal' = 3.75
+		formatString: 0.00
+		lineageTag: 20e00bff-2679-4aa1-b196-6b513facd410
+		summarizeBy: average
+
+		annotation SummarizationSetBy = User
+
+	column 'Escalations Goal' = .2
+		formatString: 0%;-0%;0%
+		lineageTag: 17c6804c-f1d2-44f4-bb8f-a8ac2b5eec63
+		summarizeBy: average
+
+		annotation SummarizationSetBy = User
+
+	column 'Minutes to First Contact'
+		dataType: int64
+		lineageTag: e0b262a6-fee8-4c14-9453-928011a0a0bd
+		summarizeBy: average
+		sourceColumn: Minutes to First Contact
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Activities
+		dataType: int64
+		formatString: 0
+		lineageTag: ff1834cf-fb9f-4aef-81f2-34020a9e737a
+		summarizeBy: sum
+		sourceColumn: Activities
+
+		annotation SummarizationSetBy = Automatic
+
+	column Topic = LOOKUPVALUE(Products[Product],Products[ProductSeq],'Cases'[ProductSeq])& " | " & 'Cases'[Subject]
+		lineageTag: 39ffea86-a555-4477-847d-79a25dda8036
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column CaseSeq
+		dataType: int64
+		formatString: 0
+		lineageTag: 741a290a-90d7-4632-b246-630ed163df18
+		summarizeBy: none
+		sourceColumn: CaseSeq
+
+		annotation SummarizationSetBy = User
+
+	column SystemUserSeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 7f208826-e0fa-4d6b-9bac-fe80e8215d18
+		summarizeBy: sum
+		sourceColumn: SystemUserSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column AccountSeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 08781658-ca57-41f2-950a-980842de7fd6
+		summarizeBy: none
+		sourceColumn: AccountSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	column ProductSeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 525c4fc2-82cf-42b5-9ffd-8e83db437e1e
+		summarizeBy: none
+		sourceColumn: ProductSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Cases-dcecf78b-fce2-4b13-adac-3d671c9e1efb = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\misewell\OneDrive - Microsoft\Documents\GitHub\ContosoBI\Contoso - Generic\Contoso - PowerBI Source Data.xlsx"), null, true),
+				    IncidentTbl_Table = Source{[Item="IncidentTbl",Kind="Table"]}[Data],
+				    #"Removed Other Columns" = Table.SelectColumns(IncidentTbl_Table,{"IncidentSeq", "CreatedOn", "Resolution Minutes", "Minutes to First Contact", "Activities", "Status", "SystemUserSeq", "Owner", "AccountSeq", "ProductSeq", "Title", "Origin", "Severity", "Is Escalated", "Is SLA Violation", "Subject", "CustomerSatScore"}),
+				    #"Inserted Text Before Delimiter" = Table.AddColumn(#"Removed Other Columns", "CSAT", each Text.BeforeDelimiter([CustomerSatScore], "-"), type text),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Inserted Text Before Delimiter",{{"CreatedOn", type date}, {"Resolution Minutes", Int64.Type}, {"Status", type text}, {"Owner", type text}, {"Title", type text}, {"Origin", type text}, {"Severity", type text}, {"Is Escalated", type logical}, {"Is SLA Violation", type logical}, {"Subject", type text}, {"CustomerSatScore", type text}, {"CSAT", Int64.Type}, {"Minutes to First Contact", Int64.Type}, {"Activities", Int64.Type}, {"IncidentSeq", Int64.Type}, {"SystemUserSeq", Int64.Type}, {"AccountSeq", Int64.Type}, {"ProductSeq", Int64.Type}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"IncidentSeq", "CaseSeq"}, {"CustomerSatScore", "CSAT Label"}, {"CreatedOn", "Case Created On"}, {"Owner", "Agent"}})
+				in
+				    #"Renamed Columns"
+
+	annotation PBI_QueryRelationships = {"columnCount":18,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Cases/Changed Type.{IncidentSeq,0}","Section1/Cases/Changed Type.{CreatedOn,1}","Section1/Cases/Changed Type.{Resolution Minutes,2}","Section1/Cases/Changed Type.{Minutes to First Contact,3}","Section1/Cases/Changed Type.{Activities,4}","Section1/Cases/Changed Type.{Status,5}","Section1/Cases/Changed Type.{SystemUserSeq,6}","Section1/Cases/Changed Type.{Owner,7}","Section1/Cases/Changed Type.{AccountSeq,8}","Section1/Cases/Changed Type.{ProductSeq,9}","Section1/Cases/Changed Type.{Title,10}","Section1/Cases/Changed Type.{Origin,11}","Section1/Cases/Changed Type.{Severity,12}","Section1/Cases/Changed Type.{Is Escalated,13}","Section1/Cases/Changed Type.{Is SLA Violation,14}","Section1/Cases/Changed Type.{Subject,15}","Section1/Cases/Changed Type.{CustomerSatScore,16}","Section1/Cases/Changed Type.{CSAT,17}"],"ColumnCount":18,"KeyColumnNames":[],"ColumnIdentities":["Section1/Cases/Changed Type.{IncidentSeq,0}","Section1/Cases/Changed Type.{CreatedOn,1}","Section1/Cases/Changed Type.{Resolution Minutes,2}","Section1/Cases/Changed Type.{Minutes to First Contact,3}","Section1/Cases/Changed Type.{Activities,4}","Section1/Cases/Changed Type.{Status,5}","Section1/Cases/Changed Type.{SystemUserSeq,6}","Section1/Cases/Changed Type.{Owner,7}","Section1/Cases/Changed Type.{AccountSeq,8}","Section1/Cases/Changed Type.{ProductSeq,9}","Section1/Cases/Changed Type.{Title,10}","Section1/Cases/Changed Type.{Origin,11}","Section1/Cases/Changed Type.{Severity,12}","Section1/Cases/Changed Type.{Is Escalated,13}","Section1/Cases/Changed Type.{Is SLA Violation,14}","Section1/Cases/Changed Type.{Subject,15}","Section1/Cases/Changed Type.{CustomerSatScore,16}","Section1/Cases/Changed Type.{CSAT,17}"],"RelationshipInfo":[]}
+
+	annotation PBI_ResultType = Table
+

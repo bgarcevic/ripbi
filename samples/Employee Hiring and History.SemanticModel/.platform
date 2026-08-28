@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Employee Hiring and History"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "77193357-4e67-4979-a11f-9faad7be7561"
+  }
+}

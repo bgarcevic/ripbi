@@ -1,0 +1,26 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation PBI_QueryOrder = ["Account","Fact A","Fact B","Opportunity","Partner","Product","Sales stage","Calculations"]
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_ProTooling = ["MCP-PBIModeling","DevMode"]
+
+ref table Account
+ref table 'Fact A'
+ref table 'Fact B'
+ref table Opportunity
+ref table Partner
+ref table Product
+ref table 'Sales stage'
+ref table Calculations
+ref table Calendar
+
+ref cultureInfo en-US
+

@@ -1,0 +1,62 @@
+/// The business units the company organizes work around. Lets reports break the workforce down by market, region, and the VP who owns it.
+table 'Business unit'
+	lineageTag: b0e8fd57-87f1-48ee-b325-bc99770c8833
+
+	/// Name of the business unit / market.
+	column BU
+		dataType: string
+		isHidden
+		lineageTag: 06acea7b-1a5c-4b04-a6e5-d6cfb3875cf8
+		summarizeBy: none
+		sourceColumn: BU
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Region label with a leading sort code so regions appear in a chosen order rather than alphabetically.
+	column 'Region with order'
+		dataType: string
+		isHidden
+		lineageTag: cb33be0a-af4e-4cf3-903c-8b0a6b1d39c8
+		summarizeBy: none
+		sourceColumn: Region with order
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	/// VP (Market Director) who owns the business unit.
+	column VP
+		dataType: string
+		lineageTag: 95aed9fa-d65f-4922-918b-00ba44d387d4
+		summarizeBy: none
+		sourceColumn: VP
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Region the business unit belongs to (Americas, EMEA, APAC, ...).
+	column Region = mid([Region with order], 3,15)
+		lineageTag: efdd656d-19d2-47a1-81b1-d7c47ef78b7f
+		summarizeBy: none
+		sortByColumn: 'Region with order'
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Business unit' = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database(".", "IP", [Query="select distinct market BU,#(lf)  REGIONTITLE Region,#(lf)  MARKETDIRECTOR VP#(lf)from hr.bu"]),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"BU", "BU"}, {"Region", "RegionSeq"}, {"VP", "VP"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"BU", type text}, {"RegionSeq", type text}, {"VP", type text}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"RegionSeq", "Region with order"}})
+				in
+				    #"Renamed Columns1"
+
+	changedProperty = Name
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Exception
+

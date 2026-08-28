@@ -1,0 +1,35 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 970,
+    "z": 14000,
+    "height": 73.513513513513516,
+    "width": 324,
+    "tabOrder": 4000
+  },
+  "objects": {
+    "flowInfo": [
+      {
+        "properties": {
+          "EnvironmentId": {
+            "expr": {
+              "Literal": {
+                "Value": "'839eace6-59ab-4243-97ec-a5b8fcc104e4'"
+              }
+            }
+          },
+          "EnvironmentLocation": {
+            "expr": {
+              "Literal": {
+                "Value": "'unitedstatesfirstrelease'"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "buttonFill": [],
+    "buttonText": []
+  }
+}

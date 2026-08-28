@@ -1,0 +1,75 @@
+relationship 6bf63ad9-2603-438b-a700-cb53cdeb7e5a
+	fromColumn: Accounts.'Account Owner'
+	toColumn: Owners.'Sales owner'
+
+relationship ab2e21ab-c232-41ff-83dc-8e3b0d908f5e
+	fromColumn: Opportunities.AccountSeq
+	toColumn: Accounts.AccountSeq
+
+relationship 8ac5c082-bb7b-4b18-a3aa-6221c5b00778
+	fromColumn: Cases.AccountSeq
+	toColumn: Accounts.AccountSeq
+
+relationship 76006d0f-909a-4fb2-b452-80f483d3e919
+	fromColumn: Contacts.AccountSeq
+	toColumn: Accounts.AccountSeq
+
+relationship f9c0c9e0-69b6-4e0b-9ad1-505c46d592a0
+	fromColumn: Accounts.IndustrySeq
+	toColumn: Industries.IndustrySeq
+
+relationship 55523217-ba80-4483-a167-760f05c7b1bf
+	fromColumn: Opportunities.ProductSeq
+	toColumn: Products.ProductSeq
+
+relationship abc4045f-b600-4c6d-a62b-7610c3ac67d9
+	fromColumn: Cases.ProductSeq
+	toColumn: Products.ProductSeq
+
+relationship c5b245c6-f533-4dbe-be32-ca0932182f37
+	isActive: false
+	fromColumn: Opportunities.SystemUserSeq
+	toColumn: Owners.SystemUserSeq
+
+relationship 916033c6-4494-4f01-8399-28cc11868db4
+	isActive: false
+	fromColumn: Cases.SystemUserSeq
+	toColumn: Owners.SystemUserSeq
+
+relationship 96575f67-d20f-4d68-93ce-9ad7546cd4ec
+	fromColumn: Opportunities.CloseDate
+	toColumn: 'Opportunity Calendar'.DAY
+
+relationship eb4def86-5ce3-4711-8802-9f00f3d8b5b6
+	fromColumn: Opportunities.CampaignSeq
+	toColumn: Campaigns.CampaignSeq
+
+relationship bcd80127-8d10-4230-89ed-f91d7cc82ebd
+	fromColumn: Cases.'Case Created On'
+	toColumn: 'Case Calendar'.Date
+
+relationship 31b31781-e688-46e4-87c6-e17c1b83fcac
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Opportunities.'Opportunity Created On'
+	toColumn: LocalDateTable_b0573d09-ef3e-45e2-9f39-8a331c91c6c3.Date
+
+relationship b10a0bfa-b7fe-4437-8b2d-85624b0f085f
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Opportunity Calendar'.Date
+	toColumn: LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228.Date
+
+relationship 89a44a58-1397-4839-a0fe-c46c0c5d890d
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Opportunity Calendar'.DAY
+	toColumn: LocalDateTable_16a9f7af-fed3-4e54-9b5a-15d1cdfee444.Date
+
+relationship e3b852c8-3de1-4176-a681-2c8778ff436a
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Opportunity Calendar'.WEEK
+	toColumn: LocalDateTable_36e7cc16-9aa7-44be-8b25-7a2fa51c55d8.Date
+
+relationship c86c8fdc-17e2-4d35-991e-c74e38584d49
+	joinOnDateBehavior: datePartOnly
+	fromColumn: 'Opportunity Calendar'.'RELATIVE DAY'
+	toColumn: LocalDateTable_de73616c-e116-4a69-92e1-907ce2a4d5db.Date
+

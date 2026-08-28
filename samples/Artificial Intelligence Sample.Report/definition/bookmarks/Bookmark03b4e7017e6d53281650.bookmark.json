@@ -1,0 +1,266 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "Sales P - Funnel 1",
+  "name": "Bookmark03b4e7017e6d53281650",
+  "options": {
+    "applyOnlyToTargetVisuals": true,
+    "targetVisualNames": [
+      "6b9413d3e5b8c13aec70",
+      "35be4cf0ec8b0800d04c",
+      "b72a88eaabdb74bcd61b",
+      "a29f2d41006cece9c43e",
+      "ff346c049749abdeb8e0",
+      "f65298f3006422d89780",
+      "098739403791c51e57d4",
+      "85d8cb37fcdcfa859de5",
+      "d5b68f96590809bce10b",
+      "48ef018a4caa8d55a300",
+      "cce39823cb2e18e379c2",
+      "929b04aaeea9058cb70e"
+    ],
+    "suppressData": true
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "ReportSection11ffc0e29d406dde8c07",
+    "sections": {
+      "ReportSection11ffc0e29d406dde8c07": {
+        "filters": {
+          "byName": {
+            "Filter": {
+              "name": "Filter",
+              "type": "Categorical",
+              "filter": {
+                "Version": 2,
+                "From": [
+                  {
+                    "Name": "o",
+                    "Entity": "Opportunities",
+                    "Type": 0
+                  }
+                ],
+                "Where": [
+                  {
+                    "Condition": {
+                      "In": {
+                        "Expressions": [
+                          {
+                            "Column": {
+                              "Expression": {
+                                "SourceRef": {
+                                  "Source": "o"
+                                }
+                              },
+                              "Property": "Status"
+                            }
+                          }
+                        ],
+                        "Values": [
+                          [
+                            {
+                              "Literal": {
+                                "Value": "'Open'"
+                              }
+                            }
+                          ],
+                          [
+                            {
+                              "Literal": {
+                                "Value": "'Won'"
+                              }
+                            }
+                          ]
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Opportunities"
+                    }
+                  },
+                  "Property": "Status"
+                }
+              },
+              "howCreated": 1
+            }
+          },
+          "byExpr": [
+            {
+              "name": "Filter4",
+              "type": "Advanced",
+              "filter": {
+                "Version": 2,
+                "From": [
+                  {
+                    "Name": "o",
+                    "Entity": "Opportunity Calendar",
+                    "Type": 0
+                  }
+                ],
+                "Where": [
+                  {
+                    "Condition": {
+                      "Comparison": {
+                        "ComparisonKind": 2,
+                        "Left": {
+                          "Column": {
+                            "Expression": {
+                              "SourceRef": {
+                                "Source": "o"
+                              }
+                            },
+                            "Property": "RELATIVE MONTH"
+                          }
+                        },
+                        "Right": {
+                          "Literal": {
+                            "Value": "-6L"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Opportunity Calendar"
+                    }
+                  },
+                  "Property": "RELATIVE MONTH"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter1",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Opportunities"
+                    }
+                  },
+                  "Property": "PipelineStep"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter3",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Products"
+                    }
+                  },
+                  "Property": "Product category"
+                }
+              },
+              "howCreated": 1
+            },
+            {
+              "name": "Filter2",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Owners"
+                    }
+                  },
+                  "Property": "Sales owner"
+                }
+              },
+              "howCreated": 1
+            }
+          ]
+        },
+        "visualContainers": {},
+        "visualContainerGroups": {
+          "7bc3081eb191cc2a0391": {
+            "isHidden": false
+          },
+          "34d818edbd12b84ba831": {
+            "isHidden": true,
+            "children": {
+              "bf03719668605c638d25": {
+                "isHidden": false
+              }
+            }
+          },
+          "1c89e0b062865acaa06b": {
+            "isHidden": false,
+            "children": {
+              "828b9a9f5458d7ac7b99": {
+                "isHidden": true
+              },
+              "fe7eb8316ab9b0de0009": {
+                "isHidden": false
+              }
+            }
+          },
+          "d67506637447bd208267": {
+            "isHidden": false
+          },
+          "6b9413d3e5b8c13aec70": {
+            "isHidden": false,
+            "children": {
+              "35be4cf0ec8b0800d04c": {
+                "isHidden": true
+              },
+              "098739403791c51e57d4": {
+                "isHidden": false
+              }
+            }
+          },
+          "0350598d17066b8e4060": {
+            "isHidden": true,
+            "children": {
+              "a3aa481aa5b5b10dd30a": {
+                "isHidden": false
+              },
+              "952f79c232d6033955c6": {
+                "isHidden": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              },
+              "visible": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

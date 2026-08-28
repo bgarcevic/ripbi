@@ -1,0 +1,121 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 0,
+    "z": 2250,
+    "height": 1492,
+    "width": 324,
+    "tabOrder": 2000
+  },
+  "objects": {
+    "referenceLabel": [],
+    "smallMultiplesLayout": [
+      {
+        "properties": {
+          "rowCount": {
+            "expr": {
+              "Literal": {
+                "Value": "4L"
+              }
+            }
+          },
+          "columnCount": {
+            "expr": {
+              "Literal": {
+                "Value": "3L"
+              }
+            }
+          },
+          "autoGrid": {
+            "expr": {
+              "Literal": {
+                "Value": "false"
+              }
+            }
+          },
+          "orientation": {
+            "expr": {
+              "Literal": {
+                "Value": "1D"
+              }
+            }
+          },
+          "maxSmallMultiples": {
+            "expr": {
+              "Literal": {
+                "Value": "9L"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "layout": [],
+    "fillCustom": [],
+    "value": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "10D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "id": "default"
+        }
+      }
+    ],
+    "label": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "id": "default"
+        }
+      }
+    ],
+    "referenceLabelValue": [
+      {
+        "properties": {
+          "valueFontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Sales.This Year Sales"
+        }
+      }
+    ],
+    "referenceLabelTitle": [
+      {
+        "properties": {
+          "titleFontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Sales.This Year Sales"
+        }
+      }
+    ]
+  }
+}

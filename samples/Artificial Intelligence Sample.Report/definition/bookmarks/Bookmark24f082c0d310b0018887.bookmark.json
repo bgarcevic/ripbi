@@ -1,0 +1,107 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "displayName": "Services - KPI - Tabular",
+  "name": "Bookmark24f082c0d310b0018887",
+  "options": {
+    "applyOnlyToTargetVisuals": true,
+    "targetVisualNames": [
+      "83a0794a2ec839d502c0",
+      "89ba9cc294a0b1a34590",
+      "744eead02ad0453b1eb4",
+      "f75956cfd0ca4e7e0080",
+      "302f8573275d0e06ccb7",
+      "692a3a24198ca70e286a",
+      "0d143b8bb2cb01401851",
+      "1051cd599d377a495219",
+      "ea56653007e5e4215c6c",
+      "0b41ca0373d3860157a4",
+      "5b48b7820d86662104c9"
+    ],
+    "suppressData": true
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "ReportSection05a54c7e3a20a9ecb954",
+    "sections": {
+      "ReportSection05a54c7e3a20a9ecb954": {
+        "filters": {
+          "byExpr": [
+            {
+              "name": "Filtere804aee73589001406b5",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Products"
+                    }
+                  },
+                  "Property": "Product"
+                }
+              },
+              "howCreated": 1
+            }
+          ]
+        },
+        "visualContainers": {},
+        "visualContainerGroups": {
+          "81d3c91bc10504e4ed70": {
+            "isHidden": true
+          },
+          "ed1d4d7337bab123ee3b": {
+            "isHidden": false
+          },
+          "33564955c8231b221b83": {
+            "isHidden": false
+          },
+          "fe2d198f085ec9504ac5": {
+            "isHidden": false,
+            "children": {
+              "17a2e3d3d691e6bb9020": {
+                "isHidden": false
+              },
+              "c5f793088dcbdc48ab69": {
+                "isHidden": false
+              }
+            }
+          },
+          "83a0794a2ec839d502c0": {
+            "isHidden": false,
+            "children": {
+              "89ba9cc294a0b1a34590": {
+                "isHidden": false
+              },
+              "0d143b8bb2cb01401851": {
+                "isHidden": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              },
+              "visible": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

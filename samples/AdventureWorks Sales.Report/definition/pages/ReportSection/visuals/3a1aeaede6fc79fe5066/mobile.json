@@ -1,0 +1,141 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 644,
+    "z": 16000,
+    "height": 299,
+    "width": 324,
+    "tabOrder": 20
+  },
+  "objects": {
+    "columnFormatting": [],
+    "columnHeaders": [
+      {
+        "properties": {
+          "defaultColumnWidth": {
+            "expr": {
+              "Literal": {
+                "Value": "120D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "values": [],
+    "rowHeaders": [
+      {
+        "properties": {
+          "unfrozen": {
+            "expr": {
+              "Literal": {
+                "Value": "true"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "grid": [
+      {
+        "properties": {
+          "textSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "columnWidth": [
+      {
+        "properties": {
+          "value": {
+            "expr": {
+              "Literal": {
+                "Value": "55D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Sales.Products"
+        }
+      },
+      {
+        "properties": {
+          "value": {
+            "expr": {
+              "Literal": {
+                "Value": "55D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Sales.Profit"
+        }
+      },
+      {
+        "properties": {
+          "value": {
+            "expr": {
+              "Literal": {
+                "Value": "55D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Sales.Profit Margin %"
+        }
+      },
+      {
+        "properties": {
+          "value": {
+            "expr": {
+              "Literal": {
+                "Value": "120D"
+              }
+            }
+          }
+        },
+        "selector": {
+          "metadata": "Product.Products.Category"
+        }
+      }
+    ]
+  },
+  "visualContainerObjects": {
+    "dropShadow": [],
+    "title": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "10D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "subTitle": [
+      {
+        "properties": {
+          "fontSize": {
+            "expr": {
+              "Literal": {
+                "Value": "8D"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

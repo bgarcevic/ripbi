@@ -1,0 +1,67 @@
+table Products
+	lineageTag: 9c41c4f3-4a44-481e-9206-e81a3e1655c5
+
+	column 'Product category'
+		dataType: string
+		lineageTag: 1d02278d-305e-4c6e-b008-8bf1fc993690
+		summarizeBy: none
+		sourceColumn: Product category
+
+		annotation SummarizationSetBy = Automatic
+
+	column Product
+		dataType: string
+		lineageTag: d6442a5c-f1dd-4996-91a4-69e5f5eb03fb
+		summarizeBy: none
+		sourceColumn: Product
+
+		annotation SummarizationSetBy = Automatic
+
+	column MinOppValue
+		dataType: decimal
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+		lineageTag: 89461ba6-ae67-411c-b3ee-b33eb0b0626e
+		summarizeBy: sum
+		sourceColumn: MinOppValue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	column MaxOppValue
+		dataType: decimal
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+		lineageTag: 2bfd01e6-2038-45a6-82e6-6fdfc80605c2
+		summarizeBy: sum
+		sourceColumn: MaxOppValue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	column ProductSeq
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 4aa5e17e-b539-4076-9940-6819ff184804
+		summarizeBy: none
+		sourceColumn: ProductSeq
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Products-61d71a22-5f23-4d9d-85f8-f6f4f6c01813 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Users\misewell\OneDrive - Microsoft\Documents\GitHub\ContosoBI\Contoso - Generic\Contoso - PowerBI Source Data.xlsx"), null, true),
+				    ProductTbl_Table = Source{[Item="ProductTbl",Kind="Table"]}[Data],
+				    #"Removed Columns" = Table.RemoveColumns(ProductTbl_Table,{"Factor"}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Removed Columns",{{"ProductSeq", Int64.Type}, {"Product", type text}, {"Product LOB", type text}, {"MinOppValue", Currency.Type}, {"MaxOppValue", Currency.Type}}),
+				    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Product LOB", "Product category"}})
+				in
+				    #"Renamed Columns"
+
+	annotation PBI_QueryRelationships = {"columnCount":5,"keyColumnNames":[],"queryRelationships":[],"columnIdentities":["Section1/Products/Changed Type.{ProductSeq,0}","Section1/Products/Changed Type.{Product,1}","Section1/Products/Changed Type.{Product LOB,2}","Section1/Products/Changed Type.{MinOppValue,3}","Section1/Products/Changed Type.{MaxOppValue,4}"],"ColumnCount":5,"KeyColumnNames":[],"ColumnIdentities":["Section1/Products/Changed Type.{ProductSeq,0}","Section1/Products/Changed Type.{Product,1}","Section1/Products/Changed Type.{Product LOB,2}","Section1/Products/Changed Type.{MinOppValue,3}","Section1/Products/Changed Type.{MaxOppValue,4}"],"RelationshipInfo":[]}
+
+	annotation PBI_ResultType = Table
+

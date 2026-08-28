@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 855,
+    "z": 3500,
+    "height": 370,
+    "width": 324,
+    "tabOrder": 0
+  },
+  "objects": {
+    "columnHeaders": [],
+    "values": [],
+    "columnFormatting": [],
+    "columnWidth": [],
+    "rowHeaders": [
+      {
+        "properties": {
+          "unfrozen": {
+            "expr": {
+              "Literal": {
+                "Value": "true"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

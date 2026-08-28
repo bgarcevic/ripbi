@@ -1,0 +1,37 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_QueryOrder = ["Accounts","Industries","Opportunities","Owners","Products","Cases","Contacts","Territories","Campaigns","Query1"]
+
+annotation __TEdtr = 1
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table Accounts
+ref table Industries
+ref table Opportunities
+ref table Owners
+ref table Products
+ref table 'Opportunity Forecast Adjustment'
+ref table Cases
+ref table 'Case Calendar'
+ref table 'Opportunity Calendar'
+ref table Contacts
+ref table Territories
+ref table Campaigns
+ref table DateTableTemplate_0039983e-de71-45fb-bd88-812f61c0ff38
+ref table LocalDateTable_b0573d09-ef3e-45e2-9f39-8a331c91c6c3
+ref table LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228
+ref table LocalDateTable_16a9f7af-fed3-4e54-9b5a-15d1cdfee444
+ref table LocalDateTable_36e7cc16-9aa7-44be-8b25-7a2fa51c55d8
+ref table LocalDateTable_de73616c-e116-4a69-92e1-907ce2a4d5db
+
+ref cultureInfo en-US
+

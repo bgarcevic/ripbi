@@ -1,0 +1,27 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 447,
+    "z": 14000,
+    "height": 184,
+    "width": 319,
+    "tabOrder": 5
+  },
+  "objects": {
+    "narrativeSelection": [
+      {
+        "properties": {
+          "dismissSelectionScreen": {
+            "expr": {
+              "Literal": {
+                "Value": "true"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "userPrompt": []
+  }
+}

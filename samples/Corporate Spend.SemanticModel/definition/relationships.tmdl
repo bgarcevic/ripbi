@@ -1,0 +1,28 @@
+relationship 5eb17777-e9c8-493b-9d81-c5adb900e09a
+	fromColumn: Calculations.'Scenario ID'
+	toColumn: Scenario.'Scenario ID'
+
+relationship 16eae15a-3aea-445b-94b6-43eb0d1c86b0
+	fromColumn: Calculations.'IT Sub Area ID'
+	toColumn: 'IT Area'.'IT Sub Area ID'
+
+relationship c4633d95-838e-4156-a8c1-906d157a153f
+	fromColumn: Calculations.'Business Area ID'
+	toColumn: 'Business Area'.'Business Area ID'
+
+relationship 8f584f25-177a-4def-ac05-f3ba08364533
+	fromColumn: Calculations.'Country/Region ID'
+	toColumn: 'Country Region'.'Country/Region ID'
+
+relationship f18fc136-4954-40db-9c7a-08bab06c5a8d
+	fromColumn: Calculations.'Cost Element ID'
+	toColumn: 'Cost Element'.'Cost Element ID'
+
+relationship 3a0ed39a-366d-407a-ade6-67c9755849f8
+	fromColumn: Calculations.Department
+	toColumn: Department.Department
+
+relationship b8fa9cc0-0e1d-45c7-853c-1533595a20b0
+	fromColumn: Calculations.Date
+	toColumn: Date.Date
+

@@ -1,0 +1,38 @@
+/// The age bands used to look at the workforce demographically without exposing individual ages.
+table Age
+	lineageTag: 19e499df-938d-474e-ace1-e03c53b88427
+
+	/// Age band code.
+	column 'Age group ID'
+		dataType: int64
+		isHidden
+		lineageTag: dfcd6f30-cace-4e7b-8d6a-fa2ae554b597
+		summarizeBy: none
+		sourceColumn: Age group ID
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	/// Age band used to look at the workforce demographically (e.g. <25, 25-34, 35-44).
+	column 'Age group'
+		dataType: string
+		lineageTag: b3ba583d-e7f6-4f0c-9d73-0013800b19f5
+		summarizeBy: none
+		sourceColumn: Age group
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Age = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMlTSUYopNTAwTjY2UIrViVYyAgoYG+iaWIJ5xkCeqYG2UmwsAA==", BinaryEncoding.Base64), Compression.Deflate))),
+				    #"Renamed Columns" = Table.RenameColumns(Source, {{"Column1", "AgeGroupID"}, {"Column2", "AgeGroup"}}),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Renamed Columns", {{"AgeGroupID", Int64.Type}, {"AgeGroup", type text}}),
+				    #"Renamed Columns1" = Table.RenameColumns(#"Changed Type",{{"AgeGroup", "Age group"}, {"AgeGroupID", "Age group ID"}})
+				 in
+				    #"Renamed Columns1"
+
+	changedProperty = Name
+

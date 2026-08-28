@@ -1,0 +1,231 @@
+/// Use for all time-based analysis. Drag Calendar Hierarchy or Fiscal Hierarchy onto a visual axis, or use individual columns like Year, Month, or Fiscal Quarter. Slice with the Date column for date ranges.
+table Date
+	lineageTag: 3e323c02-c51d-48f1-a5f2-0f1bf047a828
+	dataCategory: Time
+
+	/// Day-level date. Use as a continuous axis on line/area charts, in date-range slicers, or as the value in bookmarks that need a specific day.
+	column Date
+		isUnique
+		isKey
+		formatString: dd-mmm-yyyy
+		lineageTag: e050ceaa-2080-48b2-9545-4bdb761e0cc0
+		isNameInferred
+		sourceColumn: [Date]
+
+	/// Integer date key in yyyymmdd format (e.g., 20140315). Used to join fact tables.
+	column DateKey
+		isHidden
+		formatString: 0
+		lineageTag: 01cf19e6-6688-497c-90e4-2ee0be38aa60
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [DateKey]
+
+	/// Calendar year. Use on axes, slicers, or as a filter for year-over-year comparisons.
+	column Year
+		formatString: 0
+		lineageTag: 4db249e7-0bca-4177-8560-b6ce1e609d53
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year]
+
+	/// Calendar quarter number (1–4).
+	column 'Quarter Number'
+		isHidden
+		formatString: 0
+		lineageTag: a2465982-8956-45f7-9c8d-8258108013d3
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Quarter Number]
+
+	/// Calendar quarter (Q1–Q4). Use on axes or slicers; combine with Year for a full label.
+	column Quarter
+		lineageTag: f1154ac2-142b-4778-afc2-dd1df8e75177
+		isNameInferred
+		sourceColumn: [Quarter]
+		sortByColumn: 'Quarter Number'
+
+	/// Calendar year and quarter (e.g., 2014-Q1). Use as a self-contained axis label when you want both together.
+	column 'Year Quarter'
+		lineageTag: a7aa7811-eccc-4b51-8949-2439cd19eafd
+		isNameInferred
+		sourceColumn: [Year Quarter]
+		sortByColumn: 'Year Month Number'
+
+	/// Calendar month number (1–12).
+	column 'Month Number'
+		isHidden
+		formatString: 0
+		lineageTag: cb36ea85-532b-464f-8241-68f69f929fc0
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Month Number]
+
+	/// Calendar month name. Use on axes or slicers — already sorts chronologically.
+	column Month
+		lineageTag: e753c840-7621-4856-9f3b-a8f991d01e36
+		isNameInferred
+		sourceColumn: [Month]
+		sortByColumn: 'Month Number'
+
+	/// Calendar year and month (e.g., 2014-Jan). Use as a self-contained axis label — already sorts chronologically.
+	column 'Year Month'
+		lineageTag: f9d7f4de-0dbe-4fe5-aee3-65b366a580b8
+		isNameInferred
+		sourceColumn: [Year Month]
+		sortByColumn: 'Year Month Number'
+
+	/// Numeric year-month key for sorting (e.g., 201401).
+	column 'Year Month Number'
+		isHidden
+		formatString: 0
+		lineageTag: 1f217fed-98f3-4f51-8460-057f2d39e7e6
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year Month Number]
+
+	/// Day of week number (1 = Monday, 7 = Sunday).
+	column 'Day of Week Number'
+		isHidden
+		formatString: 0
+		lineageTag: caf40182-3657-42e3-89a0-a4681c412e6b
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Day of Week Number]
+
+	/// Day of week name (Monday–Sunday). Use on axes or slicers for weekday patterns — already sorts Mon→Sun.
+	column 'Day of Week'
+		lineageTag: fec95780-2471-4417-a799-f8130064a2d2
+		isNameInferred
+		sourceColumn: [Day of Week]
+		sortByColumn: 'Day of Week Number'
+
+	/// Fiscal year. Use for fiscal-year reporting on axes, slicers, or as a filter.
+	column 'Fiscal Year'
+		formatString: 0
+		lineageTag: 2466cb0a-0269-47d6-8137-3d99e7840e8b
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Fiscal Year]
+
+	/// Fiscal quarter number (1–4).
+	column 'Fiscal Quarter Number'
+		isHidden
+		formatString: 0
+		lineageTag: 82014e10-2ffc-4810-8e6e-06536f978b3c
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Fiscal Quarter Number]
+
+	/// Fiscal quarter (FQ1–FQ4). Use on axes or slicers; combine with Fiscal Year for a full label.
+	column 'Fiscal Quarter'
+		lineageTag: 8f3bd49e-2235-44ce-a61d-50b6e3e96c30
+		isNameInferred
+		sourceColumn: [Fiscal Quarter]
+		sortByColumn: 'Fiscal Quarter Number'
+
+	/// Fiscal year and quarter (e.g., 2014-FQ1). Use as a self-contained axis label.
+	column 'Fiscal Year Quarter'
+		lineageTag: 9a09872d-ded0-4c44-a91e-be2a58dac875
+		isNameInferred
+		sourceColumn: [Fiscal Year Quarter]
+		sortByColumn: 'Fiscal Year Month Number'
+
+	/// Fiscal month number (1–12).
+	column 'Fiscal Month Number'
+		isHidden
+		formatString: 0
+		lineageTag: 14b0f0ee-4f87-44c2-bbd9-1bc6ffe4b0e1
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Fiscal Month Number]
+
+	/// Fiscal month name. Use on axes or slicers — already sorts by fiscal month order.
+	column 'Fiscal Month'
+		lineageTag: 4a55ac29-e05a-42ef-97b9-bb796bb5c2d9
+		isNameInferred
+		sourceColumn: [Fiscal Month]
+		sortByColumn: 'Fiscal Month Number'
+
+	/// Fiscal year and month (e.g., 2014-Jan). Use as a self-contained axis label — already sorts by fiscal order.
+	column 'Fiscal Year Month'
+		lineageTag: 4756494e-a380-44ef-9e04-53406944cf59
+		isNameInferred
+		sourceColumn: [Fiscal Year Month]
+		sortByColumn: 'Fiscal Year Month Number'
+
+	/// Numeric fiscal year-month key for sorting (e.g., 201401).
+	column 'Fiscal Year Month Number'
+		isHidden
+		formatString: 0
+		lineageTag: a6592031-ce8a-47d7-9231-3b8a5953adea
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Fiscal Year Month Number]
+
+	/// Use this for standard calendar-year reporting. Drop on a visual axis to drill Year → Quarter → Month → Date.
+	hierarchy 'Calendar Hierarchy'
+		lineageTag: 9c378f8a-bdcb-447e-bba2-ba05a794708a
+
+		level Year
+			lineageTag: 32b4834a-8bd5-46f4-aded-2f5239a790cd
+			column: Year
+
+		level Quarter
+			lineageTag: 53147649-ebfd-400f-8805-fedd947246af
+			column: Quarter
+
+		level Month
+			lineageTag: e2efb702-8c93-49a9-8ca7-38ea89eaf992
+			column: Month
+
+		level Date
+			lineageTag: 3c2fe165-524d-4524-9a32-c1062b634e6f
+			column: Date
+
+	/// Use this for fiscal-year reporting instead of the calendar hierarchy. Drop on a visual axis to drill Fiscal Year → Fiscal Quarter → Fiscal Month → Date.
+	hierarchy 'Fiscal Hierarchy'
+		lineageTag: df2c4a36-0cbb-4c8e-a341-7a03c3c923ff
+
+		level 'Fiscal Year'
+			lineageTag: d593ac63-8645-4198-af97-d94b2c9c187b
+			column: 'Fiscal Year'
+
+		level 'Fiscal Quarter'
+			lineageTag: d2cdae46-8d16-44d0-9b2e-e1f3f8595b92
+			column: 'Fiscal Quarter'
+
+		level 'Fiscal Month'
+			lineageTag: cf6b95c1-ceef-4266-bfaf-316c56b25242
+			column: 'Fiscal Month'
+
+		level Date
+			lineageTag: 5193ee39-415f-4efc-aae8-d7d12ecf085b
+			column: Date
+
+	partition Date = calculated
+		mode: import
+		source =
+				ADDCOLUMNS(
+				    CALENDAR(DATE(2012,1,1), DATE(2015,12,31)),
+				    "DateKey", YEAR([Date])*10000 + MONTH([Date])*100 + DAY([Date]),
+				    "Year", YEAR([Date]),
+				    "Quarter Number", QUARTER([Date]),
+				    "Quarter", "Q" & QUARTER([Date]),
+				    "Year Quarter", YEAR([Date]) & "-Q" & QUARTER([Date]),
+				    "Month Number", MONTH([Date]),
+				    "Month", FORMAT([Date], "mmm"),
+				    "Year Month", FORMAT([Date], "yyyy-mmm"),
+				    "Year Month Number", YEAR([Date])*100 + MONTH([Date]),
+				    "Day of Week Number", WEEKDAY([Date], 2),
+				    "Day of Week", FORMAT([Date], "dddd"),
+				    "Fiscal Year", YEAR([Date]),
+				    "Fiscal Quarter Number", QUARTER([Date]),
+				    "Fiscal Quarter", "FQ" & QUARTER([Date]),
+				    "Fiscal Year Quarter", YEAR([Date]) & "-FQ" & QUARTER([Date]),
+				    "Fiscal Month Number", MONTH([Date]),
+				    "Fiscal Month", FORMAT([Date], "mmm"),
+				    "Fiscal Year Month", YEAR([Date]) & "-" & FORMAT([Date], "mmm"),
+				    "Fiscal Year Month Number", YEAR([Date])*100 + MONTH([Date])
+				)
+

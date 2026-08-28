@@ -1,0 +1,31 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainerMobileState/2.7.0/schema.json",
+  "position": {
+    "x": 0,
+    "y": 1738,
+    "z": 1000,
+    "height": 370,
+    "width": 324,
+    "tabOrder": 0
+  },
+  "objects": {
+    "total": [],
+    "values": [],
+    "grid": [],
+    "columnHeaders": [
+      {
+        "properties": {
+          "defaultColumnWidth": {
+            "expr": {
+              "Literal": {
+                "Value": "100D"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "columnFormatting": [],
+    "columnWidth": []
+  }
+}
