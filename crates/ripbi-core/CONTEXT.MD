@@ -9,6 +9,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 - **Semantic model** (`src/model.rs`, `src/identity.rs`): the normalized `TabularDatabase`
   AST and the case-insensitive object identity every other layer refers to objects by.
   Pure data — no parsing, no I/O.
+- **Report** (`src/report.rs`): the normalized `ReportModel` AST — pages, visuals,
+  filters, bookmarks, and report-level measures. Its `bindings()` enumeration is the
+  reachability-root surface; pure data, populated by the ingestion formats.
 - **Ingestion** (`src/ingest/`): detect and parse the four source formats —
   legacy `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` + `Report/Layout`),
   `.pbip` folders (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL
@@ -31,6 +34,7 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 | Task | Read | Notes |
 |---|---|---|
 | Semantic model AST | [docs/semantic-model.md](docs/semantic-model.md) | What is modeled and what is not; where DAX hides. Read before changing the AST |
+| Report AST & root bindings | [docs/report-model.md](docs/report-model.md) | What binds model objects and why; where roots hide. Read before changing the report AST |
 | Name resolution & identity | [docs/name-resolution.md](docs/name-resolution.md) | Case-insensitivity, model-global measures, why `[Name]` resolves to *all* candidates |
 | Format specs & detection | docs/formats.md (planned) | Create when ingestion lands |
 | DAX token grammar | docs/dax-lexing.md (planned) | Create when lexer lands |

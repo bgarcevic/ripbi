@@ -412,11 +412,13 @@ impl TabularDatabase {
     }
 }
 
-/// Which model property a DAX expression came from.
+/// Which property of its owner a DAX expression came from — model-side or
+/// report-side.
 ///
 /// The graph layer matches on this to decide what kind of edge a discovered
-/// reference produces; the enumeration in [`TabularDatabase::dax_expressions`]
-/// guarantees every variant has exactly one production site.
+/// reference produces; the two enumerations ([`TabularDatabase::dax_expressions`]
+/// and [`crate::report::ReportModel::dax_expressions`]) guarantee every variant
+/// has exactly one production site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DaxExpressionKind {
     /// A measure's own expression.
@@ -453,17 +455,24 @@ pub enum DaxExpressionKind {
     CalculationGroupMultipleOrEmptySelectionFormatString,
     /// A user-defined function's body.
     Function,
+    /// A report-level measure's own expression (reportExtensions.json).
+    ReportMeasure,
+    /// A report-level measure's dynamic format string.
+    ReportMeasureFormatString,
 }
 
-/// The model object an enumerated expression belongs to.
+/// The model or report object an enumerated expression belongs to.
 ///
-/// Names are borrowed from the model, so enumerating a model's expressions
+/// Names are borrowed from the AST, so enumerating a model's expressions
 /// allocates nothing. Call [`to_object_id`](ExpressionOwner::to_object_id) to
 /// materialize a graph node key — once per node the graph actually creates, rather
 /// than once per expression.
 ///
 /// The variants are exactly the objects that can own an expression, which is why
 /// there is no hierarchy here: hierarchies reference columns but define no DAX.
+/// The one report-side variant is the report-level measure, whose DAX body is an
+/// expression source the model knows nothing about (see
+/// [`crate::report::ReportModel::dax_expressions`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExpressionOwner<'a> {
     /// A table, owning its detail-rows expression.
@@ -514,6 +523,12 @@ pub enum ExpressionOwner<'a> {
         /// Function name.
         name: &'a str,
     },
+    /// A report-level measure (reportExtensions.json), owning its expression and
+    /// dynamic format string. Lives in the report, not the model.
+    ReportMeasure {
+        /// Measure name, report-scoped.
+        measure: &'a str,
+    },
 }
 
 impl ExpressionOwner<'_> {
@@ -548,6 +563,9 @@ impl ExpressionOwner<'_> {
             },
             ExpressionOwner::Function { name } => ObjectId::Function {
                 name: NameKey::new(name),
+            },
+            ExpressionOwner::ReportMeasure { measure } => ObjectId::ReportMeasure {
+                measure: NameKey::new(measure),
             },
         }
     }

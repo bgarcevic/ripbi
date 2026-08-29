@@ -19,7 +19,7 @@ pub(crate) fn fold_name(s: &str) -> String {
 /// Writes a name as a single-quoted DAX identifier, doubling any internal quote.
 ///
 /// Allocation-free: the input is emitted in slices around each quote character.
-struct Quoted<'a>(&'a str);
+pub(crate) struct Quoted<'a>(pub(crate) &'a str);
 
 impl fmt::Display for Quoted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -175,8 +175,8 @@ impl fmt::Display for FieldRef {
     }
 }
 
-/// Stable, case-insensitive identity of a model object — the node key of the
-/// dependency graph.
+/// Stable, case-insensitive identity of a model or report object — the node key
+/// of the dependency graph.
 ///
 /// Every name is a [`NameKey`], so two `ObjectId`s that differ only in casing are the
 /// same node.
@@ -238,6 +238,13 @@ pub enum ObjectId {
         /// Function name.
         name: NameKey,
     },
+    /// A report-level measure (reportExtensions.json). Lives in the report, not the
+    /// model, so it does not share the model's measure namespace: a distinct variant
+    /// avoids ever conflating the two.
+    ReportMeasure {
+        /// Report measure name; unique within its report.
+        measure: NameKey,
+    },
 }
 
 impl fmt::Display for ObjectId {
@@ -286,6 +293,9 @@ impl fmt::Display for ObjectId {
             }
             ObjectId::Function { name } => {
                 write!(f, "function {}", Quoted(name.as_str()))
+            }
+            ObjectId::ReportMeasure { measure } => {
+                write!(f, "report measure {}", Quoted(measure.as_str()))
             }
         }
     }
@@ -535,6 +545,10 @@ mod tests {
         #[case::function(
             ObjectId::Function { name: NameKey::new("Sales.Margin") },
             "function 'Sales.Margin'"
+        )]
+        #[case::report_measure(
+            ObjectId::ReportMeasure { measure: NameKey::new("Growth %") },
+            "report measure 'Growth %'"
         )]
         #[case::internal_quotes_are_doubled(
             column("Bob's 'Best' Data", "AmOuNt"),
