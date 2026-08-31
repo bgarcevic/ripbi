@@ -562,7 +562,6 @@ fn extend_with_wells<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::ObjectId;
     use rstest::rstest;
 
     fn column_target(table: &str, column: &str) -> FieldTarget {
@@ -708,6 +707,34 @@ mod tests {
             }
         }
 
+        /// One binding's full provenance: page, visual, bookmark, kind, and the
+        /// target as `Display` — what resolution consumes.
+        type Provenance<'a> = (
+            Option<&'a str>,
+            Option<&'a str>,
+            Option<&'a str>,
+            BindingKind<'a>,
+            String,
+        );
+
+        /// `Provenance` per binding, in enumeration order — the full
+        /// specification `bindings()` must satisfy.
+        fn provenance(report: &ReportModel) -> Vec<Provenance<'_>> {
+            report
+                .bindings()
+                .into_iter()
+                .map(|binding| {
+                    (
+                        binding.page.map(NameKey::as_str),
+                        binding.visual.map(NameKey::as_str),
+                        binding.bookmark.map(NameKey::as_str),
+                        binding.kind,
+                        binding.target.to_string(),
+                    )
+                })
+                .collect()
+        }
+
         #[test]
         fn a_report_filter_has_no_page_visual_or_bookmark() {
             let report = ReportModel {
@@ -789,11 +816,16 @@ mod tests {
                 ..page("ReportSection1")
             });
 
-            let kinds: Vec<BindingKind> = report.bindings().into_iter().map(|b| b.kind).collect();
+            let bindings = report.bindings();
             assert_eq!(
-                kinds,
+                bindings.iter().map(|b| b.kind).collect::<Vec<_>>(),
                 vec![BindingKind::Sort, BindingKind::ConditionalFormatting]
             );
+            // Both bindings belong to their visual, at page level.
+            for binding in &bindings {
+                assert_eq!(binding.page.unwrap().as_str(), "ReportSection1");
+                assert_eq!(binding.visual.unwrap().as_str(), "visual1");
+            }
         }
 
         #[test]
@@ -845,8 +877,8 @@ mod tests {
             assert_eq!(bindings[0].kind, BindingKind::FieldWell { role: "Rows" });
         }
 
-        /// A filter with no structured target still yields its condition tree's
-        /// references; the declared target, when present, comes first.
+        /// The declared target comes first, then the condition tree's references,
+        /// in file order.
         #[test]
         fn a_filter_yields_target_then_references_in_order() {
             let report = sample_with_page(Page {
@@ -876,6 +908,36 @@ mod tests {
             );
         }
 
+        /// A filter the parser could not give a structured target still binds:
+        /// its references are roots even when `target` is `None`.
+        #[test]
+        fn a_filter_without_a_target_still_binds_its_references() {
+            let report = sample_with_page(Page {
+                visuals: vec![Visual {
+                    filters: vec![Filter {
+                        name: Some(NameKey::new("Filter5")),
+                        target: None,
+                        references: vec![
+                            column_target("Product", "Subcategory"),
+                            measure_target(None, "Units"),
+                        ],
+                    }],
+                    ..visual("visual1", "donutChart")
+                }],
+                ..page("ReportSection1")
+            });
+
+            let targets: Vec<&FieldTarget> =
+                report.bindings().into_iter().map(|b| b.target).collect();
+            assert_eq!(
+                targets,
+                vec![
+                    &column_target("Product", "Subcategory"),
+                    &measure_target(None, "Units"),
+                ]
+            );
+        }
+
         /// An inactive projection is one toggle away from live; dropping it would
         /// under-count roots and report live code as unused.
         #[test]
@@ -898,9 +960,31 @@ mod tests {
             assert_eq!(report.bindings().len(), 1);
         }
 
+        /// Hidden is not dead: a hidden page's visuals render on demand, so their
+        /// wells bind like any other page's. Skipping hidden pages would
+        /// under-count roots and report live code as unused.
+        #[test]
+        fn a_hidden_pages_visuals_still_bind() {
+            let report = sample_with_page(Page {
+                is_hidden: true,
+                visuals: vec![Visual {
+                    wells: vec![well("Values", &[column_target("Sales", "Units")])],
+                    ..visual("visual1", "card")
+                }],
+                ..page("ReportSection1")
+            });
+
+            let bindings = report.bindings();
+            assert_eq!(bindings.len(), 1);
+            assert_eq!(bindings[0].page.unwrap().as_str(), "ReportSection1");
+            assert_eq!(bindings[0].kind, BindingKind::FieldWell { role: "Values" });
+        }
+
         /// Enumeration walks report order — report filters, page (parameters,
         /// filters, visuals: wells, filters, sorts, conditional formatting), then
-        /// bookmarks — so runs are diffable.
+        /// bookmarks — so runs are diffable. Every binding's full provenance is
+        /// pinned, not just its kind: a slipped page, visual, or bookmark on any
+        /// site must fail here.
         #[test]
         fn order_follows_report_structure() {
             let report = ReportModel {
@@ -951,28 +1035,91 @@ mod tests {
                 ..sample()
             };
 
-            let kinds: Vec<BindingKind> = report.bindings().into_iter().map(|b| b.kind).collect();
             assert_eq!(
-                kinds,
+                provenance(&report),
                 vec![
-                    BindingKind::Filter,                         // report filter
-                    BindingKind::Drillthrough,                   // page 1 parameter
-                    BindingKind::Filter,                         // page 1 filter
-                    BindingKind::FieldWell { role: "Category" }, // visual 1 well
-                    BindingKind::Filter,                         // visual 1 filter
-                    BindingKind::Sort,                           // visual 1 sort
-                    BindingKind::ConditionalFormatting,          // visual 1 rule
-                    BindingKind::FieldWell { role: "Tooltips" }, // visual 2 well
-                    BindingKind::Filter,                         // bookmark filter
-                    BindingKind::FieldWell { role: "Rows" },     // bookmark well
+                    // Report filter.
+                    (
+                        None,
+                        None,
+                        None,
+                        BindingKind::Filter,
+                        "'Product'[Category]".to_string(),
+                    ),
+                    // Page 1 drillthrough parameter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        None,
+                        BindingKind::Drillthrough,
+                        "'Industries'[Industry]".to_string(),
+                    ),
+                    // Page 1 filter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        None,
+                        BindingKind::Filter,
+                        "'Owners'[Sales owner]".to_string(),
+                    ),
+                    // Visual 1 well.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        BindingKind::FieldWell { role: "Category" },
+                        "'Product'[Category]".to_string(),
+                    ),
+                    // Visual 1 filter.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        BindingKind::Filter,
+                        "'Region'[Country]".to_string(),
+                    ),
+                    // Visual 1 sort.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        BindingKind::Sort,
+                        "'Sales'[Sales]".to_string(),
+                    ),
+                    // Visual 1 conditional formatting.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        BindingKind::ConditionalFormatting,
+                        "'Sales'[Margin]".to_string(),
+                    ),
+                    // Visual 2 well.
+                    (
+                        Some("ReportSection2"),
+                        Some("visual2"),
+                        None,
+                        BindingKind::FieldWell { role: "Tooltips" },
+                        "'Sales'[Customers %]".to_string(),
+                    ),
+                    // Bookmark filter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        Some("Bookmark1"),
+                        BindingKind::Filter,
+                        "'Products'[Product category]".to_string(),
+                    ),
+                    // Bookmark well.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        Some("Bookmark1"),
+                        BindingKind::FieldWell { role: "Rows" },
+                        "'Product'[Subcategory]".to_string(),
+                    ),
                 ]
             );
-        }
-
-        #[test]
-        fn enumeration_is_deterministic() {
-            let report = sample();
-            assert_eq!(report.bindings(), report.bindings());
         }
     }
 
@@ -1048,9 +1195,34 @@ mod tests {
                 }
             );
             assert_eq!(
-                expressions[1].kind,
-                DaxExpressionKind::ReportMeasureFormatString
+                expressions[1],
+                DaxExpressionRef {
+                    owner: ExpressionOwner::ReportMeasure {
+                        measure: "Growth %"
+                    },
+                    kind: DaxExpressionKind::ReportMeasureFormatString,
+                    home_table: None,
+                    text: "0.0%;-0.0%;0.0%",
+                }
             );
+        }
+
+        /// Most report measures carry no dynamic format string; only the body is
+        /// then an expression source.
+        #[test]
+        fn a_measure_without_a_format_string_enumerates_only_its_body() {
+            let report = ReportModel {
+                measures: vec![ReportMeasure {
+                    name: NameKey::new("Total Units"),
+                    expression: "SUM('Sales'[Units])".to_string(),
+                    format_string: None,
+                }],
+                ..Default::default()
+            };
+
+            let expressions = report.dax_expressions();
+            assert_eq!(expressions.len(), 1);
+            assert_eq!(expressions[0].kind, DaxExpressionKind::ReportMeasure);
         }
 
         #[test]
@@ -1060,16 +1232,16 @@ mod tests {
 
         /// The owner is the measure's reachability identity: visuals reference it,
         /// its body references model objects, and the graph node must match both.
+        /// Compared through `Display`: `ObjectId` equality ignores case, so it
+        /// could never catch a lowercased or rewritten name.
         #[test]
         fn owner_materializes_a_report_measure_object_id() {
             let owner = ExpressionOwner::ReportMeasure {
                 measure: "Growth %",
             };
             assert_eq!(
-                owner.to_object_id(),
-                ObjectId::ReportMeasure {
-                    measure: NameKey::new("growth %")
-                }
+                owner.to_object_id().to_string(),
+                "report measure 'Growth %'"
             );
         }
     }
