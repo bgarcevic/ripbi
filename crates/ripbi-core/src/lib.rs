@@ -35,9 +35,15 @@
 //! assert_eq!(expressions.len(), 1);
 //! assert_eq!(expressions[0].text, "SUM(Sales[Amount])");
 //! ```
+//!
+//! The report side is one [`ReportModel`] per report sharing the model: its
+//! [`bindings`](ReportModel::bindings) are the reachability roots, and its
+//! [`dax_expressions`](ReportModel::dax_expressions) add report-level measures on
+//! top of the model's own expressions.
 
 pub mod identity;
 pub mod model;
+pub mod report;
 
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use model::index::{
@@ -49,6 +55,11 @@ pub use model::{
     DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel, Kpi, MExpressionRef,
     Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
     TablePermission, TabularDatabase,
+};
+pub use report::{
+    BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, DatasetReference,
+    DrillthroughParameter, FieldTarget, FieldWell, Filter, Page, PageBinding, PageBindingKind,
+    Projection, ReportMeasure, ReportModel, Visual,
 };
 
 use thiserror::Error;
@@ -72,10 +83,3 @@ pub enum Error {
 
 /// A result whose error is this crate's [`enum@Error`].
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Normalized report model: visuals, filters, and slicer bindings.
-#[derive(Debug, Default)]
-pub struct ReportModel {
-    /// Model objects the report binds to, as written in the binding.
-    pub bound_fields: Vec<String>,
-}
