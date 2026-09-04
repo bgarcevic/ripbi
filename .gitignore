@@ -29,6 +29,9 @@ tarpaulin-report.*
 .env
 .env.local
 
+# Power BI Desktop local artifacts — regenerated on open, not shipped upstream
+samples/**/.pbi/
+
 # Agent tooling — skills are tracked, scratch state is not
 /.claude/worktrees
 /.claude/settings.local.json
