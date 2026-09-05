@@ -17,9 +17,9 @@ table Sales
 		detailRowsDefinition = SELECTCOLUMNS('Sales', "Key", [SalesOrderLineKey])
 		kpi
 			statusGraphic: Three Traffic Lights
-			target = [Sales Budget]
-			status = IF([Sales] > [Sales Budget], 1, -1)
-			trend = [Sales] - [Sales Budget]
+			targetExpression = [Sales Budget]
+			statusExpression = IF([Sales] > [Sales Budget], 1, -1)
+			trendExpression = [Sales] - [Sales Budget]
 
 	column SalesOrderLineKey
 		dataType: int64
@@ -37,6 +37,8 @@ table Sales
 		summarizeBy: sum
 		sourceColumn: Sales Amount
 		lineageTag: 44444444-4444-4444-4444-444444444444
+		relatedColumnDetails
+			groupByColumn: SalesOrderLineKey
 
 	/// A calculated column; the sort-by target is quoted.
 	column 'Margin %' = DIVIDE([Sales Amount], 10)
@@ -44,6 +46,23 @@ table Sales
 		formatString: 0.0%
 		sortByColumn: 'Sales Amount'
 		lineageTag: 55555555-5555-5555-5555-555555555555
+
+	column DueDateKey
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: DueDateKey
+		lineageTag: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+
+	column YearNum
+		dataType: int64
+		sourceColumn: YearNum
+		lineageTag: cccccccc-cccc-cccc-cccc-cccccccccccc
+
+	column 'Month Name'
+		dataType: string
+		sourceColumn: Month Name
+		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddddd
 
 	hierarchy Fiscal
 		lineageTag: 66666666-6666-6666-6666-666666666666
@@ -54,6 +73,8 @@ table Sales
 
 		level 'Month Name'
 			column: 'Month Name'
+
+	defaultDetailRowsDefinition = SELECTCOLUMNS('Sales', "Key", [SalesOrderLineKey])
 
 	partition Sales-ab12cd34 = m
 		mode: import

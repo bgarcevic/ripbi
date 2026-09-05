@@ -1,6 +1,12 @@
 //! Fixture tests for TMDL ingestion: a golden model parsed exactly, and
 //! resilience fixtures asserting both directions — drift parses *and* is
 //! noticed, deliberately-unmodeled metadata stays silent.
+//!
+//! The golden fixture is valid TMDL, not just text this parser accepts: it
+//! loads in the Analysis Services engine (verified with `tomix-cli`'s
+//! `tx load`). When editing it, re-validate — the engine is the authority on
+//! spellings the samples never exercise (KPI expressions, detail rows,
+//! calculation-group selection expressions, `relatedColumnDetails`).
 
 use std::path::PathBuf;
 
@@ -40,6 +46,7 @@ fn golden_database() -> TabularDatabase {
                     Column {
                         name: "Sales Amount".to_string(),
                         kind: ColumnKind::Data,
+                        group_by_columns: vec!["SalesOrderLineKey".to_string()],
                         ..Default::default()
                     },
                     Column {
@@ -48,6 +55,22 @@ fn golden_database() -> TabularDatabase {
                             expression: "DIVIDE([Sales Amount], 10)".to_string(),
                         },
                         sort_by_column: Some("Sales Amount".to_string()),
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "DueDateKey".to_string(),
+                        kind: ColumnKind::Data,
+                        is_hidden: true,
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "YearNum".to_string(),
+                        kind: ColumnKind::Data,
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "Month Name".to_string(),
+                        kind: ColumnKind::Data,
                         ..Default::default()
                     },
                 ],
@@ -92,15 +115,37 @@ fn golden_database() -> TabularDatabase {
                     ],
                     is_hidden: false,
                 }],
+                detail_rows_expression: Some(
+                    "SELECTCOLUMNS('Sales', \"Key\", [SalesOrderLineKey])".to_string(),
+                ),
                 ..Default::default()
             },
             Table {
                 name: "Sales Order".to_string(),
-                columns: vec![Column {
-                    name: "It's quoted".to_string(),
-                    kind: ColumnKind::Data,
-                    ..Default::default()
-                }],
+                columns: vec![
+                    Column {
+                        name: "SalesOrder".to_string(),
+                        kind: ColumnKind::Data,
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "SalesOrderLineKey".to_string(),
+                        kind: ColumnKind::Data,
+                        is_hidden: true,
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "DueDateKey".to_string(),
+                        kind: ColumnKind::Data,
+                        is_hidden: true,
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "It's quoted".to_string(),
+                        kind: ColumnKind::Data,
+                        ..Default::default()
+                    },
+                ],
                 partitions: vec![Partition {
                     name: "SalesOrder-cd34ef56".to_string(),
                     source: PartitionSource::M {
@@ -162,15 +207,15 @@ fn golden_database() -> TabularDatabase {
                 name: Some("00000000-0000-0000-0000-000000000002".to_string()),
                 from_table: "Sales Order".to_string(),
                 from_column: "SalesOrder".to_string(),
-                to_table: "Customer".to_string(),
-                to_column: "SalesOrder".to_string(),
+                to_table: "Sales".to_string(),
+                to_column: "SalesOrderLineKey".to_string(),
                 is_active: true,
             },
             Relationship {
                 name: Some("00000000-0000-0000-0000-000000000003".to_string()),
                 from_table: "Sales".to_string(),
                 from_column: "DueDateKey".to_string(),
-                to_table: "Date".to_string(),
+                to_table: "Sales Order".to_string(),
                 to_column: "DueDateKey".to_string(),
                 is_active: false,
             },

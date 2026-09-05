@@ -6,9 +6,9 @@ relationship 00000000-0000-0000-0000-000000000002
 	crossFilteringBehavior: bothDirections
 	fromCardinality: one
 	fromColumn: 'Sales Order'.SalesOrder
-	toColumn: Customer.SalesOrder
+	toColumn: Sales.SalesOrderLineKey
 
 relationship 00000000-0000-0000-0000-000000000003
 	isActive: false
 	fromColumn: Sales.DueDateKey
-	toColumn: Date.DueDateKey
+	toColumn: 'Sales Order'.DueDateKey

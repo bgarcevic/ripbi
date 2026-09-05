@@ -10,9 +10,9 @@ table 'Time Intelligence'
 			formatStringDefinition = "0%;-0%;0%"
 
 		noSelectionExpression = SELECTEDMEASURE()
-		noSelectionFormatString = SELECTEDMEASUREFORMATSTRING()
+			formatStringDefinition = SELECTEDMEASUREFORMATSTRING()
 		multipleOrEmptySelectionExpression = ERROR("Pick exactly one")
-		multipleOrEmptySelectionFormatString = "General"
+			formatStringDefinition = "General"
 
 	/// The group's field column, an ordinary column.
 	column 'Time Intelligence'

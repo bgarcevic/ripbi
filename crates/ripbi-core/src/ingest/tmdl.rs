@@ -50,7 +50,6 @@ const IGNORED_KEYS: &[&str] = &[
     "isDefaultImage",
     "isAvailableInMdx",
     "keepUniqueRows",
-    "relatedColumnDetails",
     "tableDetailPosition",
     // Measure and table metadata
     "displayFolder",
@@ -967,7 +966,7 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
                 table.calculation_group = Some(map_calculation_group(child, path, skips));
             }
             "isHidden" => table.is_hidden = true,
-            "detailRowsDefinition" => {
+            "defaultDetailRowsDefinition" => {
                 table.detail_rows_expression = child.text().map(str::to_string);
             }
             other => notice(
@@ -1023,8 +1022,9 @@ fn map_measure(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Measure
     measure
 }
 
-/// Maps a `kpi` block. No sample carries one, so both the short TMDL spellings
-/// (`target =`) and the TOM property names (`targetExpression`) are accepted.
+/// Maps a `kpi` block: `statusGraphic` plus the three TOM expression
+/// properties. Spellings verified against the Analysis Services engine — the
+/// short forms (`target =`, `status =`, `trend =`) are not valid TMDL.
 fn map_kpi(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Kpi {
     let mut kpi = Kpi::default();
     for child in &node.children {
@@ -1032,13 +1032,13 @@ fn map_kpi(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Kpi {
             continue;
         }
         match child.key.as_str() {
-            "target" | "targetExpression" => {
+            "targetExpression" => {
                 kpi.target_expression = child.text().map(str::to_string);
             }
-            "status" | "statusExpression" => {
+            "statusExpression" => {
                 kpi.status_expression = child.text().map(str::to_string);
             }
-            "trend" | "trendExpression" => {
+            "trendExpression" => {
                 kpi.trend_expression = child.text().map(str::to_string);
             }
             other => notice(
@@ -1072,9 +1072,24 @@ fn map_column(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Column {
         match child.key.as_str() {
             "isHidden" => column.is_hidden = true,
             "sortByColumn" => column.sort_by_column = child.text().map(unquote),
-            "groupByColumn" => {
-                if let Some(text) = child.text() {
-                    column.group_by_columns.push(unquote(text));
+            // Group-by columns live inside a nameless relatedColumnDetails
+            // object, one groupByColumn per grouped column (verified shape —
+            // samples/…/Toggle for breakdown.tmdl).
+            "relatedColumnDetails" => {
+                for detail in &child.children {
+                    if detail.key == "groupByColumn" {
+                        if let Some(text) = detail.text() {
+                            column.group_by_columns.push(unquote(text));
+                        }
+                    } else if !is_ignored(detail) {
+                        notice(
+                            skips,
+                            path,
+                            Some(detail.line),
+                            SkipKind::UnknownProperty,
+                            format!("unknown property '{}' on relatedColumnDetails", detail.key),
+                        );
+                    }
                 }
             }
             other => notice(
@@ -1214,19 +1229,18 @@ fn map_calculation_group(
         }
         match child.key.as_str() {
             "calculationItem" => group.items.push(map_calculation_item(child, path, skips)),
+            // Selection expressions are objects: the expression itself, with
+            // an optional nested formatStringDefinition for its dynamic
+            // format string. Standalone format-string spellings are not valid
+            // TMDL (verified against the Analysis Services engine).
             "noSelectionExpression" => {
                 group.no_selection_expression = child.text().map(str::to_string);
-            }
-            "noSelectionFormatString" | "noSelectionFormatStringDefinition" => {
-                group.no_selection_format_string_expression = child.text().map(str::to_string);
+                group.no_selection_format_string_expression = nested_format_string(child);
             }
             "multipleOrEmptySelectionExpression" => {
                 group.multiple_or_empty_selection_expression = child.text().map(str::to_string);
-            }
-            "multipleOrEmptySelectionFormatString"
-            | "multipleOrEmptySelectionFormatStringDefinition" => {
                 group.multiple_or_empty_selection_format_string_expression =
-                    child.text().map(str::to_string);
+                    nested_format_string(child);
             }
             other => notice(
                 skips,
@@ -1238,6 +1252,15 @@ fn map_calculation_group(
         }
     }
     group
+}
+
+/// A selection expression's nested `formatStringDefinition` child, if any.
+fn nested_format_string(node: &Node) -> Option<String> {
+    node.children
+        .iter()
+        .find(|child| child.key == "formatStringDefinition")
+        .and_then(Node::text)
+        .map(str::to_string)
 }
 
 fn map_calculation_item(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> CalculationItem {
@@ -1373,9 +1396,9 @@ fn map_role(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Role {
             continue;
         }
         match child.key.as_str() {
-            // The filter is the `=` expression (inline or block); the
-            // child-property form is accepted too, since no sample fixes the
-            // spelling.
+            // The filter is the `=` expression (inline or block); a
+            // `filterExpression` child also loads — both spellings verified
+            // against the Analysis Services engine.
             "tablePermission" => {
                 let table = unquote(child.name.as_deref().unwrap_or_default());
                 let filter_expression = child.text().map(str::to_string).or_else(|| {
@@ -1746,7 +1769,7 @@ mod tests {
         fn maps_a_measure_with_kpi_and_dynamic_format_string() {
             let mut skips = Vec::new();
             let node = map_one(
-                "measure 'Growth %' =\n\t\tVAR p = 1\n\t\tRETURN p\n\tisHidden\n\tformatStringDefinition = \"0%\"\n\tdetailRowsDefinition = DR\n\tkpi\n\t\ttarget = [B]\n\t\tstatusExpression = IF(1, 1, -1)\n\t\ttrend = [T]\n",
+                "measure 'Growth %' =\n\t\tVAR p = 1\n\t\tRETURN p\n\tisHidden\n\tformatStringDefinition = \"0%\"\n\tdetailRowsDefinition = DR\n\tkpi\n\t\tstatusGraphic: Three Traffic Lights\n\t\ttargetExpression = [B]\n\t\tstatusExpression = IF(1, 1, -1)\n\t\ttrendExpression = [T]\n",
                 "measure",
             );
             let measure = map_measure(&node, Path::new("t"), &mut skips);
@@ -1760,6 +1783,20 @@ mod tests {
             assert_eq!(kpi.target_expression.as_deref(), Some("[B]"));
             assert_eq!(kpi.status_expression.as_deref(), Some("IF(1, 1, -1)"));
             assert_eq!(kpi.trend_expression.as_deref(), Some("[T]"));
+        }
+
+        /// The short KPI spellings are not valid TMDL — the AS engine rejects
+        /// `target =` — so they must surface as drift here, not map silently.
+        #[test]
+        fn notices_the_invalid_short_kpi_spellings() {
+            let mut skips = Vec::new();
+            let node = map_one("measure M = 1\n\tkpi\n\t\ttarget = [B]\n", "measure");
+            let measure = map_measure(&node, Path::new("t"), &mut skips);
+
+            let kpi = measure.kpi.expect("kpi block still maps");
+            assert_eq!(kpi.target_expression, None);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::UnknownProperty);
         }
 
         #[test]
@@ -1778,7 +1815,7 @@ mod tests {
         fn maps_calculated_columns_sort_and_group_by() {
             let mut skips = Vec::new();
             let node = map_one(
-                "column 'Margin %' = DIVIDE([Sales Amount], 10)\n\tsortByColumn: 'Sales Amount'\n\tgroupByColumn: 'A'\n\tgroupByColumn: B\n",
+                "column 'Margin %' = DIVIDE([Sales Amount], 10)\n\tsortByColumn: 'Sales Amount'\n\trelatedColumnDetails\n\t\tgroupByColumn: 'A'\n\t\tgroupByColumn: B\n",
                 "column",
             );
             let column = map_column(&node, Path::new("t"), &mut skips);
@@ -1967,8 +2004,11 @@ mod tests {
         #[test]
         fn maps_calculation_groups_with_selection_expressions() {
             let mut skips = Vec::new();
+            // Selection expressions carry their dynamic format strings as a
+            // nested formatStringDefinition child (verified against the AS
+            // engine; the standalone spellings are not valid TMDL).
             let node = map_one(
-                "calculationGroup\n\tprecedence: 100\n\tcalculationItem Current = SELECTEDMEASURE()\n\tcalculationItem 'YoY %' = 1\n\t\tformatStringDefinition = \"0%\"\n\tnoSelectionExpression = SELECTEDMEASURE()\n\tnoSelectionFormatString = F()\n\tmultipleOrEmptySelectionExpression = ERROR(\"x\")\n\tmultipleOrEmptySelectionFormatStringDefinition = \"G\"\n",
+                "calculationGroup\n\tprecedence: 100\n\tcalculationItem Current = SELECTEDMEASURE()\n\tcalculationItem 'YoY %' = 1\n\t\tformatStringDefinition = \"0%\"\n\tnoSelectionExpression = SELECTEDMEASURE()\n\t\tformatStringDefinition = F()\n\tmultipleOrEmptySelectionExpression = ERROR(\"x\")\n\t\tformatStringDefinition = \"G\"\n",
                 "calculationGroup",
             );
             let group = map_calculation_group(&node, Path::new("t"), &mut skips);

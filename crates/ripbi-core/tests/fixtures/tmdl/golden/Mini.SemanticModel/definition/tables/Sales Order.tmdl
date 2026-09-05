@@ -1,6 +1,22 @@
 table 'Sales Order'
 	lineageTag: 88888888-8888-8888-8888-888888888888
 
+	column SalesOrder
+		dataType: string
+		sourceColumn: SalesOrder
+
+	column SalesOrderLineKey
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: SalesOrderLineKey
+
+	column DueDateKey
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: DueDateKey
+
 	/// An escaped quote in the name.
 	column 'It''s quoted'
 		dataType: string

@@ -32,8 +32,8 @@ Object headers, mapped into the AST:
 
 | Descriptor | Maps to |
 |---|---|
-| `table N` (+ `isHidden`) | `Table` (`detailRowsDefinition` → detail rows) |
-| `column N` / `column N = dax` | `Column` (data / `ColumnKind::Calculated`) |
+| `table N` (+ `isHidden`) | `Table` (`defaultDetailRowsDefinition` → detail rows) |
+| `column N` / `column N = dax` | `Column` (data / `ColumnKind::Calculated`; `sortByColumn`, nested `relatedColumnDetails` → group-by columns) |
 | `measure N = dax` | `Measure` (+ `formatStringDefinition`, `detailRowsDefinition`, `kpi`) |
 | `partition N = m\|calculated\|query\|<other>` | `PartitionSource::M`/`Calculated`/`Query`/`Other` |
 | `relationship <guid>` | `Relationship` (`isActive` defaults true, like TOM) |
@@ -114,16 +114,35 @@ Hierarchies/levels: `ordinal`. Relationships: `crossFilteringBehavior`,
 `fromCardinality`, `toCardinality`, `joinOnDateBehavior`, `hideArrows`,
 `securityFilteringBehavior`, `reliability`.
 
-### Assumed spellings (no sample carries them)
+### Verified spellings (validated against the AS engine)
 
-KPI expressions accept both `target`/`status`/`trend` and the TOM names
-`targetExpression`/`statusExpression`/`trendExpression`. `tablePermission`
-accepts its filter as the `=` expression (inline or block) or as a
-`filterExpression` child. Calculation-group selection expressions accept the
-`noSelectionFormatString` and `noSelectionFormatStringDefinition` spellings
-(likewise `multipleOrEmptySelection…`). `groupByColumn` (singular, repeated)
-feeds `Column::group_by_columns`. If real files disagree, the drift policy
-surfaces it as a notice rather than failing.
+No `samples/` model exercises these, so the spellings were verified by loading
+probe models in the Analysis Services TMDL engine (via
+[tomix-cli](https://github.com/bgarcevic/tomix-cli)'s `tx load`), and the
+golden fixture is held to the same standard — it loads clean in the engine:
+
+- **KPI**: `kpi` blocks carry `statusGraphic` plus `targetExpression`,
+  `statusExpression`, `trendExpression`. The short forms (`target =`,
+  `status =`, `trend =`) are *not* valid TMDL — the engine rejects them — so
+  this parser notices them as drift rather than mapping them.
+- **Detail rows**: measures use `detailRowsDefinition`; tables use
+  `defaultDetailRowsDefinition` (the engine rejects the measure spelling on a
+  table).
+- **Calculation-group selection expressions**: `noSelectionExpression` and
+  `multipleOrEmptySelectionExpression` are *objects* — the expression itself,
+  with an optional nested `formatStringDefinition` child for its dynamic
+  format string. Standalone format-string spellings are rejected by the engine.
+- **`tablePermission`**: the filter is the `=` expression (inline or block);
+  a `filterExpression` child property also loads. A permission with no filter
+  is just `tablePermission <table>`. All three shapes verified.
+- **`relatedColumnDetails`**: a nameless object under a column with one
+  `groupByColumn: <column>` per grouped column (the shape in
+  `samples/…/Toggle for breakdown.tmdl`); it feeds `Column::group_by_columns`.
+- The engine also *resolves* relationship `fromColumn`/`toColumn` against the
+  model's tables, and rejects `///` doc comments (descriptions) on
+  `tablePermission`. This parser does not cross-validate references — missing
+  targets are the graph layer's findings, not parse failures — but the golden
+  fixture keeps self-consistent references to stay engine-loadable.
 
 ### Known gaps
 

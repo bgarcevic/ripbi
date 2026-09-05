@@ -7,5 +7,3 @@ expression Calendar =
 		    EndDate = #date(2024, 12, 31)
 		in
 		    {StartDate, EndDate}
-
-annotation PBI_ResultType = Table
