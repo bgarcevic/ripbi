@@ -209,7 +209,11 @@ fn golden_database() -> TabularDatabase {
                 from_column: "SalesOrder".to_string(),
                 to_table: "Sales".to_string(),
                 to_column: "SalesOrderLineKey".to_string(),
-                is_active: true,
+                // Two active relationships between the same table pair are an
+                // ambiguous path — the engine rejects them at save time
+                // (PFE_XL_USERELATIONSHIP_AMBIGUOUS_PATH), so the second
+                // relationship on the pair must stay inactive.
+                is_active: false,
             },
             Relationship {
                 name: Some("00000000-0000-0000-0000-000000000003".to_string()),
