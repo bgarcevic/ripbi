@@ -1,0 +1,9 @@
+expression ServerName = "localhost"
+
+/// A shared calendar query, written as a block.
+expression Calendar =
+		let
+		    StartDate = #date(2024, 1, 1),
+		    EndDate = #date(2024, 12, 31)
+		in
+		    {StartDate, EndDate}

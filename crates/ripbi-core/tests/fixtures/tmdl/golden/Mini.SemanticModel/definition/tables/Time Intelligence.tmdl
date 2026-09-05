@@ -1,0 +1,22 @@
+table 'Time Intelligence'
+	lineageTag: 99999999-9999-9999-9999-999999999999
+
+	calculationGroup
+		precedence: 100
+
+		calculationItem Current = SELECTEDMEASURE()
+
+		calculationItem 'YoY %' = DIVIDE(SELECTEDMEASURE(), CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date])))
+			formatStringDefinition = "0%;-0%;0%"
+
+		noSelectionExpression = SELECTEDMEASURE()
+			formatStringDefinition = SELECTEDMEASUREFORMATSTRING()
+		multipleOrEmptySelectionExpression = ERROR("Pick exactly one")
+			formatStringDefinition = "General"
+
+	/// The group's field column, an ordinary column.
+	column 'Time Intelligence'
+		dataType: string
+		lineageTag: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+
+	partition 'Partition_Time Intelligence' = calculationGroup

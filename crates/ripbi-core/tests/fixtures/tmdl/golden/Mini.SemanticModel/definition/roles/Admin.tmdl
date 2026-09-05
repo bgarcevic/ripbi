@@ -1,0 +1,7 @@
+role Administrators
+	modelPermission: read
+
+	tablePermission Sales =
+			FILTER('Sales', [Sales Amount] > 0)
+
+	tablePermission 'Sales Order'
