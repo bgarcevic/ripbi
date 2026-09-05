@@ -1,0 +1,9 @@
+role Administrators
+	modelPermission: read
+
+	/// Row-level security, written as a block.
+	tablePermission Sales =
+			FILTER('Sales', [Sales Amount] > 0)
+
+	/// Metadata only: no filter expression.
+	tablePermission 'Sales Order'

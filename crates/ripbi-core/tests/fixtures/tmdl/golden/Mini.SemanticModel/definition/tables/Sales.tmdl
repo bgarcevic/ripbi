@@ -1,0 +1,68 @@
+/// Sales fact table.
+table Sales
+	lineageTag: 11111111-1111-1111-1111-111111111111
+
+	/// Total sales revenue.
+	measure Sales = SUM('Sales'[Sales Amount])
+		formatString: "$"#,0
+		displayFolder: Core
+		lineageTag: 22222222-2222-2222-2222-222222222222
+
+	/// Growth versus prior year, written across two lines.
+	measure 'Growth %' =
+			VAR prior = CALCULATE([Sales], DATEADD('Date'[Date], -1, YEAR))
+			RETURN DIVIDE([Sales] - prior, prior)
+		isHidden
+		formatStringDefinition = "0.0%;-0.0%;0.0%"
+		detailRowsDefinition = SELECTCOLUMNS('Sales', "Key", [SalesOrderLineKey])
+		kpi
+			statusGraphic: Three Traffic Lights
+			target = [Sales Budget]
+			status = IF([Sales] > [Sales Budget], 1, -1)
+			trend = [Sales] - [Sales Budget]
+
+	column SalesOrderLineKey
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: SalesOrderLineKey
+		lineageTag: 33333333-3333-3333-3333-333333333333
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Sales Amount'
+		dataType: double
+		summarizeBy: sum
+		sourceColumn: Sales Amount
+		lineageTag: 44444444-4444-4444-4444-444444444444
+
+	/// A calculated column; the sort-by target is quoted.
+	column 'Margin %' = DIVIDE([Sales Amount], 10)
+		dataType: double
+		formatString: 0.0%
+		sortByColumn: 'Sales Amount'
+		lineageTag: 55555555-5555-5555-5555-555555555555
+
+	hierarchy Fiscal
+		lineageTag: 66666666-6666-6666-6666-666666666666
+
+		level Year
+			column: YearNum
+			lineageTag: 77777777-7777-7777-7777-777777777777
+
+		level 'Month Name'
+			column: 'Month Name'
+
+	partition Sales-ab12cd34 = m
+		mode: import
+		source =
+				let
+				    Source = Excel.Workbook(File.Contents("C:\Data\Mini.xlsx"), null, true),
+
+				    Sales_Table = Source{[Item="Sales",Kind="Table"]}[Data]
+				in
+				    Sales_Table
+
+annotation PBI_ResultType = Table

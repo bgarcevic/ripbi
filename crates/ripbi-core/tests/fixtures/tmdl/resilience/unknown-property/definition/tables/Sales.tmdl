@@ -1,0 +1,7 @@
+table Sales
+	lineageTag: 11111111-1111-1111-1111-111111111111
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		aiHint: smart

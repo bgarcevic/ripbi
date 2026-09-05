@@ -40,12 +40,19 @@
 //! [`bindings`](ReportModel::bindings) are the reachability roots, and its
 //! [`dax_expressions`](ReportModel::dax_expressions) add report-level measures on
 //! top of the model's own expressions.
+//!
+//! Source formats are ingested through [`ingest`]: `semantic_model` parses a TMDL
+//! `.SemanticModel` folder into a [`TabularDatabase`]. Every ingestion entry point
+//! returns [`Ingested`], pairing the parsed value with the [`SkipNotice`]s it
+//! recorded — warnings as data, so the CLI decides how to surface them.
 
 pub mod identity;
+pub mod ingest;
 pub mod model;
 pub mod report;
 
 pub use identity::{FieldRef, NameKey, ObjectId};
+pub use ingest::{Ingested, SkipKind, SkipNotice};
 pub use model::index::{
     ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, ModelIndex,
     Resolved, TableHandle, UnqualifiedMatches,
@@ -76,6 +83,9 @@ pub enum Error {
     /// A model or report JSON document could not be parsed.
     #[error("invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// A TMDL document is structurally malformed and could not be parsed.
+    #[error("malformed TMDL: {0}")]
+    Tmdl(String),
     /// The path is not a Power BI source this crate recognizes.
     #[error("unsupported or unrecognized source format: {0}")]
     UnsupportedFormat(String),

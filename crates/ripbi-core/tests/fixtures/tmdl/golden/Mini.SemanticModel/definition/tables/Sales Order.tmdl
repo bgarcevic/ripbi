@@ -1,0 +1,11 @@
+table 'Sales Order'
+	lineageTag: 88888888-8888-8888-8888-888888888888
+
+	/// An escaped quote in the name.
+	column 'It''s quoted'
+		dataType: string
+		sourceColumn: Quoted
+
+	partition SalesOrder-cd34ef56 = m
+		mode: import
+		source = Sql.Database("server", "db")
