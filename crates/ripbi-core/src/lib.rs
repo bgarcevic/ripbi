@@ -42,9 +42,10 @@
 //! top of the model's own expressions.
 //!
 //! Source formats are ingested through [`ingest`]: `semantic_model` parses a TMDL
-//! `.SemanticModel` folder into a [`TabularDatabase`]. Every ingestion entry point
-//! returns [`Ingested`], pairing the parsed value with the [`SkipNotice`]s it
-//! recorded — warnings as data, so the CLI decides how to surface them.
+//! `.SemanticModel` folder into a [`TabularDatabase`], and `report` parses a PBIR
+//! `.Report` folder into a [`ReportModel`]. Every ingestion entry point returns
+//! [`Ingested`], pairing the parsed value with the [`SkipNotice`]s it recorded —
+//! warnings as data, so the CLI decides how to surface them.
 
 pub mod identity;
 pub mod ingest;

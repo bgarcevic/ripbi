@@ -3,6 +3,7 @@ relationship 00000000-0000-0000-0000-000000000001
 	toColumn: 'Sales Order'.SalesOrderLineKey
 
 relationship 00000000-0000-0000-0000-000000000002
+	isActive: false
 	crossFilteringBehavior: bothDirections
 	fromCardinality: one
 	fromColumn: 'Sales Order'.SalesOrder

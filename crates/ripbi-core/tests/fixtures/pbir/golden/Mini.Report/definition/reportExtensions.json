@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/reportExtension/1.0.0/schema.json",
+  "name": "extension",
+  "entities": [
+    {
+      "name": "Sales",
+      "measures": [
+        {
+          "name": "Budget %",
+          "dataType": "Double",
+          "expression": "DIVIDE([Sales], [Budget])",
+          "formatString": "0.0%",
+          "hidden": false
+        }
+      ]
+    }
+  ]
+}

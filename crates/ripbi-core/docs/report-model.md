@@ -76,7 +76,9 @@ field wells, report-side roots also live in:
 - drillthrough parameters (`pageBinding.parameters[].fieldExpr`)
 - sort definitions (`sortDefinition.sort[].field`)
 - conditional-formatting rule keys
-- bookmarks' saved filters and active projections
+- bookmarks' saved filters — at all three levels, mirroring a live report:
+  report-level (`explorationState.filters`), per page section, and per visual —
+  and their saved projections
 - report-level measures, whose *bodies* consume model objects even though the measure
   itself is report-owned
 

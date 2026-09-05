@@ -14,12 +14,14 @@
 //! to parse — is recorded as a notice. The full policy, including the curated
 //! ignore list, lives in `docs/formats.md`.
 
+mod pbir;
 mod tmdl;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::model::TabularDatabase;
+use crate::report::ReportModel;
 use crate::{Error, Result};
 
 /// One thing a parser skipped, and why.
@@ -85,6 +87,24 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
     Ok(Ingested { value, skips })
 }
 
+/// Parses a PBIR report folder into a [`ReportModel`].
+///
+/// `path` is a `.Report` folder (its `definition/` subfolder is located
+/// automatically) or a `definition/` folder itself. A report is parsed
+/// standalone: the semantic model it connects to need not sit beside it, so
+/// one model can be scanned against several reports. Unexpected drift is
+/// reported in [`Ingested::skips`]; only an unreadable or malformed
+/// `report.json` — the file that makes the folder a report — fails.
+pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
+    let definition = locate_report_definition(path)?;
+    // `.platform` (which carries the display name) sits beside `definition/`.
+    let item_root = definition.parent().unwrap_or(path);
+    let name = platform_display_name(item_root);
+    let mut skips = Vec::new();
+    let value = pbir::load_report(&definition, name, &mut skips)?;
+    Ok(Ingested { value, skips })
+}
+
 /// Resolves the `definition/` folder of a semantic-model item.
 ///
 /// Accepts the `.SemanticModel` folder itself, its `definition/` subfolder, or
@@ -109,6 +129,30 @@ fn locate_definition(path: &Path) -> Result<PathBuf> {
     }
     Err(Error::UnsupportedFormat(format!(
         "not a semantic model: no definition/ or model.tmdl under {}",
+        path.display()
+    )))
+}
+
+/// Resolves the `definition/` folder of a PBIR report item.
+///
+/// Accepts the `.Report` folder itself, its `definition/` subfolder, or any
+/// directory that directly contains a `report.json`.
+fn locate_report_definition(path: &Path) -> Result<PathBuf> {
+    if !path.is_dir() {
+        return Err(Error::UnsupportedFormat(format!(
+            "not a report: {} is not a directory",
+            path.display()
+        )));
+    }
+    let nested = path.join("definition");
+    if nested.join("report.json").is_file() {
+        return Ok(nested);
+    }
+    if path.join("report.json").is_file() {
+        return Ok(path.to_path_buf());
+    }
+    Err(Error::UnsupportedFormat(format!(
+        "not a report: no definition/report.json or report.json under {}",
         path.display()
     )))
 }

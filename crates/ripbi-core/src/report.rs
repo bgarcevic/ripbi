@@ -190,6 +190,8 @@ pub struct Bookmark {
     pub name: NameKey,
     /// Author-facing name.
     pub display_name: Option<String>,
+    /// Filters saved at report level (`explorationState.filters`).
+    pub filters: Vec<Filter>,
     /// Captured state, per page it spans (usually one).
     pub sections: Vec<BookmarkSection>,
 }
@@ -212,6 +214,8 @@ pub struct BookmarkVisual {
     pub visual: NameKey,
     /// Fields active when the bookmark was captured, as wells by role.
     pub wells: Vec<FieldWell>,
+    /// Filters saved for this visual (`visualContainers.<id>.filters`).
+    pub filters: Vec<Filter>,
 }
 
 /// A DAX measure defined in the report (PBIR `reportExtensions.json`), not the
@@ -365,8 +369,9 @@ impl ReportModel {
     ///
     /// Order follows report order (report filters, then per page: drillthrough
     /// parameters, page filters, and each visual's wells, filters, sorts, and
-    /// conditional formatting; then per bookmark: section filters and saved wells),
-    /// so the result is deterministic for a given report and diffable across runs.
+    /// conditional formatting; then per bookmark: report-level filters, and per
+    /// section: section filters and each visual's wells and filters), so the
+    /// result is deterministic for a given report and diffable across runs.
     ///
     /// Everything borrows from the report, so this allocates only the returned
     /// `Vec`.
@@ -455,6 +460,10 @@ impl ReportModel {
         for bookmark in &self.bookmarks {
             let bookmark_id = Some(&bookmark.name);
 
+            for filter in &bookmark.filters {
+                extend_with_filter(&mut out, None, None, bookmark_id, filter);
+            }
+
             for section in &bookmark.sections {
                 let page_id = Some(&section.page);
 
@@ -463,13 +472,12 @@ impl ReportModel {
                 }
 
                 for visual in &section.visuals {
-                    extend_with_wells(
-                        &mut out,
-                        page_id,
-                        Some(&visual.visual),
-                        bookmark_id,
-                        &visual.wells,
-                    );
+                    let visual_id = Some(&visual.visual);
+                    extend_with_wells(&mut out, page_id, visual_id, bookmark_id, &visual.wells);
+
+                    for filter in &visual.filters {
+                        extend_with_filter(&mut out, page_id, visual_id, bookmark_id, filter);
+                    }
                 }
             }
         }
@@ -834,6 +842,7 @@ mod tests {
                 bookmarks: vec![Bookmark {
                     name: NameKey::new("Bookmark1"),
                     display_name: Some("FY24".to_string()),
+                    filters: Vec::new(),
                     sections: vec![BookmarkSection {
                         page: NameKey::new("ReportSection1"),
                         filters: vec![filter_on(column_target("Products", "Product category"))],
@@ -857,12 +866,14 @@ mod tests {
                 bookmarks: vec![Bookmark {
                     name: NameKey::new("Bookmark1"),
                     display_name: None,
+                    filters: Vec::new(),
                     sections: vec![BookmarkSection {
                         page: NameKey::new("ReportSection1"),
                         filters: Vec::new(),
                         visuals: vec![BookmarkVisual {
                             visual: NameKey::new("visual1"),
                             wells: vec![well("Rows", &[column_target("Product", "Subcategory")])],
+                            filters: Vec::new(),
                         }],
                     }],
                 }],
@@ -1022,12 +1033,14 @@ mod tests {
                 bookmarks: vec![Bookmark {
                     name: NameKey::new("Bookmark1"),
                     display_name: None,
+                    filters: vec![filter_on(measure_target(None, "Total Units"))],
                     sections: vec![BookmarkSection {
                         page: NameKey::new("ReportSection1"),
                         filters: vec![filter_on(column_target("Products", "Product category"))],
                         visuals: vec![BookmarkVisual {
                             visual: NameKey::new("visual1"),
                             wells: vec![well("Rows", &[column_target("Product", "Subcategory")])],
+                            filters: vec![filter_on(column_target("Product", "Color"))],
                         }],
                     }],
                 }],
@@ -1102,7 +1115,15 @@ mod tests {
                         BindingKind::FieldWell { role: "Tooltips" },
                         "'Sales'[Customers %]".to_string(),
                     ),
-                    // Bookmark filter.
+                    // Bookmark report-level filter: no page, no visual.
+                    (
+                        None,
+                        None,
+                        Some("Bookmark1"),
+                        BindingKind::Filter,
+                        "[Total Units]".to_string(),
+                    ),
+                    // Bookmark section filter.
                     (
                         Some("ReportSection1"),
                         None,
@@ -1117,6 +1138,14 @@ mod tests {
                         Some("Bookmark1"),
                         BindingKind::FieldWell { role: "Rows" },
                         "'Product'[Subcategory]".to_string(),
+                    ),
+                    // Bookmark visual filter.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        Some("Bookmark1"),
+                        BindingKind::Filter,
+                        "'Product'[Color]".to_string(),
                     ),
                 ]
             );
