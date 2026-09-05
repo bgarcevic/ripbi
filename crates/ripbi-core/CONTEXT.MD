@@ -36,5 +36,5 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 | Semantic model AST | [docs/semantic-model.md](docs/semantic-model.md) | What is modeled and what is not; where DAX hides. Read before changing the AST |
 | Report AST & root bindings | [docs/report-model.md](docs/report-model.md) | What binds model objects and why; where roots hide. Read before changing the report AST |
 | Name resolution & identity | [docs/name-resolution.md](docs/name-resolution.md) | Case-insensitivity, model-global measures, why `[Name]` resolves to *all* candidates |
-| Format specs & detection | [docs/formats.md](docs/formats.md) | What each format's parser accepts, the TMDL grammar subset, and the drift/skip policy. Read before changing any ingest module |
+| Format specs & detection | [docs/formats.md](docs/formats.md) | What each format's parser accepts, the TMDL grammar subset, the PBIR key policies, and the drift/skip policy. Read before changing any ingest module |
 | DAX token grammar | docs/dax-lexing.md (planned) | Create when lexer lands |

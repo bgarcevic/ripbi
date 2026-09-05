@@ -4,8 +4,9 @@ What each ingestion format's parser accepts, how it maps into the ASTs, and —
 most importantly — the policy for everything it does *not* model. Read this
 before changing anything under `src/ingest/`.
 
-PBIR report ingestion (`.Report/` folders → `ReportModel`) lands with #5; this
-file currently covers the semantic-model side.
+Two formats are covered today: TMDL semantic models (`ingest::semantic_model`
+→ `TabularDatabase`) and PBIR reports (`ingest::report` → `ReportModel`, its
+own section below).
 
 ## Detection
 
@@ -68,26 +69,112 @@ nothing (e.g. starting with `:` or `=`), and a flag-shaped node whose key is a
 known descriptor that requires a name (a bare `table`). Everything else
 unexpected is a skip notice; a run never fails because of drift.
 
+## PBIR reports
+
+PBIR is not one grammar but a folder of one-object-per-file JSON documents,
+each carrying a `$schema` URL whose version drifts across Power BI releases
+(preview format; real exports run ahead of the published schemas at
+`microsoft/json-schemas`). There is therefore no fixed grammar: parsing is
+per-file *key policies* — keys the AST models are parsed, keys deliberately
+unmodeled are silent, anything else is `UnknownProperty` drift (see the
+`Keys` tables in `src/ingest/pbir.rs`). Files are read in a fixed order
+(`report.json` → `definition.pbir` → `reportExtensions.json` → pages in
+folder-name order → bookmarks in file-name order) so notices are
+deterministic.
+
+**Detection.** `ingest::report(path)` accepts a `.Report` item folder (its
+`definition/` is located automatically) or a `definition/` folder itself (any
+directory directly containing a `report.json`). A report is parsed
+*standalone* — the semantic model it references need not sit beside it,
+because several reports can share one model. The reference is read from
+`definition.pbir` beside `definition/` (`byPath.path` or
+`byConnection.connectionString`; the schema demands exactly one); any absence
+or drift yields `DatasetReference::Unresolved` — a pairing is never
+fabricated. Display name from `.platform`, as on the model side.
+
+**What each file contributes.**
+
+| File | Maps to | Deliberately ignored |
+|---|---|---|
+| `report.json` (the anchor) | `filterConfig` → report filters | `themeCollection`, `settings`, `resourcePackages`, `slowDataSourceSettings`, `objects` (canvas formatting) |
+| `definition.pbir` | `DatasetReference` | `version` |
+| `reportExtensions.json` | `entities[].measures[]` → report measures (`name`, `expression`, `formatString`) | `dataType`, `hidden`, `dataCategory`, `displayFolder`, `measureTemplate`, `references`, … |
+| `pages/pages.json` | *never read* — page order and the active page are display state | — |
+| `pages/<dir>/page.json` | `name`, `displayName`, `visibility` (`HiddenInViewMode` → `is_hidden`), `filterConfig`, `pageBinding` (`type`, `parameters[].fieldExpr` → drillthrough) | `displayOption`, `height`, `width`, `objects`, `type`, `visualInteractions` |
+| `pages/<dir>/visuals/<dir>/visual.json` | container `name`, `filterConfig`; `visual.visualType`, `query.queryState` (wells, plus `fieldParameters` as inactive projections), `query.sortDefinition` (sorts), `objects` (see below), `visualContainerObjects.visualTooltip`/`visualHeaderTooltip` `section` → tooltip page | `position`, `isHidden`, `parentGroupName`, `howCreated`, `visualGroup` (a group container carries no query and is skipped whole), `syncGroup`, `expansionStates`, `drillFilterOtherVisuals` |
+| `pages/<dir>/visuals/<dir>/mobile.json` | *never read* — mobile layout binds nothing of its own | — |
+| `bookmarks/*.bookmark.json` | `explorationState.filters` → bookmark report-level filters; `sections.<page>.filters` → section filters; `sections.<page>.visualContainers.<id>.filters` → per-visual saved filters; `singleVisual.projections`/`activeProjections` → saved wells | `options`, `explorationState.objects`/`version`/`activeSection`, `visualContainerGroups`, `singleVisual.display`/`orderBy`/`expansionStates`/… |
+| `version.json` | *never read* | — |
+
+**Persisted automatic filters.** A visual's own filter normally lives in the
+container's `filterConfig`, but an *automatic* filter persists only after the
+filter pane has been expanded in the report's authoring history — and then it
+appears as a `filter` property inside the formatting `objects`
+(`objects.general[].properties.filter`). Both shapes join the visual's
+filters; the other `objects` properties are conditional formatting, whose
+fields are collected structurally (a `FillRule` input, an icon rule's
+comparison operands).
+
+**Filters, aliases, and condition trees.** One filter-entry shape serves every
+scope: the filtered field under `field` (bookmark states spell it
+`expression`), and the condition under `filter` — a `FilterDefinition`
+(`Version: 2`, `From`, `Where`). `From` maps query aliases to entities; a
+`SourceRef.Source` resolves through it case-insensitively, a
+`SourceRef.Entity` names the table directly, and a hierarchy on a date
+variation sources its table through `PropertyVariationSource`. An alias that
+matches no `From` entry yields `FieldTarget::Written` plus an
+`UnresolvedAlias` notice — the alias is not a table name, so it is never
+written in as one. Condition trees are walked *structurally*, not
+schema-driven: known field containers (`Column`, `Measure`, `Aggregation`
+with function codes 0–8, `Min`/`Max`/`Percentile`, `Hierarchy`/`HierarchyLevel`)
+are extracted wherever they nest, `Literal` values are data and never
+references, and a `Where` clause's `Target` arrays are references too. Known
+non-drift shapes that yield no reference: `ScopedEval` wrappers (unwrapped
+transparently), `RangePercent` bounds in formatting rules (they reuse the
+`Min`/`Max` keys for gradient ends), and visual-calculation sources (below).
+
+**Errors.** Only the anchor `report.json` can fail the run (`Error::Io` /
+`Error::Json`) — it is what makes the folder a report. An unreadable page,
+visual, or bookmark file, a malformed filter field, an unknown property: all
+notices, never failures.
+
+### PBIR known gaps
+
+- **Visual calculations.** A field sourced from `Subquery`, `SelectRef`, or
+  `TransformTableRef` names a visual-calculation local, not a model object, so
+  it produces no binding and no notice; a subquery's own `Select` columns are
+  walked with the subquery's aliases, so the model fields behind a
+  calculation do bind. A `SelectRef` name (a calculation output referenced
+  elsewhere in the same visual) cannot be resolved here, and a
+  `NativeVisualCalculation` projection in a field well is not yet modeled.
+- **Bookmark-saved display state.** `singleVisual.orderBy` (saved sort),
+  saved formatting merges (`singleVisual.objects`, `explorationState.objects`
+  — a conditional-formatting rule changed only inside a bookmark would be
+  missed), and `highlight.selection` are deliberately unmodeled.
+- **Tooltip pages** are read from `section` expr literals; any other spelling
+  yields a `MalformedValue` notice rather than a silent loss.
+
 ## Drift policy: two tiers of skipping
 
 Ingestion entry points return `Ingested<T>` — the parsed value plus a
-`Vec<SkipNotice>` (path, TMDL line number, `SkipKind`, detail). Notices are
-warnings as data: core never prints, and the CLI decides presentation. They
-are collected on every run, not only in debug builds, because a silent skip
-can surface later as a false "unused" finding.
+`Vec<SkipNotice>` (path, TMDL line number or JSON pointer, `SkipKind`,
+detail). Notices are warnings as data: core never prints, and the CLI decides
+presentation. They are collected on every run, not only in debug builds,
+because a silent skip can surface later as a false "unused" finding.
 
-**Tier 1 — deliberately unmodeled, silent.** Keys on the curated list below
-(and their whole subtrees) are skipped without a notice. Everything on it is
-metadata that cannot consume a model object, so skipping it cannot cause a
-false "unused" finding. The tests hold this honest in both directions:
-`every_sample_parses_without_notices` fails if the list misses something the
-samples carry; the golden fixture fails if a modeled key lands on the list.
+**Tier 1 — deliberately unmodeled, silent.** Keys on the curated lists (the
+TMDL ignore list below; the PBIR `Keys` tables in `src/ingest/pbir.rs`) are
+skipped without a notice. Everything on them is metadata that cannot consume
+a model object, so skipping it cannot cause a false "unused" finding. The
+tests hold this honest in both directions: the samples tests fail if a list
+misses something the samples carry; the golden fixtures fail if a modeled key
+lands on a list.
 
 **Tier 2 — unexpected drift, noticed.** An unknown object (root descriptor
 this crate does not know, unknown file or directory under `definition/`), an
-unknown property not on the list, a modeled value that fails to parse
-(`MalformedValue`), or a reference that cannot be resolved
-(`UnresolvedAlias`, reserved for PBIR aliases).
+unknown property not on a list, a modeled value that fails to parse
+(`MalformedValue`), or a PBIR query alias that cannot be resolved
+(`UnresolvedAlias`).
 
 ### The ignore list
 
@@ -144,7 +231,7 @@ golden fixture is held to the same standard — it loads clean in the engine:
   targets are the graph layer's findings, not parse failures — but the golden
   fixture keeps self-consistent references to stay engine-loadable.
 
-### Known gaps
+### TMDL known gaps
 
 - **Date variations** (`variation`, `defaultHierarchy`, `isDefault`,
   `showAsVariationsOnly`) are deliberately unmodeled. A variation references a

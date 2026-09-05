@@ -1,0 +1,48 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "name": "V1",
+  "position": {
+    "x": 100,
+    "y": 80,
+    "z": 0,
+    "height": 200,
+    "width": 300,
+    "tabOrder": 10
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Sales"
+                    }
+                  },
+                  "Property": "Amount"
+                }
+              },
+              "queryRef": "Sales.Amount",
+              "active": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "F1",
+        "type": "Categorical",
+        "field": {
+          "Column": {}
+        }
+      }
+    ]
+  }
+}

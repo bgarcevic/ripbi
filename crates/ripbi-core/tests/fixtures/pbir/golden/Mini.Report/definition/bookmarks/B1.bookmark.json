@@ -1,0 +1,115 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+  "name": "B1",
+  "displayName": "Saved view",
+  "options": {
+    "suppressData": true
+  },
+  "explorationState": {
+    "version": "1.3",
+    "activeSection": "P1",
+    "filters": {
+      "byExpr": [
+        {
+          "name": "BookmarkFilter",
+          "type": "Categorical",
+          "expression": {
+            "Column": {
+              "Expression": {
+                "SourceRef": {
+                  "Entity": "Geography"
+                }
+              },
+              "Property": "Country"
+            }
+          }
+        }
+      ]
+    },
+    "sections": {
+      "P1": {
+        "visualContainerGroups": {},
+        "visualContainers": {
+          "V1": {
+            "filters": {
+              "byExpr": [
+                {
+                  "name": "BookmarkV1Filter",
+                  "type": "Categorical",
+                  "expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Product"
+                        }
+                      },
+                      "Property": "Color"
+                    }
+                  }
+                }
+              ]
+            },
+            "singleVisual": {
+              "visualType": "slicer",
+              "projections": {
+                "Rows": [
+                  {
+                    "field": {
+                      "Column": {
+                        "Expression": {
+                          "SourceRef": {
+                            "Entity": "Product"
+                          }
+                        },
+                        "Property": "Subcategory"
+                      }
+                    },
+                    "queryRef": "Product.Subcategory"
+                  }
+                ]
+              },
+              "display": {
+                "mode": "hidden"
+              }
+            }
+          }
+        },
+        "filters": {
+          "byName": {
+            "Filter4": {
+              "name": "Filter4",
+              "type": "Categorical",
+              "expression": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Owners"
+                    }
+                  },
+                  "Property": "Sales owner"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "objects": {
+      "merge": {
+        "outspacePane": [
+          {
+            "properties": {
+              "expanded": {
+                "expr": {
+                  "Literal": {
+                    "Value": "false"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
