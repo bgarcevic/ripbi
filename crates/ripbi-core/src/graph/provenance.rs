@@ -140,6 +140,8 @@ pub enum BindingSite {
     Drillthrough,
     /// A field driving a conditional-formatting rule.
     ConditionalFormatting,
+    /// A visual's accessibility alt text.
+    AltText,
 }
 
 fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
@@ -151,6 +153,7 @@ fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
         BindingSite::Sort => f.write_str("sort definition"),
         BindingSite::Drillthrough => f.write_str("drillthrough parameter"),
         BindingSite::ConditionalFormatting => f.write_str("conditional formatting"),
+        BindingSite::AltText => f.write_str("alt text"),
     }
 }
 

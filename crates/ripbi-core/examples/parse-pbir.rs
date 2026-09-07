@@ -128,6 +128,7 @@ fn print_bindings(report: &ReportModel) {
             BindingKind::Sort => "sort".to_string(),
             BindingKind::Drillthrough => "drillthrough".to_string(),
             BindingKind::ConditionalFormatting => "conditional formatting".to_string(),
+            BindingKind::AltText => "alt text".to_string(),
         };
         println!("  {:22} {:28} {}", kind, site, binding.target);
     }

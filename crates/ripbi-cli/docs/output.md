@@ -150,13 +150,18 @@ from the output and the exit code, and counted in `summary.ignored`.
 
 ## Validation
 
-`scan`'s findings on the committed Adventure Works sample are pinned against an
-external unused-objects analysis in
-[`tests/fixtures/adventure-works-baseline.txt`](../tests/fixtures/adventure-works-baseline.txt):
-every object the baseline marks dead is a finding with the same chain shape, no live
-object is ever flagged, and the only accepted extras are the dead `Time Intelligence`
-field-parameter cluster (table, partition, and its calculation items) — nothing
-anywhere references them, so ripbi reports them.
+`scan`'s findings on two committed samples are pinned against external unused-objects
+analyses —
+[`tests/fixtures/adventure-works-baseline.txt`](../tests/fixtures/adventure-works-baseline.txt)
+and
+[`tests/fixtures/regional-sales-baseline.txt`](../tests/fixtures/regional-sales-baseline.txt):
+every object a baseline marks dead is a finding with the same chain shape, and no live
+object is ever flagged. The accepted extras are documented in each fixture header: the
+dead `Time Intelligence` field-parameter cluster on Adventure Works (table, partition,
+and its calculation items — nothing anywhere references them), and the fully-dead
+`Contacts` table with its partition on Regional Sales (the external export lists no
+table rows, but a table referenced by nothing but a relationship is unused by the
+documented containment rule).
 
 ## Known boundaries
 

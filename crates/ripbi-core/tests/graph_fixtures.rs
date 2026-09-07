@@ -284,8 +284,9 @@ fn golden_roots_carry_binding_provenance() {
     assert!(edge.bookmark.is_none());
 
     // …and the stale `Units` aggregation keeps the qualifying table alive —
-    // the nearest resolvable candidate of a reference matching nothing.
-    assert_eq!(graph.roots_of(&table_id("Sales")).len(), 1);
+    // the nearest resolvable candidate of a reference matching nothing. The
+    // alt text's `Units` column reference is a second root on the table.
+    assert_eq!(graph.roots_of(&table_id("Sales")).len(), 2);
 
     // The report's measures are nodes, not roots.
     assert!(graph.roots_of(&report_measure_id("Budget %")).is_empty());

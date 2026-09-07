@@ -739,6 +739,7 @@ fn binding_site(kind: BindingKind<'_>) -> BindingSite {
         BindingKind::Sort => BindingSite::Sort,
         BindingKind::Drillthrough => BindingSite::Drillthrough,
         BindingKind::ConditionalFormatting => BindingSite::ConditionalFormatting,
+        BindingKind::AltText => BindingSite::AltText,
     }
 }
 

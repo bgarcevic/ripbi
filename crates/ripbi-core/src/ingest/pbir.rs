@@ -365,6 +365,11 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
         ctx,
         "/filterConfig",
     ));
+    let alt_text = alt_text_targets(
+        inner.get("visualContainerObjects"),
+        ctx,
+        "/visual/visualContainerObjects",
+    );
     Some(Visual {
         name: NameKey::new(value.get("name").and_then(Value::as_str).unwrap_or(folder)),
         visual_type: visual_type.to_string(),
@@ -378,6 +383,7 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
             .map(|query| sorts(query, ctx, "/visual/query"))
             .unwrap_or_default(),
         conditional_formatting,
+        alt_text,
         tooltip_page: tooltip_page(
             inner.get("visualContainerObjects"),
             ctx,
@@ -1187,6 +1193,39 @@ fn visual_objects(
         }
     }
     (filters, conditional_formatting)
+}
+
+/// Reads a visual's accessibility alt text
+/// (`visualContainerObjects.<group>[].properties.altText`). The canonical
+/// spelling is `general`; the reference is collected wherever it hides,
+/// because a screen reader reads the text — whatever model object it
+/// interpolates stays alive.
+fn alt_text_targets(objects: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<FieldTarget> {
+    let mut out = Vec::new();
+    let Some(map) = objects.and_then(Value::as_object) else {
+        return out;
+    };
+    for (group, definitions) in map {
+        let Some(list) = definitions.as_array() else {
+            continue;
+        };
+        for (index, definition) in list.iter().enumerate() {
+            let Some(text) = definition
+                .get("properties")
+                .and_then(|properties| properties.get("altText"))
+            else {
+                continue;
+            };
+            collect_fields(
+                text,
+                &Aliases::new(),
+                ctx,
+                &format!("{location}/{group}/{index}/properties/altText"),
+                &mut out,
+            );
+        }
+    }
+    out
 }
 
 /// Reads a visual's tooltip page reference

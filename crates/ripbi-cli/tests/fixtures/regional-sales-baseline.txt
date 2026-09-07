@@ -1,0 +1,42 @@
+# Unused-objects baseline for the Regional Sales Sample.
+#
+# Distilled from target/regional-sales-unused-analysis.csv (an external
+# unused-objects analysis export over the same model in samples/), one object
+# per line:
+#
+#   <ripbi-type>\t<table>\t<object name>\t<expected chain>
+#
+# expected chain: "orphan"  — externally marked Unused (ripbi: empty used_by)
+#                 "chained" — externally marked Used by unused (ripbi: every
+#                             consumer itself unused)
+# The E2E test in tests/regional_sales.rs asserts every line is a ripbi
+# finding with the matching chain shape, that no live object is flagged, and
+# that the only extra findings are the fully-dead 'Contacts' table and its
+# partition: the export lists no table rows, but with every non-key Contacts
+# column dead and only a relationship referencing the table, the table and
+# its partition are unused by the documented containment rule.
+column	Accounts	Account Number	orphan
+column	Accounts	AccountID	orphan
+column	Accounts	AccountOwnerSeq	orphan
+column	Calculations	Value	orphan
+column	Contacts	Contact	orphan
+column	Contacts	ContactSeq	orphan
+column	Contacts	Job Title	orphan
+column	Opportunities	Blank	orphan
+column	Opportunities	DateDiff-Days	orphan
+column	Opportunities	Days Remaining In Pipeline (bins)	orphan
+column	Opportunities	Probability	orphan
+column	Opportunities	Probability (raw)	orphan
+column	Opportunity Calendar	DAY	orphan
+column	Opportunity Calendar	DaySeq	orphan
+column	Opportunity Calendar	MONTH	orphan
+column	Opportunity Calendar	MONTH NUMBER	chained
+column	Opportunity Calendar	RELATIVE 07 DAY PERIOD	orphan
+column	Opportunity Calendar	RELATIVE 30 DAY PERIOD	orphan
+column	Opportunity Calendar	RELATIVE DAY	orphan
+column	Opportunity Calendar	RELATIVE WEEK	orphan
+column	Opportunity Calendar	WEEK	orphan
+column	Opportunity Calendar	YEAR	orphan
+column	Opportunity Calendar	YEAR WEEK	orphan
+column	Opportunity Forecast Adjustment	Blank	orphan
+column	Territories	Country	orphan

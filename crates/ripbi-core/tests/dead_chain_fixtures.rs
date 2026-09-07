@@ -134,6 +134,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
                 filters: Vec::new(),
                 sorts: Vec::new(),
                 conditional_formatting: Vec::new(),
+                alt_text: Vec::new(),
                 tooltip_page: None,
             }],
         }],
