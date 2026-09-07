@@ -1,0 +1,23 @@
+/// The far table of the live relationship: unused despite its live key column.
+table DimOld
+	lineageTag: cccccccc-cccc-cccc-cccc-cccccccccc01
+
+	column Key
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: Key
+		lineageTag: cccccccc-cccc-cccc-cccc-cccccccccc02
+
+	column Notes
+		dataType: string
+		sourceColumn: Notes
+		lineageTag: cccccccc-cccc-cccc-cccc-cccccccccc03
+
+	partition DimOld = m
+		mode: import
+		source =
+				let
+				    Source = LegacyParam
+				in
+				    Source

@@ -149,8 +149,12 @@ pub fn bind<'a>(
             name,
             ..
         } => {
+            // Resolution is by logical name: `''` escapes inside quoted names are
+            // stripped first, or `'It''s'[X]` could never find the table `It's`.
+            let table = unescape_name(table);
+            let name = unescape_name(name);
             if let Some(id) = index
-                .resolve_qualified(table, name)
+                .resolve_qualified(&table, &name)
                 .and_then(|r| db.object_id(r))
             {
                 targets.push(id);
@@ -159,7 +163,8 @@ pub fn bind<'a>(
         RawRef::Field {
             table: None, name, ..
         } => {
-            let matches = index.resolve_unqualified(name, home_table);
+            let name = unescape_name(name);
+            let matches = index.resolve_unqualified(&name, home_table);
             for resolved in [
                 matches.measure.map(Resolved::Measure),
                 matches.column.map(Resolved::Column),
@@ -170,7 +175,8 @@ pub fn bind<'a>(
             }
         }
         RawRef::Table { name, .. } => {
-            if let Some(table) = index.resolve_table(name).and_then(|h| db.table(h)) {
+            let name = unescape_name(name);
+            if let Some(table) = index.resolve_table(&name).and_then(|h| db.table(h)) {
                 targets.push(ObjectId::Table {
                     table: NameKey::new(table.name.as_str()),
                 });
@@ -380,6 +386,42 @@ mod tests {
         assert_eq!(field.to_string(), "'It''s'[X]");
         // Unresolvable here — the fixture has no such table — but well-formed.
         assert!(bind(&db, &index, None, raw).is_unresolved());
+    }
+
+    /// Escaped quotes must be stripped before resolution, or a reference to a
+    /// table actually named `It's` can never bind.
+    #[test]
+    fn an_escaped_qualifier_resolves_to_the_escaped_name() {
+        let db = TabularDatabase {
+            tables: vec![Table {
+                name: "It's".to_string(),
+                columns: vec![Column {
+                    name: "X".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let index = ModelIndex::build(&db);
+
+        let raw = references("'It''s'[X]").remove(0);
+        assert_eq!(
+            bind(&db, &index, None, raw).targets(),
+            [ObjectId::Column {
+                table: NameKey::new("It's"),
+                column: NameKey::new("X"),
+            }]
+        );
+
+        // The bare table use escapes too.
+        let raw = references("COUNTROWS('It''s')").remove(1);
+        assert_eq!(
+            bind(&db, &index, None, raw).targets(),
+            [ObjectId::Table {
+                table: NameKey::new("It's"),
+            }]
+        );
     }
 
     #[test]

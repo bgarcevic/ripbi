@@ -179,8 +179,9 @@ impl fmt::Display for FieldRef {
 /// of the dependency graph.
 ///
 /// Every name is a [`NameKey`], so two `ObjectId`s that differ only in casing are the
-/// same node.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// same node. Ordering (used to give analysis output a deterministic order) follows
+/// the folded names, never the original casing.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectId {
     /// A table.
     Table {
@@ -215,6 +216,19 @@ pub enum ObjectId {
         table: NameKey,
         /// Partition name.
         partition: NameKey,
+    },
+    /// A relationship, identified by its endpoints. TMDL relationship names are
+    /// GUIDs kept for diagnostics only, and a column pair carries at most one
+    /// relationship, so the four endpoint names are the stable identity.
+    Relationship {
+        /// Table on the "from" (typically many) side.
+        from_table: NameKey,
+        /// Key column in `from_table`.
+        from_column: NameKey,
+        /// Table on the "to" (typically one) side.
+        to_table: NameKey,
+        /// Key column in `to_table`.
+        to_column: NameKey,
     },
     /// A security role.
     Role {
@@ -275,6 +289,21 @@ impl fmt::Display for ObjectId {
                     "partition {}[{}]",
                     Quoted(table.as_str()),
                     partition.as_str()
+                )
+            }
+            ObjectId::Relationship {
+                from_table,
+                from_column,
+                to_table,
+                to_column,
+            } => {
+                write!(
+                    f,
+                    "relationship {}[{}] -> {}[{}]",
+                    Quoted(from_table.as_str()),
+                    from_column.as_str(),
+                    Quoted(to_table.as_str()),
+                    to_column.as_str()
                 )
             }
             ObjectId::Role { role } => {
@@ -482,6 +511,32 @@ mod tests {
 
             assert_eq!(set.len(), 2);
         }
+
+        /// Relationship identity is its endpoints, ignoring case: TMDL names are
+        /// GUIDs, so endpoints are all a graph node can be keyed by.
+        #[test]
+        fn relationships_compare_by_their_endpoints() {
+            let relationship = |from: &str, to: &str| ObjectId::Relationship {
+                from_table: NameKey::new(from),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new(to),
+                to_column: NameKey::new("Key"),
+            };
+
+            assert_eq!(
+                relationship("Sales", "DimOld"),
+                relationship("SALES", "dimold")
+            );
+            assert_ne!(
+                relationship("Sales", "DimOld"),
+                relationship("Sales", "DimNew")
+            );
+            // Direction is identity: the reverse relationship is a different edge.
+            assert_ne!(
+                relationship("Sales", "DimOld"),
+                relationship("DimOld", "Sales")
+            );
+        }
     }
 
     mod field_ref {
@@ -529,6 +584,15 @@ mod tests {
                 partition: NameKey::new("Sales-Part1"),
             },
             "partition 'Sales'[Sales-Part1]"
+        )]
+        #[case::relationship(
+            ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new("Dim Old"),
+                to_column: NameKey::new("Key"),
+            },
+            "relationship 'Sales'[Key] -> 'Dim Old'[Key]"
         )]
         #[case::role(ObjectId::Role { role: NameKey::new("Reader") }, "role 'Reader'")]
         #[case::calculation_item(

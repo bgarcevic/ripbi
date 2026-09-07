@@ -54,10 +54,11 @@ bindings enumerate with `bookmark` set, alongside the page and visual they captu
 
 **Report measures bridge both directions.** A report-level measure's DAX body
 references model objects (so `ReportModel::dax_expressions` is an expression source on
-top of `TabularDatabase::dax_expressions`), and visuals reference it by name (so it is
-a reachability root of its own). Its graph identity is
-`ObjectId::ReportMeasure` — deliberately not `ObjectId::Measure`, so a report measure
-can never be conflated with a model measure of the same name.
+top of `TabularDatabase::dax_expressions`), and visuals reference it by name. Its graph
+identity is `ObjectId::ReportMeasure` — deliberately not `ObjectId::Measure`, so a
+report measure can never be conflated with a model measure of the same name. It is a
+graph node, not a root: a report measure no visual binds and no other DAX names is
+dead, like any other object (see [graph.md](graph.md)).
 
 **Tooltip pages are report-internal references.** A visual's `tooltip_page` keeps a
 *page* reachable, not a model object, so it lives on the AST but never enumerates as a
