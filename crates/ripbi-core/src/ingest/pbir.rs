@@ -1017,10 +1017,12 @@ fn collect_fields(
         Value::Object(object) => {
             if let Some(query) = object.get("Subquery").and_then(|sub| sub.get("Query")) {
                 // A visual-calculation subquery defines its own alias scope;
-                // its Select and Where trees carry the model references.
+                // its Select, Where, and Transform trees carry the model
+                // references — an AI narrative's Transform steps consume whole
+                // tables of aliased fields.
                 let aliases = query_aliases(query);
                 let location = format!("{location}/Subquery/Query");
-                for key in ["Select", "Where"] {
+                for key in ["Select", "Where", "Transform"] {
                     if let Some(part) = query.get(key) {
                         collect_fields(part, &aliases, ctx, &format!("{location}/{key}"), out);
                     }
@@ -1868,6 +1870,87 @@ mod tests {
         #[case::unquoted("Top", "Top")]
         fn unquote_literal_strips_quotes(#[case] input: &str, #[case] expected: &str) {
             assert_eq!(unquote_literal(input), expected);
+        }
+    }
+
+    /// A visual-calculation subquery: the Select carries the queryRef, but an
+    /// AI narrative's Transform steps also consume aliased model fields —
+    /// a shape a real textbox ships (`HighPointLowPointSummary`).
+    mod subquery {
+        use super::*;
+
+        fn collect(json: &str) -> Vec<FieldTarget> {
+            let value = serde_json::from_str(json).unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let mut out = Vec::new();
+            collect_fields(&value, &Aliases::new(), &mut ctx, "/field", &mut out);
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            out
+        }
+
+        #[test]
+        fn the_subquery_alias_scope_covers_its_transform_steps() {
+            let out = collect(
+                r#"{
+                  "Subquery": {
+                    "Query": {
+                      "Version": 2,
+                      "From": [
+                        {"Name": "o", "Entity": "Opportunity Calendar", "Type": 0}
+                      ],
+                      "Select": [
+                        {"QueryRef": "x", "Expression": {"Measure": {
+                          "Expression": {"SourceRef": {"Source": "o"}},
+                          "Property": "Revenue Won"}}}
+                      ],
+                      "Transform": [
+                        {
+                          "Name": "HighAndLowPoint",
+                          "Algorithm": "HighPointLowPointSummary",
+                          "Input": {
+                            "Parameters": [
+                              {
+                                "Literal": {"Value": "10000L"},
+                                "Name": "initialTemplateId"
+                              }
+                            ],
+                            "Table": {
+                              "Name": "HighAndLowPointInput",
+                              "Columns": [
+                                {
+                                  "Expression": {"Column": {
+                                    "Expression": {"SourceRef": {"Source": "o"}},
+                                    "Property": "YEAR MONTH"}},
+                                  "Name": "d2",
+                                  "Role": "PrimarySeriesColumnRole"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }"#,
+            );
+
+            assert_eq!(
+                out,
+                [
+                    FieldTarget::Measure {
+                        home_table: Some(NameKey::new("Opportunity Calendar")),
+                        measure: NameKey::new("Revenue Won"),
+                    },
+                    FieldTarget::Column {
+                        table: NameKey::new("Opportunity Calendar"),
+                        column: NameKey::new("YEAR MONTH"),
+                    },
+                ]
+            );
         }
     }
 }

@@ -150,18 +150,23 @@ from the output and the exit code, and counted in `summary.ignored`.
 
 ## Validation
 
-`scan`'s findings on two committed samples are pinned against external unused-objects
+`scan`'s findings on three committed samples are pinned against external unused-objects
 analyses —
-[`tests/fixtures/adventure-works-baseline.txt`](../tests/fixtures/adventure-works-baseline.txt)
+[`tests/fixtures/adventure-works-baseline.txt`](../tests/fixtures/adventure-works-baseline.txt),
+[`tests/fixtures/regional-sales-baseline.txt`](../tests/fixtures/regional-sales-baseline.txt),
 and
-[`tests/fixtures/regional-sales-baseline.txt`](../tests/fixtures/regional-sales-baseline.txt):
+[`tests/fixtures/artificial-intelligence-baseline.txt`](../tests/fixtures/artificial-intelligence-baseline.txt):
 every object a baseline marks dead is a finding with the same chain shape, and no live
-object is ever flagged. The accepted extras are documented in each fixture header: the
-dead `Time Intelligence` field-parameter cluster on Adventure Works (table, partition,
-and its calculation items — nothing anywhere references them), and the fully-dead
-`Contacts` table with its partition on Regional Sales (the external export lists no
-table rows, but a table referenced by nothing but a relationship is unused by the
-documented containment rule).
+object is ever flagged. The accepted deltas are documented in each fixture header: the
+dead `Time Intelligence` field-parameter cluster on Adventure Works; fully-dead
+relationship-only tables the exports don't list as rows (a table referenced by nothing
+but a relationship is unused by the documented containment rule); and, on the
+Artificial Intelligence sample, the engine-generated auto date/time machinery, which
+the report reaches only through the date variations this crate deliberately does not
+model (a known gap, see `crates/ripbi-core/docs/formats.md`). Two conservatism
+policies the external analyses do not share, also visible in that baseline: bookmark
+saved filters count as bindings (re-applying a bookmark re-binds its fields), and
+inactive relationships keep both key columns alive.
 
 ## Known boundaries
 
