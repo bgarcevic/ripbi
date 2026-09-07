@@ -186,12 +186,14 @@ Columns: `dataType`, `formatString` (static), `summarizeBy`, `sourceColumn`,
 `isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`, `keepUniqueRows`,
 `relatedColumnDetails`, `tableDetailPosition`.
 
-Measures/tables: `displayFolder`, `isPrivate`.
+Measures/tables: `displayFolder`, `isPrivate`, `excludeFromModelRefresh`.
 
 Model/database: `culture`, `sourceQueryCulture`,
 `defaultPowerBIDataSourceVersion`, `discourageImplicitMeasures`,
 `dataAccessOptions`, `compatibilityLevel`, `createOrReplace`,
-`retainDataTillForceCalculate`.
+`retainDataTillForceCalculate`. Power Query query groups (`queryGroup`) are
+unmodeled in every form they take: block declarations in `model.tmdl` and
+membership properties on expressions and partitions.
 
 Cultures (folder never read; keys listed for stray uses): `cultureInfo`,
 `linguisticMetadata`, `contentType`.

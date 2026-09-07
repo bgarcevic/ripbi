@@ -54,6 +54,7 @@ const IGNORED_KEYS: &[&str] = &[
     // Measure and table metadata
     "displayFolder",
     "isPrivate",
+    "excludeFromModelRefresh",
     // Date variations bind columns to hierarchies; deliberately unmodeled
     // (a variation-only hierarchy could be mis-reported — known gap, see
     // docs/formats.md)
@@ -70,6 +71,10 @@ const IGNORED_KEYS: &[&str] = &[
     "compatibilityLevel",
     "createOrReplace",
     "retainDataTillForceCalculate",
+    // Power Query query groups: declared as blocks in model.tmdl (handled by
+    // the object match there) and assigned to expressions and partitions as a
+    // property. Purely organizational metadata — no liveness meaning.
+    "queryGroup",
     // Cultures (the cultures/ folder is never read; keys kept for stray uses)
     "cultureInfo",
     "linguisticMetadata",
@@ -283,6 +288,9 @@ impl Loader {
                     .functions
                     .push(map_function(root, path, skips)),
                 "annotation" | "extendedProperty" | "dataSource" | "perspective" => {}
+                // Query groups are declared here in real models; the crate
+                // neither models nor needs them.
+                "queryGroup" => {}
                 other => notice(
                     skips,
                     path,
@@ -1805,7 +1813,7 @@ mod tests {
         fn ignores_deliberately_unmodeled_metadata_silently() {
             let mut skips = Vec::new();
             let node = map_one(
-                "table Sales\n\tlineageTag: g\n\tisHidden\n\tcolumn Amount\n\t\tdataType: double\n\t\tformatString: 0\n\t\tsummarizeBy: sum\n\t\tsourceColumn: Amount\n\t\tchangedProperty = IsHidden\n\t\tannotation SetBy = User\n\tmeasure M = 1\n\t\tdisplayFolder: Core\n",
+                "table Sales\n\tlineageTag: g\n\tisHidden\n\texcludeFromModelRefresh\n\tcolumn Amount\n\t\tdataType: double\n\t\tformatString: 0\n\t\tsummarizeBy: sum\n\t\tsourceColumn: Amount\n\t\tchangedProperty = IsHidden\n\t\tannotation SetBy = User\n\tmeasure M = 1\n\t\tdisplayFolder: Core\n",
                 "table",
             );
             let table = map_table(&node, Path::new("t"), &mut skips);
@@ -1817,6 +1825,27 @@ mod tests {
             assert!(table.is_hidden);
             assert_eq!(table.columns.len(), 1);
             assert_eq!(table.measures.len(), 1);
+        }
+
+        /// Real Desktop models assign Power Query query groups to expressions
+        /// and partitions; purely organizational, so never a notice.
+        #[test]
+        fn query_group_membership_is_deliberately_unmodeled() {
+            let mut skips = Vec::new();
+            let expression = map_one(
+                "expression E =\n\t\tlet\n\t\t    S = 1\n\t\tin\n\t\t    S\n\tlineageTag: t\n\tqueryGroup: 'Extract Tables\\\\e_X'\n",
+                "expression",
+            );
+            let expression = map_expression(&expression, Path::new("t"), &mut skips);
+            let partition = map_one(
+                "partition P = m\n\tmode: import\n\tqueryGroup: 'Extract Tables\\\\e_X'\n\tsource =\n\t\tlet\n\t\t    S = 1\n\t\tin\n\t\t    S\n",
+                "partition",
+            );
+            let partition = map_partition(&partition, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "query groups must be silent: {skips:?}");
+            assert!(expression.expression.contains("S = 1"));
+            assert!(matches!(partition.source, PartitionSource::M { .. }));
         }
 
         #[test]
