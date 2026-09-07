@@ -48,12 +48,16 @@
 //! warnings as data, so the CLI decides how to surface them.
 
 pub mod dax;
+pub mod graph;
 pub mod identity;
 pub mod ingest;
 pub mod model;
 pub mod report;
 
 pub use dax::{Binding, RawRef, Token, TokenKind, bind, references, tokenize, unescape_name};
+pub use graph::{
+    BindingEdge, BindingSite, DependencyGraph, Provenance, StructuralEdge, UnusedObject, UsedBy,
+};
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};
 pub use model::index::{

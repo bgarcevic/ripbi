@@ -1,0 +1,18 @@
+/// The YTD item is referenced by the live measure, so the group stays alive;
+/// the unselected Current item is dead.
+table 'Time Intelligence'
+	lineageTag: eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01
+
+	calculationGroup
+		precedence: 100
+
+		calculationItem Current = SELECTEDMEASURE()
+
+		calculationItem YTD = TOTALYTD(SELECTEDMEASURE(), 'Date'[Date])
+
+	/// The group's field column, an ordinary column.
+	column 'Time Intelligence'
+		dataType: string
+		lineageTag: eeeeeeee-eeee-eeee-eeee-eeeeeeeeee02
+
+	partition 'Partition_Time Intelligence' = calculationGroup

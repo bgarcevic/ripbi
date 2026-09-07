@@ -1,0 +1,33 @@
+/// Its hierarchy and level columns are dead, but the table itself stays
+/// alive: the live YTD calculation item's stale `'Date'[Date]` reference
+/// keeps the qualifying table alive.
+table Date
+	lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd01
+
+	column Year
+		dataType: int64
+		sourceColumn: Year
+		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd02
+
+	column Month
+		dataType: int64
+		sourceColumn: Month
+		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd03
+
+	hierarchy Calendar
+		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd04
+
+		level Year
+			column: Year
+			lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd05
+
+		level Month
+			column: Month
+
+	partition Date = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Year", "Month"}, {})
+				in
+				    Source

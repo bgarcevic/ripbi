@@ -1,0 +1,5 @@
+role Reader
+	modelPermission: read
+
+	tablePermission Sales =
+			'Sales'[Region] = "West"

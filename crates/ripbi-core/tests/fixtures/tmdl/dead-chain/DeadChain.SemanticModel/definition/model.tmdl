@@ -1,0 +1,12 @@
+model DeadChain
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+
+annotation PBI_QueryOrder = ["Sales","DimOld","Date","Time Intelligence"]
+
+ref table Sales
+ref table DimOld
+ref table Date
+ref table 'Time Intelligence'
+
+ref cultureInfo en-US

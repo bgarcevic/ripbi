@@ -39,3 +39,4 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 | Name resolution & identity | [docs/name-resolution.md](docs/name-resolution.md) | Case-insensitivity, model-global measures, why `[Name]` resolves to *all* candidates |
 | Format specs & detection | [docs/formats.md](docs/formats.md) | What each format's parser accepts, the TMDL grammar subset, the PBIR key policies, and the drift/skip policy. Read before changing any ingest module |
 | DAX token grammar | [docs/dax-lexing.md](docs/dax-lexing.md) | Token grammar, extraction rules, the conservatism rule, and the SQLBI provenance. Read before changing the lexer |
+| Graph, reachability & liveness policy | [docs/graph.md](docs/graph.md) | The edge catalog, the two-pass relationship rule, and what "unused" means. Read before changing the graph module |
