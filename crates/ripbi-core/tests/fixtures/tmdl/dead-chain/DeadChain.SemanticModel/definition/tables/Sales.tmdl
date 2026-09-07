@@ -19,7 +19,22 @@ table Sales
 		dataType: double
 		summarizeBy: sum
 		sourceColumn: Amount
+		sortByColumn: 'Amount Sort'
 		lineageTag: 55555555-5555-5555-5555-555555555555
+		relatedColumnDetails
+			groupByColumn: Bucket
+
+	/// Live only through Amount's sort-by — the structural survivor.
+	column 'Amount Sort'
+		dataType: int64
+		sourceColumn: Amount Sort
+		lineageTag: f0000000-0000-0000-0000-000000000001
+
+	/// Live only through Amount's group-by — the structural survivor.
+	column Bucket
+		dataType: string
+		sourceColumn: Bucket
+		lineageTag: f0000000-0000-0000-0000-000000000002
 
 	column 'Old Amount'
 		dataType: double
@@ -64,7 +79,7 @@ table Sales
 		mode: import
 		source =
 				let
-				    Source = Sql.Database(ServerName, "db"),
+				    Source = Sql.Database(#"Staging Query", "db"),
 				    Sales_Table = Source{[Item="Sales",Kind="Table"]}[Data]
 				in
 				    Sales_Table

@@ -219,8 +219,15 @@ fn the_dead_chain_keeps_policy_live_objects_alive() {
     );
     not_unused(&unused, &table_id("Date"));
     not_unused(&unused, &partition_id("Date", "Date"));
-    // The M reference keeps ServerName alive.
+    // The M chain keeps Staging Query alive, and with it ServerName — one
+    // M-to-M hop past the partition that names the staging query.
+    not_unused(&unused, &expression_id("Staging Query"));
     not_unused(&unused, &expression_id("ServerName"));
+    // The structural survivors: Amount's sort-by and group-by columns, and
+    // the calendar-bound column on the live Date table.
+    not_unused(&unused, &column_id("Sales", "Amount Sort"));
+    not_unused(&unused, &column_id("Sales", "Bucket"));
+    not_unused(&unused, &column_id("Date", "Day"));
     // Relationship-kept key columns: live, but weakly.
     not_unused(&unused, &column_id("Sales", "Key"));
     not_unused(&unused, &column_id("DimOld", "Key"));
@@ -313,4 +320,61 @@ fn the_dead_chain_annotates_its_chains() {
             "{orphan} is an orphan"
         );
     }
+}
+
+/// The structural survivors are alive through exactly one edge each: the
+/// sort-by, group-by, calendar, and M rules. These edges are the whole point
+/// of the issue — a column referenced *only* through one of them is not dead.
+#[test]
+fn the_structural_survivors_are_kept_alive_by_their_own_edges() {
+    let (db, report) = dead_chain();
+    let graph = DependencyGraph::build(&db, &[&report]);
+
+    let consumers = |id: &ObjectId| graph.consumers_of(id);
+
+    // Amount Sort is kept alive only by the column it sorts.
+    assert_eq!(
+        consumers(&column_id("Sales", "Amount Sort")),
+        [(
+            column_id("Sales", "Amount"),
+            Provenance::Structural {
+                role: StructuralEdge::SortByColumn
+            }
+        )]
+    );
+
+    // Bucket is kept alive only by the column that groups by it.
+    assert_eq!(
+        consumers(&column_id("Sales", "Bucket")),
+        [(
+            column_id("Sales", "Amount"),
+            Provenance::Structural {
+                role: StructuralEdge::GroupByColumn
+            }
+        )]
+    );
+
+    // Day is kept alive only by its table's calendar — engine-managed with
+    // the table, never dropped independently of it.
+    assert_eq!(
+        consumers(&column_id("Date", "Day")),
+        [(
+            table_id("Date"),
+            Provenance::Structural {
+                role: StructuralEdge::EngineManaged
+            }
+        )]
+    );
+
+    // Staging Query is kept alive only by the partition whose M names it, and
+    // it alone keeps ServerName alive now — the shared-expression-to-
+    // shared-expression edge.
+    assert_eq!(
+        consumers(&expression_id("Staging Query")),
+        [(partition_id("Sales", "Sales"), Provenance::M)]
+    );
+    assert_eq!(
+        consumers(&expression_id("ServerName")),
+        [(expression_id("Staging Query"), Provenance::M)]
+    );
 }

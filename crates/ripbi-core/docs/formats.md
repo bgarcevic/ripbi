@@ -225,6 +225,14 @@ golden fixture is held to the same standard — it loads clean in the engine:
 - **`relatedColumnDetails`**: a nameless object under a column with one
   `groupByColumn: <column>` per grouped column (the shape in
   `samples/…/Toggle for breakdown.tmdl`); it feeds `Column::group_by_columns`.
+- **`calendar`**: a named object under a table (calendars require
+  compatibility level 1701). Its column bindings live inside nameless
+  `calendarColumnGroup` objects in two shapes — a time-related group lists
+  plain `column: <column>` lines, and a time-unit association carries the
+  unit as the group's `=` value plus `primaryColumn:`/`associatedColumn:`
+  references. All of them name columns of the owning table and all feed
+  `Calendar::columns`; the shapes were verified against the Analysis Services
+  engine by round-tripping through tomix-cli.
 - The engine also *resolves* relationship `fromColumn`/`toColumn` against the
   model's tables, and rejects `///` doc comments (descriptions) on
   `tablePermission`. This parser does not cross-validate references — missing
@@ -238,9 +246,10 @@ golden fixture is held to the same standard — it loads clean in the engine:
   hierarchy *by name*; a hierarchy kept alive only by a variation could be
   mis-reported as unused. Tracked for a future AST extension; until then the
   keys are on the ignore list so healthy models do not drown in notices.
-- **`Calendar` and `ColumnKind::CalculatedTableColumn`** have no sampled TMDL
-  form; the descriptors are not mapped. If they appear, the drift policy
-  notices them — which is the correct signal, not silence.
+- **`ColumnKind::CalculatedTableColumn`** has no sampled TMDL form; the
+  column kind is not mapped. If it appears, the drift policy notices it —
+  which is the correct signal, not silence. (The table-level `calendar`
+  object, once in the same boat, is mapped now — see above.)
 - A multi-line expression that continues at exactly the property level
   (depth+1) after a non-empty `=` value is indistinguishable from properties
   and reads as a sibling; TMDL serialization keeps expression bodies below

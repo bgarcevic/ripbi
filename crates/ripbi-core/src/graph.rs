@@ -809,6 +809,70 @@ mod tests {
             ));
         }
 
+        /// Group-by chains mirror sort-by: an unused grouping column drags
+        /// its unused group column along, with the annotation naming the chain.
+        #[test]
+        fn a_group_by_chain_is_annotated() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![
+                        Column {
+                            name: "Amount".to_string(),
+                            group_by_columns: vec!["Bucket".to_string()],
+                            ..Default::default()
+                        },
+                        column("Bucket"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            let amount = find(&unused, &column_id("Sales", "Amount"));
+            assert!(amount.used_by.is_empty());
+            let bucket = find(&unused, &column_id("Sales", "Bucket"));
+            assert_eq!(bucket.used_by.len(), 1);
+            assert_eq!(bucket.used_by[0].id, column_id("Sales", "Amount"));
+            assert!(bucket.used_by[0].also_unused);
+            assert!(matches!(
+                bucket.used_by[0].provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::GroupByColumn
+                }
+            ));
+        }
+
+        /// A used column keeps its group-by column alive: grouping is part of
+        /// how the engine aggregates the column, so a column referenced only
+        /// through a group-by is not dead.
+        #[test]
+        fn a_used_column_keeps_its_group_by_column_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![
+                        Column {
+                            name: "Amount".to_string(),
+                            group_by_columns: vec!["Bucket".to_string()],
+                            ..Default::default()
+                        },
+                        column("Bucket"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Amount")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.unused_objects().is_empty());
+        }
+
         /// A dead hierarchy keeps its level columns from being orphans: they
         /// are referenced only by the hierarchy, which is itself unused.
         #[test]
@@ -1038,6 +1102,65 @@ mod tests {
             assert!(matches!(legacy.used_by[0].provenance, Provenance::M));
         }
 
+        /// Shared expressions reference each other: a partition keeps its
+        /// staging query alive, and the staging query keeps the parameter it
+        /// names alive — one M edge per hop.
+        #[test]
+        fn an_m_chain_keeps_shared_expressions_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    partitions: vec![m_partition(
+                        "Sales",
+                        "let Source = Sql.Database(#\"Staging Query\") in Source",
+                    )],
+                    ..Default::default()
+                }],
+                expressions: vec![
+                    SharedExpression {
+                        name: "Staging Query".to_string(),
+                        expression: "ServerName".to_string(),
+                    },
+                    SharedExpression {
+                        name: "ServerName".to_string(),
+                        expression: "\"localhost\"".to_string(),
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Anything")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("Staging Query"),
+                },
+            );
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("ServerName"),
+                },
+            );
+
+            // The second hop is the M-to-M edge: the staging query, not the
+            // partition, is what names ServerName.
+            assert_eq!(
+                graph.consumers_of(&ObjectId::Expression {
+                    name: NameKey::new("ServerName"),
+                }),
+                [(
+                    ObjectId::Expression {
+                        name: NameKey::new("Staging Query"),
+                    },
+                    Provenance::M
+                )]
+            );
+        }
+
         /// A bookmark's saved filter is a root like a live one.
         #[test]
         fn a_bookmark_saved_filter_is_a_root() {
@@ -1108,6 +1231,63 @@ mod tests {
             let graph = DependencyGraph::build(&db, &[&report]);
 
             assert!(graph.unused_objects().is_empty());
+        }
+
+        /// Calendar-bound columns ride along with their table: the engine
+        /// materializes them through the calendar, so a column referenced
+        /// only through a calendar is not dead.
+        #[test]
+        fn calendar_columns_stay_with_their_table() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Date".to_string(),
+                    columns: vec![column("Day")],
+                    calendars: vec![crate::model::Calendar {
+                        name: "Fiscal Calendar".to_string(),
+                        columns: vec!["Day".to_string()],
+                    }],
+                    measures: vec![measure("Rows", "COUNTROWS('Date')")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Date", "Rows")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.unused_objects().is_empty());
+        }
+
+        /// A dead table drags its calendar-bound columns along, annotated:
+        /// the calendar is the only thing that ever referenced them.
+        #[test]
+        fn a_dead_table_annotates_its_calendar_columns() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Date".to_string(),
+                    columns: vec![column("Day")],
+                    calendars: vec![crate::model::Calendar {
+                        name: "Fiscal Calendar".to_string(),
+                        columns: vec!["Day".to_string()],
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            let day = find(&unused, &column_id("Date", "Day"));
+            assert_eq!(day.used_by.len(), 1);
+            assert_eq!(day.used_by[0].id, table_id("Date"));
+            assert!(day.used_by[0].also_unused);
+            assert!(matches!(
+                day.used_by[0].provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::EngineManaged
+                }
+            ));
         }
     }
 

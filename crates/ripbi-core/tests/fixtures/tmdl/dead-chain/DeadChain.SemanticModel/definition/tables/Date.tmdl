@@ -14,6 +14,12 @@ table Date
 		sourceColumn: Month
 		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd03
 
+	/// Live only through the calendar — the engine binds it with the table.
+	column Day
+		dataType: int64
+		sourceColumn: Day
+		lineageTag: f0000000-0000-0000-0000-000000000003
+
 	hierarchy Calendar
 		lineageTag: dddddddd-dddd-dddd-dddd-dddddddddd04
 
@@ -23,6 +29,12 @@ table Date
 
 		level Month
 			column: Month
+
+	/// The date-table calendar (engine shape verified via tomix-cli). It binds
+	/// only [Day] so the dead hierarchy chain above is untouched.
+	calendar 'Fiscal Calendar'
+		calendarColumnGroup
+			column: Day
 
 	partition Date = m
 		mode: import

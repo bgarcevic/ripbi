@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
-    CalculationGroup, CalculationItem, Column, ColumnKind, Function, Hierarchy, HierarchyLevel,
-    Kpi, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
-    TablePermission, TabularDatabase,
+    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
+    HierarchyLevel, Kpi, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
+    Table, TablePermission, TabularDatabase,
 };
 use crate::{Error, Result};
 
@@ -90,6 +90,9 @@ const IGNORED_KEYS: &[&str] = &[
     "reliability",
     // Hierarchies and levels
     "ordinal",
+    // Calendars (the group's time unit names no column, so it binds no
+    // liveness; the canonical spelling carries it as the group's `=` value)
+    "timeUnit",
     // KPIs
     "statusGraphic",
 ];
@@ -99,6 +102,7 @@ const IGNORED_KEYS: &[&str] = &[
 const NAMED_DESCRIPTORS: &[&str] = &[
     "annotation",
     "calculationItem",
+    "calendar",
     "column",
     "dataSource",
     "expression",
@@ -962,6 +966,7 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
             "column" => table.columns.push(map_column(child, path, skips)),
             "hierarchy" => table.hierarchies.push(map_hierarchy(child, path, skips)),
             "partition" => table.partitions.push(map_partition(child, path, skips)),
+            "calendar" => table.calendars.push(map_calendar(child, path, skips)),
             "calculationGroup" => {
                 table.calculation_group = Some(map_calculation_group(child, path, skips));
             }
@@ -1152,6 +1157,55 @@ fn map_hierarchy(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Hiera
         }
     }
     hierarchy
+}
+
+/// Maps a `calendar` block — the engine's date-table calendar (shape verified
+/// against the Analysis Services engine via tomix-cli). Its column bindings all
+/// live inside nameless `calendarColumnGroup` objects, in two forms: a
+/// time-related group lists plain `column:` references, and a time-unit
+/// association carries the unit as its `=` value plus `primaryColumn:` and
+/// `associatedColumn:` references. Every one of those names a column of the
+/// owning table, so all are collected — the graph treats calendar-bound columns
+/// as engine-managed liveness, and missing one would report live code unused.
+fn map_calendar(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Calendar {
+    let mut calendar = Calendar {
+        name: unquote(node.name.as_deref().unwrap_or_default()),
+        ..Default::default()
+    };
+    for child in &node.children {
+        if is_ignored(child) {
+            continue;
+        }
+        match child.key.as_str() {
+            "calendarColumnGroup" => {
+                for property in &child.children {
+                    match property.key.as_str() {
+                        "column" | "primaryColumn" | "associatedColumn" => {
+                            if let Some(text) = property.text() {
+                                calendar.columns.push(unquote(text));
+                            }
+                        }
+                        other if !is_ignored(property) => notice(
+                            skips,
+                            path,
+                            Some(property.line),
+                            SkipKind::UnknownProperty,
+                            format!("unknown property '{other}' on calendarColumnGroup"),
+                        ),
+                        _ => {}
+                    }
+                }
+            }
+            other => notice(
+                skips,
+                path,
+                Some(child.line),
+                SkipKind::UnknownProperty,
+                format!("unknown property '{other}' on calendar '{}'", calendar.name),
+            ),
+        }
+    }
+    calendar
 }
 
 fn map_partition(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Partition {
@@ -1865,6 +1919,47 @@ mod tests {
             assert_eq!(hierarchy.levels[0].column, "");
             assert_eq!(skips.len(), 1);
             assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+        }
+
+        #[test]
+        fn maps_calendar_column_groups() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "calendar 'Fiscal Calendar'\n\tlineageTag: x\n\tcalendarColumnGroup\n\t\tcolumn: Year\n\t\tcolumn: 'Month Name'\n",
+                "calendar",
+            );
+            let calendar = map_calendar(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:#?}");
+            assert_eq!(calendar.name, "Fiscal Calendar");
+            assert_eq!(calendar.columns, ["Year", "Month Name"]);
+        }
+
+        #[test]
+        fn maps_a_time_unit_association_group() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "calendar 'Fiscal Calendar'\n\tcalendarColumnGroup = month\n\t\tprimaryColumn: Month Num\n\t\tassociatedColumn: 'Month Name'\n",
+                "calendar",
+            );
+            let calendar = map_calendar(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:#?}");
+            assert_eq!(calendar.columns, ["Month Num", "Month Name"]);
+        }
+
+        #[test]
+        fn notices_unknown_calendar_properties_without_losing_the_group() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "calendar C\n\tcalendarColumnGroup\n\t\tcolumn: Year\n\t\tmystery: 1\n\tcalendarColumnGroup\n\t\tcolumn: Month\n",
+                "calendar",
+            );
+            let calendar = map_calendar(&node, Path::new("t"), &mut skips);
+
+            assert_eq!(calendar.columns, ["Year", "Month"]);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::UnknownProperty);
         }
 
         #[rstest]
