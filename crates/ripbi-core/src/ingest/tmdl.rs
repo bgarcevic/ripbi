@@ -32,12 +32,14 @@ use crate::{Error, Result};
 const IGNORED_KEYS: &[&str] = &[
     // Universal metadata
     "lineageTag",
+    "sourceLineageTag",
     "changedProperty",
     "description",
     "annotation",
     "extendedProperty",
     // Column metadata
     "dataType",
+    "isNullable",
     "formatString",
     "summarizeBy",
     "sourceColumn",
@@ -1813,7 +1815,7 @@ mod tests {
         fn ignores_deliberately_unmodeled_metadata_silently() {
             let mut skips = Vec::new();
             let node = map_one(
-                "table Sales\n\tlineageTag: g\n\tisHidden\n\texcludeFromModelRefresh\n\tcolumn Amount\n\t\tdataType: double\n\t\tformatString: 0\n\t\tsummarizeBy: sum\n\t\tsourceColumn: Amount\n\t\tchangedProperty = IsHidden\n\t\tannotation SetBy = User\n\tmeasure M = 1\n\t\tdisplayFolder: Core\n",
+                "table Sales\n\tlineageTag: g\n\tsourceLineageTag: s\n\tisHidden\n\texcludeFromModelRefresh\n\tcolumn Amount\n\t\tdataType: double\n\t\tisNullable: false\n\t\tformatString: 0\n\t\tsummarizeBy: sum\n\t\tsourceColumn: Amount\n\t\tsourceLineageTag: c\n\t\tchangedProperty = IsHidden\n\t\tannotation SetBy = User\n\tmeasure M = 1\n\t\tdisplayFolder: Core\n",
                 "table",
             );
             let table = map_table(&node, Path::new("t"), &mut skips);

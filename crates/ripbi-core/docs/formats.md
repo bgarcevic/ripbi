@@ -178,13 +178,13 @@ unknown property not on a list, a modeled value that fails to parse
 
 ### The ignore list
 
-Universal metadata: `lineageTag`, `changedProperty`, `description`,
-`annotation`, `extendedProperty`.
+Universal metadata: `lineageTag`, `sourceLineageTag`, `changedProperty`,
+`description`, `annotation`, `extendedProperty`.
 
 Columns: `dataType`, `formatString` (static), `summarizeBy`, `sourceColumn`,
 `dataCategory`, `isKey`, `isNameInferred`, `isDataTypeInferred`, `isUnique`,
-`isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`, `keepUniqueRows`,
-`relatedColumnDetails`, `tableDetailPosition`.
+`isNullable`, `isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`,
+`keepUniqueRows`, `relatedColumnDetails`, `tableDetailPosition`.
 
 Measures/tables: `displayFolder`, `isPrivate`, `excludeFromModelRefresh`.
 
