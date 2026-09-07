@@ -1,3 +1,7 @@
 expression ServerName = "localhost"
 
 expression LegacyParam = 5
+
+/// Live only through the Sales partition's M — and it keeps ServerName alive
+/// through the M-to-M edge.
+expression 'Staging Query' = ServerName

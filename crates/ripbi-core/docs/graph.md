@@ -44,9 +44,13 @@ nothing resolvable to point at.
 
 **M references.** A partition or shared expression keeps any shared expression whose
 name appears whole-word in its M text alive. M identifiers are case-sensitive, but the
-match is case-insensitive on purpose: matching too broadly only over-marks. This rule
-exists because a Power Query parameter referenced only by one partition would otherwise
-be reported unused, and deleting it breaks the partition.
+match is case-insensitive on purpose: matching too broadly only over-marks. Unlike the
+DAX lexer, the scan does not skip strings or comments — a name mentioned only there
+still marks its referent alive, because over-marking is the safe direction and a real
+lexer could only narrow the result. Edges flow expression-to-expression too, so a
+partition keeps its staging query alive and the staging query keeps the parameter it
+names alive. This rule exists because a Power Query parameter referenced only by one
+partition would otherwise be reported unused, and deleting it breaks the partition.
 
 **Report bindings.** Every `ReportModel::bindings` target is a reachability root with
 its provenance. Measure targets resolve report-first: within its report, a report
