@@ -58,6 +58,15 @@ measure shadows a model measure of the same name. `Aggregation` unwraps to its i
 field; `HierarchyLevel` keeps the hierarchy and the level's underlying column;
 `Written` falls through the same ladder as a written qualified reference.
 
+**Calculation-item selection.** A report binding that lands on a calculation-group
+column — a slicer over the field column, a filter naming an item — can select any of
+the group's items at query time, so it keeps every item of the group alive, carrying
+the binding's provenance. Written uses only: structural liveness of the group (its
+table kept alive by one explicitly named item) deliberately does not spread to the
+unselected items. DAX that references the column without naming an item
+(`'Date Role'[Date Role] = "By Ship Date"`) currently keeps only the column alive —
+the string is data, not a reference the lexer can bind.
+
 **Report measures are nodes, not roots.** An unused report measure is dead — it is
 exactly the accumulated bloat this tool looks for. Its body's references stay alive
 only through it, so they die with it, annotated.

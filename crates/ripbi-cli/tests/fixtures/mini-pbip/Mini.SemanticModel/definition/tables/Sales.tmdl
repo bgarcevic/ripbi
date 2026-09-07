@@ -1,0 +1,30 @@
+table Sales
+	lineageTag: 99999999-9999-9999-9999-999999999901
+
+	/// Live: the card projects it.
+	measure Total = SUM('Sales'[Amount])
+		formatString: "$"#,0
+		lineageTag: 99999999-9999-9999-9999-999999999902
+
+	/// Dead: bound by no visual and named by no other expression.
+	measure 'Legacy Total' = SUM('Sales'[Legacy])
+		lineageTag: 99999999-9999-9999-9999-999999999903
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: 99999999-9999-9999-9999-999999999904
+
+	/// Dead, but dragged along by the dead measure above.
+	column Legacy
+		dataType: double
+		sourceColumn: Legacy
+		lineageTag: 99999999-9999-9999-9999-999999999905
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Amount", "Legacy"}, {})
+				in
+				    Source
