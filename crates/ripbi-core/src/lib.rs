@@ -47,11 +47,13 @@
 //! [`Ingested`], pairing the parsed value with the [`SkipNotice`]s it recorded —
 //! warnings as data, so the CLI decides how to surface them.
 
+pub mod dax;
 pub mod identity;
 pub mod ingest;
 pub mod model;
 pub mod report;
 
+pub use dax::{Binding, RawRef, Token, TokenKind, bind, references, tokenize, unescape_name};
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};
 pub use model::index::{
