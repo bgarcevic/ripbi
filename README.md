@@ -5,10 +5,20 @@
 
 Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
 
-ripbi finds the measures, columns, and tables a model can live without. It reads
-a PBIP project (TMDL semantic model plus PBIR reports), checks what the reports
-actually use, and lists everything else. Supported today: TMDL and PBIR.
-`.pbix` and `.pbit` files are not supported yet.
+I created ripbi because I liked Measure Killer, but I was looking for an
+agent-friendly, free, fast tool to scan semantic models and the connected
+reports to identify potentially unused semantic model objects. I tested it on a
+shared semantic model with 14 connected reports, and it's 99% faster than
+Measure Killer, reducing processing time from almost 4 minutes to a couple of
+seconds.
+
+It works without opening the reports or semantic models, so it can run as part
+of a CI pipeline. It's also cross-platform, with no dependency on Power BI
+Desktop or similar.
+
+It currently works only on local PBIP projects — a TMDL semantic model plus
+PBIR reports; `.pbix` and `.pbit` files are not supported yet. I plan to
+implement guided automated cleanup, a UI, and tenant scanning.
 
 ## Install
 
