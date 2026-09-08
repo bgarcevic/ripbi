@@ -68,4 +68,7 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error,Warning -EnableExit
+          # Write-Host is deliberate: installer status must go straight to the
+          # console, never into the output pipeline under `irm | iex`.
+          Invoke-ScriptAnalyzer -Path install.ps1 -ExcludeRule PSAvoidUsingWriteHost `
+            -Severity Error,Warning -EnableExit
