@@ -1,16 +1,25 @@
 [package]
-name = "ripbi-cli"
+name = "ripbi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "../../README.md"
+description = "Static analysis, linting, and tree-shaking for Power BI semantic models and DAX"
+keywords = ["powerbi", "dax", "linter", "static-analysis", "tree-shaking"]
+categories = ["development-tools", "command-line-utilities", "parser-implementations"]
+
+# The published package is `ripbi`; the library keeps the crate-local name so
+# the binary's imports (`use ripbi_cli::...`) are untouched by the rename.
+[lib]
+name = "ripbi_cli"
 
 [[bin]]
 name = "ripbi"
 path = "src/main.rs"
 
 [dependencies]
-ripbi-core = { path = "../ripbi-core" }
+ripbi-core.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

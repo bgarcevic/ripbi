@@ -30,7 +30,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --locked -p ripbi-cli --target ${{ matrix.target }}
+      - run: cargo build --release --locked -p ripbi --target ${{ matrix.target }}
 
       - name: Package (tar.gz)
         if: runner.os != 'Windows'
@@ -85,3 +85,33 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag
+
+  # Skips until the CARGO_REGISTRY_TOKEN secret exists; once the owner sets it,
+  # every tag publish runs. Secrets cannot be tested in a job-level `if`, so the
+  # token is mapped into the job env and the steps check it there.
+  publish-crates:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish ripbi-core
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish --locked -p ripbi-core
+      - name: Publish ripbi
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        shell: bash
+        run: |
+          # ripbi depends on ripbi-core; the sparse index may not serve the
+          # version published seconds ago, so retry a few times before giving up.
+          for attempt in 1 2 3 4; do
+            if cargo publish --locked -p ripbi; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; ripbi-core may not be visible on the index yet"
+            sleep 30
+          done
+          exit 1

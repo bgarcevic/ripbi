@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "../../README.md"
+description = "Static analysis engine for Power BI semantic models: TMDL and PBIR ingestion, DAX reference extraction, dependency graph, and reachability"
+keywords = ["powerbi", "dax", "static-analysis", "dependency-graph"]
+categories = ["development-tools", "parser-implementations"]
 
 [dependencies]
 petgraph.workspace = true

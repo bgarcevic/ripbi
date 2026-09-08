@@ -56,3 +56,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
       - run: cargo test --workspace
+
+  lint-scripts:
+    name: Lint install scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # shellcheck is preinstalled on the runner.
+      - run: shellcheck install.sh
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          # Write-Host is deliberate: installer status must go straight to the
+          # console, never into the output pipeline under `irm | iex`.
+          Invoke-ScriptAnalyzer -Path install.ps1 -ExcludeRule PSAvoidUsingWriteHost `
+            -Severity Error,Warning -EnableExit
