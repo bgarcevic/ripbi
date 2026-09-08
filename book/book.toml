@@ -1,0 +1,17 @@
+[book]
+title = "ripbi"
+authors = ["Boris Garcevic"]
+description = "Static analysis, linting, and tree-shaking for Power BI semantic models and DAX."
+src = "src"
+
+[output.html]
+# Project pages deploy under github.io/ripbi/, so asset URLs and the 404 page
+# need the subpath.
+site-url = "/ripbi/"
+git-repository-url = "https://github.com/bgarcevic/ripbi"
+
+[output.linkcheck]
+# mdbook-linkcheck backend, run by `mdbook build`. Web links stay off: the
+# gate is for the book's internal links, so CI never flakes on the network.
+follow-web-links = false
+warning-policy = "error"

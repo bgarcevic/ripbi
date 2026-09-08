@@ -1,0 +1,98 @@
+name: Pages
+
+# Builds the mdBook on docs-touching PRs (link check only) and deploys it to
+# GitHub Pages on main. The book is assembled from the canonical docs by
+# book/assemble.sh; the docs themselves stay next to the code.
+on:
+  pull_request:
+    paths:
+      - README.md
+      - CHANGELOG.md
+      - book/**
+      - crates/ripbi-core/docs/**
+      - crates/ripbi-cli/docs/**
+      - .github/workflows/pages.yml
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - CHANGELOG.md
+      - book/**
+      - crates/ripbi-core/docs/**
+      - crates/ripbi-cli/docs/**
+      - .github/workflows/pages.yml
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One group per ref, so a docs PR can never cancel a deploy already running
+# for main.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned rather than "latest" so a mdBook release cannot change the book
+  # output between two docs PRs. 0.4.x is the series mdbook-linkcheck speaks:
+  # its backend protocol predates mdBook 0.5's crate split. Dependabot does
+  # not bump these; bump by hand, both together.
+  MDBOOK_VERSION: 0.4.52
+  MDBOOK_LINKCHECK_VERSION: 0.7.7
+
+jobs:
+  build:
+    name: Build book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Assemble the book from the canonical docs
+        run: book/assemble.sh
+
+      - name: Install mdbook ${{ env.MDBOOK_VERSION }}
+        run: |
+          # Linux assets are tarballs; only the Windows release is a zip.
+          # ~/.local/bin is on PATH but not pre-created on the runner.
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o /tmp/mdbook.tar.gz \
+            "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/mdbook.tar.gz -C "$HOME/.local/bin"
+
+      - name: Install mdbook-linkcheck ${{ env.MDBOOK_LINKCHECK_VERSION }}
+        run: |
+          # The zip does not carry the executable bit.
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o /tmp/linkcheck.zip \
+            "https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/download/v${MDBOOK_LINKCHECK_VERSION}/mdbook-linkcheck.x86_64-unknown-linux-gnu.zip"
+          unzip -q /tmp/linkcheck.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/mdbook-linkcheck"
+
+      # mdbook-linkcheck runs as a backend of this command: a broken internal
+      # link fails the build and the PR.
+      - run: mdbook build book
+
+      # Pages upload and deploy only make sense from main; PR runs stop after
+      # the build above.
+      - if: github.event_name == 'push'
+        uses: actions/configure-pages@v6
+      - if: github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          # mdBook writes each backend into its own subdir; the site is the
+          # html one, not the linkcheck cache next to it.
+          path: book/book/html
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **User guide on GitHub Pages** — an mdBook at
+  [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/), assembled
+  by a Pages workflow from the docs that live next to the code, with a link
+  checker so a broken internal link fails CI.
+
 ## [0.1.0] - 2026-09-07
 
 First release: the full static-analysis pipeline plus the `ripbi scan` command
@@ -55,4 +64,5 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/bgarcevic/ripbi/releases/tag/v0.1.0

@@ -29,6 +29,7 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |
 | Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Two-crate workspace |
 | Project intro / positioning | [README.md](README.md) | [README.md](README.md) | User-facing overview |
+| Docs site (mdBook on Pages) | [book/](book/) | [CONTRIBUTING.md](CONTRIBUTING.md) | `book/src/` is generated — edit the canonical docs, never the projection |
 
 ## Coding standards
 
