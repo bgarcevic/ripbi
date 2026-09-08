@@ -42,6 +42,10 @@ jobs:
           cp "target/${{ matrix.target }}/release/ripbi" "$stage/"
           cp README.md LICENSE-MIT LICENSE-APACHE "$stage/"
           tar -czf "dist/ripbi-${version}-${{ matrix.target }}.tar.gz" -C dist "ripbi-${version}"
+          # dist must hold archives only: the checksum step and the release
+          # upload both glob dist/*, and the staging dir's name collides with
+          # the ripbi-* pattern.
+          rm -rf "$stage"
 
       - name: Package (zip)
         if: runner.os == 'Windows'
@@ -53,6 +57,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/ripbi.exe" $stage
           Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE $stage
           Compress-Archive -Path $stage -DestinationPath "dist/ripbi-$version-${{ matrix.target }}.zip"
+          Remove-Item -Recurse -Force $stage
 
       - uses: actions/upload-artifact@v4
         with:
