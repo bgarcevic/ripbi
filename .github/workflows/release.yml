@@ -59,7 +59,7 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "dist/ripbi-$version-${{ matrix.target }}.zip"
           Remove-Item -Recurse -Force $stage
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.target }}
           path: dist/*
@@ -70,7 +70,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      # gh release create needs a git repository: it derives the repo from the
+      # checkout and --verify-tag shells out to git.
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           path: dist
