@@ -1,0 +1,99 @@
+# Contributing
+
+Thanks for helping make ripbi better. ripbi is a static analysis, linting, and
+tree-shaking tool for Power BI semantic models and DAX — the
+[README](README.md) covers what it does; this file covers how to work on it.
+
+This guide deliberately does not restate architecture. [AGENTS.md](AGENTS.md)
+is the routing table: it points into the per-crate `CONTEXT.MD` files, which
+point further down into topic docs. Start there when you need to know where a
+change belongs.
+
+AI agents are first-class contributors in this repo. If you are one, read
+[AGENTS.md](AGENTS.md) and follow its routing and coding standards exactly,
+like any human contributor.
+
+## Dev setup
+
+You need [Rust](https://rustup.rs/) stable. The workspace is on edition 2024,
+so 1.85 or newer; there is no MSRV and CI tracks stable.
+
+```sh
+git clone https://github.com/bgarcevic/ripbi.git
+cd ripbi
+cargo build --workspace
+```
+
+Development works on Linux, macOS, and Windows — CI runs the test suite on all
+three. To see the tool do its thing:
+
+```sh
+cargo run -p ripbi -- scan "samples/AdventureWorks Sales.pbip"
+```
+
+## Local CI parity
+
+CI is the definition of done: if these pass locally, your PR will pass CI.
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
+cargo test --workspace
+```
+
+The `cargo doc` step exists because broken intra-doc links are only caught by
+rustdoc — clippy and the test suite never see them. On PowerShell, set the
+variable first instead of prefixing: `$env:RUSTDOCFLAGS='-D warnings'`.
+
+Lint levels live in the root `Cargo.toml` under `[workspace.lints]`, so a
+plain local `cargo clippy` already denies what CI denies.
+
+## Where things live
+
+Two crates:
+
+- [`crates/ripbi-core`](crates/ripbi-core) — the pure library: format
+  ingestion, DAX lexing, graph reachability. It never prints and never exits.
+- [`crates/ripbi-cli`](crates/ripbi-cli) — the `ripbi` binary: a thin
+  orchestration layer over core. All printing lives here.
+
+For anything deeper, follow the routing: [AGENTS.md](AGENTS.md) →
+[crates/ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) and
+[crates/ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) → the topic docs
+they point to.
+
+## Contribution norms
+
+**Tests for behavior changes.** Unit tests live inline as `#[cfg(test)]`
+modules; integration tests live in each crate's `tests/` directory with
+fixtures and golden baselines (`crates/ripbi-cli/tests/fixtures/` holds the
+AdventureWorks baseline). A parser or output change without a fixture update
+is probably not done.
+
+**The standards that bite.** Two of [AGENTS.md](AGENTS.md#coding-standards)'s
+coding standards come up in almost every change: `ripbi-core` never prints to
+stdout/stderr and never calls `std::process::exit` (the CLI owns all I/O), and
+JSON traversal must tolerate schema drift — never panic or assume on unknown
+or missing fields. Read all five before your first PR.
+
+**Good issues** include a minimal reproduction (a small `.pbip`/TMDL snippet,
+or steps against a `samples/` project), expected vs. actual behavior, and the
+output of `ripbi --version`.
+
+## Samples
+
+The projects under [`samples/`](samples/) are Microsoft's own sample projects,
+redistributed under MIT and attributed in [samples/README.md](samples/README.md).
+They are not covered by ripbi's license. Never modify or relicense them, and
+don't add new test fixtures there — fixtures belong with the crate that uses
+them.
+
+## Commits and PRs
+
+- Write commit subjects in the imperative mood, like the rest of the log:
+  "Implement the ripbi scan command", not "Added…" or "fix: …".
+- Reference the issue in the PR description ("Closes #41").
+- Keep PRs small and focused — one change per PR.
+- Versions and releases are maintainer-run: pushing a `v*` tag drives the
+  release and crates.io publish workflow. Don't bump versions in your PR.

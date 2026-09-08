@@ -121,6 +121,19 @@ The full output contract (human, `--summary`, `--plain`, `--json`, and
 `ripbi.toml` configuration) is documented in
 [crates/ripbi-cli/docs/output.md](https://github.com/bgarcevic/ripbi/blob/main/crates/ripbi-cli/docs/output.md).
 
+## Contributing
+
+Dev setup, workflow, and where things live are documented in
+[CONTRIBUTING.md](CONTRIBUTING.md). The short version — CI is the definition
+of done, and this is what CI runs:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
+cargo test --workspace
+```
+
 ## License
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
