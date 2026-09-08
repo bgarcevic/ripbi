@@ -38,8 +38,9 @@ listing them), none is an error.
 
 | Flag | Effect |
 |---|---|
-| `--json` | JSON on stdout (schema below). Mutually exclusive with `--plain` |
+| `--json` | JSON on stdout (schema below). Mutually exclusive with `--plain` and `--summary` |
 | `--plain` | One `<type>\t<id>` record per finding, for grep/awk |
+| `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json` and `--plain` |
 | `-q`, `--quiet` | No output; exit code only |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml` |
 | `--strict` | Any parser skip notice becomes exit code `2` |
@@ -72,6 +73,21 @@ Columns (28)
     every) consumer is itself unused, so the whole chain can go;
   - `← used by 'X' — <where>` — the consumer is live but its use could not keep this
     object alive (a key column held only as a relationship endpoint).
+
+## `--summary`
+
+The human mode for big models: the summary line and one `label: count` line per
+non-empty group, with no findings list. Same stdout, same exit codes, same stderr
+(notices still print). Use `--plain` or `--json` when you want the individual
+objects.
+
+```text
+3781 objects, 1207 reachable from 2962 roots, 2574 unused
+
+Measures: 214
+Columns: 2211
+Report measures: 149
+```
 
 ## `--plain`
 

@@ -55,6 +55,28 @@ fn json_and_plain_flags_conflict() {
 }
 
 #[test]
+fn summary_conflicts_with_the_finding_modes() {
+    for mode in ["--json", "--plain"] {
+        ripbi()
+            .args(["scan", &mini_pbip(), "--summary", mode])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
+}
+
+#[test]
+fn summary_mode_runs_the_binary_end_to_end() {
+    ripbi()
+        .args(["scan", &mini_pbip(), "--summary"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Measures: 1"))
+        .stdout(predicate::str::contains("Columns: 1"))
+        .stdout(predicate::str::contains("'Sales'[Legacy Total]").not());
+}
+
+#[test]
 fn scan_sets_the_documented_exit_codes() {
     // Unused objects found → 1.
     ripbi()

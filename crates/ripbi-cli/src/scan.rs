@@ -221,6 +221,8 @@ fn scan(
             render::json(streams.out, &output).map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
+        } else if args.summary {
+            render::human_summary(streams.out, &palette_out, &output).map_err(ScanError::from)?;
         } else {
             render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
         }

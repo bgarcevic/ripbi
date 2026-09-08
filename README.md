@@ -15,4 +15,4 @@ ripbi scan --quiet
 ```
 
 See `ripbi scan --help` and [crates/ripbi-cli/docs/output.md](crates/ripbi-cli/docs/output.md)
-for the full output contract (human, `--plain`, `--json`) and `ripbi.toml` support.
+for the full output contract (human, `--summary`, `--plain`, `--json`) and `ripbi.toml` support.

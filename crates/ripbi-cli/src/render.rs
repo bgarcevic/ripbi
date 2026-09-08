@@ -106,26 +106,7 @@ pub fn kind_of(id: &ObjectId) -> &'static str {
 /// # Errors
 /// Propagates stream write failures.
 pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
-    let unused_text = if report.findings.is_empty() {
-        palette.green("0 unused")
-    } else {
-        palette.yellow(&format!("{} unused", report.findings.len()))
-    };
-    writeln!(
-        out,
-        "{} objects, {} reachable from {} roots, {unused_text}",
-        palette.bold(&report.objects.to_string()),
-        palette.bold(&report.reachable.to_string()),
-        palette.bold(&report.roots.to_string()),
-    )?;
-    if report.ignored > 0 {
-        writeln!(
-            out,
-            "({} objects suppressed by [scan].ignore)",
-            report.ignored
-        )?;
-    }
-    writeln!(out)?;
+    write_summary(out, palette, report)?;
 
     if report.findings.is_empty() {
         writeln!(out, "No unused objects.")?;
@@ -152,6 +133,64 @@ pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) ->
         writeln!(out)?;
     }
     Ok(())
+}
+
+/// Writes `--summary` output: the summary line and per-type totals, without
+/// the findings list — the shape for models with thousands of findings.
+///
+/// # Errors
+/// Propagates stream write failures.
+pub fn human_summary(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
+    write_summary(out, palette, report)?;
+
+    if report.findings.is_empty() {
+        writeln!(out, "No unused objects.")?;
+        return Ok(());
+    }
+    for (kind, label) in GROUPS {
+        let count = report
+            .findings
+            .iter()
+            .filter(|finding| finding.kind == *kind)
+            .count();
+        if count > 0 {
+            writeln!(out, "{}: {}", palette.bold(label), count)?;
+        }
+    }
+    Ok(())
+}
+
+/// The summary line both human modes open with, plus the `[scan].ignore`
+/// note when anything was suppressed.
+fn write_summary(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
+    let unused_text = if report.findings.is_empty() {
+        palette.green("0 unused")
+    } else {
+        palette.yellow(&format!("{} unused", report.findings.len()))
+    };
+    writeln!(
+        out,
+        "{} objects, {} reachable from {} roots, {unused_text}",
+        palette.bold(&report.objects.to_string()),
+        palette.bold(&report.reachable.to_string()),
+        palette.bold(&report.roots.to_string()),
+    )?;
+    if report.ignored > 0 {
+        writeln!(
+            out,
+            "({} objects suppressed by [scan].ignore)",
+            report.ignored
+        )?;
+    }
+    writeln!(out)
 }
 
 fn write_annotations(

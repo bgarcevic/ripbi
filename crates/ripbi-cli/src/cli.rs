@@ -30,6 +30,7 @@ Examples:
   ripbi scan models/Sales.SemanticModel --report reports/Sales.Report
   ripbi scan                       discover a project in the current directory
   ripbi scan --json > findings.json
+  ripbi scan --summary             counts only, when the list would flood the terminal
   ripbi scan -q                    exit code only: 0 clean, 1 unused found, 2 error";
 
 /// `ripbi scan` arguments.
@@ -53,6 +54,11 @@ pub struct ScanArgs {
     /// Write one record per line for grep/awk: `<type>\t<id>`.
     #[arg(long)]
     pub plain: bool,
+
+    /// Print only the counts: the summary line and per-type totals, no
+    /// findings list — for models whose finding list would flood the terminal.
+    #[arg(short = 's', long, conflicts_with_all = ["json", "plain"])]
+    pub summary: bool,
 
     /// Print nothing; the exit code is the only output.
     #[arg(short = 'q', long)]

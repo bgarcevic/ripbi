@@ -107,6 +107,29 @@ mod output_modes {
     }
 
     #[test]
+    fn summary_mode_prints_counts_without_the_findings() {
+        let temp = TempDir::new("summary");
+        let args = ScanArgs {
+            summary: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stdout.contains("6 objects, 4 reachable from 1 roots, 2 unused"),
+            "summary line:\n{stdout}"
+        );
+        assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
+        assert!(stdout.contains("Columns: 1"), "count line:\n{stdout}");
+        assert!(
+            !stdout.contains("'Sales'[Legacy"),
+            "no finding ids on stdout:\n{stdout}"
+        );
+        assert!(!stdout.contains("←"), "no annotations:\n{stdout}");
+    }
+
+    #[test]
     fn quiet_mode_prints_nothing_and_still_sets_the_exit_code() {
         let temp = TempDir::new("quiet");
         let args = ScanArgs {
