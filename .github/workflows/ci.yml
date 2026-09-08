@@ -58,12 +58,12 @@ jobs:
       - run: cargo test --workspace
 
   lint-scripts:
-    name: Lint install scripts
+    name: Lint scripts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # shellcheck is preinstalled on the runner.
-      - run: shellcheck install.sh
+      - run: shellcheck install.sh book/assemble.sh
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |

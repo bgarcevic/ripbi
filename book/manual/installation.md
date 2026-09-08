@@ -1,26 +1,6 @@
-# ripbi
+# Installation and quickstart
 
-[![CI](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/ripbi.svg)](https://crates.io/crates/ripbi)
-
-Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
-
-Docs: [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/).
-
-I created ripbi because I liked Measure Killer, but I was looking for an
-agent-friendly, free, fast tool to scan semantic models and the connected
-reports to identify potentially unused semantic model objects. I tested it on a
-shared semantic model with 14 connected reports, and it's 99% faster than
-Measure Killer, reducing processing time from almost 4 minutes to a couple of
-seconds.
-
-It works without opening the reports or semantic models, so it can run as part
-of a CI pipeline. It's also cross-platform, with no dependency on Power BI
-Desktop or similar.
-
-It currently works only on local PBIP projects — a TMDL semantic model plus
-PBIR reports; `.pbix` and `.pbit` files are not supported yet. I plan to
-implement guided automated cleanup, a UI, and tenant scanning.
+<!-- Mirrors the README's Install and Quickstart sections — keep them in sync. -->
 
 ## Install
 
@@ -65,7 +45,7 @@ irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 -OutFile 
 powershell -ExecutionPolicy Bypass -File .\install.ps1  # the flag is only needed if your policy blocks script files
 ```
 
-From a clone of this repository:
+From a clone of the repository:
 
 ```sh
 cargo install --path crates/ripbi-cli
@@ -117,27 +97,5 @@ Exit codes:
 ripbi scan -q   # no output; exit code only
 ```
 
-## Output
-
-The full output contract (human, `--summary`, `--plain`, `--json`, and
-`ripbi.toml` configuration) is documented in the user guide's
-[scan chapter](https://bgarcevic.github.io/ripbi/output.html).
-
-## Contributing
-
-Dev setup, workflow, and where things live are documented in
-[CONTRIBUTING.md](CONTRIBUTING.md). The short version — CI is the definition
-of done, and this is what CI runs:
-
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
-cargo test --workspace
-```
-
-## License
-
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
-The `samples/` are Microsoft's own sample projects (MIT) and are not covered by
-ripbi's license.
+The [scan command](output.md) chapter documents every flag, the output
+shapes, `ripbi.toml`, and the exit codes in full.

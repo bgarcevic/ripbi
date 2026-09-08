@@ -25,6 +25,11 @@ tarpaulin-report.*
 *.swo
 *~
 
+# mdBook — book/src is assembled from the canonical crate docs by
+# book/assemble.sh; book/book is the built site. Both are generated.
+/book/src/
+/book/book/
+
 # Environment
 .env
 .env.local
