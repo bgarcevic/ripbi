@@ -1067,14 +1067,49 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
             for (index, projection) in list.iter().enumerate() {
                 let projection_location = format!("{role_location}/projections/{index}");
                 check_keys(projection, &PROJECTION_KEYS, ctx, &projection_location);
-                if let Some(target) = required_field(
-                    projection.get("field"),
-                    &Aliases::new(),
-                    ctx,
-                    &format!("{projection_location}/field"),
-                ) {
+                let field_location = format!("{projection_location}/field");
+                let targets = match projection.get("field") {
+                    Some(field) => {
+                        match parse_field(field, &Aliases::new(), ctx, &field_location) {
+                            FieldParse::Target(target) => vec![target],
+                            // The failure was already noticed inside parse_field.
+                            FieldParse::Malformed => Vec::new(),
+                            // A computed field — an `Arithmetic` ratio of
+                            // measures, say — is a container of references, not
+                            // one reference: bind every model field it
+                            // mentions, the first as the projection and the
+                            // rest as inactive riders, like field parameters.
+                            FieldParse::NotAField => {
+                                let mut found = Vec::new();
+                                collect_fields(
+                                    field,
+                                    &Aliases::new(),
+                                    ctx,
+                                    &field_location,
+                                    &mut found,
+                                );
+                                let mut unique: Vec<FieldTarget> = Vec::new();
+                                for target in found {
+                                    if !unique.contains(&target) {
+                                        unique.push(target);
+                                    }
+                                }
+                                if unique.is_empty() {
+                                    ctx.notice(
+                                        field_location.clone(),
+                                        SkipKind::MalformedValue,
+                                        "value is not a readable field reference",
+                                    );
+                                }
+                                unique
+                            }
+                        }
+                    }
+                    None => Vec::new(),
+                };
+                if let Some((first, riders)) = targets.split_first() {
                     projections.push(Projection {
-                        target,
+                        target: first.clone(),
                         query_ref: projection
                             .get("queryRef")
                             .and_then(Value::as_str)
@@ -1084,6 +1119,13 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
                             .and_then(Value::as_bool)
                             .unwrap_or(false),
                     });
+                    for target in riders {
+                        projections.push(Projection {
+                            target: target.clone(),
+                            query_ref: None,
+                            active: false,
+                        });
+                    }
                 }
             }
         }
@@ -1951,6 +1993,78 @@ mod tests {
                     },
                 ]
             );
+        }
+    }
+
+    /// A well projection whose field is a *computed* expression — the real
+    /// shape: a percent-of-total ratio (`measure ÷ the same measure scoped to
+    /// the Columns role`). It is a container of references, not one reference,
+    /// so the well binds what it mentions instead of dropping the projection.
+    mod computed_projections {
+        use super::*;
+
+        fn parse_wells(json: &str) -> (Vec<FieldWell>, Vec<SkipNotice>) {
+            let value = serde_json::from_str(json).unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let out = wells(Some(&value), &mut ctx, "/visual/query/queryState");
+            (out, skips)
+        }
+
+        fn measure(table: &str, name: &str) -> FieldTarget {
+            FieldTarget::Measure {
+                home_table: Some(NameKey::new(table)),
+                measure: NameKey::new(name),
+            }
+        }
+
+        #[test]
+        fn an_arithmetic_projection_binds_its_operands_once() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                  {"queryRef": "x", "active": true, "field": {
+                    "Arithmetic": {
+                      "Left": {
+                        "Measure": {
+                          "Expression": {"SourceRef": {"Entity": "MitDuos-beregninger"}},
+                          "Property": "Antal tilfredsheds_besvarelser"}},
+                      "Right": {
+                        "ScopedEval": {
+                          "Expression": {
+                            "Measure": {
+                              "Expression": {"SourceRef": {"Entity": "MitDuos-beregninger"}},
+                              "Property": "Antal tilfredsheds_besvarelser"}},
+                          "Scope": [{"RoleRef": {"Role": "Columns"}}]}},
+                      "Operator": 3}}}
+                ]}}"#,
+            );
+
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            assert_eq!(wells_out.len(), 1);
+            assert_eq!(
+                wells_out[0].projections,
+                [Projection {
+                    target: measure("MitDuos-beregninger", "Antal tilfredsheds_besvarelser"),
+                    query_ref: Some("x".to_string()),
+                    active: true,
+                }]
+            );
+        }
+
+        #[test]
+        fn a_projection_that_mentions_no_field_still_notices() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                    {"field": {"Literal": {"Value": "'just text'"}}}
+                ]}}"#,
+            );
+
+            assert!(wells_out.is_empty());
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
         }
     }
 }
