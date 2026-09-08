@@ -1,15 +1,14 @@
 # ripbi
 
 [![CI](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml)
-[![Release](https://github.com/bgarcevic/ripbi/actions/workflows/release.yml/badge.svg)](https://github.com/bgarcevic/ripbi/actions/workflows/release.yml)
 [![crates.io](https://img.shields.io/crates/v/ripbi.svg)](https://crates.io/crates/ripbi)
 
 Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
 
-ripbi ingests TMDL semantic models and PBIR reports, tokenizes every DAX
-expression, and walks the dependency graph from report bindings to find what no
-report reaches: the dead measures, orphaned columns, and unreachable tables that
-TOM/XMLA tooling cannot see because it is report-agnostic.
+ripbi finds the measures, columns, and tables a model can live without. It reads
+a PBIP project (TMDL semantic model plus PBIR reports), checks what the reports
+actually use, and lists everything else. Supported today: TMDL and PBIR.
+`.pbix` and `.pbit` files are not supported yet.
 
 ## Install
 
@@ -25,9 +24,13 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
 ```
 
-Both scripts resolve the latest release, verify the archive's sha256 against
-the published `sha256sums.txt`, and install into `~/.local/bin`. Pin a version
-with `RIPBI_VERSION`:
+Both scripts verify the download against the release's sha256 checksums and
+install the binary into `~/.local/bin`. Or `cargo install ripbi`.
+
+<details>
+<summary>Pinning a version, reviewing the scripts first, building from source</summary>
+
+Pin a version:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | RIPBI_VERSION=v0.1.0 sh
@@ -37,32 +40,26 @@ curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | R
 $env:RIPBI_VERSION = 'v0.1.0'; irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
 ```
 
-Prefer to read a script before you run it? Both are plain shell and PowerShell —
-download them, review, then run from the file:
+Both scripts are plain shell and PowerShell. Download them first if you would
+rather read before running:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh -o install.sh
-less install.sh
 sh install.sh
 ```
 
 ```powershell
 irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 -OutFile install.ps1
-Get-Content .\install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1  # the flag is only needed if your execution policy blocks script files
+powershell -ExecutionPolicy Bypass -File .\install.ps1  # the flag is only needed if your policy blocks script files
 ```
 
-With Cargo:
-
-```sh
-cargo install ripbi
-```
-
-Or build from a clone of this repository:
+From a clone of this repository:
 
 ```sh
 cargo install --path crates/ripbi-cli
 ```
+
+</details>
 
 ## Quickstart
 
@@ -88,16 +85,15 @@ Columns (28)
   …
 ```
 
-The summary line counts every object in the model, how many the reports reach,
-and how many are unused. Findings are grouped by object type, and each carries
-a chain annotation: either nothing references it, or the only thing that does
-is itself unused — a dead chain you can delete whole.
+The summary line counts the model's objects, how many the reports reach, and
+how many are unused. Each finding says why it is dead: nothing references it,
+or its only consumer is itself unused.
 
 `ripbi scan` discovers the project itself: pass a `.pbip` file, a project
-folder, a `.SemanticModel`, or a `.Report`, or nothing at all to scan the
-current directory.
+folder, a `.SemanticModel`, or a `.Report`, or nothing to scan the current
+directory.
 
-Exit codes make it CI-ready:
+Exit codes:
 
 | Code | Meaning |
 |------|---------|
@@ -106,13 +102,13 @@ Exit codes make it CI-ready:
 | `2`  | Error (bad path, ingestion failure, …) |
 
 ```sh
-ripbi scan -q   # output suppressed; the exit code is the report
+ripbi scan -q   # no output; exit code only
 ```
 
 ## Output
 
-The full output contract — human, `--summary`, `--plain`, `--json`, and
-`ripbi.toml` configuration — is documented in
+The full output contract (human, `--summary`, `--plain`, `--json`, and
+`ripbi.toml` configuration) is documented in
 [crates/ripbi-cli/docs/output.md](https://github.com/bgarcevic/ripbi/blob/main/crates/ripbi-cli/docs/output.md).
 
 ## License
