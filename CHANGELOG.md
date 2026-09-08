@@ -43,5 +43,16 @@ that exposes it.
 - **Validated findings** — an end-to-end test pins the Adventure Works sample
   scan against a committed 44-object baseline from an external unused-objects
   analysis: full agreement, zero false positives.
+- **One-line installers** — `install.sh` (macOS/Linux) and `install.ps1`
+  (Windows) resolve the latest GitHub release, verify the archive's sha256
+  against `sha256sums.txt`, and install into `~/.local/bin`; both can be piped
+  straight from the repository or downloaded, reviewed, and run from a file,
+  with `RIPBI_VERSION` pinning a release.
+- **crates.io publishing** — the release workflow publishes `ripbi` and
+  `ripbi-core` on every tag (gated on the `CARGO_REGISTRY_TOKEN` secret), so
+  `cargo install ripbi` works from 0.1.0 on; the binary crate is now named
+  `ripbi` (library target unchanged).
+- **README** — install instructions, a 30-second quickstart with real
+  AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
 [0.1.0]: https://github.com/bgarcevic/ripbi/releases/tag/v0.1.0
