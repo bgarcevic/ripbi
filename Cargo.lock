@@ -716,7 +716,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
-name = "ripbi-cli"
+name = "ripbi"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
