@@ -55,15 +55,18 @@ jobs:
       - name: Install mdbook ${{ env.MDBOOK_VERSION }}
         run: |
           # Linux assets are tarballs; only the Windows release is a zip.
+          # ~/.local/bin is on PATH but not pre-created on the runner.
+          mkdir -p "$HOME/.local/bin"
           curl -fsSL -o /tmp/mdbook.tar.gz \
             "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
           tar -xzf /tmp/mdbook.tar.gz -C "$HOME/.local/bin"
 
       - name: Install mdbook-linkcheck ${{ env.MDBOOK_LINKCHECK_VERSION }}
         run: |
+          # The zip does not carry the executable bit.
+          mkdir -p "$HOME/.local/bin"
           curl -fsSL -o /tmp/linkcheck.zip \
             "https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/download/v${MDBOOK_LINKCHECK_VERSION}/mdbook-linkcheck.x86_64-unknown-linux-gnu.zip"
-          # The zip does not carry the executable bit.
           unzip -q /tmp/linkcheck.zip -d "$HOME/.local/bin"
           chmod +x "$HOME/.local/bin/mdbook-linkcheck"
 
