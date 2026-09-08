@@ -184,6 +184,22 @@ policies the external analyses do not share, also visible in that baseline: book
 saved filters count as bindings (re-applying a bookmark re-binds its fields), and
 inactive relationships keep both key columns alive.
 
+A fourth, uncommitted validation ran against a large production model (≈3.8k graph
+objects, 14 reports, ≈2.5k columns/measures measured externally): 99.3% of the
+externally-dead objects were findings with identical chain shape, and — the direction
+that matters — of the objects `scan` flags that the external analysis calls live,
+**none** had a live consumer. Every one was either a column referenced only inside
+Power Query (M) expressions, which this crate does not lex (see below), or a member of
+a chain where every consumer was itself unused: auto date/time clusters no report
+binds, and active relationships between otherwise-dead tables. Both are the tree-shaker
+working as designed — a dead cluster takes its relationship keys and its auto date
+table with it — but deleting a column that Power Query still references breaks
+refresh, so M-only findings deserve a manual check until M expressions are lexed.
+Two external-analysis blind spots surfaced the same run: a measure bound only by a
+drillthrough filter on a hidden page (counted live here; the external tool skipped
+hidden pages), and report-level measures the external tool judges by view telemetry,
+which static analysis deliberately ignores.
+
 ## Known boundaries
 
 - Only TMDL semantic models and PBIR reports can be ingested; `.pbix`/`.pbit`/
