@@ -1,0 +1,60 @@
+# Unused-objects baseline for the Adventure Works Sales sample.
+#
+# Distilled from target/adventure-works-unused-analysis.csv (an external
+# unused-objects analysis export over the same model in samples/), one object
+# per line:
+#
+#   <ripbi-type>\t<table>\t<object name>\t<expected chain>
+#
+# expected chain: "orphan"  — externally marked Unused (ripbi: empty used_by)
+#                 "chained" — externally marked Used by unused (ripbi: every
+#                             consumer itself unused)
+# The E2E test in tests/adventure_works.rs asserts every line is a ripbi
+# finding with the matching chain shape, that no live object is flagged, and
+# that the only extra findings are the dead 'Time Intelligence'
+# field-parameter cluster (table, partition, its 10 calculation items), which
+# nothing anywhere references.
+column	Customer	City	chained
+column	Customer	Customer	chained
+column	Customer	Customer ID	orphan
+column	Customer	Postal Code	chained
+column	Customer	State-Province	chained
+column	Date	Fiscal Quarter	chained
+column	Date	Fiscal Year	chained
+column	Date	Full Date	orphan
+column	Date	Month	chained
+column	Date	MonthKey	orphan
+column	Product	Color	orphan
+column	Product	List Price	orphan
+column	Product	SKU	orphan
+column	Product	Standard Cost	orphan
+column	Reseller	City	chained
+column	Reseller	Country-Region	chained
+column	Reseller	Postal Code	chained
+column	Reseller	Reseller	chained
+column	Reseller	Reseller ID	orphan
+column	Reseller	State-Province	chained
+column	Sales	Extended Amount	orphan
+column	Sales	Order Quantity (base)	chained
+column	Sales	Product Standard Cost	orphan
+column	Sales	Unit Price	orphan
+column	Sales	Unit Price Discount Pct	orphan
+column	Sales Order	Sales Order Line	chained
+column	Sales Territory	Country	chained
+column	Time Intelligence	Time Intelligence	chained
+hierarchy	Customer	Geography	orphan
+hierarchy	Date	Fiscal	orphan
+hierarchy	Reseller	Geography	orphan
+hierarchy	Sales Order	Sales Orders	orphan
+hierarchy	Sales Territory	Sales Territories	orphan
+measure	Sales	Average Sales per Order	orphan
+measure	Sales	Order Quantity	orphan
+measure	Sales	Sales MTD	orphan
+measure	Sales	Sales PY	orphan
+measure	Sales	Sales QTD	orphan
+measure	Sales	Sales YTD	orphan
+measure	Sales	Sales YoY	orphan
+measure	Sales	Sales YoY %	orphan
+measure	Sales	Sales by Due Date	orphan
+measure	Sales	Sales by Order Date	orphan
+measure	Sales	Sales by Ship Date	orphan

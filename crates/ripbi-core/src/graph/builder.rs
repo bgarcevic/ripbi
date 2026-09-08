@@ -491,8 +491,44 @@ impl Builder {
                 bookmark: binding.bookmark.cloned(),
             }));
             for target in self.field_target_targets(db, index, report, binding.target) {
-                self.root(target, provenance.clone());
+                self.root(target.clone(), provenance.clone());
+                self.add_selection_edges(db, &target, provenance.clone());
             }
+        }
+    }
+
+    /// A report binding that lands on a calculation-group column can select
+    /// any of the group's items by name at query time — a slicer over the
+    /// field column, a filter naming an item — so the binding keeps every
+    /// item of the group alive too. Written uses only: structural liveness
+    /// of the group (its table alive through one explicitly named item)
+    /// deliberately does not spread to the unselected items.
+    fn add_selection_edges(
+        &mut self,
+        db: &TabularDatabase,
+        target: &ObjectId,
+        provenance: Provenance,
+    ) {
+        let ObjectId::Column { table, .. } = target else {
+            return;
+        };
+        let Some(group) = db
+            .tables
+            .iter()
+            .find(|t| NameKey::new(&t.name) == *table)
+            .and_then(|t| t.calculation_group.as_ref())
+        else {
+            return;
+        };
+        for item in &group.items {
+            self.edge(
+                target,
+                &ObjectId::CalculationItem {
+                    table: table.clone(),
+                    item: NameKey::new(&item.name),
+                },
+                provenance.clone(),
+            );
         }
     }
 
@@ -703,6 +739,7 @@ fn binding_site(kind: BindingKind<'_>) -> BindingSite {
         BindingKind::Sort => BindingSite::Sort,
         BindingKind::Drillthrough => BindingSite::Drillthrough,
         BindingKind::ConditionalFormatting => BindingSite::ConditionalFormatting,
+        BindingKind::AltText => BindingSite::AltText,
     }
 }
 

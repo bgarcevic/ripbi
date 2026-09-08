@@ -1,0 +1,7 @@
+expression e_Nav =
+		let
+		    Source = 1
+		in
+		    Source
+	lineageTag: 22222222-2222-2222-2222-222222222222
+	queryGroup: 'Extract Tables\e_Nav'

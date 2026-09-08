@@ -178,20 +178,22 @@ unknown property not on a list, a modeled value that fails to parse
 
 ### The ignore list
 
-Universal metadata: `lineageTag`, `changedProperty`, `description`,
-`annotation`, `extendedProperty`.
+Universal metadata: `lineageTag`, `sourceLineageTag`, `changedProperty`,
+`description`, `annotation`, `extendedProperty`.
 
 Columns: `dataType`, `formatString` (static), `summarizeBy`, `sourceColumn`,
 `dataCategory`, `isKey`, `isNameInferred`, `isDataTypeInferred`, `isUnique`,
-`isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`, `keepUniqueRows`,
-`relatedColumnDetails`, `tableDetailPosition`.
+`isNullable`, `isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`,
+`keepUniqueRows`, `relatedColumnDetails`, `tableDetailPosition`.
 
-Measures/tables: `displayFolder`, `isPrivate`.
+Measures/tables: `displayFolder`, `isPrivate`, `excludeFromModelRefresh`.
 
 Model/database: `culture`, `sourceQueryCulture`,
 `defaultPowerBIDataSourceVersion`, `discourageImplicitMeasures`,
 `dataAccessOptions`, `compatibilityLevel`, `createOrReplace`,
-`retainDataTillForceCalculate`.
+`retainDataTillForceCalculate`. Power Query query groups (`queryGroup`) are
+unmodeled in every form they take: block declarations in `model.tmdl` and
+membership properties on expressions and partitions.
 
 Cultures (folder never read; keys listed for stray uses): `cultureInfo`,
 `linguisticMetadata`, `contentType`.

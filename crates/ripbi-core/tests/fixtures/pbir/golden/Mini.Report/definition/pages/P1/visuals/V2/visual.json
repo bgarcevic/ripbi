@@ -146,6 +146,24 @@
     },
     "drillFilterOtherVisuals": true,
     "visualContainerObjects": {
+      "general": [
+        {
+          "properties": {
+            "altText": {
+              "expr": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Sales"
+                    }
+                  },
+                  "Property": "Units"
+                }
+              }
+            }
+          }
+        }
+      ],
       "visualTooltip": [
         {
           "properties": {

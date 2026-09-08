@@ -92,6 +92,8 @@ fn golden_report() -> ReportModel {
                         }],
                         sorts: vec![column("Product", "Category")],
                         conditional_formatting: Vec::new(),
+                        // A literal alt text carries no model reference.
+                        alt_text: Vec::new(),
                         tooltip_page: None,
                     },
                     Visual {
@@ -124,6 +126,9 @@ fn golden_report() -> ReportModel {
                         }],
                         sorts: Vec::new(),
                         conditional_formatting: vec![measure("Sales", "Cost")],
+                        // The accessibility alt text: read aloud by screen
+                        // readers, so the interpolated column stays alive.
+                        alt_text: vec![column("Sales", "Units")],
                         tooltip_page: Some(NameKey::new("P2")),
                     },
                 ],
@@ -292,6 +297,14 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 None,
                 BindingKind::ConditionalFormatting,
                 "'Sales'[Cost]".to_string()
+            ),
+            // V2's alt text interpolates a column; V1's is a literal (silent).
+            (
+                Some("P1"),
+                Some("V2"),
+                None,
+                BindingKind::AltText,
+                "'Sales'[Units]".to_string()
             ),
             // Drillthrough parameter.
             (

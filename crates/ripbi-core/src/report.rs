@@ -136,6 +136,10 @@ pub struct Visual {
     pub sorts: Vec<FieldTarget>,
     /// Fields driving conditional-formatting rules.
     pub conditional_formatting: Vec<FieldTarget>,
+    /// Fields referenced by the visual's accessibility alt text
+    /// (`visualContainerObjects.general.altText`): a screen reader reads it,
+    /// so dropping the field breaks the visual.
+    pub alt_text: Vec<FieldTarget>,
     /// Page used as this visual's tooltip, by page object name. A report-internal
     /// reference: it keeps the page reachable, not a model object.
     pub tooltip_page: Option<NameKey>,
@@ -341,6 +345,8 @@ pub enum BindingKind<'a> {
     Drillthrough,
     /// A field driving a conditional-formatting rule.
     ConditionalFormatting,
+    /// A visual's accessibility alt text (`general.altText`).
+    AltText,
 }
 
 /// Borrowed view of one report binding, with its provenance.
@@ -451,6 +457,16 @@ impl ReportModel {
                         visual: visual_id,
                         bookmark: None,
                         kind: BindingKind::ConditionalFormatting,
+                        target,
+                    });
+                }
+
+                for target in &visual.alt_text {
+                    out.push(BindingRef {
+                        page: page_id,
+                        visual: visual_id,
+                        bookmark: None,
+                        kind: BindingKind::AltText,
                         target,
                     });
                 }
@@ -612,6 +628,7 @@ mod tests {
             filters: Vec::new(),
             sorts: Vec::new(),
             conditional_formatting: Vec::new(),
+            alt_text: Vec::new(),
             tooltip_page: None,
         }
     }

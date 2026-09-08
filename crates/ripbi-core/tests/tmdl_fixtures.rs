@@ -281,6 +281,28 @@ fn rejects_a_folder_that_is_not_a_semantic_model() {
     assert!(error.is_err(), "the fixtures root has no definition/");
 }
 
+/// Real Desktop models organize Power Query into query groups: block
+/// declarations in model.tmdl plus `queryGroup:` properties on expressions and
+/// partitions, and newer tables carry `excludeFromModelRefresh`. All
+/// organizational metadata — parsed cleanly, noticed never.
+#[test]
+fn query_groups_and_refresh_flags_stay_silent() {
+    let ingested = semantic_model(&fixture(&["resilience", "query-groups"]))
+        .expect("query-group metadata must not fail the parse");
+
+    assert_eq!(ingested.value.tables.len(), 1);
+    assert_eq!(ingested.value.tables[0].name, "Sales");
+    assert_eq!(ingested.value.tables[0].columns.len(), 1);
+    assert_eq!(ingested.value.expressions.len(), 1);
+    assert_eq!(ingested.value.expressions[0].name, "e_Nav");
+
+    assert!(
+        ingested.skips.is_empty(),
+        "organizational metadata must be silent: {:#?}",
+        ingested.skips
+    );
+}
+
 #[test]
 fn unknown_property_parses_and_is_noticed_once() {
     let ingested = semantic_model(&fixture(&["resilience", "unknown-property"]))

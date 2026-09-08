@@ -100,6 +100,7 @@
 //!             filters: Vec::new(),
 //!             sorts: Vec::new(),
 //!             conditional_formatting: Vec::new(),
+//!             alt_text: Vec::new(),
 //!             tooltip_page: None,
 //!         }],
 //!     }],
@@ -400,6 +401,7 @@ mod tests {
                     filters: Vec::new(),
                     sorts: Vec::new(),
                     conditional_formatting: Vec::new(),
+                    alt_text: Vec::new(),
                     tooltip_page: None,
                 }],
             }],
@@ -942,6 +944,72 @@ mod tests {
             let graph = DependencyGraph::build(&db, &[&report]);
 
             assert!(graph.unused_objects().is_empty());
+        }
+
+        /// A report binding on a calculation-group column keeps every item of
+        /// its group alive: a slicer or filter over the column can select any
+        /// item by name at query time. Structural liveness of the group alone
+        /// does not: the dead-chain fixture pins an unselected item staying
+        /// dead when only another item's explicit DAX use keeps the table up.
+        #[test]
+        fn a_binding_on_a_calculation_group_column_keeps_its_items_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Amount")],
+                        measures: vec![measure("Total", "SUM('Sales'[Amount])")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "Date Role".to_string(),
+                        columns: vec![column("Date Role")],
+                        calculation_group: Some(crate::model::CalculationGroup {
+                            items: vec![
+                                crate::model::CalculationItem {
+                                    name: "By Ship Date".to_string(),
+                                    expression: "SELECTEDMEASURE()".to_string(),
+                                    format_string_expression: None,
+                                },
+                                crate::model::CalculationItem {
+                                    name: "By Due Date".to_string(),
+                                    expression: "SELECTEDMEASURE()".to_string(),
+                                    format_string_expression: None,
+                                },
+                            ],
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page(
+                "P1",
+                "Slicer",
+                &[
+                    measure_target("Sales", "Total"),
+                    column_target("Date Role", "Date Role"),
+                ],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(
+                graph.unused_objects().is_empty(),
+                "the bound column keeps the group, the group's items, and the model alive"
+            );
+            let consumers = graph.consumers_of(&ObjectId::CalculationItem {
+                table: NameKey::new("Date Role"),
+                item: NameKey::new("By Ship Date"),
+            });
+            assert!(
+                consumers.iter().any(|(id, provenance)| {
+                    *id == column_id("Date Role", "Date Role")
+                        && matches!(provenance, Provenance::Binding(_))
+                }),
+                "the column's binding edge names the item, with the binding site as provenance"
+            );
         }
 
         /// A qualified reference into a calculation group keeps the named

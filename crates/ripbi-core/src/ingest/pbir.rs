@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::Result;
+use crate::dax;
 use crate::identity::{FieldRef, NameKey, fold_name};
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::report::{
@@ -365,6 +366,11 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
         ctx,
         "/filterConfig",
     ));
+    let alt_text = alt_text_targets(
+        inner.get("visualContainerObjects"),
+        ctx,
+        "/visual/visualContainerObjects",
+    );
     Some(Visual {
         name: NameKey::new(value.get("name").and_then(Value::as_str).unwrap_or(folder)),
         visual_type: visual_type.to_string(),
@@ -378,6 +384,7 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
             .map(|query| sorts(query, ctx, "/visual/query"))
             .unwrap_or_default(),
         conditional_formatting,
+        alt_text,
         tooltip_page: tooltip_page(
             inner.get("visualContainerObjects"),
             ctx,
@@ -710,7 +717,19 @@ fn parse_field(container: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
     let Some(variant) = FIELD_VARIANTS.iter().find(|key| object.contains_key(**key)) else {
         return FieldParse::NotAField;
     };
-    let inner = &object[*variant];
+    // Some shapes double the variant spelling — sparkline data wraps its
+    // measure as `Measure: {Measure: {…}}` — so unwrap repeated wrappers
+    // until the object stops being a lone field variant.
+    let mut inner = &object[*variant];
+    while let Some(wrapped) = inner.as_object() {
+        let mut keys = wrapped.keys();
+        match (keys.next(), keys.next()) {
+            (Some(single), None) if FIELD_VARIANTS.contains(&single.as_str()) => {
+                inner = &wrapped[single];
+            }
+            _ => break,
+        }
+    }
     match *variant {
         "Column" | "Measure" => column_or_measure(variant, inner, aliases, ctx, location),
         "Aggregation" => {
@@ -1011,10 +1030,12 @@ fn collect_fields(
         Value::Object(object) => {
             if let Some(query) = object.get("Subquery").and_then(|sub| sub.get("Query")) {
                 // A visual-calculation subquery defines its own alias scope;
-                // its Select and Where trees carry the model references.
+                // its Select, Where, and Transform trees carry the model
+                // references — an AI narrative's Transform steps consume whole
+                // tables of aliased fields.
                 let aliases = query_aliases(query);
                 let location = format!("{location}/Subquery/Query");
-                for key in ["Select", "Where"] {
+                for key in ["Select", "Where", "Transform"] {
                     if let Some(part) = query.get(key) {
                         collect_fields(part, &aliases, ctx, &format!("{location}/{key}"), out);
                     }
@@ -1059,14 +1080,81 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
             for (index, projection) in list.iter().enumerate() {
                 let projection_location = format!("{role_location}/projections/{index}");
                 check_keys(projection, &PROJECTION_KEYS, ctx, &projection_location);
-                if let Some(target) = required_field(
-                    projection.get("field"),
-                    &Aliases::new(),
-                    ctx,
-                    &format!("{projection_location}/field"),
-                ) {
+                let field_location = format!("{projection_location}/field");
+                let targets = match projection.get("field") {
+                    Some(field) => {
+                        match parse_field(field, &Aliases::new(), ctx, &field_location) {
+                            FieldParse::Target(target) => vec![target],
+                            // The failure was already noticed inside parse_field.
+                            FieldParse::Malformed => Vec::new(),
+                            // A computed field is a container of references,
+                            // not one reference: bind every model field it
+                            // mentions, the first as the projection and the
+                            // rest as inactive riders, like field parameters.
+                            // A native visual calculation is DAX text, so its
+                            // bracketed references come from the DAX lexer as
+                            // written references the graph's ladder resolves.
+                            FieldParse::NotAField => {
+                                let mut found = Vec::new();
+                                if let Some(expression) = field
+                                    .get("NativeVisualCalculation")
+                                    .and_then(|calc| calc.get("Expression"))
+                                    .and_then(Value::as_str)
+                                {
+                                    for raw in dax::references(expression) {
+                                        if let dax::RawRef::Field { table, name, .. } = raw {
+                                            found.push(FieldTarget::Written(FieldRef {
+                                                table: table.map(NameKey::new),
+                                                name: NameKey::new(name),
+                                            }));
+                                        }
+                                    }
+                                } else if let Some(sparkline) = field.get("SparklineData") {
+                                    // A sparkline binds its measured field and
+                                    // every column it groups by.
+                                    for part in ["Measure", "Groupings"] {
+                                        if let Some(value) = sparkline.get(part) {
+                                            collect_fields(
+                                                value,
+                                                &Aliases::new(),
+                                                ctx,
+                                                &format!("{field_location}/{part}"),
+                                                &mut found,
+                                            );
+                                        }
+                                    }
+                                }
+                                if found.is_empty() {
+                                    collect_fields(
+                                        field,
+                                        &Aliases::new(),
+                                        ctx,
+                                        &field_location,
+                                        &mut found,
+                                    );
+                                }
+                                let mut unique: Vec<FieldTarget> = Vec::new();
+                                for target in found {
+                                    if !unique.contains(&target) {
+                                        unique.push(target);
+                                    }
+                                }
+                                if unique.is_empty() {
+                                    ctx.notice(
+                                        field_location.clone(),
+                                        SkipKind::MalformedValue,
+                                        "value is not a readable field reference",
+                                    );
+                                }
+                                unique
+                            }
+                        }
+                    }
+                    None => Vec::new(),
+                };
+                if let Some((first, riders)) = targets.split_first() {
                     projections.push(Projection {
-                        target,
+                        target: first.clone(),
                         query_ref: projection
                             .get("queryRef")
                             .and_then(Value::as_str)
@@ -1076,6 +1164,13 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
                             .and_then(Value::as_bool)
                             .unwrap_or(false),
                     });
+                    for target in riders {
+                        projections.push(Projection {
+                            target: target.clone(),
+                            query_ref: None,
+                            active: false,
+                        });
+                    }
                 }
             }
         }
@@ -1141,8 +1236,10 @@ fn sorts(query: &Value, ctx: &mut Ctx, location: &str) -> Vec<FieldTarget> {
 ///
 /// - a `filter` property is a *persisted automatic filter* — the visual's own
 ///   filter, kept in the objects only after the filter pane has been expanded
-///   in the report's authoring history. Its condition tree binds the same way
-///   as a `filterConfig` filter's, so it joins the visual's filters.
+///   in the report's authoring history. A `selfFilter` property is the same
+///   filter in the shape a visual applies to its own data. Both bind the same
+///   way: the condition tree's fields are references like any other, so both
+///   join the visual's filters.
 /// - every other property is conditional formatting, whose field references
 ///   (`FillRule` inputs and the like) are collected structurally, since the
 ///   property trees have shape only the schema knows.
@@ -1168,7 +1265,7 @@ fn visual_objects(
             };
             for (property_name, property_value) in properties {
                 let property_location = format!("{definition_location}/properties/{property_name}");
-                let is_persisted_filter = property_name == "filter"
+                let is_persisted_filter = matches!(property_name.as_str(), "filter" | "selfFilter")
                     && property_value
                         .get("filter")
                         .is_some_and(|definition| definition.get("Where").is_some());
@@ -1187,6 +1284,39 @@ fn visual_objects(
         }
     }
     (filters, conditional_formatting)
+}
+
+/// Reads a visual's accessibility alt text
+/// (`visualContainerObjects.<group>[].properties.altText`). The canonical
+/// spelling is `general`; the reference is collected wherever it hides,
+/// because a screen reader reads the text — whatever model object it
+/// interpolates stays alive.
+fn alt_text_targets(objects: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<FieldTarget> {
+    let mut out = Vec::new();
+    let Some(map) = objects.and_then(Value::as_object) else {
+        return out;
+    };
+    for (group, definitions) in map {
+        let Some(list) = definitions.as_array() else {
+            continue;
+        };
+        for (index, definition) in list.iter().enumerate() {
+            let Some(text) = definition
+                .get("properties")
+                .and_then(|properties| properties.get("altText"))
+            else {
+                continue;
+            };
+            collect_fields(
+                text,
+                &Aliases::new(),
+                ctx,
+                &format!("{location}/{group}/{index}/properties/altText"),
+                &mut out,
+            );
+        }
+    }
+    out
 }
 
 /// Reads a visual's tooltip page reference
@@ -1829,6 +1959,274 @@ mod tests {
         #[case::unquoted("Top", "Top")]
         fn unquote_literal_strips_quotes(#[case] input: &str, #[case] expected: &str) {
             assert_eq!(unquote_literal(input), expected);
+        }
+    }
+
+    /// A visual-calculation subquery: the Select carries the queryRef, but an
+    /// AI narrative's Transform steps also consume aliased model fields —
+    /// a shape a real textbox ships (`HighPointLowPointSummary`).
+    mod subquery {
+        use super::*;
+
+        fn collect(json: &str) -> Vec<FieldTarget> {
+            let value = serde_json::from_str(json).unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let mut out = Vec::new();
+            collect_fields(&value, &Aliases::new(), &mut ctx, "/field", &mut out);
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            out
+        }
+
+        #[test]
+        fn the_subquery_alias_scope_covers_its_transform_steps() {
+            let out = collect(
+                r#"{
+                  "Subquery": {
+                    "Query": {
+                      "Version": 2,
+                      "From": [
+                        {"Name": "o", "Entity": "Opportunity Calendar", "Type": 0}
+                      ],
+                      "Select": [
+                        {"QueryRef": "x", "Expression": {"Measure": {
+                          "Expression": {"SourceRef": {"Source": "o"}},
+                          "Property": "Revenue Won"}}}
+                      ],
+                      "Transform": [
+                        {
+                          "Name": "HighAndLowPoint",
+                          "Algorithm": "HighPointLowPointSummary",
+                          "Input": {
+                            "Parameters": [
+                              {
+                                "Literal": {"Value": "10000L"},
+                                "Name": "initialTemplateId"
+                              }
+                            ],
+                            "Table": {
+                              "Name": "HighAndLowPointInput",
+                              "Columns": [
+                                {
+                                  "Expression": {"Column": {
+                                    "Expression": {"SourceRef": {"Source": "o"}},
+                                    "Property": "YEAR MONTH"}},
+                                  "Name": "d2",
+                                  "Role": "PrimarySeriesColumnRole"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }"#,
+            );
+
+            assert_eq!(
+                out,
+                [
+                    FieldTarget::Measure {
+                        home_table: Some(NameKey::new("Opportunity Calendar")),
+                        measure: NameKey::new("Revenue Won"),
+                    },
+                    FieldTarget::Column {
+                        table: NameKey::new("Opportunity Calendar"),
+                        column: NameKey::new("YEAR MONTH"),
+                    },
+                ]
+            );
+        }
+    }
+
+    /// A well projection whose field is a *computed* expression — the real
+    /// shape: a percent-of-total ratio (`measure ÷ the same measure scoped to
+    /// the Columns role`). It is a container of references, not one reference,
+    /// so the well binds what it mentions instead of dropping the projection.
+    mod computed_projections {
+        use super::*;
+
+        fn parse_wells(json: &str) -> (Vec<FieldWell>, Vec<SkipNotice>) {
+            let value = serde_json::from_str(json).unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let out = wells(Some(&value), &mut ctx, "/visual/query/queryState");
+            (out, skips)
+        }
+
+        fn measure(table: &str, name: &str) -> FieldTarget {
+            FieldTarget::Measure {
+                home_table: Some(NameKey::new(table)),
+                measure: NameKey::new(name),
+            }
+        }
+
+        #[test]
+        fn an_arithmetic_projection_binds_its_operands_once() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                  {"queryRef": "x", "active": true, "field": {
+                    "Arithmetic": {
+                      "Left": {
+                        "Measure": {
+                          "Expression": {"SourceRef": {"Entity": "Sales"}},
+                          "Property": "Revenue"}},
+                      "Right": {
+                        "ScopedEval": {
+                          "Expression": {
+                            "Measure": {
+                              "Expression": {"SourceRef": {"Entity": "Sales"}},
+                              "Property": "Revenue"}},
+                          "Scope": [{"RoleRef": {"Role": "Columns"}}]}},
+                      "Operator": 3}}}
+                ]}}"#,
+            );
+
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            assert_eq!(wells_out.len(), 1);
+            assert_eq!(
+                wells_out[0].projections,
+                [Projection {
+                    target: measure("Sales", "Revenue"),
+                    query_ref: Some("x".to_string()),
+                    active: true,
+                }]
+            );
+        }
+
+        #[test]
+        fn a_sparkline_binds_its_measure_and_groupings() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                    {"field": {"SparklineData": {
+                        "Measure": {"Measure": {
+                            "Expression": {"SourceRef": {"Entity": "Sales"}},
+                            "Property": "Revenue"}},
+                        "Groupings": [{"Column": {
+                            "Expression": {"SourceRef": {"Entity": "Calendar"}},
+                            "Property": "MonthNumber"}}]}}}
+                ]}}"#,
+            );
+
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            assert_eq!(wells_out.len(), 1);
+            assert_eq!(
+                wells_out[0].projections,
+                [
+                    Projection {
+                        target: measure("Sales", "Revenue"),
+                        query_ref: None,
+                        active: false,
+                    },
+                    Projection {
+                        target: FieldTarget::Column {
+                            table: NameKey::new("Calendar"),
+                            column: NameKey::new("MonthNumber"),
+                        },
+                        query_ref: None,
+                        active: false,
+                    },
+                ]
+            );
+        }
+
+        #[test]
+        fn a_projection_that_mentions_no_field_still_notices() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                    {"field": {"Literal": {"Value": "'just text'"}}}
+                ]}}"#,
+            );
+
+            assert!(wells_out.is_empty());
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+        }
+
+        /// A native visual calculation is DAX over the visual's own fields;
+        /// its bracketed references become written targets the graph's ladder
+        /// resolves, as inactive riders (the calculation itself is visual-
+        /// level, so it carries no active model field of its own).
+        #[test]
+        fn a_native_visual_calculation_binds_its_dax_references() {
+            let (wells_out, skips) = parse_wells(
+                r#"{"Values": {"projections": [
+                    {"field": {"NativeVisualCalculation": {
+                        "Language": "dax",
+                        "Expression": "EXPAND(AVERAGE([Revenue]), [Week])",
+                        "Name": "Avg"}}}
+                ]}}"#,
+            );
+
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            assert_eq!(wells_out.len(), 1);
+            assert_eq!(
+                wells_out[0].projections,
+                [
+                    Projection {
+                        target: FieldTarget::Written(FieldRef {
+                            table: None,
+                            name: NameKey::new("Revenue"),
+                        }),
+                        query_ref: None,
+                        active: false,
+                    },
+                    Projection {
+                        target: FieldTarget::Written(FieldRef {
+                            table: None,
+                            name: NameKey::new("Week"),
+                        }),
+                        query_ref: None,
+                        active: false,
+                    },
+                ]
+            );
+        }
+    }
+
+    /// A `selfFilter` property is the visual's own persisted filter in the
+    /// same `{filter: {From, Where}}` wrapper as the filter pane's; its
+    /// condition tree must resolve through its own alias scope.
+    mod self_filter {
+        use super::*;
+
+        #[test]
+        fn a_self_filter_binds_through_its_own_aliases() {
+            let value = serde_json::from_str::<Value>(
+                r#"{"general": [{"properties": {"selfFilter": {"filter": {
+                  "Version": 2,
+                  "From": [{"Name": "c", "Entity": "Customers", "Type": 0}],
+                  "Where": [{"Condition": {"Contains": {
+                    "Left": {"Column": {"Expression": {"SourceRef": {"Source": "c"}}, "Property": "Name"}},
+                    "Right": {"Literal": {"Value": "'west'"}}}}}]}}}}]}"#,
+            )
+            .unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let (filters, conditional_formatting) =
+                visual_objects(Some(&value), &mut ctx, "/visual/objects");
+
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+            assert!(conditional_formatting.is_empty());
+            assert_eq!(filters.len(), 1);
+            assert_eq!(filters[0].target, None);
+            assert_eq!(
+                filters[0].references,
+                [FieldTarget::Column {
+                    table: NameKey::new("Customers"),
+                    column: NameKey::new("Name"),
+                }]
+            );
         }
     }
 }

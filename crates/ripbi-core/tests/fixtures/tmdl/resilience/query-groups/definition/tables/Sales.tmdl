@@ -1,0 +1,6 @@
+table Sales
+	excludeFromModelRefresh
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount

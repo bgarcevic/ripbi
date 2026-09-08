@@ -1,0 +1,16 @@
+model Model
+	culture: en-US
+
+queryGroup 'Extract Tables'
+
+	annotation PBI_QueryGroupOrder = 0
+
+queryGroup 'Extract Tables\e_Nav'
+
+	annotation PBI_QueryGroupOrder = 1
+
+queryGroup 'Load Tables\Dimension_tables'
+
+	annotation PBI_QueryGroupOrder = 0
+
+ref table Sales
