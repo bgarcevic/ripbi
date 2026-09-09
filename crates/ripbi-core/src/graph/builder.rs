@@ -39,12 +39,13 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
         edges: HashSet::new(),
         roots: Vec::new(),
         root_set: HashSet::new(),
+        m_named: HashMap::new(),
     };
 
     builder.add_model_objects(db, reports);
     builder.add_structural_edges(db, &index);
     builder.add_dax_edges(db, &index, reports);
-    builder.add_m_edges(db);
+    builder.add_m_edges(db, &index);
     for report in reports {
         builder.add_roots(db, &index, report);
     }
@@ -60,6 +61,9 @@ struct Builder {
     edges: HashSet<(NodeIndex, NodeIndex, Provenance)>,
     roots: Vec<(ObjectId, Provenance)>,
     root_set: HashSet<(ObjectId, Provenance)>,
+    /// Columns named by M expressions — the supply chain, deliberately not
+    /// edges. Key: the column. Value: the expressions that name it.
+    m_named: HashMap<ObjectId, Vec<ObjectId>>,
 }
 
 impl Builder {
@@ -100,7 +104,7 @@ impl Builder {
     }
 
     fn finish(self) -> DependencyGraph {
-        DependencyGraph::assemble(self.graph, self.nodes, self.roots)
+        DependencyGraph::assemble(self.graph, self.nodes, self.roots, self.m_named)
     }
 
     /// Pre-creates a node for every model and report object, so isolated
@@ -283,14 +287,28 @@ impl Builder {
             let id = relationship_node_id(rel);
             let from = endpoint_column(db, index, &rel.from_table, &rel.from_column);
             let to = endpoint_column(db, index, &rel.to_table, &rel.to_column);
-            // Either endpoint table keeps the relationship alive…
-            for (table_id, _) in [&from, &to].into_iter().flatten() {
-                self.edge(table_id, &id, relationship());
-            }
-            // …and the relationship keeps both key columns alive — but, being a
-            // relationship endpoint, without keeping their tables alive.
-            for (_, column_id) in [&from, &to].into_iter().flatten() {
-                self.edge(&id, column_id, relationship_endpoint());
+            if rel.is_active {
+                // Either endpoint table keeps the relationship alive, and it
+                // keeps both key columns alive — but, being a relationship
+                // endpoint, without keeping their tables alive.
+                for (table_id, _) in [&from, &to].into_iter().flatten() {
+                    self.edge(table_id, &id, relationship());
+                }
+                for (_, column_id) in [&from, &to].into_iter().flatten() {
+                    self.edge(&id, column_id, relationship_endpoint());
+                }
+            } else {
+                // An inactive relationship is recorded on both sides without
+                // any liveness: only a live `USERELATIONSHIP` call — an
+                // activation edge from the DAX walk — can switch it on, so an
+                // unactivated one is a finding, and its keys are findings
+                // that point back at it.
+                for (table_id, _) in [&from, &to].into_iter().flatten() {
+                    self.edge(table_id, &id, inactive_relationship());
+                }
+                for (_, column_id) in [&from, &to].into_iter().flatten() {
+                    self.edge(&id, column_id, inactive_relationship_endpoint());
+                }
             }
         }
 
@@ -344,7 +362,23 @@ impl Builder {
             },
         };
 
-        for raw in dax::references(expression.text) {
+        let refs = dax::references(expression.text);
+        for (position, raw) in refs.iter().enumerate() {
+            // `USERELATIONSHIP('A'[X], 'B'[Y])` is the only DAX that can
+            // switch an inactive relationship on at query time — the
+            // activation edge is what keeps the relationship alive. The two
+            // arguments bind to their columns through the ordinary walk
+            // below; the extraction emits the call and its qualified field
+            // arguments adjacently.
+            if let (Some((a, b)), RawRef::Function { name, .. }) =
+                (refs.get(position + 1).zip(refs.get(position + 2)), &raw)
+                && fold_name(name) == "userelationship"
+            {
+                for target in userelationship_targets(db, a, b) {
+                    self.edge(site.owner, &target, site.provenance.clone());
+                }
+            }
+
             if let (
                 Some(report),
                 RawRef::Field {
@@ -384,7 +418,7 @@ impl Builder {
                 // fallback for a reference that matched nothing at all.
                 self.extend_qualified(db, index, &site, table, name, !binding.is_unresolved());
             } else {
-                let binding = dax::bind(db, index, expression.home_table, raw);
+                let binding = dax::bind(db, index, expression.home_table, raw.clone());
                 for target in binding.targets() {
                     self.edge(site.owner, target, site.provenance.clone());
                 }
@@ -452,29 +486,64 @@ impl Builder {
         }
     }
 
-    /// Edges from M expressions to the shared expressions they reference by
-    /// name, so a parameter used only by one partition is never falsely unused.
-    fn add_m_edges(&mut self, db: &TabularDatabase) {
-        if db.expressions.is_empty() {
-            return;
-        }
-        let names: Vec<(NameKey, ObjectId)> = db
-            .expressions
-            .iter()
-            .map(|expression| {
-                let name = NameKey::new(&expression.name);
-                let id = ObjectId::Expression { name: name.clone() };
-                (name, id)
-            })
-            .collect();
-
-        for m in db.m_expressions() {
-            let owner = m.owner.to_object_id();
-            for (name, id) in &names {
-                if m_references(m.text, name.as_str()) {
-                    self.edge(&owner, id, Provenance::M);
+    /// Edges from M expressions to the model objects they reference: the
+    /// shared expressions, tables, and columns named by a partition's or
+    /// shared expression's Power Query text.
+    ///
+    /// A column referenced only inside Power Query is refresh-critical —
+    /// removing it breaks refresh even though no DAX or report binding touches
+    /// it — so its reference keeps it alive, and a merge-source table keeps
+    /// the table it merges in. The edges stay ordinary [`Provenance::M`] edges,
+    /// so liveness still flows through the owner: a dead table's partition
+    /// keeps nothing alive, and a reference never marks anything live on its
+    /// own.
+    /// Wires the Power Query references into the graph. The pipeline is M →
+    /// tables/columns → DAX → reports: deleting a model object can never break
+    /// what is upstream of it, and M is upstream of everything. What the two
+    /// directions mean here:
+    ///
+    /// - a **column** named in M is that column's supply chain — the query
+    ///   keeps producing it and the model stops mapping it. Unloading the
+    ///   column cannot break refresh, so there is deliberately *no* liveness
+    ///   edge; the naming expression is recorded in `m_named` instead, so
+    ///   findings can say what a *full* removal — script included — must edit;
+    /// - a **table or shared expression** named in M is different: deleting it
+    ///   deletes the query this expression reads or joins, which breaks
+    ///   refresh. Those stay real edges.
+    fn add_m_edges(&mut self, db: &TabularDatabase, index: &ModelIndex) {
+        for expression in db.m_expressions() {
+            let owner = expression.owner.to_object_id();
+            for binding in crate::m::bindings(db, index, expression.text) {
+                for target in binding.targets() {
+                    match target {
+                        ObjectId::Column { .. } => {
+                            self.m_named
+                                .entry(target.clone())
+                                .or_default()
+                                .push(owner.clone());
+                        }
+                        ObjectId::Table { table } => {
+                            // A partition naming its own table says nothing
+                            // new, and the edge would cycle with the
+                            // table-partition edge.
+                            if let ObjectId::Partition { table: own, .. } = &owner
+                                && own == table
+                            {
+                                continue;
+                            }
+                            self.edge(&owner, target, Provenance::M);
+                        }
+                        ObjectId::Expression { .. } => {
+                            self.edge(&owner, target, Provenance::M);
+                        }
+                        _ => {}
+                    }
                 }
             }
+        }
+        for owners in self.m_named.values_mut() {
+            owners.sort();
+            owners.dedup();
         }
     }
 
@@ -721,6 +790,57 @@ fn report_measure(report: &ReportModel, name: &NameKey) -> Option<ObjectId> {
         })
 }
 
+/// Every model relationship whose endpoints are exactly the two qualified
+/// columns of a `USERELATIONSHIP('A'[X], 'B'[Y])` call, in either argument
+/// order. Unqualified arguments match nothing (they are invalid in a real
+/// call), and an ambiguous pair activates every matching relationship —
+/// keeping one more is the safe direction. Empty when the call names no
+/// model relationship; the arguments still bind to their columns through the
+/// ordinary walk.
+fn userelationship_targets(db: &TabularDatabase, a: &RawRef, b: &RawRef) -> Vec<ObjectId> {
+    let (
+        RawRef::Field {
+            table: Some(ft),
+            name: fc,
+            ..
+        },
+        RawRef::Field {
+            table: Some(tt),
+            name: tc,
+            ..
+        },
+    ) = (a, b)
+    else {
+        return Vec::new();
+    };
+    let (from, to) = (
+        (
+            fold_name(unescape_name(ft).as_ref()),
+            fold_name(unescape_name(fc).as_ref()),
+        ),
+        (
+            fold_name(unescape_name(tt).as_ref()),
+            fold_name(unescape_name(tc).as_ref()),
+        ),
+    );
+    db.relationships
+        .iter()
+        .filter(|rel| {
+            let (a_side, b_side) = (
+                (fold_name(&rel.from_table), fold_name(&rel.from_column)),
+                (fold_name(&rel.to_table), fold_name(&rel.to_column)),
+            );
+            (a_side == from && b_side == to) || (a_side == to && b_side == from)
+        })
+        .map(|rel| ObjectId::Relationship {
+            from_table: NameKey::new(&rel.from_table),
+            from_column: NameKey::new(&rel.from_column),
+            to_table: NameKey::new(&rel.to_table),
+            to_column: NameKey::new(&rel.to_column),
+        })
+        .collect()
+}
+
 fn relationship_node_id(relationship: &crate::model::Relationship) -> ObjectId {
     ObjectId::Relationship {
         from_table: NameKey::new(&relationship.from_table),
@@ -767,6 +887,18 @@ fn relationship_endpoint() -> Provenance {
     }
 }
 
+fn inactive_relationship() -> Provenance {
+    Provenance::Structural {
+        role: StructuralEdge::InactiveRelationship,
+    }
+}
+
+fn inactive_relationship_endpoint() -> Provenance {
+    Provenance::Structural {
+        role: StructuralEdge::InactiveRelationshipEndpoint,
+    }
+}
+
 fn sort_by() -> Provenance {
     Provenance::Structural {
         role: StructuralEdge::SortByColumn,
@@ -794,62 +926,5 @@ fn engine_managed() -> Provenance {
 fn role_permission() -> Provenance {
     Provenance::Structural {
         role: StructuralEdge::RolePermission,
-    }
-}
-
-/// Case-insensitive whole-word search for a shared-expression name inside an M
-/// expression. M identifiers are case-sensitive, so matching too broadly is the
-/// safe direction; `#"Name"` quoting counts as a reference.
-fn m_references(text: &str, name: &str) -> bool {
-    let haystack = text.to_lowercase();
-    let needle = name.to_lowercase();
-    if needle.is_empty() {
-        return false;
-    }
-    let bytes = haystack.as_bytes();
-    let mut from = 0usize;
-    while let Some(offset) = haystack[from..].find(&needle) {
-        let start = from + offset;
-        let end = start + needle.len();
-        let boundary = |b: Option<u8>| b.is_none_or(|byte| !is_word_byte(byte));
-        if boundary(bytes[..start].last().copied()) && boundary(bytes.get(end).copied()) {
-            return true;
-        }
-        from = end;
-    }
-    false
-}
-
-/// The characters that count as *inside* an M identifier for word-boundary
-/// purposes. A dot is deliberately a boundary: `Server` must match inside
-/// `Server.Name` — over-marking is the safe direction.
-fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rstest::rstest;
-
-    #[rstest]
-    #[case::plain_identifier("let Source = Sql.Database(Server) in Source", "Server", true)]
-    #[case::quoted_identifier("let Source = #\"Server\" in Source", "Server", true)]
-    #[case::dotted_access_counts_as_a_use("let Source = Server.Name in Source", "Server", true)]
-    #[case::case_insensitive("let Source = SERVER in Source", "Server", true)]
-    #[case::inside_a_word_is_no_match("let Source = MyServer in Source", "Server", false)]
-    #[case::a_suffix_is_no_match("let Source = Servers in Source", "Server", false)]
-    #[case::a_different_name_is_no_match("let Source = Database in Source", "Server", false)]
-    fn m_references_match_whole_words_only(
-        #[case] text: &str,
-        #[case] name: &str,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(m_references(text, name), expected, "{text}");
-    }
-
-    #[test]
-    fn an_empty_name_matches_nothing() {
-        assert!(!m_references("let Source = Server in Source", ""));
     }
 }

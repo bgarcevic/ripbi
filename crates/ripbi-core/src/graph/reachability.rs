@@ -4,18 +4,22 @@
 //! machinery (the policy itself is documented in [`super`]):
 //!
 //! 1. **Strong pass** — from the roots (report bindings and roles), over every
-//!    edge *except* relationship endpoints. Containment fires: a used column
-//!    keeps its table alive, a used table keeps its partitions and
-//!    relationships alive.
+//!    edge *except* relationship endpoints and the inactive-relationship
+//!    edges. Containment fires: a used column keeps its table alive, a used
+//!    table keeps its partitions and active relationships alive.
 //! 2. **Weak pass** — extends the strong set over every edge *except*
-//!    containment. A live table pulls in its relationships and both their key
-//!    columns, but a key column that is only alive this way can no longer keep
-//!    its own table alive — so a table referenced by nothing but a
-//!    relationship is still reported unused.
+//!    containment and the inactive-relationship edges. A live table pulls in
+//!    its relationships and both their key columns, but a key column that is
+//!    only alive this way can no longer keep its own table alive — so a table
+//!    referenced by nothing but a relationship is still reported unused. An
+//!    inactive relationship joins only through a live `USERELATIONSHIP`
+//!    reference (an ordinary Dax edge); its table references never confer
+//!    liveness, so an unactivated one is a finding.
 //!
 //! A consumer annotation therefore never lies: for any unused object, every
-//! referencing object is either itself unused, or live only through a
-//! relationship endpoint (its `also_unused` flag is `false`).
+//! referencing object is either itself unused, live only through a
+//! relationship endpoint (its `also_unused` flag is `false`), or the table of
+//! an inactive relationship the relationship cannot keep alive.
 
 use std::collections::HashSet;
 
@@ -31,7 +35,8 @@ impl Reachability {
     pub(super) fn compute(graph: &DependencyGraph) -> Self {
         // Pass 1 reaches everything except relationship-endpoint targets; pass 2
         // extends that set without letting containment fire again, so weakly
-        // alive key columns never drag their tables along.
+        // alive key columns never drag their tables along — and inactive
+        // relationships never confer liveness at all.
         let strong = graph.reach(graph.seed_indices(), Provenance::is_strong_pass_edge);
         let live = graph.reach(strong.iter().copied(), Provenance::is_weak_pass_edge);
         Self {
@@ -56,6 +61,11 @@ pub struct UnusedObject {
     /// Every graph edge pointing at it. Empty means nothing references the
     /// object at all: the root cause of its dead chain, deletable outright.
     pub used_by: Vec<UsedBy>,
+    /// The M expressions that name this object — its Power Query supply
+    /// chain, carried beside the graph because it is deliberately not edges.
+    /// Unloading the object cannot break these; removing it from the script
+    /// entirely means editing each of them. Non-empty only ever for columns.
+    pub named_by_m: Vec<ObjectId>,
 }
 
 /// One referencing object behind an [`UnusedObject`].
@@ -68,7 +78,8 @@ pub struct UsedBy {
     /// True when the referencing object is itself unused — the "also unused"
     /// of the `← only used by X (also unused)` annotation. False means the
     /// referencing object is live but its use could not keep this one alive:
-    /// a key column kept alive only as a relationship endpoint, holding its
-    /// table's only reference.
+    /// a key column kept alive only as an active relationship endpoint,
+    /// holding its table's only reference, or the live table of an inactive
+    /// relationship nothing activates.
     pub also_unused: bool,
 }

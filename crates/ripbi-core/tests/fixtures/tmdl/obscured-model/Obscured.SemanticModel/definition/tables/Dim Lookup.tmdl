@@ -1,0 +1,24 @@
+/// The merge-source table: referenced only from another partition's M, so
+/// the issue #39 table rule is what keeps it alive.
+table 'Dim Lookup'
+	lineageTag: b0000000-0000-0000-0000-000000000001
+
+	column 'Lookup Key'
+		dataType: int64
+		sourceColumn: Lookup Key
+		lineageTag: b0000000-0000-0000-0000-000000000002
+
+	column 'Dim Name'
+		dataType: string
+		sourceColumn: Dim Name
+		lineageTag: b0000000-0000-0000-0000-000000000003
+
+	partition 'Dim Lookup' = m
+		mode: import
+		source =
+				let
+				    Source = #"Dim Lookup"
+				in
+				    Source
+
+annotation PBI_ResultType = Table

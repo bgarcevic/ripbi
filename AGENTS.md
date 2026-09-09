@@ -24,6 +24,7 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | Semantic model AST / object identity | [crates/ripbi-core/](crates/ripbi-core/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Pure data; identity shared with the report AST |
 | Format ingestion (.pbix/.pbip/PBIR/TMDL) | [crates/ripbi-core/](crates/ripbi-core/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Normalize all formats to the same AST |
 | DAX lexing / reference discovery | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Zero-copy `&str` slices |
+| Power Query (M) lexing / column & table references | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Same lexer shape as DAX; M names columns (supply chain, not consumers) and keeps merge-source tables/expressions alive (issue #39) |
 | Dependency graph / reachability | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | `petgraph` DAG, BFS from report roots |
 | CLI flags, output, exit codes | [crates/ripbi-cli/](crates/ripbi-cli/) | [ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) | All printing lives here, never in core |
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |

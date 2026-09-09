@@ -28,6 +28,7 @@ for f in \
   crates/ripbi-core/docs/semantic-model.md \
   crates/ripbi-core/docs/report-model.md \
   crates/ripbi-core/docs/dax-lexing.md \
+  crates/ripbi-core/docs/m-lexing.md \
   crates/ripbi-core/docs/name-resolution.md \
 ; do
   [ -f "$f" ] || { echo "book/assemble.sh: missing $f" >&2; exit 1; }

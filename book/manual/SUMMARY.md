@@ -15,6 +15,7 @@
 - [Semantic model AST](semantic-model.md)
 - [Report AST](report-model.md)
 - [DAX lexing](dax-lexing.md)
+- [Power Query (M) lexing](m-lexing.md)
 - [Name resolution](name-resolution.md)
 
 ---

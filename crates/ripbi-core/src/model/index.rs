@@ -295,6 +295,67 @@ impl ModelIndex {
             .map(Resolved::Measure)
     }
 
+    /// Looks up a column on a specific table — how M field access
+    /// `#"Sales"[Amount]` resolves. Unlike [`resolve_qualified`](Self::resolve_qualified)
+    /// there is no measure fallback: an M expression cannot reference a
+    /// measure, so a measure of the same name must not be kept alive by one.
+    #[must_use]
+    pub fn resolve_column(&self, table: &str, name: &str) -> Option<ColumnHandle> {
+        self.tables
+            .get(&fold_name(table))?
+            .columns
+            .get(&fold_name(name))
+            .copied()
+    }
+
+    /// Finds **every** column of a name, on every table — how M resolves the
+    /// string arguments of its column-centric built-ins and an unqualified
+    /// `[Name]` field access.
+    ///
+    /// M string arguments carry no row context: `Table.NestedJoin(Source,
+    /// "Key", …)` can name any table's column, and a lexer cannot tell which
+    /// without a full dataflow analysis. The conservative direction is to keep
+    /// **all** candidates alive; the result is sorted by table, then column,
+    /// so it is deterministic for a given model.
+    ///
+    /// ```
+    /// # use ripbi_core::{Column, ModelIndex, Table, TabularDatabase};
+    /// # let db = TabularDatabase {
+    /// #     tables: vec![
+    /// #         Table {
+    /// #             name: "Sales".to_string(),
+    /// #             columns: vec![Column { name: "Key".to_string(), ..Default::default() }],
+    /// #             ..Default::default()
+    /// #         },
+    /// #         Table {
+    /// #             name: "Dato".to_string(),
+    /// #             columns: vec![Column { name: "Key".to_string(), ..Default::default() }],
+    /// #             ..Default::default()
+    /// #         },
+    /// #     ],
+    /// #     ..Default::default()
+    /// # };
+    /// let index = ModelIndex::build(&db);
+    ///
+    /// // Both tables have a `Key` column; a merge step naming "Key" keeps
+    /// // both alive.
+    /// assert_eq!(index.resolve_columns("key").len(), 2);
+    ///
+    /// // An unknown name is data, not an error.
+    /// assert!(index.resolve_columns("Ukendt").is_empty());
+    /// ```
+    #[must_use]
+    pub fn resolve_columns(&self, name: &str) -> Vec<ColumnHandle> {
+        let folded_name = fold_name(name);
+        let mut handles: Vec<ColumnHandle> = self
+            .tables
+            .values()
+            .filter_map(|entry| entry.columns.get(&folded_name).copied())
+            .collect();
+        handles.sort_by_key(|handle| (handle.table, handle.column));
+        handles
+    }
+
     /// Resolves an unqualified reference, `[Name]`, to **all** its candidates.
     ///
     /// `home_table` is the row-context table of the expression the reference was

@@ -58,6 +58,9 @@ Measures (11)
 Columns (28)
   'Customer'[City]
     ← only used by hierarchy 'Customer'[Geography] — hierarchy level (also unused)
+  'Customer'[Customer ID]
+    ← nothing references it
+    ⭘ Power Query also names it ('Customer' partition) — safe to stop loading; removing it from the script means editing those steps too
 ```
 
 - The summary line: total graph objects, how many reachability reached, from how many
@@ -72,7 +75,13 @@ Columns (28)
   - `← only used by 'X' — <where> (also unused)` — the sole (or all-identical case:
     every) consumer is itself unused, so the whole chain can go;
   - `← used by 'X' — <where>` — the consumer is live but its use could not keep this
-    object alive (a key column held only as a relationship endpoint).
+    object alive (a key column held only by an active relationship endpoint, or the
+    table of an inactive relationship nothing activates).
+- The `⭘ Power Query also names it (…)` annotation appears on columns named by M
+  expressions. It is supply-chain context, not a consumer: unloading the column cannot
+  break refresh, but removing it from the Power Query script *entirely* means editing
+  each named partition or expression too. Columns without the annotation are also gone
+  from every Power Query step.
 
 ## `--summary`
 
@@ -124,7 +133,8 @@ Pretty-printed JSON, stable field order, additive schema:
           "provenance": "measure expression",
           "also_unused": true
         }
-      ]
+      ],
+      "named_in_power_query": []
     }
   ],
   "skips": {
@@ -141,6 +151,9 @@ Pretty-printed JSON, stable field order, additive schema:
   `report_measure`.
 - `provenance` is the human phrase for how the use is made (e.g. `measure expression`,
   `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`).
+- `named_in_power_query` lists the M expressions (partitions by their table, shared
+  expressions by name) that mention the column — supply-chain context, never a
+  consumer. Empty for every non-column finding and for columns no M step names.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`.
   Under `--strict`, `count > 0` corresponds to exit code `2`.
@@ -179,23 +192,27 @@ relationship-only tables the exports don't list as rows (a table referenced by n
 but a relationship is unused by the documented containment rule); and, on the
 Artificial Intelligence sample, the engine-generated auto date/time machinery, which
 the report reaches only through the date variations this crate deliberately does not
-model (a known gap, see `crates/ripbi-core/docs/formats.md`). Two conservatism
-policies the external analyses do not share, also visible in that baseline: bookmark
-saved filters count as bindings (re-applying a bookmark re-binds its fields), and
-inactive relationships keep both key columns alive.
+model (a known gap, see `crates/ripbi-core/docs/formats.md`). One conservatism policy
+the external analyses do not share, visible in that baseline: bookmark saved filters
+count as bindings (re-applying a bookmark re-binds its fields). Inactive relationships
+are the opposite correction: they are live only when a live `USERELATIONSHIP` reference
+activates them, so an unactivated one is a finding itself, with its key columns chained
+under it — `only used by relationship … (also unused)`.
 
 A fourth, uncommitted validation ran against a large production model (≈3.8k graph
 objects, 14 reports, ≈2.5k columns/measures measured externally): 99.3% of the
 externally-dead objects were findings with identical chain shape, and — the direction
 that matters — of the objects `scan` flags that the external analysis calls live,
-**none** had a live consumer. Every one was either a column referenced only inside
-Power Query (M) expressions, which this crate does not lex (see below), or a member of
-a chain where every consumer was itself unused: auto date/time clusters no report
-binds, and active relationships between otherwise-dead tables. Both are the tree-shaker
-working as designed — a dead cluster takes its relationship keys and its auto date
-table with it — but deleting a column that Power Query still references breaks
-refresh, so M-only findings deserve a manual check until M expressions are lexed.
-Two external-analysis blind spots surfaced the same run: a measure bound only by a
+**none** had a live consumer. Every one was a member of a chain where every consumer
+was itself unused: auto date/time clusters no report binds, and active relationships
+between otherwise-dead tables. The one other historical divergence — columns referenced
+only inside Power Query — closed in both directions with the M lexing of issue #39:
+the pipeline is M → tables/columns → DAX → reports, so an M mention of a column is its
+supply chain, not a consumer, and those columns surface as findings again, each
+carrying `named_in_power_query` so the script-side steps can be cleaned up alongside.
+What M *does* keep alive is what deletion would break: shared expressions and
+merge-source tables named by other queries' M. Two external-analysis blind spots
+surfaced the same run: a measure bound only by a
 drillthrough filter on a hidden page (counted live here; the external tool skipped
 hidden pages), and report-level measures the external tool judges by view telemetry,
 which static analysis deliberately ignores.

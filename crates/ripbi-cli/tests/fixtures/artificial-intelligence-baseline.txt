@@ -14,10 +14,13 @@
 # asserted separately in tests/artificial_intelligence.rs, with reasons):
 #   - nine columns kept alive only by bookmark saved filters — re-applying a
 #     bookmark re-binds its fields, so ripbi counts bookmark state as usage and
-#     the external analysis does not;
-#   - three SystemUserSeq key columns kept alive by inactive relationships —
-#     ripbi keeps both endpoints of any relationship whose either side is
-#     reachable, inactive ones included (USERELATIONSHIP).
+#     the external analysis does not.
+# Objects both sides mark dead, distilled out of the rows for their chain shape
+# (asserted in the test): the two unactivated inactive SystemUserSeq
+# relationships and their three key columns — externally Unused; ripbi flags
+# the relationships themselves and chains the keys under them
+# (`only used by … (also unused)`): nothing but a live USERELATIONSHIP
+# reference can activate an inactive relationship, and the report has none.
 # Objects ripbi flags that the export does not (asserted as the only extras):
 #   - the engine-generated auto date/time machinery (LocalDateTable_* and
 #     DateTableTemplate_* tables with their partitions), unused because the

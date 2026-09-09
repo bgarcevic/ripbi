@@ -61,25 +61,36 @@ pub struct BindingEdge {
 
 impl Provenance {
     /// True when the strong reachability pass may traverse this edge — every
-    /// edge except a relationship endpoint, which keeps a key column alive
-    /// without keeping its table alive (see the module docs of [`super`]).
+    /// edge except relationship endpoints (which keep a key column alive
+    /// without keeping its table alive) and inactive-relationship references
+    /// (which never confer liveness — see the module docs of [`super`]).
     pub(super) fn is_strong_pass_edge(&self) -> bool {
         !matches!(
             self,
             Provenance::Structural {
                 role: StructuralEdge::RelationshipEndpoint
+            } | Provenance::Structural {
+                role: StructuralEdge::InactiveRelationship
+            } | Provenance::Structural {
+                role: StructuralEdge::InactiveRelationshipEndpoint
             }
         )
     }
 
     /// True when the weak reachability pass may traverse this edge — every
     /// edge except containment from a table member to its table, so liveness
-    /// gained weakly can never propagate into a table.
+    /// gained weakly can never propagate into a table, and except the
+    /// inactive-relationship edges, which never confer liveness in any pass:
+    /// only a live `USERELATIONSHIP` reference can activate the relationship.
     pub(super) fn is_weak_pass_edge(&self) -> bool {
         !matches!(
             self,
             Provenance::Structural {
                 role: StructuralEdge::TableMember
+            } | Provenance::Structural {
+                role: StructuralEdge::InactiveRelationship
+            } | Provenance::Structural {
+                role: StructuralEdge::InactiveRelationshipEndpoint
             }
         )
     }
@@ -116,7 +127,7 @@ impl fmt::Display for Provenance {
                 }
                 Ok(())
             }
-            Provenance::M => f.write_str("M expression"),
+            Provenance::M => f.write_str("Power Query expression"),
             Provenance::Structural { role } => write!(f, "{role}"),
         }
     }
@@ -167,8 +178,19 @@ pub enum StructuralEdge {
     TablePartition,
     /// The relationship hangs off this table; either endpoint keeps it alive.
     Relationship,
+    /// An inactive relationship hangs off this table, but the reference is
+    /// recorded without liveness: switching an inactive relationship on at
+    /// query time is DAX's job (`USERELATIONSHIP`), so an unactivated one is
+    /// itself a finding.
+    InactiveRelationship,
     /// The relationship needs this key column.
     RelationshipEndpoint,
+    /// An inactive relationship names this key column, but activating it at
+    /// query time is DAX's job (`USERELATIONSHIP`): the edge is recorded so
+    /// findings can point at the relationship, yet it confers no liveness —
+    /// until a live DAX reference switches the relationship on, the key is
+    /// unloadable bloat.
+    InactiveRelationshipEndpoint,
     /// The source column is sorted by the target column.
     SortByColumn,
     /// The source column is grouped by the target column.
@@ -189,7 +211,9 @@ impl fmt::Display for StructuralEdge {
             StructuralEdge::TableMember => "table member",
             StructuralEdge::TablePartition => "table partition",
             StructuralEdge::Relationship => "relationship",
+            StructuralEdge::InactiveRelationship => "inactive relationship",
             StructuralEdge::RelationshipEndpoint => "relationship endpoint",
+            StructuralEdge::InactiveRelationshipEndpoint => "inactive relationship endpoint",
             StructuralEdge::SortByColumn => "sort-by column",
             StructuralEdge::GroupByColumn => "group-by column",
             StructuralEdge::HierarchyLevel => "hierarchy level",
@@ -295,7 +319,14 @@ mod tests {
                 .to_string(),
                 "relationship endpoint"
             );
-            assert_eq!(Provenance::M.to_string(), "M expression");
+            assert_eq!(
+                Provenance::Structural {
+                    role: StructuralEdge::InactiveRelationship
+                }
+                .to_string(),
+                "inactive relationship"
+            );
+            assert_eq!(Provenance::M.to_string(), "Power Query expression");
         }
 
         #[test]
@@ -321,15 +352,23 @@ mod tests {
         use super::*;
 
         #[test]
-        fn the_strong_pass_excludes_only_relationship_endpoints() {
+        fn the_strong_pass_excludes_relationship_endpoints_and_inactive_relationships() {
             let endpoint = Provenance::Structural {
                 role: StructuralEdge::RelationshipEndpoint,
+            };
+            let inactive = Provenance::Structural {
+                role: StructuralEdge::InactiveRelationship,
+            };
+            let inactive_key = Provenance::Structural {
+                role: StructuralEdge::InactiveRelationshipEndpoint,
             };
             let member = Provenance::Structural {
                 role: StructuralEdge::TableMember,
             };
 
             assert!(!endpoint.is_strong_pass_edge());
+            assert!(!inactive.is_strong_pass_edge());
+            assert!(!inactive_key.is_strong_pass_edge());
             assert!(member.is_strong_pass_edge());
             assert!(Provenance::M.is_strong_pass_edge());
             assert!(
@@ -341,9 +380,15 @@ mod tests {
         }
 
         #[test]
-        fn the_weak_pass_excludes_only_containment() {
+        fn the_weak_pass_excludes_containment_and_the_inactive_relationship_edges() {
             let endpoint = Provenance::Structural {
                 role: StructuralEdge::RelationshipEndpoint,
+            };
+            let inactive = Provenance::Structural {
+                role: StructuralEdge::InactiveRelationship,
+            };
+            let inactive_key = Provenance::Structural {
+                role: StructuralEdge::InactiveRelationshipEndpoint,
             };
             let member = Provenance::Structural {
                 role: StructuralEdge::TableMember,
@@ -351,6 +396,12 @@ mod tests {
 
             assert!(!member.is_weak_pass_edge());
             assert!(endpoint.is_weak_pass_edge());
+            // The whole point of the inactive variants: the relationship and
+            // its endpoints are recorded references, never sources of
+            // liveness. Only a live USERELATIONSHIP call (a Dax edge) can
+            // activate the relationship.
+            assert!(!inactive.is_weak_pass_edge());
+            assert!(!inactive_key.is_weak_pass_edge());
             assert!(Provenance::M.is_weak_pass_edge());
         }
     }

@@ -228,8 +228,10 @@ pub struct Relationship {
     pub to_table: String,
     /// Key column in `to_table`.
     pub to_column: String,
-    /// Inactive relationships still keep key columns alive (USERELATIONSHIP);
-    /// the flag exists for reporting/linting, not liveness.
+    /// Active relationships keep both key columns alive while either endpoint
+    /// table is reachable; inactive ones are live only when a live DAX
+    /// reference (`USERELATIONSHIP`) activates them — otherwise the
+    /// relationship and its key columns are all findings.
     pub is_active: bool,
 }
 
