@@ -29,9 +29,18 @@
 //!   extended candidates (hierarchies, calculation items, and, for a
 //!   reference matching nothing, its qualifying table). A reference that
 //!   matches nothing and has no resolvable part keeps nothing alive.
-//! - **M references**: a shared expression named inside an M expression
-//!   (matched whole-word, case-insensitively — M is case-sensitive, so
-//!   over-matching is the safe direction).
+//! - **M references** (`m::bind`, same conservatism). The pipeline is M →
+//!   tables/columns → DAX → reports, so M is upstream of everything and
+//!   deletion flows one way. A **table or shared expression** named in M — a
+//!   merge source, a referenced parameter query — keeps alive: deleting it
+//!   deletes the query another partition reads, which breaks refresh. A
+//!   **column** named in M is the column's *supply chain*, not a consumer:
+//!   the query keeps producing it and the model just stops mapping it, so
+//!   unloading cannot break refresh and there is deliberately no edge.
+//!   Instead the naming expressions ride along on the finding
+//!   ([`UnusedObject::named_by_m`]) — the what-a-full-removal-must-edit
+//!   context. Liveness still flows through the owner, so a dead table's
+//!   partition keeps nothing alive.
 //! - **Report bindings** with their provenance, report measures shadowing
 //!   model measures of the same name. An unused report measure is dead like
 //!   any other node — its body's references stay alive only through it.
@@ -39,10 +48,14 @@
 //!   item) keeps its table alive; a used table keeps its partitions,
 //!   relationships, and engine-managed columns (calculated-table columns,
 //!   calculation-group columns, calendar columns) alive.
-//! - **Relationships**: live if either endpoint table is reachable, and they
-//!   keep both key columns alive — but a key column kept alive *only* as a
-//!   relationship endpoint does **not** keep its table alive, so a table
-//!   referenced by nothing but a relationship is still unused.
+//! - **Relationships**: live if either endpoint table is reachable. An
+//!   **active** relationship keeps both key columns alive — but a key column
+//!   kept alive *only* as a relationship endpoint does **not** keep its table
+//!   alive, so a table referenced by nothing but a relationship is still
+//!   unused. An **inactive** relationship is live only when a live DAX
+//!   reference (`USERELATIONSHIP`) activates it — switching one on at query
+//!   time is DAX's job, and nothing else can. Unactivated, it is a finding
+//!   itself, and its key columns are findings chained under it.
 //!
 //! The conservatism rule from name resolution governs everything: marking an
 //! object used too many is harmless; marking one too few tells a user to
@@ -156,6 +169,9 @@ pub struct DependencyGraph {
     /// The reachability roots: report bindings pointing at model objects, with
     /// their binding provenance, in report order.
     roots: Vec<(ObjectId, Provenance)>,
+    /// Columns named by M expressions: the supply chain that is deliberately
+    /// *not* edges. Key: the column. Value: the naming expressions, sorted.
+    m_named: HashMap<ObjectId, Vec<ObjectId>>,
 }
 
 impl DependencyGraph {
@@ -173,11 +189,13 @@ impl DependencyGraph {
         graph: DiGraph<ObjectId, Provenance>,
         nodes: HashMap<ObjectId, NodeIndex>,
         roots: Vec<(ObjectId, Provenance)>,
+        m_named: HashMap<ObjectId, Vec<ObjectId>>,
     ) -> Self {
         Self {
             graph,
             nodes,
             roots,
+            m_named,
         }
     }
 
@@ -215,10 +233,21 @@ impl DependencyGraph {
             .collect()
     }
 
+    /// The M expressions that name `id` — its Power Query supply chain. A
+    /// name is not a consumer: unloading a column these expressions produce
+    /// cannot break refresh. But removing the column *entirely* — model and
+    /// script — means editing each of them, which is what this answers.
+    /// Non-empty only ever for columns.
+    pub fn named_by_m(&self, id: &ObjectId) -> &[ObjectId] {
+        self.m_named.get(id).map(Vec::as_slice).unwrap_or_default()
+    }
+
     /// Every object reachability never reached, sorted by object identity:
     /// the `scan` findings. Each finding names who still references it —
-    /// empty for a true orphan, and every referencing object is either itself
-    /// unused or a key column kept alive only as a relationship endpoint.
+    /// empty for a true orphan, and every referencing object is either
+    /// itself unused, a key column kept alive only as an active relationship
+    /// endpoint, or the table of an inactive relationship it cannot keep
+    /// alive.
     pub fn unused_objects(&self) -> Vec<UnusedObject> {
         let reach = reachability::Reachability::compute(self);
         let mut out: Vec<UnusedObject> = self
@@ -237,7 +266,12 @@ impl DependencyGraph {
                     })
                     .collect();
                 used_by.sort_by(|a, b| a.id.cmp(&b.id));
-                UnusedObject { id, used_by }
+                let named_by_m = self.named_by_m(&id).to_vec();
+                UnusedObject {
+                    id,
+                    used_by,
+                    named_by_m,
+                }
             })
             .collect();
         out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -626,6 +660,152 @@ mod tests {
             assert_eq!(partition.used_by.len(), 1);
             assert!(partition.used_by[0].also_unused);
             assert_eq!(partition.used_by[0].id, table_id("DimOld"));
+        }
+
+        /// An inactive relationship nothing activates is itself a finding,
+        /// and its key columns are findings pointing back at it — the
+        /// `only used by … (also unused)` chain shape. Only a live
+        /// `USERELATIONSHIP` reference can switch it on at query time.
+        #[test]
+        fn an_unactivated_inactive_relationship_is_a_finding_with_its_keys() {
+            let relationship_id = ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new("DimOld"),
+                to_column: NameKey::new("Key"),
+            };
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Amt"), column("Key")],
+                        measures: vec![measure("Total", "SUM('Sales'[Amt])")],
+                        partitions: vec![m_partition("Sales", "let Source = 1 in Source")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "DimOld".to_string(),
+                        columns: vec![column("Key"), column("Notes")],
+                        partitions: vec![m_partition("DimOld", "let Source = 2 in Source")],
+                        ..Default::default()
+                    },
+                ],
+                relationships: vec![Relationship {
+                    name: None,
+                    from_table: "Sales".to_string(),
+                    from_column: "Key".to_string(),
+                    to_table: "DimOld".to_string(),
+                    to_column: "Key".to_string(),
+                    is_active: false,
+                }],
+                ..Default::default()
+            };
+            // Only `Total` is bound: `Sales` is live, `DimOld` is not, and
+            // the inactive relationship must not rescue its keys — or itself.
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Total")]);
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &table_id("Sales"));
+
+            // The relationship is a finding; its two tables are the recorded
+            // consumers that could not keep it alive — `Sales` live, `DimOld`
+            // itself unused.
+            let relationship = find(&unused, &relationship_id);
+            assert_eq!(relationship.used_by.len(), 2);
+            assert!(relationship.used_by.iter().all(|used| matches!(
+                &used.provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::InactiveRelationship
+                }
+            )));
+            let sales_side = relationship
+                .used_by
+                .iter()
+                .find(|used| used.id == table_id("Sales"))
+                .expect("the from table references the relationship");
+            assert!(!sales_side.also_unused);
+
+            // Both keys point back at the unactivated relationship — the
+            // `only used by … (also unused)` chain shape.
+            for (table_name, column_name) in [("Sales", "Key"), ("DimOld", "Key")] {
+                let finding = find(&unused, &column_id(table_name, column_name));
+                assert_eq!(
+                    finding.used_by.len(),
+                    1,
+                    "the inactive relationship is the only reference"
+                );
+                assert!(finding.used_by[0].also_unused);
+                assert_eq!(finding.used_by[0].id, relationship_id);
+                assert!(matches!(
+                    &finding.used_by[0].provenance,
+                    Provenance::Structural {
+                        role: StructuralEdge::InactiveRelationshipEndpoint
+                    }
+                ));
+            }
+            // And `DimOld` is still a finding: a dead key column must not
+            // pull its own table along.
+            find(&unused, &table_id("DimOld"));
+        }
+
+        /// The other half of the rule: a live measure switching the inactive
+        /// relationship on with `USERELATIONSHIP` is an ordinary DAX
+        /// reference, and it keeps both key columns alive.
+        #[test]
+        fn a_live_userelationship_measure_keeps_inactive_keys_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Amt"), column("Key")],
+                        measures: vec![measure(
+                            "Old Total",
+                            "CALCULATE(SUM('Sales'[Amt]), USERELATIONSHIP('Sales'[Key], 'DimOld'[Key]))",
+                        )],
+                        partitions: vec![m_partition("Sales", "let Source = 1 in Source")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "DimOld".to_string(),
+                        columns: vec![column("Key"), column("Notes")],
+                        partitions: vec![m_partition("DimOld", "let Source = 2 in Source")],
+                        ..Default::default()
+                    },
+                ],
+                relationships: vec![Relationship {
+                    name: None,
+                    from_table: "Sales".to_string(),
+                    from_column: "Key".to_string(),
+                    to_table: "DimOld".to_string(),
+                    to_column: "Key".to_string(),
+                    is_active: false,
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Old Total")]);
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &column_id("Sales", "Key"));
+            not_unused(&unused, &column_id("DimOld", "Key"));
+            // The live measure's call is the activation edge itself: the
+            // relationship stays alive even though no table needs it.
+            not_unused(
+                &unused,
+                &ObjectId::Relationship {
+                    from_table: NameKey::new("Sales"),
+                    from_column: NameKey::new("Key"),
+                    to_table: NameKey::new("DimOld"),
+                    to_column: NameKey::new("Key"),
+                },
+            );
+            // The measure's `USERELATIONSHIP` arguments are ordinary DAX
+            // references, so containment applies on top: `DimOld` stays alive
+            // through its live key column, and only `Notes` is left dead.
+            not_unused(&unused, &table_id("DimOld"));
+            let notes = find(&unused, &column_id("DimOld", "Notes"));
+            assert!(notes.used_by.is_empty());
         }
 
         /// An RLS filter is rooted at its role: the filtered column stays alive
@@ -1226,6 +1406,229 @@ mod tests {
                     },
                     Provenance::M
                 )]
+            );
+        }
+
+        /// A column named only inside its own table's Power Query partition
+        /// is **not** kept alive. M produces the column and the model maps
+        /// onto the query's output, so unloading the column cannot break
+        /// refresh — the issue #39 keep was inverted. What the partition's
+        /// mention is worth rides on the finding instead
+        /// ([`UnusedObject::named_by_m`]): removing the column from the
+        /// *script* too means editing those steps.
+        #[test]
+        fn an_m_partition_names_its_columns_without_keeping_them_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![
+                        column("Pk"),
+                        column("Amount"),
+                        column("Region"),
+                        column("Orphaned"),
+                    ],
+                    partitions: vec![m_partition(
+                        "Sales",
+                        concat!(
+                            "let\n",
+                            "    Source = Sql.Database(ServerName, \"db\"),\n",
+                            "    Typed = Table.TransformColumnTypes(Source, {{\"Amount\", type text}}),\n",
+                            "    Expanded = Table.ExpandTableColumn(Typed, \"Detail\", {\"Region\"}),\n",
+                            "    Filtered = Table.SelectRows(Expanded, each [Orphaned] = \"West\")\n",
+                            "in\n",
+                            "    Filtered",
+                        ),
+                    )],
+                    ..Default::default()
+                }],
+                expressions: vec![SharedExpression {
+                    name: "ServerName".to_string(),
+                    expression: "\"localhost\"".to_string(),
+                }],
+                ..Default::default()
+            };
+            // The report binds Pk only: that keeps the table (and with it the
+            // partition) alive, while Amount, Region, and Orphaned have no
+            // DAX or report binding anywhere.
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Pk")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            let partition = ObjectId::Partition {
+                table: NameKey::new("Sales"),
+                partition: NameKey::new("Sales"),
+            };
+            let expected_named = [partition];
+            for name in ["Amount", "Region", "Orphaned"] {
+                let finding = find(&unused, &column_id("Sales", name));
+                assert!(
+                    finding.used_by.is_empty(),
+                    "M names are not consumers: no edge points at the column"
+                );
+                assert_eq!(finding.named_by_m, expected_named);
+            }
+            // The shared expression the partition's M reads is still kept —
+            // the liveness half of the rule.
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("ServerName"),
+                },
+            );
+        }
+
+        /// A liveness edge must never outrun its owner: when the table is
+        /// dead, its partition is unreachable and keeps nothing alive — the
+        /// columns die with the table they belong to.
+        #[test]
+        fn a_dead_tables_partition_keeps_nothing_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "DimOld".to_string(),
+                    columns: vec![column("Key")],
+                    partitions: vec![m_partition(
+                        "DimOld",
+                        "let Source = Table.SelectRows(#\"DimOld\", each [Key] <> null) in Source",
+                    )],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            find(&unused, &column_id("DimOld", "Key"));
+            // The partition names DimOld itself and [Key]; the self-table
+            // reference is dropped, but nothing else could keep the table
+            // alive either.
+            find(&unused, &table_id("DimOld"));
+        }
+
+        /// A table consumed only as another query's merge source is
+        /// refresh-critical: `#"DimOld"` in a NestedJoin deletes the query the
+        /// join reads when the table goes, so the table keeps alive. Its
+        /// *column* does not — the `{"Key"}` strings merely name it.
+        #[test]
+        fn an_m_merge_source_keeps_the_joined_table_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Key")],
+                        partitions: vec![m_partition(
+                            "Sales",
+                            concat!(
+                                "let\n",
+                                "    Source = Sql.Database(ServerName, \"db\"),\n",
+                                "    Joined = Table.NestedJoin(Source, {\"Key\"}, #\"DimOld\", {\"Key\"}, \"Dim\")\n",
+                                "in\n",
+                                "    Joined",
+                            ),
+                        )],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "DimOld".to_string(),
+                        columns: vec![column("Key")],
+                        partitions: vec![m_partition("DimOld", "let Source = DimOld in Source")],
+                        ..Default::default()
+                    },
+                ],
+                expressions: vec![SharedExpression {
+                    name: "ServerName".to_string(),
+                    expression: "\"localhost\"".to_string(),
+                }],
+                ..Default::default()
+            };
+            // Sales is reachable only through a relationship-free report
+            // binding on its column; DimOld has no binding anywhere.
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Key")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &table_id("DimOld"));
+            // The join keys are named, not kept: Sales' partition rides on
+            // DimOld's column finding as supply-chain context.
+            let finding = find(&unused, &column_id("DimOld", "Key"));
+            assert_eq!(
+                finding.named_by_m,
+                [ObjectId::Partition {
+                    table: NameKey::new("Sales"),
+                    partition: NameKey::new("Sales"),
+                }]
+            );
+        }
+
+        /// A qualified field access names the query it reads from:
+        /// `#"DimOld"[Key]` keeps the whole DimOld table alive even when no
+        /// argument-position mention of the table exists anywhere.
+        #[test]
+        fn a_qualified_m_field_access_keeps_the_named_table_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Key")],
+                        partitions: vec![m_partition(
+                            "Sales",
+                            "let Source = #\"DimOld\"[Key] in Source",
+                        )],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "DimOld".to_string(),
+                        columns: vec![column("Key")],
+                        partitions: vec![m_partition("DimOld", "let Source = DimOld in Source")],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Key")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &table_id("DimOld"));
+        }
+
+        /// The lexer narrowed the old substring match, deliberately: a shared
+        /// expression whose name appears only inside an M comment or an
+        /// unrelated string is no longer "referenced".
+        #[test]
+        fn a_name_inside_an_m_comment_or_string_keeps_nothing_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    partitions: vec![m_partition(
+                        "Sales",
+                        concat!(
+                            "let\n",
+                            "    // ServerName was renamed; this step is retired.\n",
+                            "    Text = \"ServerName is mentioned here as data\",\n",
+                            "    Source = 1\n",
+                            "in\n",
+                            "    Source",
+                        ),
+                    )],
+                    ..Default::default()
+                }],
+                expressions: vec![SharedExpression {
+                    name: "ServerName".to_string(),
+                    expression: "\"localhost\"".to_string(),
+                }],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            find(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("ServerName"),
+                },
             );
         }
 

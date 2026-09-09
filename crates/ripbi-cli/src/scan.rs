@@ -198,6 +198,7 @@ fn scan(
                     also_unused: used.also_unused,
                 })
                 .collect(),
+            named_in_power_query: render::power_query_labels(&finding.named_by_m),
         });
     }
 

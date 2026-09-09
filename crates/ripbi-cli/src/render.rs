@@ -42,6 +42,10 @@ pub struct Finding {
     pub id: String,
     /// Every object still referencing this one.
     pub used_by: Vec<UsedByOut>,
+    /// The Power Query expressions that name this column — the supply chain
+    /// that is deliberately not liveness. Unloading the column cannot break
+    /// these; removing it from the script entirely means editing each.
+    pub named_in_power_query: Vec<String>,
 }
 
 /// One referencing object behind a finding.
@@ -98,6 +102,25 @@ pub fn kind_of(id: &ObjectId) -> &'static str {
         ObjectId::Function { .. } => "function",
         ObjectId::ReportMeasure { .. } => "report_measure",
     }
+}
+
+/// The Power Query expressions that name a finding's column, as display
+/// labels — the partition is named by its table (that is what the user
+/// edits), not by its GUID. Order-preserving and deduplicated.
+#[must_use]
+pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
+    let mut labels: Vec<String> = Vec::new();
+    for id in ids {
+        let label = match id {
+            ObjectId::Partition { table, .. } => format!("'{}' partition", table.as_str()),
+            ObjectId::Expression { name } => format!("'{}' expression", name.as_str()),
+            other => other.to_string(),
+        };
+        if !labels.contains(&label) {
+            labels.push(label);
+        }
+    }
+    labels
 }
 
 /// Writes the human-readable report: a summary line, then findings grouped by
@@ -200,22 +223,33 @@ fn write_annotations(
 ) -> io::Result<()> {
     if finding.used_by.is_empty() {
         writeln!(out, "{}", palette.dim("    ← nothing references it"))?;
-        return Ok(());
+    } else {
+        let only = finding.used_by.len() == 1;
+        for used in &finding.used_by {
+            let prefix = if only { "only " } else { "" };
+            let also = if used.also_unused {
+                " (also unused)"
+            } else {
+                ""
+            };
+            writeln!(
+                out,
+                "{}",
+                palette.dim(&format!(
+                    "    ← {prefix}used by {} — {}{also}",
+                    used.id, used.provenance
+                ))
+            )?;
+        }
     }
-    let only = finding.used_by.len() == 1;
-    for used in &finding.used_by {
-        let prefix = if only { "only " } else { "" };
-        let also = if used.also_unused {
-            " (also unused)"
-        } else {
-            ""
-        };
+    if !finding.named_in_power_query.is_empty() {
+        let named = finding.named_in_power_query.join(", ");
         writeln!(
             out,
             "{}",
             palette.dim(&format!(
-                "    ← {prefix}used by {} — {}{also}",
-                used.id, used.provenance
+                "    ⭘ Power Query also names it ({named}) — safe to stop loading; \
+                 removing it from the script means editing those steps too"
             ))
         )?;
     }
@@ -264,6 +298,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                         also_unused: used.also_unused,
                     })
                     .collect(),
+                named_in_power_query: finding.named_in_power_query.clone(),
             })
             .collect(),
         skips: JsonSkips {
@@ -310,6 +345,9 @@ struct JsonFinding {
     kind: &'static str,
     id: String,
     used_by: Vec<JsonUsedBy>,
+    /// Power Query expressions naming this column — supply-chain context,
+    /// not liveness. Empty for everything but columns.
+    named_in_power_query: Vec<String>,
 }
 
 #[derive(Serialize)]

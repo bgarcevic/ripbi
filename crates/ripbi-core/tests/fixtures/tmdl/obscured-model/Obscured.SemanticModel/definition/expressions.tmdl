@@ -1,0 +1,11 @@
+/// A connection parameter, written as a plain one-line expression.
+expression 'Server Name' = "REDACTED-SERVER"
+
+/// An extract query with an inline SQL statement in a record option. The
+/// SQL text is data, not a column reference, and must never be harvested.
+expression 'Staging Extract' =
+		let
+		    Source = Sql.Database("Server Name", "REDACTED-DB", [Query = "SELECT * FROM dbo.redacted_table"]),
+		    #"Renamed Columns" = Table.RenameColumns(Source, {{"Old Col", "Extract Col"}})
+		in
+		    #"Renamed Columns"

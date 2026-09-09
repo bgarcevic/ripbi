@@ -119,6 +119,26 @@ fn golden_unused_set_is_exact() {
         column_id("Sales", "Month Name"),
         // The quoted-name column no expression or visual reaches.
         column_id("Sales Order", "It's quoted"),
+        // The two inactive relationships name these keys but cannot keep
+        // them: nothing but a live USERELATIONSHIP reference activates an
+        // inactive relationship. `Sales`[SalesOrderLineKey] stays live — it
+        // is also the active relationship's key.
+        column_id("Sales", "DueDateKey"),
+        column_id("Sales Order", "DueDateKey"),
+        column_id("Sales Order", "SalesOrder"),
+        // The unactivated inactive relationships are findings themselves.
+        ObjectId::Relationship {
+            from_table: NameKey::new("Sales"),
+            from_column: NameKey::new("DueDateKey"),
+            to_table: NameKey::new("Sales Order"),
+            to_column: NameKey::new("DueDateKey"),
+        },
+        ObjectId::Relationship {
+            from_table: NameKey::new("Sales Order"),
+            from_column: NameKey::new("SalesOrder"),
+            to_table: NameKey::new("Sales"),
+            to_column: NameKey::new("SalesOrderLineKey"),
+        },
         // `Growth %` is bound by no visual and named by no other DAX.
         measure_id("Sales", "Growth %"),
         // The report defines `Budget %` but no visual binds it: a dead report
@@ -141,9 +161,11 @@ fn golden_unused_set_is_exact() {
     assert_eq!(ids, expected, "exact unused set for the golden pair");
 }
 
-/// The relationships and the weak key columns stay live: `Sales` is strong,
-/// all three relationships hang off live tables, and their key columns —
-/// including the hidden key columns on `Sales Order` — are alive.
+/// The relationships follow the activation rule: the active relationship and
+/// its key columns — the hidden key columns on `Sales Order` included — stay
+/// live with their tables, while the two inactive ones are unactivated (no
+/// `USERELATIONSHIP` anywhere in the golden report) and are findings; see
+/// `golden_inactive_relationship_keys_are_findings`.
 #[test]
 fn golden_relationships_and_key_columns_stay_live() {
     let (db, report) = golden_pair();
@@ -154,10 +176,7 @@ fn golden_relationships_and_key_columns_stay_live() {
     not_unused(&unused, &table_id("Sales Order"));
     not_unused(&unused, &column_id("Sales", "Sales Amount"));
     not_unused(&unused, &column_id("Sales", "SalesOrderLineKey"));
-    not_unused(&unused, &column_id("Sales", "DueDateKey"));
-    not_unused(&unused, &column_id("Sales Order", "SalesOrder"));
     not_unused(&unused, &column_id("Sales Order", "SalesOrderLineKey"));
-    not_unused(&unused, &column_id("Sales Order", "DueDateKey"));
 
     let relationship_id = |from_table: &str, from_column: &str, to_table: &str, to_column: &str| {
         ObjectId::Relationship {
@@ -176,14 +195,6 @@ fn golden_relationships_and_key_columns_stay_live() {
             "SalesOrderLineKey",
         ),
     );
-    not_unused(
-        &unused,
-        &relationship_id("Sales Order", "SalesOrder", "Sales", "SalesOrderLineKey"),
-    );
-    not_unused(
-        &unused,
-        &relationship_id("Sales", "DueDateKey", "Sales Order", "DueDateKey"),
-    );
 
     not_unused(
         &unused,
@@ -191,6 +202,81 @@ fn golden_relationships_and_key_columns_stay_live() {
             role: NameKey::new("Administrators"),
         },
     );
+}
+
+/// The activation rule for inactive relationships: an unactivated one is
+/// itself a finding, and its key columns surface as findings pointing back
+/// at it — the `only used by X (also unused)` chain shape. Only a live
+/// `USERELATIONSHIP` reference can activate one, and the golden report has
+/// none. `Sales`[SalesOrderLineKey] is an inactive relationship's key too,
+/// but the active relationship keeps it alive.
+#[test]
+fn golden_inactive_relationship_keys_are_findings() {
+    let (db, report) = golden_pair();
+    let graph = DependencyGraph::build(&db, &[&report]);
+    let unused = graph.unused_objects();
+
+    // The active relationship keeps its key columns alive; one of them is
+    // also an inactive relationship's key, which changes nothing.
+    not_unused(&unused, &column_id("Sales", "SalesOrderLineKey"));
+    not_unused(&unused, &column_id("Sales Order", "SalesOrderLineKey"));
+
+    let expected: [(ObjectId, &[ObjectId]); 2] = [
+        (
+            ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("DueDateKey"),
+                to_table: NameKey::new("Sales Order"),
+                to_column: NameKey::new("DueDateKey"),
+            },
+            &[
+                column_id("Sales", "DueDateKey"),
+                column_id("Sales Order", "DueDateKey"),
+            ],
+        ),
+        (
+            ObjectId::Relationship {
+                from_table: NameKey::new("Sales Order"),
+                from_column: NameKey::new("SalesOrder"),
+                to_table: NameKey::new("Sales"),
+                to_column: NameKey::new("SalesOrderLineKey"),
+            },
+            &[column_id("Sales Order", "SalesOrder")],
+        ),
+    ];
+    for (relationship_id, keys) in expected {
+        // The unactivated relationship is a finding; its tables are the
+        // recorded consumers that could not keep it alive.
+        let relationship = find(&unused, &relationship_id);
+        assert!(
+            relationship.used_by.iter().all(|used| matches!(
+                &used.provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::InactiveRelationship
+                }
+            )),
+            "{relationship_id}: only its tables record it"
+        );
+        for key in keys {
+            let finding = find(&unused, key);
+            assert_eq!(
+                finding.used_by.len(),
+                1,
+                "{key}: the inactive relationship is the only reference"
+            );
+            assert_eq!(finding.used_by[0].id, relationship_id);
+            assert!(
+                finding.used_by[0].also_unused,
+                "{key}: the relationship naming it is itself unused"
+            );
+            assert!(matches!(
+                &finding.used_by[0].provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::InactiveRelationshipEndpoint
+                }
+            ));
+        }
+    }
 }
 
 /// The dead chains carry their annotations: the hierarchy explains its level

@@ -32,10 +32,9 @@ fn sample_pbip() -> PathBuf {
         .join("../../samples/Artificial Intelligence Sample.pbip")
 }
 
-/// Objects the export marks dead that ripbi deliberately keeps alive. Each
-/// entry names the policy: bookmarks re-bind their saved filters when
-/// re-applied, and an inactive relationship keeps both key columns alive as
-/// long as either endpoint table is reachable (USERELATIONSHIP).
+/// Objects the export marks dead that ripbi deliberately keeps alive: bookmark
+/// saved filters. Re-applying a bookmark re-binds its fields, so ripbi counts
+/// bookmark state as usage and the external analysis does not.
 const POLICY_KEPT_ALIVE: &[(&str, &str)] = &[
     ("'Cases'[Subject]", "bookmark saved filters"),
     ("'Cases'[Agent]", "bookmark saved filters"),
@@ -52,12 +51,16 @@ const POLICY_KEPT_ALIVE: &[(&str, &str)] = &[
         "'Case Calendar'[RELATIVE 30 DAY PERIOD]",
         "bookmark saved filters",
     ),
-    ("'Cases'[SystemUserSeq]", "inactive relationship endpoint"),
-    (
-        "'Opportunities'[SystemUserSeq]",
-        "inactive relationship endpoint",
-    ),
-    ("'Owners'[SystemUserSeq]", "inactive relationship endpoint"),
+];
+
+/// Columns the export marks dead that ripbi agrees are dead, but annotates
+/// with the inactive relationship that names them: an inactive relationship
+/// confers no liveness — only a live `USERELATIONSHIP` reference can activate
+/// it — so its key columns surface as findings pointing back at it.
+const INACTIVE_RELATIONSHIP_FINDINGS: &[&str] = &[
+    "'Cases'[SystemUserSeq]",
+    "'Opportunities'[SystemUserSeq]",
+    "'Owners'[SystemUserSeq]",
 ];
 
 /// Objects the export marks live that ripbi proves live through binding paths
@@ -84,7 +87,8 @@ const LIVE_GUARDS: &[&str] = &[
 /// variations this crate does not model, a documented known gap), the four
 /// LocalDateTable hierarchy columns the export counts as used through that
 /// machinery, the fully-dead relationship-only tables with their partitions,
-/// and the orphaned `Query1` expression.
+/// the two unactivated inactive relationships and their SystemUserSeq key
+/// columns, and the orphaned `Query1` expression.
 fn is_expected_extra(kind: &str, id: &str) -> bool {
     let machinery_table = matches!(kind, "table" | "partition")
         && (id.contains("LocalDateTable")
@@ -92,8 +96,10 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
             || id.contains("'Contacts'")
             || id.contains("'Opportunity Forecast Adjustment'"));
     let variation_gap_column = kind == "column" && id.contains("LocalDateTable");
+    let inactive_relationship =
+        id.contains("SystemUserSeq") && matches!(kind, "column" | "relationship");
     let orphaned_expression = kind == "expression" && id.contains("'Query1'");
-    machinery_table || variation_gap_column || orphaned_expression
+    machinery_table || variation_gap_column || inactive_relationship || orphaned_expression
 }
 
 #[test]
@@ -183,6 +189,24 @@ fn scan_agrees_with_the_committed_baseline() {
         assert!(
             !by_id.contains_key(id),
             "ripbi flags '{id}': kept alive only by {policy}, which must count as usage"
+        );
+    }
+
+    // 3b. The inactive-relationship keys follow the standard chain shape: the
+    //     relationship naming them is itself an unactivated finding, so the
+    //     keys read `only used by … (also unused)`.
+    for id in INACTIVE_RELATIONSHIP_FINDINGS {
+        let finding = by_id.get(id).unwrap_or_else(|| {
+            panic!("ripbi stopped flagging '{id}': the inactive relationship that names it must not keep it alive")
+        });
+        let used_by = finding["used_by"].as_array().expect("used_by");
+        assert!(
+            !used_by.is_empty()
+                && used_by.iter().all(|used| {
+                    used["also_unused"] == true
+                        && used["provenance"] == "inactive relationship endpoint"
+                }),
+            "{id}: expected only the unactivated relationship as an also-unused reference: {used_by:?}"
         );
     }
 

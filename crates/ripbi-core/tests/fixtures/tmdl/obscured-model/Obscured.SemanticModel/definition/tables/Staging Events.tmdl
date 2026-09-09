@@ -1,0 +1,20 @@
+/// A dead table: nothing references it, so its partition must keep nothing
+/// alive — not the shared expression its M names, not its own column.
+table 'Staging Events'
+	lineageTag: c0000000-0000-0000-0000-000000000001
+
+	column Raw
+		dataType: string
+		sourceColumn: Raw
+		lineageTag: c0000000-0000-0000-0000-000000000002
+
+	partition 'Staging Events' = m
+		mode: import
+		source =
+				let
+				    Source = #"Staging Extract",
+				    Typed = Table.TransformColumnTypes(Source, {{"Raw", type text}})
+				in
+				    Typed
+
+annotation PBI_ResultType = Table

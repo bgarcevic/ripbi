@@ -42,15 +42,32 @@ qualifying table alive — the nearest resolvable candidate the written form ass
 Unqualified, bare, and call references that match nothing keep nothing alive: there is
 nothing resolvable to point at.
 
-**M references.** A partition or shared expression keeps any shared expression whose
-name appears whole-word in its M text alive. M identifiers are case-sensitive, but the
-match is case-insensitive on purpose: matching too broadly only over-marks. Unlike the
-DAX lexer, the scan does not skip strings or comments — a name mentioned only there
-still marks its referent alive, because over-marking is the safe direction and a real
-lexer could only narrow the result. Edges flow expression-to-expression too, so a
-partition keeps its staging query alive and the staging query keeps the parameter it
-names alive. This rule exists because a Power Query parameter referenced only by one
-partition would otherwise be reported unused, and deleting it breaks the partition.
+**M references.** Every M expression — a table partition or a shared expression — is
+lexed (`m::bind`, see [m-lexing.md](m-lexing.md)). The pipeline is M → tables/columns →
+DAX → reports, so deletion never breaks upstream, and the two directions of a mention
+split:
+
+- a **shared expression** named in the text (a parameter, a staging query) keeps alive —
+  deleting it deletes the query the expression reads, which breaks refresh. M-to-M
+  chains flow one hop per edge;
+- a **table** named as a merge source (`Table.NestedJoin(…, #"Dim Lookup", …)`) or as a
+  qualified field access (`#"Dim Lookup"[Key]`) keeps alive, for the same reason. A
+  partition naming its *own* table creates no edge, and a dead table's partition keeps
+  nothing alive, because every M edge flows from its owner;
+- a **column** named by bracket field access (`each [Amount]`) or by the string
+  arguments of the column-centric built-ins
+  (`Table.ExpandTableColumn(Source, "Amount")`) keeps **nothing** alive. The column's
+  M mention is its supply chain — the query keeps producing the column and the model
+  just stops mapping it — so unloading it cannot break refresh. The naming expressions
+  travel with the finding instead (`UnusedObject::named_by_m`, rendered as the
+  `named_in_power_query` JSON field and the `⭘ Power Query also names it` annotation):
+  unloading is safe, and removing the column from the script *entirely* means editing
+  those steps too.
+
+Matching is by identifier tokens, case-insensitively: names inside comments and
+unrelated strings do not count (the one deliberate narrowing against the old substring
+scan, which this rule replaced), while bare identifiers still over-mark — most are
+`let` variables that resolve to nothing. Unresolved references stay data, never errors.
 
 **Report bindings.** Every `ReportModel::bindings` target is a reachability root with
 its provenance. Measure targets resolve report-first: within its report, a report
@@ -83,10 +100,13 @@ alive, because unused columns in used tables are the bread and butter of the fin
 form the other way: an unused sorted column drags its unused sort column along,
 annotated.
 
-**Relationships.** Live if either endpoint table is reachable, and they keep **both**
-key columns alive — inactive ones included (`USERELATIONSHIP`). Roles keep their
-granted tables and filtered columns alive; roles themselves are seeds, never findings,
-because security configuration is not bloat.
+**Relationships.** Live if either endpoint table is reachable. An **active** relationship
+keeps **both** key columns alive; an **inactive** one is live only when a live DAX
+reference (`USERELATIONSHIP`) activates it — switching one on at query time is DAX's
+job, and nothing else can. Unactivated, the relationship is itself a finding, and its
+key columns are findings chained under it (`only used by … (also unused)`). Roles keep
+their granted tables and filtered columns alive; roles themselves are seeds, never
+findings, because security configuration is not bloat.
 
 ## The relationship rule and the two-pass traversal
 
@@ -99,14 +119,18 @@ related, this is the difference between table findings and none.
 One plain BFS cannot express that (containment would drag the far table in), so
 reachability runs two passes and the policy falls out of what each pass excludes:
 
-1. **Strong pass** — from the roots over every edge except relationship endpoints.
-   Containment fires; the result is everything that can keep its table alive.
-2. **Weak pass** — extends the strong set over every edge *except* containment. The
-   relationships of live tables and both their key columns join here, without
-   propagation into tables.
+1. **Strong pass** — from the roots over every edge except relationship endpoints and
+   the inactive-relationship edges. Containment fires; the result is everything that
+   can keep its table alive.
+2. **Weak pass** — extends the strong set over every edge *except* containment and the
+   inactive-relationship edges. The relationships of live tables and their active key
+   columns join here, without propagation into tables; an inactive relationship joins
+   only through a live `USERELATIONSHIP` reference, whose Dax edge the strong pass
+   already carries.
 
 Unused = every node in neither pass. For any unused object, every referencing object is
-provably either itself unused, or a weakly-live key column — which is exactly the
+provably either itself unused, a weakly-live key column, or the table of an inactive
+relationship the relationship cannot keep alive — which is exactly the
 `also_unused: false` case in `UsedBy`, and the reason `unused_objects` needs no
 special-casing to annotate chains.
 

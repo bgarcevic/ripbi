@@ -51,6 +51,7 @@ pub mod dax;
 pub mod graph;
 pub mod identity;
 pub mod ingest;
+pub mod m;
 pub mod model;
 pub mod report;
 

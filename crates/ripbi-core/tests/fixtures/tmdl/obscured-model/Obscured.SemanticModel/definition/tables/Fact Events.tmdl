@@ -1,0 +1,51 @@
+/// The fact table: its partition exercises every M shape the issue #39 rule
+/// cares about. Names are synthetic.
+table 'Fact Events'
+	lineageTag: a0000000-0000-0000-0000-000000000001
+
+	column 'Event Id'
+		dataType: int64
+		summarizeBy: sum
+		sourceColumn: Event Id
+		lineageTag: a0000000-0000-0000-0000-000000000002
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: a0000000-0000-0000-0000-000000000003
+
+	column 'Beløb'
+		dataType: string
+		sourceColumn: Beløb
+		lineageTag: a0000000-0000-0000-0000-000000000004
+
+	column Region
+		dataType: string
+		sourceColumn: Region
+		lineageTag: a0000000-0000-0000-0000-000000000005
+
+	column Key
+		dataType: int64
+		sourceColumn: Key
+		lineageTag: a0000000-0000-0000-0000-000000000006
+
+	/// Referenced by nothing — the negative case.
+	column Notes
+		dataType: string
+		sourceColumn: Notes
+		lineageTag: a0000000-0000-0000-0000-000000000007
+
+	partition 'Fact Events' = m
+		mode: import
+		source =
+				let
+				    Source = Sql.Database("Server Name", "REDACTED-DB", [Query = "SELECT * FROM dbo.redacted_events"]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source, {{"Amount", type number}, {"Beløb", type text}, {"Key", Int64.Type}}),
+				    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each [Region] = "West"),
+				    #"Merged Queries" = Table.NestedJoin(#"Filtered Rows", {"Key"}, #"Dim Lookup", {"Lookup Key"}, "Dim", JoinKind.LeftOuter),
+				    #"Expanded Dim" = Table.ExpandTableColumn(#"Merged Queries", "Dim", {"Dim Name"}, {"Dim Name"}),
+				    #"Replaced Value" = Table.ReplaceValue(#"Expanded Dim", null, 0, Replacer.ReplaceValue, {"Amount"})
+				in
+				    #"Replaced Value"
+
+annotation PBI_ResultType = Table
