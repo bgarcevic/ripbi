@@ -39,7 +39,9 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           stage="dist/ripbi-${version}"
           mkdir -p "$stage"
+          # Both names: ripbi and its short alias rib are separate binaries.
           cp "target/${{ matrix.target }}/release/ripbi" "$stage/"
+          cp "target/${{ matrix.target }}/release/rib" "$stage/"
           cp README.md LICENSE-MIT LICENSE-APACHE "$stage/"
           tar -czf "dist/ripbi-${version}-${{ matrix.target }}.tar.gz" -C dist "ripbi-${version}"
           # dist must hold archives only: the checksum step and the release
@@ -54,7 +56,9 @@ jobs:
           $version = $env:GITHUB_REF_NAME.Substring(1)
           $stage = "dist/ripbi-$version"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          # Both names: ripbi and its short alias rib are separate binaries.
           Copy-Item "target/${{ matrix.target }}/release/ripbi.exe" $stage
+          Copy-Item "target/${{ matrix.target }}/release/rib.exe" $stage
           Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE $stage
           Compress-Archive -Path $stage -DestinationPath "dist/ripbi-$version-${{ matrix.target }}.zip"
           Remove-Item -Recurse -Force $stage

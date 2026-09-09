@@ -37,7 +37,9 @@ irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
 ```
 
 Both scripts verify the download against the release's sha256 checksums and
-install the binary into `~/.local/bin`. Or `cargo install ripbi`.
+install the binary into `~/.local/bin` as both `ripbi` and its short alias
+`rib` — the two names are the same tool, so `rib scan` works anywhere
+`ripbi scan` does. Or `cargo install ripbi`.
 
 <details>
 <summary>Pinning a version, reviewing the scripts first, building from source</summary>

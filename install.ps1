@@ -4,7 +4,9 @@
 
 .DESCRIPTION
   Downloads the release zip, verifies its SHA-256 against the published
-  sha256sums.txt, and installs ripbi.exe into %USERPROFILE%\.local\bin.
+  sha256sums.txt, and installs ripbi.exe into %USERPROFILE%\.local\bin as
+  both ripbi.exe and its short alias rib.exe (a hard link to the same
+  binary).
 
   Pipe directly (parameters are not passable this way; use RIPBI_VERSION):
 
@@ -123,13 +125,23 @@ try {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     Copy-Item $exe (Join-Path $installDir 'ripbi.exe') -Force
 
+    # Same binary, shorter name. A hard link is enough; fall back to a copy on
+    # filesystems that refuse links.
+    $installedExe = Join-Path $installDir 'ripbi.exe'
+    $alias = Join-Path $installDir 'rib.exe'
+    try {
+      New-Item -ItemType HardLink -Path $alias -Value $installedExe -Force -ErrorAction Stop | Out-Null
+    } catch {
+      Copy-Item $installedExe $alias -Force
+    }
+
     $pathDirs = @($env:Path -split ';' | Where-Object { $_ })
     if ($pathDirs -notcontains $installDir) {
       Write-Host ''
       Write-Host "$installDir is not on your PATH. Add it for your user with:"
       Write-Host "  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$installDir', 'User')"
     }
-    Write-Host "installed ripbi $Version to $(Join-Path $installDir 'ripbi.exe')"
+    Write-Host "installed ripbi $Version to $installedExe (also usable as $alias)"
   } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
   }

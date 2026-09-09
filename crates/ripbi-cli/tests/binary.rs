@@ -1,11 +1,15 @@
-//! End-to-end tests of the `ripbi` binary itself: the clap surface (help,
-//! conflicts, exit codes) that in-process tests cannot reach.
+//! End-to-end tests of the `ripbi` and `rib` binaries themselves: the clap
+//! surface (help, conflicts, exit codes) that in-process tests cannot reach.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn ripbi() -> Command {
     Command::cargo_bin("ripbi").expect("the ripbi binary")
+}
+
+fn rib() -> Command {
+    Command::cargo_bin("rib").expect("the rib alias binary")
 }
 
 fn mini_pbip() -> String {
@@ -100,4 +104,24 @@ fn bare_path_argument_no_longer_works_without_a_subcommand() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
+}
+
+#[test]
+fn the_rib_alias_is_the_same_tool() {
+    rib()
+        .args(["scan", &mini_pbip(), "--plain"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("measure\t'Sales'[Legacy Total]"));
+}
+
+#[test]
+fn rib_help_says_rib() {
+    // clap derives the displayed name from argv[0], so the alias must never
+    // print "Usage: ripbi".
+    rib()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage: rib"));
 }

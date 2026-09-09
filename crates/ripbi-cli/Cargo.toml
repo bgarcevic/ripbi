@@ -14,9 +14,8 @@ categories = ["development-tools", "command-line-utilities", "parser-implementat
 [lib]
 name = "ripbi_cli"
 
-[[bin]]
-name = "ripbi"
-path = "src/main.rs"
+# The short `rib` alias is auto-discovered from src/bin/rib.rs; both binaries
+# share ripbi_cli::entry::run.
 
 [dependencies]
 ripbi-core.workspace = true

@@ -5,6 +5,7 @@
 pub mod cli;
 pub mod config;
 pub mod discover;
+pub mod entry;
 pub mod error;
 pub mod glob;
 pub mod render;
