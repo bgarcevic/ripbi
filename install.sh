@@ -9,7 +9,8 @@
 #   sh install.sh [--version v0.1.0]
 #
 # The script downloads the release archive, verifies its sha256 against the
-# published sha256sums.txt, and installs the binary into ~/.local/bin.
+# published sha256sums.txt, and installs the binary into ~/.local/bin as both
+# `ripbi` and its short alias `rib` (a hard link to the same binary).
 
 set -eu
 # `| sh` often means dash, which has no pipefail; enable it only where it exists.
@@ -163,6 +164,11 @@ if ! mkdir -p "$install_dir" 2>/dev/null; then
 fi
 mv "$binary" "${install_dir}/ripbi"
 chmod +x "${install_dir}/ripbi"
+# Same binary, shorter name. A hard link is enough; fall back to a copy on
+# filesystems that refuse links.
+if ! ln -f "${install_dir}/ripbi" "${install_dir}/rib" 2>/dev/null; then
+  cp "${install_dir}/ripbi" "${install_dir}/rib"
+fi
 
 case ":$PATH:" in
   *":${install_dir}:"*) ;;
@@ -173,4 +179,4 @@ case ":$PATH:" in
     ;;
 esac
 
-printf 'installed ripbi %s to %s/ripbi\n' "$version" "$install_dir"
+printf 'installed ripbi %s to %s/ripbi (also usable as %s/rib)\n' "$version" "$install_dir" "$install_dir"

@@ -19,12 +19,15 @@ CI-friendly output, and exit codes.
 `src/lib.rs` wires the modules; `main.rs` only parses and maps the returned code to
 `ExitCode`. The lib target exists so integration tests drive `scan` without spawning
 a process (`Streams` injects stdout/stderr/stdin and the stdin-is-a-TTY bit).
+The short alias `rib` (`src/bin/rib.rs`) shares `entry::run` with `main.rs`; clap
+derives the displayed name from argv[0], so help says whichever name was typed.
 
 | Module | Role |
 |---|---|
 | `cli.rs` | clap definitions — the user-facing interface |
 | `config.rs` | `ripbi.toml` discovery (cwd upward), parsing, path resolution |
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery |
+| `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code |
 | `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → render |
 | `render.rs` | the three output modes: human, `--plain`, `--json` |
 | `style.rs` | ANSI palette gated on TTY / `NO_COLOR` / `TERM=dumb` / `--no-color` |
