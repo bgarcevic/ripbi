@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ripbi_core::ingest::report;
+use ripbi_core::ingest::{SkipKind, report};
 use ripbi_core::report::{BindingKind, FieldTarget};
 
 /// The `.Report` folders shipped in the repository.
@@ -36,12 +36,42 @@ fn every_sample_parses_with_no_notices() {
     for sample in samples() {
         let ingested = report(&sample)
             .unwrap_or_else(|error| panic!("{} must parse: {error}", sample.display()));
-        assert!(
-            ingested.skips.is_empty(),
-            "{} must parse without notices: {:#?}",
-            sample.display(),
-            ingested.skips
-        );
+        let is_ai_sample = sample
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "Artificial Intelligence Sample.Report");
+        for skip in &ingested.skips {
+            // The one deliberate notice: the AI sample's bookmarks save state
+            // for pages deleted from the report (issue #48). Everything else —
+            // an unknown key in a future export above all — fails here.
+            assert!(
+                is_ai_sample && skip.kind == SkipKind::StaleState,
+                "{} must parse without notices: {}",
+                sample.display(),
+                skip.detail
+            );
+            assert!(
+                skip.path.to_string_lossy().contains("bookmarks"),
+                "stale-state notices come from bookmark files: {}",
+                skip.path.display()
+            );
+        }
+        if is_ai_sample {
+            // 15 of its 17 bookmarks reference one of the 6 deleted sections.
+            assert_eq!(
+                ingested.skips.len(),
+                15,
+                "{}: exactly the stale-section notices, nothing else",
+                sample.display()
+            );
+        } else {
+            assert!(
+                ingested.skips.is_empty(),
+                "{} must parse without notices: {:#?}",
+                sample.display(),
+                ingested.skips
+            );
+        }
     }
 }
 

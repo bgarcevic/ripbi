@@ -21,7 +21,7 @@ listing them), none is an error.
 | Findings, summary, JSON, plain records | stdout | the machine-readable side |
 | Discovery/selection announce, scanning line | stderr | one line each |
 | Coverage caveat | stderr | once per run |
-| Skip notices (parser drift) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
+| Skip notices (parser drift, stale saved state) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
@@ -268,7 +268,14 @@ declaration — is fully live, its columns are gone from the findings, and its
 `in use` verdict (with the other five tables' verdicts) is pinned by the same test
 through the `auto_date_time` section. One conservatism policy
 the external analyses do not share, visible in that baseline: bookmark saved filters
-count as bindings (re-applying a bookmark re-binds its fields). Inactive relationships
+count as bindings (re-applying a bookmark re-binds its fields) — but only for
+sections whose page still exists. Power BI leaves deleted pages' sections inside
+bookmarks forever, so those sections are skipped as stale (a `stale_state`
+notice, surfaced by `--strict`), and the columns their filters were the last
+consumers of surface as ordinary findings; on the Artificial Intelligence
+sample that closes the last bookmark-kept-alive delta with the export, at the
+cost of a documented cascade (the fully-dead `'Cases'` and `'Case Calendar'`
+tables and everything chained under them). Inactive relationships
 are the opposite correction: they are live only when a live `USERELATIONSHIP` reference
 activates them, so an unactivated one is a finding itself, with its key columns chained
 under it — `only used by relationship … (also unused)`.

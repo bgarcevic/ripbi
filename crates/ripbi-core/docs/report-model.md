@@ -12,11 +12,13 @@ bindings, visuals), visuals (field wells, filters, sort-by, conditional formatti
 tooltip-page references), bookmarks (saved filters and active projections), and
 report-level measures (`reportExtensions.json`).
 
-Deliberately absent: page order and the active/landing page (`pages.json`), mobile
-layouts (`mobile.json`), themes and resource packages, `semanticModelDiagramLayout.json`,
-and every literal *value* a filter or slicer selection persists. None of them reference
-model objects, so none can keep one alive. They describe the report; they never bind.
-Adding them later is additive — but do not add them speculatively.
+Deliberately absent: page order and the active/landing page (`pages.json` — the
+one exception, `pageOrder`, is read at ingest as a bookmark-section liveness
+authority, but never modeled), mobile layouts (`mobile.json`), themes and
+resource packages, `semanticModelDiagramLayout.json`, and every literal *value*
+a filter or slicer selection persists. None of them reference model objects, so
+none can keep one alive. They describe the report; they never bind. Adding them
+later is additive — but do not add them speculatively.
 
 ## Power BI semantics the types don't show
 
@@ -50,7 +52,12 @@ toggle away from live.
 
 **Bookmarks are roots.** Applying a bookmark re-applies its saved filters and
 projections, so a field kept alive only by a bookmark is still alive. Bookmark
-bindings enumerate with `bookmark` set, alongside the page and visual they captured.
+bindings enumerate with `bookmark` set, alongside the page and visual they
+captured. One bound: a section whose page the report no longer defines is not
+a binding — Power BI leaves deleted pages' sections inside bookmarks forever,
+and a filter on a page nobody can reach would keep its columns alive with no
+way to re-apply it. Those sections are dropped at ingest (see the bookmark
+staleness rule in [formats.md](formats.md)); they never reach this AST.
 
 **Report measures bridge both directions.** A report-level measure's DAX body
 references model objects (so `ReportModel::dax_expressions` is an expression source on

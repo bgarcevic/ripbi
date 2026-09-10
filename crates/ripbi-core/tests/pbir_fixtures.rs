@@ -148,27 +148,39 @@ fn golden_report() -> ReportModel {
                 visuals: Vec::new(),
             },
         ],
-        bookmarks: vec![Bookmark {
-            name: NameKey::new("B1"),
-            display_name: Some("Saved view".to_string()),
-            filters: vec![filter_on("BookmarkFilter", column("Geography", "Country"))],
-            sections: vec![BookmarkSection {
-                page: NameKey::new("P1"),
-                filters: vec![filter_on("Filter4", column("Owners", "Sales owner"))],
-                visuals: vec![BookmarkVisual {
-                    visual: NameKey::new("V1"),
-                    wells: vec![FieldWell {
-                        role: "Rows".to_string(),
-                        projections: vec![Projection {
-                            target: column("Product", "Subcategory"),
-                            query_ref: None,
-                            active: false,
+        bookmarks: vec![
+            Bookmark {
+                name: NameKey::new("B1"),
+                display_name: Some("Saved view".to_string()),
+                filters: vec![filter_on("BookmarkFilter", column("Geography", "Country"))],
+                sections: vec![BookmarkSection {
+                    page: NameKey::new("P1"),
+                    filters: vec![filter_on("Filter4", column("Owners", "Sales owner"))],
+                    visuals: vec![BookmarkVisual {
+                        visual: NameKey::new("V1"),
+                        wells: vec![FieldWell {
+                            role: "Rows".to_string(),
+                            projections: vec![Projection {
+                                target: column("Product", "Subcategory"),
+                                query_ref: None,
+                                active: false,
+                            }],
                         }],
+                        filters: vec![filter_on("BookmarkV1Filter", column("Product", "Color"))],
                     }],
-                    filters: vec![filter_on("BookmarkV1Filter", column("Product", "Color"))],
                 }],
-            }],
-        }],
+            },
+            // Saved on a page since deleted: `Pgone` appears in neither
+            // `pages.json` `pageOrder` nor the `pages/` folders, so the
+            // section — and the `'Product'[Color]` filter it carries — never
+            // reaches the AST (issue #48). It is the fixture's one notice.
+            Bookmark {
+                name: NameKey::new("B2"),
+                display_name: Some("Deleted page view".to_string()),
+                filters: Vec::new(),
+                sections: Vec::new(),
+            },
+        ],
         measures: vec![ReportMeasure {
             name: NameKey::new("Budget %"),
             expression: "DIVIDE([Sales], [Budget])".to_string(),
@@ -178,14 +190,27 @@ fn golden_report() -> ReportModel {
 }
 
 #[test]
-fn golden_report_parses_exactly_with_no_skips() {
+fn golden_report_parses_exactly_with_expected_skips() {
     let ingested = report(&fixture(&["golden", "Mini.Report"])).expect("golden fixture parses");
 
     assert_eq!(ingested.value, golden_report());
-    assert!(
-        ingested.skips.is_empty(),
-        "deliberately-unmodeled metadata must be silent: {:#?}",
-        ingested.skips
+    // Exactly one notice: B2's saved state for the deleted page `Pgone`
+    // (issue #48). Everything else skipped is deliberately-unmodeled and
+    // silent.
+    assert_eq!(ingested.skips.len(), 1, "{:#?}", ingested.skips);
+    assert_eq!(ingested.skips[0].kind, SkipKind::StaleState);
+    assert_eq!(
+        ingested.skips[0].location.as_deref(),
+        Some("/explorationState/sections/Pgone")
+    );
+    assert_eq!(
+        ingested.skips[0].detail,
+        "bookmark 'B2' saves state for page 'Pgone', which the report no longer defines; \
+         its saved filters bind nothing (it is also the bookmark's active section)"
+    );
+    assert_eq!(
+        ingested.skips[0].path.file_name().and_then(|n| n.to_str()),
+        Some("B2.bookmark.json")
     );
 }
 
