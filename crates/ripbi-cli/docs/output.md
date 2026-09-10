@@ -120,12 +120,12 @@ Columns (28)
 
 ## `--summary`
 
-The human mode for big models: the summary line and one `label: count` line per
-non-empty group, plus one `Auto date/time:` line when the model has such tables
-(`Auto date/time: 1 in use, 2 unused by reports, 5 dead`), with no findings list. Type
-flags filter the counts like any other mode. Same stdout, same exit codes, same
-stderr (notices still print). Use `--plain` or `--json` when you want the individual
-objects.
+The human mode for big models: the summary line, one `label: count` line per non-empty
+group, a `Worst tables:` breakdown, and one `Auto date/time:` line when the model has
+such tables (`Auto date/time: 1 in use, 2 unused by reports, 5 dead`) — with no findings
+list. Type flags filter the counts and the breakdown like any other mode. Same stdout,
+same exit codes, same stderr (notices still print). Use `--plain` or `--json` when you
+want the individual objects.
 
 ```text
 3781 objects, 1207 reachable from 2962 roots, 2574 unused
@@ -133,7 +133,26 @@ objects.
 Measures: 214
 Columns: 2211
 Report measures: 149
+
+Worst tables:
+  'Sales'      412
+  'Customer'   187
+  'Date'       154
+  ... and 14 more tables with findings
 ```
+
+The `Worst tables:` block groups the same surviving findings the counts above come from
+— `[scan].ignore` suppressions and type-filter-hidden objects never appear in it — and
+names the tables carrying the most of them, so a big model answers "where do I start".
+Rules:
+
+- At most 10 rows; when more tables carry findings, a footer says how many.
+- Ordered by count descending, then table name folded case-insensitively — the
+  model's identity ordering, so the order is stable across runs.
+- A dead relationship counts under its "from" table. Report measures, shared
+  expressions, and functions belong to no table and are skipped here (their counts
+  above still show them); the block is omitted entirely when nothing surviving has a
+  table.
 
 ## `--plain`
 
@@ -175,6 +194,7 @@ Pretty-printed JSON, stable field order, additive schema:
     {
       "type": "column",
       "id": "'Sales'[Order Quantity (base)]",
+      "table": "'Sales'",
       "used_by": [
         {
           "id": "'Sales'[Order Quantity]",
@@ -219,6 +239,10 @@ Pretty-printed JSON, stable field order, additive schema:
 - `type` is one of `table`, `column`, `measure`, `hierarchy`, `partition`,
   `relationship`, `role`, `calculation_item`, `expression`, `function`,
   `report_measure`.
+- `table` is the finding's model table, quoted (`'Sales'`) — a relationship reports
+  its "from" side. It is `null` for the kinds with no model table (`role`,
+  `expression`, `function`, `report_measure`). `--plain` deliberately omits it: its
+  records are a two-column grep contract.
 - `provenance` is the human phrase for how the use is made (e.g. `measure expression`,
   `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`).
 - `named_in_power_query` lists the M expressions (partitions by their table, shared

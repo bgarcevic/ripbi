@@ -30,7 +30,7 @@ derives the displayed name from argv[0], so help says whichever name was typed.
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code |
 | `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → type filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict; the section prints only when no type filter runs without `--tables`) |
-| `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them. `GROUPS` is the fixed kind order the type flags select from |
+| `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them. `GROUPS` is the fixed kind order the type flags select from. `Finding.table` (`ObjectId::owning_table`, set in `scan.rs` only for `--json`/`--summary`) feeds the JSON `table` field and `--summary`'s worst-tables breakdown |
 | `style.rs` | ANSI palette gated on TTY / `NO_COLOR` / `TERM=dumb` / `--no-color` |
 | `glob.rs` | case-insensitive `*`/`?` matcher for `[scan].ignore` |
 

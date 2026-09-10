@@ -77,6 +77,7 @@ fn summary_mode_runs_the_binary_end_to_end() {
         .code(1)
         .stdout(predicate::str::contains("Measures: 1"))
         .stdout(predicate::str::contains("Columns: 1"))
+        .stdout(predicate::str::contains("Worst tables:\n  'Sales'  2"))
         .stdout(predicate::str::contains("'Sales'[Legacy Total]").not());
 }
 

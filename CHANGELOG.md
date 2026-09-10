@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Worst-tables breakdown in `--summary`** (`#38`) — the summary mode now ends the
+  per-type counts with a `Worst tables:` block: the (at most 10) tables carrying the
+  most surviving findings, count descending then table name (case-insensitively, the
+  model's identity order), cut from the same post-`[scan].ignore` findings as the
+  counts. A dead relationship counts under its "from" table; report measures, shared
+  expressions, and functions belong to no table and stay out of the block, and a
+  footer announces how many further tables have findings. `--json` gains a `table`
+  field on every finding — the quoted model table, `null` when it has none — so a
+  consumer can group the same way without parsing ids.
 - **Per-type scan filters** (`#31`) — `ripbi scan --measures`, `--columns`,
   `--tables`, `--hierarchies`, `--partitions`, `--relationships`, `--calc-items`,
   `--expressions`, `--functions`, and `--report-measures` report only unused objects
