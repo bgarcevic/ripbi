@@ -48,6 +48,7 @@ fail the run. `--strict` and `-q/--quiet` are unaffected.
 | `-q`, `--quiet` | No output; exit code only |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml` |
 | `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Report only unused objects of the passed types; repeatable, and passed together they union (`--measures --columns`). Filters every output mode and the exit code. With none of them, everything is reported |
+| `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
 | `--no-input` | Never prompt; fail where a picker would appear |
@@ -65,7 +66,6 @@ Columns (28)
     ← only used by hierarchy 'Customer'[Geography] — hierarchy level (also unused)
   'Customer'[Customer ID]
     ← nothing references it
-    ⭘ Power Query also names it ('Customer' partition) — safe to stop loading; removing it from the script means editing those steps too
 ```
 
 - The summary line: total graph objects, how many reachability reached, from how many
@@ -85,13 +85,24 @@ Columns (28)
   - `← used by 'X' — <where>` — the consumer is live but its use could not keep this
     object alive (a key column held only by an active relationship endpoint, or the
     table of an inactive relationship nothing activates).
-- The `⭘ Power Query also names it (…)` annotation appears on Data columns named by M
-  expressions. It is supply-chain context, not a consumer: unloading the column cannot
-  break refresh, but removing it from the Power Query script *entirely* means editing
-  each named partition or expression too. Columns without the annotation are also gone
-  from every Power Query step — and engine-computed columns (calculated columns, auto
-  date/time machinery) never carry it, because an M step can only name a column it
-  produces.
+- The `⭘ Power Query also names it (…)` annotation appears, behind `--power-query`,
+  on Data columns named by M expressions. With the flag, the last finding above
+  reads:
+
+  ```text
+    'Customer'[Customer ID]
+      ← nothing references it
+      ⭘ Power Query also names it ('Customer' partition) — safe to stop loading; removing it from the script means editing those steps too
+  ```
+
+  It is supply-chain context, not a consumer:
+  unloading the column cannot break refresh, but removing it from the Power Query
+  script *entirely* means editing each named partition or expression too — cleanup-time
+  guidance, so it is hidden by default and shown only on request. Columns without the
+  annotation are also gone from every Power Query step — and engine-computed columns
+  (calculated columns, auto date/time machinery) never carry it, because an M step can
+  only name a column it produces. `--json` always carries the underlying
+  `named_in_power_query` field regardless of the flag.
 - The **Auto date/time** section follows the findings: one verdict per
   `LocalDateTable_*`/`DateTableTemplate_*` table, naming the user's date column the
   machinery serves. It is a *provenance* verdict, not a reachability one — the engine's

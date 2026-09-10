@@ -127,6 +127,11 @@ pub struct ScanArgs {
     /// to select several; with none of them, everything is reported.
     #[arg(long)]
     pub report_measures: bool,
+
+    /// Also print the "Power Query also names it" annotation on unused Data
+    /// columns (human output). `--json` always carries the field.
+    #[arg(long)]
+    pub power_query: bool,
 }
 
 impl ScanArgs {

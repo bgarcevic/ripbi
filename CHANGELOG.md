@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section prints only when `--tables` is among them. `--json` gains
   `summary.unused_total`, the model-wide unused count, so consumers can tell a
   filtered-away finding from an absent one.
+- **`--power-query` flag** (`#57`) — the "⭘ Power Query also names it" annotation on
+  unused Data columns is now hidden by default and shown on request. `--json` always
+  carries the underlying `named_in_power_query` field.
 - **User guide on GitHub Pages** — an mdBook at
   [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/), assembled
   by a Pages workflow from the docs that live next to the code, with a link

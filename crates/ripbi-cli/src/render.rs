@@ -165,11 +165,18 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
 }
 
 /// Writes the human-readable report: a summary line, then findings grouped by
-/// object type with `←` chain annotations.
+/// object type with `←` chain annotations. `show_power_query` adds the
+/// `⭘ Power Query also names it` annotations (hidden by default; `--json`
+/// always carries the underlying field).
 ///
 /// # Errors
 /// Propagates stream write failures.
-pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
+pub fn human(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+    show_power_query: bool,
+) -> io::Result<()> {
     write_summary(out, palette, report)?;
 
     if report.findings.is_empty() {
@@ -191,12 +198,12 @@ pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) ->
             )?;
             for finding in group {
                 writeln!(out, "  {}", finding.id)?;
-                write_annotations(out, palette, finding, "    ")?;
+                write_annotations(out, palette, finding, "    ", show_power_query)?;
             }
             writeln!(out)?;
         }
     }
-    write_auto_date_time(out, palette, report)
+    write_auto_date_time(out, palette, report, show_power_query)
 }
 
 /// The auto date/time section, rendered in both human modes after the
@@ -206,6 +213,7 @@ fn write_auto_date_time(
     out: &mut dyn io::Write,
     palette: &Palette,
     report: &ScanOutput,
+    show_power_query: bool,
 ) -> io::Result<()> {
     if report.auto_date_time.is_empty() {
         return Ok(());
@@ -250,7 +258,7 @@ fn write_auto_date_time(
                 .unwrap_or_default();
             writeln!(out, "    {}{source}", row.id)?;
             if let Some(finding) = &row.finding {
-                write_annotations(out, palette, finding, "      ")?;
+                write_annotations(out, palette, finding, "      ", show_power_query)?;
             }
         }
     }
@@ -350,6 +358,7 @@ fn write_annotations(
     palette: &Palette,
     finding: &Finding,
     indent: &str,
+    show_power_query: bool,
 ) -> io::Result<()> {
     if finding.used_by.is_empty() {
         writeln!(
@@ -376,7 +385,9 @@ fn write_annotations(
             )?;
         }
     }
-    if !finding.named_in_power_query.is_empty() {
+    // Cleanup-time supply-chain guidance, not verdict information: hidden
+    // unless asked for (--power-query). The JSON field is unconditional.
+    if show_power_query && !finding.named_in_power_query.is_empty() {
         let named = finding.named_in_power_query.join(", ");
         writeln!(
             out,

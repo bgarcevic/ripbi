@@ -270,7 +270,8 @@ fn scan(
         } else if args.summary {
             render::human_summary(streams.out, &palette_out, &output).map_err(ScanError::from)?;
         } else {
-            render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
+            render::human(streams.out, &palette_out, &output, args.power_query)
+                .map_err(ScanError::from)?;
         }
         // Notices are stderr's job in text modes; --json carries them itself.
         if !args.json && !output.skips.is_empty() {

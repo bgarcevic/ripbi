@@ -366,6 +366,71 @@ mod type_filters {
     }
 }
 
+mod power_query_annotation {
+    use super::*;
+
+    /// The supply-chain annotation is cleanup-time guidance, not verdict
+    /// information: hidden by default, shown with `--power-query` (issue #57).
+    #[test]
+    fn the_power_query_annotation_is_hidden_by_default() {
+        let temp = TempDir::new("pq-default");
+        let (code, stdout, _) = scan_path(&mini_pbip().join("Mini.pbip"), &temp.0);
+
+        assert_eq!(code, 1);
+        assert!(
+            !stdout.contains("Power Query also names it"),
+            "default output must not annotate:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn power_query_flag_shows_the_annotation() {
+        let temp = TempDir::new("pq-flag");
+        let args = ScanArgs {
+            power_query: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stdout.contains(
+                "⭘ Power Query also names it ('Sales' partition) — safe to stop loading; \
+                 removing it from the script means editing those steps too",
+            ),
+            "annotation:\n{stdout}"
+        );
+    }
+
+    /// The JSON field is part of the additive schema and stays unconditional:
+    /// the flag is a human-output knob, machine consumers filter themselves.
+    #[test]
+    fn json_carries_named_in_power_query_with_and_without_the_flag() {
+        let temp = TempDir::new("pq-json");
+        for power_query in [false, true] {
+            let args = ScanArgs {
+                json: true,
+                power_query,
+                ..fixture_args(mini_pbip().join("Mini.pbip"))
+            };
+            let (code, stdout, _) = run_scan(&args, &temp.0, "");
+            assert_eq!(code, 1);
+            let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+            let legacy = payload["unused"]
+                .as_array()
+                .expect("unused array")
+                .iter()
+                .find(|finding| finding["id"] == "'Sales'[Legacy]")
+                .expect("the dead column");
+            assert_eq!(
+                legacy["named_in_power_query"],
+                serde_json::json!(["'Sales' partition"]),
+                "flag={power_query}"
+            );
+        }
+    }
+}
+
 mod refusals {
     use super::*;
 
