@@ -164,6 +164,273 @@ mod output_modes {
     }
 }
 
+mod type_filters {
+    use super::*;
+
+    /// The fixture has exactly one unused measure and one unused column, so
+    /// every flag's effect is directly visible.
+    #[test]
+    fn a_type_flag_selects_only_its_group() {
+        let temp = TempDir::new("filter-measures");
+        let args = ScanArgs {
+            measures: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the selected measure is still unused");
+        assert!(stdout.contains("Measures (1)"), "group header:\n{stdout}");
+        assert!(
+            stdout.contains("'Sales'[Legacy Total]"),
+            "finding:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("Columns"),
+            "other groups vanish:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("'Sales'[Legacy]"),
+            "the hidden finding is gone, id included:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("(1 unused hidden by type filters)"),
+            "hidden note:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn type_flags_passed_together_union_their_groups() {
+        let temp = TempDir::new("filter-union");
+        let args = ScanArgs {
+            measures: true,
+            columns: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Measures (1)"), "group header:\n{stdout}");
+        assert!(stdout.contains("Columns (1)"), "group header:\n{stdout}");
+        assert!(
+            !stdout.contains("hidden by type filters"),
+            "nothing was hidden:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn a_filter_that_hides_every_finding_exits_clean() {
+        let temp = TempDir::new("filter-none");
+        let args = ScanArgs {
+            tables: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "the exit code describes what was reported");
+        assert!(
+            stdout.contains("6 objects, 4 reachable from 1 roots, 0 unused"),
+            "model-wide counts stand, findings do not:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("(2 unused hidden by type filters)"),
+            "hidden note:\n{stdout}"
+        );
+        assert!(stdout.contains("No unused objects."));
+    }
+
+    #[test]
+    fn quiet_mode_honors_the_filter_in_its_exit_code() {
+        let temp = TempDir::new("filter-quiet");
+        let args = ScanArgs {
+            quiet: true,
+            tables: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(stdout.is_empty());
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn json_mode_reflects_the_filter_in_unused_and_summary() {
+        let temp = TempDir::new("filter-json");
+        let args = ScanArgs {
+            json: true,
+            measures: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        let unused = payload["unused"].as_array().expect("unused array");
+        assert_eq!(unused.len(), 1, "only the measure survives:\n{unused:?}");
+        assert_eq!(unused[0]["type"], "measure");
+        assert_eq!(payload["summary"]["unused"], 1, "the filtered length");
+        assert_eq!(
+            payload["summary"]["unused_total"], 2,
+            "the model-wide count"
+        );
+        assert_eq!(payload["summary"]["objects"], 6, "model-wide, unfiltered");
+        assert_eq!(payload["summary"]["reachable"], 4, "model-wide, unfiltered");
+    }
+
+    #[test]
+    fn plain_mode_emits_only_the_selected_records() {
+        let temp = TempDir::new("filter-plain");
+        let args = ScanArgs {
+            plain: true,
+            measures: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert_eq!(
+            lines,
+            vec!["measure\t'Sales'[Legacy Total]"],
+            "records:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn summary_mode_counts_only_the_selected_groups() {
+        let temp = TempDir::new("filter-summary");
+        let args = ScanArgs {
+            summary: true,
+            measures: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
+        assert!(
+            !stdout.contains("Columns"),
+            "unselected counts vanish:\n{stdout}"
+        );
+    }
+
+    /// `[scan].ignore` runs before the type flags: an object matched by both
+    /// is a suppression, not a filter hiding. The measure id ends in
+    /// `Legacy Total`; the column is bare `Legacy`, so this pattern only
+    /// ever matches the measure.
+    #[test]
+    fn ignore_applies_before_the_type_filter() {
+        let temp = TempDir::new("filter-ignore");
+        project_into(&temp.0, "Mini");
+        temp.write(
+            "ripbi.toml",
+            "target = \"Mini.SemanticModel\"\n\n[scan]\nignore = [\"*Legacy Total*\"]\n",
+        );
+
+        let args = ScanArgs {
+            measures: true,
+            ..ScanArgs::default()
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+        assert_eq!(
+            code, 0,
+            "ignored measure + filtered column = nothing reported"
+        );
+        assert!(
+            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            "suppression note:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("(1 unused hidden by type filters)"),
+            "the column is filter-hidden while the measure is ignore-suppressed:\n{stdout}"
+        );
+
+        let args = ScanArgs {
+            columns: true,
+            ..ScanArgs::default()
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "the selected column is still unused");
+        assert!(
+            stdout.contains("column\t'Sales'[Legacy]") || stdout.contains("'Sales'[Legacy]"),
+            "the ignored measure must not drag the column away:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            "suppression note:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("Measures ("),
+            "the suppressed measure has no group of its own (its chain note may still name it):\n{stdout}"
+        );
+    }
+}
+
+mod power_query_annotation {
+    use super::*;
+
+    /// The supply-chain annotation is cleanup-time guidance, not verdict
+    /// information: hidden by default, shown with `--power-query` (issue #57).
+    #[test]
+    fn the_power_query_annotation_is_hidden_by_default() {
+        let temp = TempDir::new("pq-default");
+        let (code, stdout, _) = scan_path(&mini_pbip().join("Mini.pbip"), &temp.0);
+
+        assert_eq!(code, 1);
+        assert!(
+            !stdout.contains("Power Query also names it"),
+            "default output must not annotate:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn power_query_flag_shows_the_annotation() {
+        let temp = TempDir::new("pq-flag");
+        let args = ScanArgs {
+            power_query: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stdout.contains(
+                "⭘ Power Query also names it ('Sales' partition) — safe to stop loading; \
+                 removing it from the script means editing those steps too",
+            ),
+            "annotation:\n{stdout}"
+        );
+    }
+
+    /// The JSON field is part of the additive schema and stays unconditional:
+    /// the flag is a human-output knob, machine consumers filter themselves.
+    #[test]
+    fn json_carries_named_in_power_query_with_and_without_the_flag() {
+        let temp = TempDir::new("pq-json");
+        for power_query in [false, true] {
+            let args = ScanArgs {
+                json: true,
+                power_query,
+                ..fixture_args(mini_pbip().join("Mini.pbip"))
+            };
+            let (code, stdout, _) = run_scan(&args, &temp.0, "");
+            assert_eq!(code, 1);
+            let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+            let legacy = payload["unused"]
+                .as_array()
+                .expect("unused array")
+                .iter()
+                .find(|finding| finding["id"] == "'Sales'[Legacy]")
+                .expect("the dead column");
+            assert_eq!(
+                legacy["named_in_power_query"],
+                serde_json::json!(["'Sales' partition"]),
+                "flag={power_query}"
+            );
+        }
+    }
+}
+
 mod refusals {
     use super::*;
 

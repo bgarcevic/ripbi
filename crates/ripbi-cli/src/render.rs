@@ -27,13 +27,18 @@ pub struct ScanOutput {
     pub unused_raw: usize,
     /// Objects suppressed by `[scan].ignore` patterns.
     pub ignored: usize,
+    /// Unused objects hidden by the type flags (`--measures` and friends).
+    /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
+    /// instead.
+    pub filtered_out: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
     /// A dead auto date/time table's own row lives in [`ScanOutput::auto_date_time`]
     /// instead, under its verdict.
     pub findings: Vec<Finding>,
     /// One row per auto date/time table (`LocalDateTable_*` /
     /// `DateTableTemplate_*`): the provenance verdict no reachability pass can
-    /// produce. Rows suppressed by `[scan].ignore` are absent.
+    /// produce. Rows suppressed by `[scan].ignore` are absent, and so is the
+    /// whole section when a type filter runs without `--tables`.
     pub auto_date_time: Vec<AutoDateTimeRow>,
     /// Every skip notice ingestion recorded.
     pub skips: Vec<SkipNoticeOut>,
@@ -95,8 +100,10 @@ pub struct SkipNoticeOut {
     pub detail: String,
 }
 
-/// Group order and labels: the fixed section order of human output.
-const GROUPS: &[(&str, &str)] = &[
+/// Group order and labels: the fixed section order of human output. The
+/// `scan` type flags (`--measures` and friends) select exactly these kinds —
+/// `cli.rs`'s lockstep test pins the two together.
+pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("measure", "Measures"),
     ("column", "Columns"),
     ("hierarchy", "Hierarchies"),
@@ -158,11 +165,18 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
 }
 
 /// Writes the human-readable report: a summary line, then findings grouped by
-/// object type with `←` chain annotations.
+/// object type with `←` chain annotations. `show_power_query` adds the
+/// `⭘ Power Query also names it` annotations (hidden by default; `--json`
+/// always carries the underlying field).
 ///
 /// # Errors
 /// Propagates stream write failures.
-pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
+pub fn human(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+    show_power_query: bool,
+) -> io::Result<()> {
     write_summary(out, palette, report)?;
 
     if report.findings.is_empty() {
@@ -184,12 +198,12 @@ pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) ->
             )?;
             for finding in group {
                 writeln!(out, "  {}", finding.id)?;
-                write_annotations(out, palette, finding, "    ")?;
+                write_annotations(out, palette, finding, "    ", show_power_query)?;
             }
             writeln!(out)?;
         }
     }
-    write_auto_date_time(out, palette, report)
+    write_auto_date_time(out, palette, report, show_power_query)
 }
 
 /// The auto date/time section, rendered in both human modes after the
@@ -199,6 +213,7 @@ fn write_auto_date_time(
     out: &mut dyn io::Write,
     palette: &Palette,
     report: &ScanOutput,
+    show_power_query: bool,
 ) -> io::Result<()> {
     if report.auto_date_time.is_empty() {
         return Ok(());
@@ -243,7 +258,7 @@ fn write_auto_date_time(
                 .unwrap_or_default();
             writeln!(out, "    {}{source}", row.id)?;
             if let Some(finding) = &row.finding {
-                write_annotations(out, palette, finding, "      ")?;
+                write_annotations(out, palette, finding, "      ", show_power_query)?;
             }
         }
     }
@@ -328,6 +343,13 @@ fn write_summary(
             report.ignored
         )?;
     }
+    if report.filtered_out > 0 {
+        writeln!(
+            out,
+            "({} unused hidden by type filters)",
+            report.filtered_out
+        )?;
+    }
     writeln!(out)
 }
 
@@ -336,6 +358,7 @@ fn write_annotations(
     palette: &Palette,
     finding: &Finding,
     indent: &str,
+    show_power_query: bool,
 ) -> io::Result<()> {
     if finding.used_by.is_empty() {
         writeln!(
@@ -362,7 +385,9 @@ fn write_annotations(
             )?;
         }
     }
-    if !finding.named_in_power_query.is_empty() {
+    // Cleanup-time supply-chain guidance, not verdict information: hidden
+    // unless asked for (--power-query). The JSON field is unconditional.
+    if show_power_query && !finding.named_in_power_query.is_empty() {
         let named = finding.named_in_power_query.join(", ");
         writeln!(
             out,
@@ -405,6 +430,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             reachable: report.reachable,
             roots: report.roots,
             unused: report.findings.len(),
+            unused_total: report.unused_raw,
             ignored: report.ignored,
             auto_date_time: JsonAutoDateTimeCounts {
                 in_use: count_verdict(&report.auto_date_time, "in_use"),
@@ -488,7 +514,13 @@ struct JsonSummary {
     objects: usize,
     reachable: usize,
     roots: usize,
+    /// Unused findings after `[scan].ignore` and the type flags — the length
+    /// of `unused`.
     unused: usize,
+    /// Every unused object in the model: before `[scan].ignore`, the type
+    /// flags, and the auto date/time section move. `reachable` is always
+    /// `objects − unused_total`.
+    unused_total: usize,
     ignored: usize,
     auto_date_time: JsonAutoDateTimeCounts,
 }

@@ -34,6 +34,10 @@ listing them), none is an error.
 | `1` | Unused objects found, or auto date/time machinery no report binds |
 | `2` | Error: usage, bad PATH, model-only input, unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
+The exit code describes what was *reported*: findings hidden by the type flags, and an
+Auto date/time section hidden because `--tables` was not among the passed flags, cannot
+fail the run. `--strict` and `-q/--quiet` are unaffected.
+
 ## Flags
 
 | Flag | Effect |
@@ -43,6 +47,8 @@ listing them), none is an error.
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json` and `--plain` |
 | `-q`, `--quiet` | No output; exit code only |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml` |
+| `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Report only unused objects of the passed types; repeatable, and passed together they union (`--measures --columns`). Filters every output mode and the exit code. With none of them, everything is reported |
+| `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
 | `--no-input` | Never prompt; fail where a picker would appear |
@@ -60,16 +66,18 @@ Columns (28)
     ← only used by hierarchy 'Customer'[Geography] — hierarchy level (also unused)
   'Customer'[Customer ID]
     ← nothing references it
-    ⭘ Power Query also names it ('Customer' partition) — safe to stop loading; removing it from the script means editing those steps too
 ```
 
 - The summary line: total graph objects, how many reachability reached, from how many
   report binding roots, and the unused count. Roots are report bindings; RLS roles also
   seed reachability without counting here. When `[scan].ignore` suppressed objects, a
-  second line says how many.
+  second line says how many; when the type flags hid findings, a third line counts them
+  (`(2 unused hidden by type filters)`) so a filtered `0 unused` never reads as a clean
+  model.
 - Findings are grouped by object type (measures, columns, hierarchies, tables,
   partitions, relationships, calculation items, expressions, functions, report
-  measures — fixed order, empty groups omitted), sorted by object identity.
+  measures — fixed order, empty groups omitted), sorted by object identity. The type
+  flags restrict the groups to the selected kinds; empty groups are still never printed.
 - Chain annotations, one per referencing object:
   - `← nothing references it` — a true orphan, deletable outright;
   - `← only used by 'X' — <where> (also unused)` — the sole (or all-identical case:
@@ -77,17 +85,30 @@ Columns (28)
   - `← used by 'X' — <where>` — the consumer is live but its use could not keep this
     object alive (a key column held only by an active relationship endpoint, or the
     table of an inactive relationship nothing activates).
-- The `⭘ Power Query also names it (…)` annotation appears on Data columns named by M
-  expressions. It is supply-chain context, not a consumer: unloading the column cannot
-  break refresh, but removing it from the Power Query script *entirely* means editing
-  each named partition or expression too. Columns without the annotation are also gone
-  from every Power Query step — and engine-computed columns (calculated columns, auto
-  date/time machinery) never carry it, because an M step can only name a column it
-  produces.
+- The `⭘ Power Query also names it (…)` annotation appears, behind `--power-query`,
+  on Data columns named by M expressions. With the flag, the last finding above
+  reads:
+
+  ```text
+    'Customer'[Customer ID]
+      ← nothing references it
+      ⭘ Power Query also names it ('Customer' partition) — safe to stop loading; removing it from the script means editing those steps too
+  ```
+
+  It is supply-chain context, not a consumer:
+  unloading the column cannot break refresh, but removing it from the Power Query
+  script *entirely* means editing each named partition or expression too — cleanup-time
+  guidance, so it is hidden by default and shown only on request. Columns without the
+  annotation are also gone from every Power Query step — and engine-computed columns
+  (calculated columns, auto date/time machinery) never carry it, because an M step can
+  only name a column it produces. `--json` always carries the underlying
+  `named_in_power_query` field regardless of the flag.
 - The **Auto date/time** section follows the findings: one verdict per
   `LocalDateTable_*`/`DateTableTemplate_*` table, naming the user's date column the
   machinery serves. It is a *provenance* verdict, not a reachability one — the engine's
-  own relationship keeps the machinery alive, so "alive" says nothing:
+  own relationship keeps the machinery alive, so "alive" says nothing. The section is
+  table-shaped: it prints (and carries its exit-code weight) only when no type flags are
+  passed or `--tables` is among them; hidden, it is absent from every output mode.
   - `in use — replace with a real date table` — a report binding lands on the
     machinery (usually a visual's date hierarchy over the varied column). Informational;
     it never fails the exit code.
@@ -101,9 +122,10 @@ Columns (28)
 
 The human mode for big models: the summary line and one `label: count` line per
 non-empty group, plus one `Auto date/time:` line when the model has such tables
-(`Auto date/time: 1 in use, 2 unused by reports, 5 dead`), with no findings list. Same
-stdout, same exit codes, same stderr (notices still print). Use `--plain` or `--json`
-when you want the individual objects.
+(`Auto date/time: 1 in use, 2 unused by reports, 5 dead`), with no findings list. Type
+flags filter the counts like any other mode. Same stdout, same exit codes, same
+stderr (notices still print). Use `--plain` or `--json` when you want the individual
+objects.
 
 ```text
 3781 objects, 1207 reachable from 2962 roots, 2574 unused
@@ -116,7 +138,9 @@ Report measures: 149
 ## `--plain`
 
 One record per finding on stdout, tab-separated, greppable — followed by one
-`auto_date_time:<verdict>` record per auto date/time table:
+`auto_date_time:<verdict>` record per auto date/time table. Type flags filter the
+finding records; the `auto_date_time:` records print only when the section does (no
+type flags, or `--tables` among them):
 
 ```
 measure	'Sales'[Legacy Total]
@@ -139,6 +163,7 @@ Pretty-printed JSON, stable field order, additive schema:
     "reachable": 74,
     "roots": 51,
     "unused": 56,
+    "unused_total": 56,
     "ignored": 0,
     "auto_date_time": {
       "in_use": 0,
@@ -175,11 +200,16 @@ Pretty-printed JSON, stable field order, additive schema:
 }
 ```
 
-- `summary.unused` is the length of `unused`; `summary.ignored` counts objects
-  suppressed by `[scan].ignore`; `reachable = objects − (unused + ignored +
-  summary.auto_date_time.dead)` — a dead auto date/time table's own row moves out of
-  `unused` into the section below, and `summary.auto_date_time.dead` counts those rows.
+- `summary.unused` is the length of `unused` — after `[scan].ignore` and the type
+  flags. `summary.unused_total` counts every unused object in the model before any
+  suppression, filter, or section move, so `reachable = objects − unused_total` always
+  holds and a consumer can tell a filtered-away finding from an absent one.
+  `summary.ignored` counts objects suppressed by `[scan].ignore`.
 - `summary.auto_date_time` counts the section's rows by verdict.
+- Type flags filter the `unused` array and `summary.unused`; `summary.unused_total`
+  stays model-wide. The `auto_date_time` array and `summary.auto_date_time` counts
+  follow the section rule: present in full when no type flags are passed or `--tables`
+  is among them, empty and zero otherwise.
 - `auto_date_time` carries one row per `LocalDateTable_*`/`DateTableTemplate_*` table:
   `verdict` is `in_use`, `unused_by_reports`, or `dead`; `source_column` names the
   varied user column the machinery serves (`null` when none resolves, e.g. the
@@ -215,7 +245,8 @@ ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, neve
 and `?` exactly one; everything else (quotes and brackets included — they appear in
 display ids) is literal. A pattern matches a finding when it matches the full display
 id (`'Sales'[Draft Amount]`) or the bare object name. Suppressed objects are excluded
-from the output and the exit code, and counted in `summary.ignored`.
+from the output and the exit code, and counted in `summary.ignored`. The suppression
+applies before the type flags: an object matched by both is simply gone.
 
 ## Validation
 
@@ -262,6 +293,8 @@ which static analysis deliberately ignores.
 
 ## Known boundaries
 
+- The type flags cover the ten rendered groups; a `role` finding has no flag and is
+  filtered out whenever any type flag is passed.
 - Only TMDL semantic models and PBIR reports can be ingested; `.pbix`/`.pbit`/
   `model.bim` are recognized and refused with a clear error until their ingestors land.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
