@@ -90,6 +90,26 @@ mod output_modes {
         assert_eq!(legacy["used_by"][0]["also_unused"], true);
     }
 
+    /// The model has no auto date/time machinery: the section exists in the
+    /// schema, is empty, and changes neither the exit code nor the findings.
+    #[test]
+    fn a_model_without_auto_datetime_tables_has_an_empty_verdict_section() {
+        let temp = TempDir::new("json-no-auto");
+        let args = ScanArgs {
+            json: true,
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the generic findings still gate the exit code");
+        let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        let auto = payload["auto_date_time"].as_array().expect("auto array");
+        assert!(auto.is_empty());
+        assert_eq!(payload["summary"]["auto_date_time"]["in_use"], 0);
+        assert_eq!(payload["summary"]["auto_date_time"]["unused_by_reports"], 0);
+        assert_eq!(payload["summary"]["auto_date_time"]["dead"], 0);
+    }
+
     #[test]
     fn plain_mode_is_one_tab_separated_record_per_finding() {
         let temp = TempDir::new("plain");

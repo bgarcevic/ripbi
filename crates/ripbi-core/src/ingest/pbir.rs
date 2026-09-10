@@ -636,7 +636,7 @@ fn filter_entry(entry: &Value, ctx: &mut Ctx, location: &str) -> Filter {
                             ctx,
                             &format!("{clause_location}/Target/{index}"),
                         ) {
-                            references.push(target);
+                            references.push(*target);
                         }
                     }
                 }
@@ -676,8 +676,10 @@ type Aliases = HashMap<String, String>;
 /// What a field container parsed into.
 #[derive(Debug, PartialEq, Eq)]
 enum FieldParse {
-    /// A structured reference.
-    Target(FieldTarget),
+    /// A structured reference. Boxed: the other variants are unit-sized and
+    /// this enum comes back from every field parse, so the payload's size
+    /// would otherwise be paid on every return.
+    Target(Box<FieldTarget>),
     /// JSON, but no field shape this crate reads. Not noticed here: whether
     /// that is drift depends on the slot — a wrapper key inside a condition
     /// tree is expected, a projection's `field` is not.
@@ -753,10 +755,12 @@ fn parse_field(container: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
                 ctx,
                 &format!("{location}/Aggregation/Expression"),
             ) {
-                FieldParse::Target(inner) => FieldParse::Target(FieldTarget::Aggregation {
-                    function: function.map(str::to_string),
-                    inner: Box::new(inner),
-                }),
+                FieldParse::Target(inner) => {
+                    FieldParse::Target(Box::new(FieldTarget::Aggregation {
+                        function: function.map(str::to_string),
+                        inner: Box::new(*inner),
+                    }))
+                }
                 // A malformed inner was noticed while parsing it. An inner
                 // that is no field shape at all is by design here — percent
                 // ranges and visual-calculation sources end here — and the
@@ -786,10 +790,10 @@ fn parse_field(container: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
                     &format!("{location}/Hierarchy/Expression"),
                 )
             });
-            FieldParse::Target(FieldTarget::Written(FieldRef {
+            FieldParse::Target(Box::new(FieldTarget::Written(FieldRef {
                 table,
                 name: NameKey::new(hierarchy),
-            }))
+            })))
         }
         "Min" | "Max" | "Percentile" => {
             let Some(expression) = inner.get("Expression") else {
@@ -804,10 +808,12 @@ fn parse_field(container: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
                 ctx,
                 &format!("{location}/{variant}/Expression"),
             ) {
-                FieldParse::Target(inner) => FieldParse::Target(FieldTarget::Aggregation {
-                    function: Some(variant.to_string()),
-                    inner: Box::new(inner),
-                }),
+                FieldParse::Target(inner) => {
+                    FieldParse::Target(Box::new(FieldTarget::Aggregation {
+                        function: Some(variant.to_string()),
+                        inner: Box::new(*inner),
+                    }))
+                }
                 FieldParse::Malformed => FieldParse::Malformed,
                 FieldParse::NotAField => FieldParse::NotAField,
             }
@@ -848,12 +854,12 @@ fn column_or_measure(
     match variant {
         // Measures are model-global, so the entity beside them is provenance:
         // an unreadable source still leaves a resolvable, table-less name.
-        "Measure" => FieldParse::Target(FieldTarget::Measure {
+        "Measure" => FieldParse::Target(Box::new(FieldTarget::Measure {
             home_table: inner.get("Expression").and_then(|source| {
                 resolve_source(source, aliases, ctx, &format!("{location}/Expression"))
             }),
             measure: name,
-        }),
+        })),
         // A column without its table keeps the reference as written — a
         // binding we cannot fully read still binds.
         _ => {
@@ -861,11 +867,14 @@ fn column_or_measure(
                 resolve_source(source, aliases, ctx, &format!("{location}/Expression"))
             });
             match table {
-                Some(table) => FieldParse::Target(FieldTarget::Column {
+                Some(table) => FieldParse::Target(Box::new(FieldTarget::Column {
                     table,
                     column: name,
-                }),
-                None => FieldParse::Target(FieldTarget::Written(FieldRef { table: None, name })),
+                })),
+                None => FieldParse::Target(Box::new(FieldTarget::Written(FieldRef {
+                    table: None,
+                    name,
+                }))),
             }
         }
     }
@@ -902,6 +911,21 @@ fn hierarchy_level(inner: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
         return FieldParse::Malformed;
     };
     let name = NameKey::new(hierarchy_name);
+    // A hierarchy over a date variation sources the *varied* table through a
+    // `PropertyVariationSource`: its `Property` names the varied column and its
+    // `Name` the variation. Both are carried so resolution can join the
+    // model-side `variation` declaration instead of guessing.
+    let variation_source = hierarchy
+        .get("Expression")
+        .and_then(|expression| expression.get("PropertyVariationSource"));
+    let via_column = variation_source
+        .and_then(|variation| variation.get("Property"))
+        .and_then(Value::as_str)
+        .map(NameKey::new);
+    let via_variation = variation_source
+        .and_then(|variation| variation.get("Name"))
+        .and_then(Value::as_str)
+        .map(NameKey::new);
     let table = hierarchy.get("Expression").and_then(|source| {
         resolve_source(
             source,
@@ -911,14 +935,19 @@ fn hierarchy_level(inner: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
         )
     });
     match table {
-        Some(table) => FieldParse::Target(FieldTarget::HierarchyLevel {
+        Some(table) => FieldParse::Target(Box::new(FieldTarget::HierarchyLevel {
             table,
             hierarchy: name,
             level: NameKey::new(level),
-        }),
+            via_column,
+            via_variation,
+        })),
         // Losing the table would lose the level too, so fall back to the
         // hierarchy's name as written.
-        None => FieldParse::Target(FieldTarget::Written(FieldRef { table: None, name })),
+        None => FieldParse::Target(Box::new(FieldTarget::Written(FieldRef {
+            table: None,
+            name,
+        }))),
     }
 }
 
@@ -993,7 +1022,7 @@ fn required_field(
 ) -> Option<FieldTarget> {
     let container = container?;
     match parse_field(container, aliases, ctx, location) {
-        FieldParse::Target(target) => Some(target),
+        FieldParse::Target(target) => Some(*target),
         FieldParse::Malformed => None,
         FieldParse::NotAField => {
             ctx.notice(
@@ -1045,7 +1074,7 @@ fn collect_fields(
             if FIELD_VARIANTS.iter().any(|key| object.contains_key(*key)) {
                 match parse_field(value, aliases, ctx, location) {
                     FieldParse::Target(target) => {
-                        out.push(target);
+                        out.push(*target);
                         return;
                     }
                     // A malformed field was noticed while parsing it.
@@ -1084,7 +1113,7 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
                 let targets = match projection.get("field") {
                     Some(field) => {
                         match parse_field(field, &Aliases::new(), ctx, &field_location) {
-                            FieldParse::Target(target) => vec![target],
+                            FieldParse::Target(target) => vec![*target],
                             // The failure was already noticed inside parse_field.
                             FieldParse::Malformed => Vec::new(),
                             // A computed field is a container of references,
@@ -1708,7 +1737,7 @@ mod tests {
                 r#"{"Column": {"Expression": {"SourceRef": {"Entity": "Product"}}, "Property": "Category"}}"#,
             );
 
-            assert_eq!(outcome, FieldParse::Target(direct_column()));
+            assert_eq!(outcome, FieldParse::Target(Box::new(direct_column())));
             assert!(skips.is_empty());
         }
 
@@ -1719,7 +1748,7 @@ mod tests {
                 Aliases::from([("p".to_string(), "Product".to_string())]),
             );
 
-            assert_eq!(outcome, FieldParse::Target(direct_column()));
+            assert_eq!(outcome, FieldParse::Target(Box::new(direct_column())));
             assert!(skips.is_empty());
         }
 
@@ -1730,7 +1759,7 @@ mod tests {
                 Aliases::from([("p".to_string(), "Product".to_string())]),
             );
 
-            assert_eq!(outcome, FieldParse::Target(direct_column()));
+            assert_eq!(outcome, FieldParse::Target(Box::new(direct_column())));
             assert!(skips.is_empty());
         }
 
@@ -1744,10 +1773,10 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::Written(FieldRef {
+                FieldParse::Target(Box::new(FieldTarget::Written(FieldRef {
                     table: None,
                     name: NameKey::new("Category"),
-                }))
+                })))
             );
             assert_eq!(skips.len(), 1);
             assert_eq!(skips[0].kind, SkipKind::UnresolvedAlias);
@@ -1771,10 +1800,10 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::Measure {
+                FieldParse::Target(Box::new(FieldTarget::Measure {
                     home_table: None,
                     measure: NameKey::new("Cost"),
-                })
+                }))
             );
             assert_eq!(skips[0].kind, SkipKind::MalformedValue);
         }
@@ -1787,10 +1816,10 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::Measure {
+                FieldParse::Target(Box::new(FieldTarget::Measure {
                     home_table: Some(NameKey::new("Sales")),
                     measure: NameKey::new("Cost"),
-                })
+                }))
             );
             assert!(skips.is_empty());
         }
@@ -1815,13 +1844,13 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::Aggregation {
+                FieldParse::Target(Box::new(FieldTarget::Aggregation {
                     function: Some("Sum".to_string()),
                     inner: Box::new(FieldTarget::Column {
                         table: NameKey::new("Sales"),
                         column: NameKey::new("Units"),
                     }),
-                })
+                }))
             );
             assert!(skips.is_empty());
         }
@@ -1836,7 +1865,8 @@ mod tests {
 
             assert!(matches!(
                 outcome,
-                FieldParse::Target(FieldTarget::Aggregation { function: None, .. })
+                FieldParse::Target(target)
+                    if matches!(*target, FieldTarget::Aggregation { function: None, .. })
             ));
             assert!(skips.is_empty());
         }
@@ -1860,9 +1890,10 @@ mod tests {
                 let (outcome, skips) = parse_field_json(json);
                 assert!(matches!(
                     outcome,
-                    FieldParse::Target(FieldTarget::Aggregation { .. })
+                    FieldParse::Target(ref target) if matches!(**target, FieldTarget::Aggregation { .. })
                 ));
-                if let FieldParse::Target(FieldTarget::Aggregation { function: name, .. }) = outcome
+                if let FieldParse::Target(target) = outcome
+                    && let FieldTarget::Aggregation { function: name, .. } = *target
                 {
                     assert_eq!(name.as_deref(), Some(function));
                 }
@@ -1882,13 +1913,37 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::HierarchyLevel {
+                FieldParse::Target(Box::new(FieldTarget::HierarchyLevel {
                     table: NameKey::new("Date"),
                     hierarchy: NameKey::new("Calendar"),
                     level: NameKey::new("Year"),
-                })
+                    via_column: None,
+                    via_variation: None,
+                }))
             );
             assert!(skips.is_empty());
+        }
+
+        /// A hierarchy over a date variation carries the varied column and the
+        /// variation's name — the join keys for the model-side `variation`
+        /// declaration — while the written table stays the varied (base) one.
+        #[test]
+        fn a_hierarchy_over_a_property_variation_carries_the_variation_link() {
+            let (outcome, skips) = parse_field_json(
+                r#"{"HierarchyLevel": {"Expression": {"Hierarchy": {"Expression": {"PropertyVariationSource": {"Expression": {"SourceRef": {"Entity": "Opportunity Calendar"}}, "Name": "Variation", "Property": "Date"}}, "Hierarchy": "Date Hierarchy"}}, "Level": "Year"}}"#,
+            );
+
+            assert_eq!(
+                outcome,
+                FieldParse::Target(Box::new(FieldTarget::HierarchyLevel {
+                    table: NameKey::new("Opportunity Calendar"),
+                    hierarchy: NameKey::new("Date Hierarchy"),
+                    level: NameKey::new("Year"),
+                    via_column: Some(NameKey::new("Date")),
+                    via_variation: Some(NameKey::new("Variation")),
+                }))
+            );
+            assert!(skips.is_empty(), "the engine's own shape is not drift");
         }
 
         /// A whole hierarchy has no dedicated variant; its table-qualified
@@ -1901,10 +1956,10 @@ mod tests {
 
             assert_eq!(
                 outcome,
-                FieldParse::Target(FieldTarget::Written(FieldRef {
+                FieldParse::Target(Box::new(FieldTarget::Written(FieldRef {
                     table: Some(NameKey::new("Date")),
                     name: NameKey::new("Calendar"),
-                }))
+                })))
             );
             assert!(skips.is_empty());
         }

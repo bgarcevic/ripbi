@@ -9,8 +9,9 @@ CI-friendly output, and exit codes.
 - **No analysis logic here.** All ingestion, lexing, and graph work lives in
   `ripbi-core`; this crate only calls it and presents results.
 - This is the only crate allowed to print to stdout/stderr or set exit codes.
-- Exit codes: `0` clean, `1` unused objects found (CI gating), `2` error
-  (usage, discovery, ingestion, or `--strict` skip notices).
+- Exit codes: `0` clean, `1` unused objects found or auto date/time machinery no
+  report binds (CI gating), `2` error (usage, discovery, ingestion, or `--strict`
+  skip notices).
 - Results to stdout; messages, notices, and errors to stderr. `-q` suppresses both.
 - `#![forbid(unsafe_code)]`.
 
@@ -28,8 +29,8 @@ derives the displayed name from argv[0], so help says whichever name was typed.
 | `config.rs` | `ripbi.toml` discovery (cwd upward), parsing, path resolution |
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code |
-| `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → render |
-| `render.rs` | the three output modes: human, `--plain`, `--json` |
+| `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict) |
+| `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them |
 | `style.rs` | ANSI palette gated on TTY / `NO_COLOR` / `TERM=dumb` / `--no-color` |
 | `glob.rs` | case-insensitive `*`/`?` matcher for `[scan].ignore` |
 

@@ -69,6 +69,21 @@ pub struct Table {
     pub detail_rows_expression: Option<String>,
     /// Hidden from report authors; hidden objects are still live if referenced.
     pub is_hidden: bool,
+    /// Engine-private (TOM isPrivate): reserved for the engine, never authored
+    /// against. Display-only metadata — never liveness.
+    pub is_private: bool,
+    /// An engine-generated auto date/time table serving one date column
+    /// (TOM annotation `__PBI_LocalDateTable`; name-prefix fallback). Hidden
+    /// machinery a report cannot author against directly. Display-only
+    /// metadata — never liveness; the graph layer reads it for the
+    /// auto-date/time verdict
+    /// ([`DependencyGraph::auto_date_time_tables`](crate::graph::DependencyGraph::auto_date_time_tables)).
+    pub is_local_date_table: bool,
+    /// The engine-generated date table template the `LocalDateTable_*` family
+    /// is derived from (TOM annotation `__PBI_TemplateDateTable`; name-prefix
+    /// fallback). Display-only metadata — never liveness; see
+    /// [`Self::is_local_date_table`].
+    pub is_template_date_table: bool,
 }
 
 impl Table {
@@ -126,6 +141,43 @@ pub struct Column {
     /// Names of other columns in the same table (TOM groupByColumns).
     /// Liveness edge: a used column keeps its group-by columns alive.
     pub group_by_columns: Vec<String>,
+    /// Column variations (TOM variations): bindings of this column to
+    /// hierarchies on other tables — for auto date/time, the engine's hidden
+    /// `LocalDateTable_*` machinery.
+    pub variations: Vec<Variation>,
+}
+
+/// A column variation (TOM variation): the model's declaration that the owning
+/// column is served by a hierarchy on another table — for auto date/time, a
+/// hidden relationship to an engine-generated `LocalDateTable_*`.
+///
+/// Report bindings written against the varied column resolve through this
+/// declaration: the graph joins the referenced relationship or hierarchy
+/// instead of guessing which of a column's relationships is the variation.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Variation {
+    /// Variation name (the TMDL descriptor name, e.g. `Variation`).
+    pub name: String,
+    /// Whether this is the column's default variation (TOM isDefault; TMDL
+    /// writes the key only when true).
+    pub is_default: bool,
+    /// Name of the TOM relationship realizing this variation — for auto
+    /// date/time, the hidden relationship from the owning column to the date
+    /// table's key column. TMDL relationship names are GUIDs.
+    pub relationship: Option<String>,
+    /// The table-qualified default hierarchy (TOM defaultHierarchy), e.g.
+    /// `LocalDateTable_x.'Date Hierarchy'` — where report bindings on the
+    /// varied column land.
+    pub default_hierarchy: Option<HierarchyRef>,
+}
+
+/// A table-qualified reference to a hierarchy defined on another table.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HierarchyRef {
+    /// Name of the table owning the hierarchy.
+    pub table: String,
+    /// Hierarchy name in that table.
+    pub hierarchy: String,
 }
 
 /// How a column's values are produced.

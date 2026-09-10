@@ -3,7 +3,7 @@
 //! findings to `render`. Every decision here is about *which* folders to feed
 //! core and *what to say* — no analysis logic lives in this crate.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, IsTerminal};
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,7 @@ use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
-use crate::render::{self, Finding, ScanOutput, SkipNoticeOut, UsedByOut};
+use crate::render::{self, AutoDateTimeRow, Finding, ScanOutput, SkipNoticeOut, UsedByOut};
 use crate::style::Palette;
 
 /// Exit code: no unused objects.
@@ -170,6 +170,7 @@ fn scan(
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
     let graph = DependencyGraph::build(&model.value, &report_refs);
     let unused = graph.unused_objects();
+    let verdicts = graph.auto_date_time_tables(&model.value);
     let objects = graph.object_ids().count();
     let roots = graph.roots().len();
     let reachable = objects - unused.len();
@@ -181,12 +182,33 @@ fn scan(
         .unwrap_or(&[]);
     let mut findings = Vec::new();
     let mut ignored = 0;
+
+    // One verdict row per auto date/time table the ignore list does not
+    // suppress; a dead table's own finding is filed under its row so the
+    // verdict and the dead-chain note read together. Filed by object identity —
+    // display ids are rendering, not keys.
+    let mut auto_date_time: Vec<AutoDateTimeRow> = Vec::new();
+    let mut row_by_table: HashMap<&ObjectId, usize> = HashMap::new();
+    for verdict in &verdicts {
+        if is_ignored(&verdict.id, patterns) {
+            continue;
+        }
+        row_by_table.insert(&verdict.id, auto_date_time.len());
+        auto_date_time.push(AutoDateTimeRow {
+            verdict: render::verdict_of(verdict.verdict),
+            id: verdict.id.to_string(),
+            source_column: verdict.source_column.as_ref().map(ToString::to_string),
+            finding: None,
+        });
+    }
+
     for finding in unused {
         if is_ignored(&finding.id, patterns) {
             ignored += 1;
             continue;
         }
-        findings.push(Finding {
+        let section_row = row_by_table.get(&finding.id).copied();
+        let finding = Finding {
             kind: render::kind_of(&finding.id),
             id: finding.id.to_string(),
             used_by: finding
@@ -199,7 +221,11 @@ fn scan(
                 })
                 .collect(),
             named_in_power_query: render::power_query_labels(&finding.named_by_m),
-        });
+        };
+        match section_row {
+            Some(position) => auto_date_time[position].finding = Some(finding),
+            None => findings.push(finding),
+        }
     }
 
     let output = ScanOutput {
@@ -214,6 +240,7 @@ fn scan(
         unused_raw: objects - reachable,
         ignored,
         findings,
+        auto_date_time,
         skips,
     };
 
@@ -253,7 +280,14 @@ fn scan(
 
     if args.strict && !output.skips.is_empty() {
         Ok(EXIT_ERROR)
-    } else if output.findings.is_empty() {
+    } else if output.findings.is_empty()
+        && output
+            .auto_date_time
+            .iter()
+            .all(|row| row.verdict == "in_use")
+    {
+        // Suppressed by [scan].ignore counts as handled; an in-use auto
+        // date/time table is informational advice, not a failure.
         Ok(EXIT_CLEAN)
     } else {
         Ok(EXIT_UNUSED)

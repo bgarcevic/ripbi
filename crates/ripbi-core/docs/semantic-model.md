@@ -7,12 +7,19 @@ ingestion format.
 ## What is modeled, and what is not
 
 Modeled: tables, columns, measures, partitions, relationships, hierarchies, RLS roles,
-calculation groups, KPIs, and model-level shared M expressions.
+calculation groups, KPIs, and model-level shared M expressions. Columns also carry their
+variations (TOM `variation`) — the declaration a report's date-hierarchy binding resolves
+through — and tables carry the engine's auto date/time identity flags (`is_private`,
+`is_local_date_table`, `is_template_date_table`).
 
 Deliberately absent: data sources, perspectives, cultures and translations, role
 memberships, annotations, linguistic metadata. None of them *consume* model objects, so
 none can keep an object alive, so none affect reachability. Adding them later is additive
-and breaks nothing — but do not add them speculatively.
+and breaks nothing — but do not add them speculatively. The single exception proves the
+rule: the two engine annotations `__PBI_LocalDateTable` and `__PBI_TemplateDateTable` are
+consumed, because they *describe* an object (which tables are auto date/time machinery)
+and that description is load-bearing for the linter's verdict — not because they
+reference anything.
 
 Also absent for the same reason: data types, display folders, source column names,
 calculation-item precedence. They describe objects; they never reference them.
@@ -40,6 +47,19 @@ reporting and linting, never for liveness.
 
 **A column's sort-by column is a liveness edge.** A used column keeps the column it sorts
 by alive, even when nothing else references it.
+
+**Auto date/time is identity, not liveness.** The engine generates a hidden
+`LocalDateTable_*` per date column (plus one `DateTableTemplate_*`), and the model says
+which tables those are: the `__PBI_*DateTable` annotations, `isPrivate`, and — for formats
+that carry neither — the `LocalDateTable_`/`DateTableTemplate_` name prefixes. The flags
+are display-only metadata; they never confer or remove liveness. Two things read them:
+the graph's hierarchy-binding resolution (a visual's date hierarchy over a varied column
+lands on the related `LocalDateTable_*` through `Column::variations`), and
+`DependencyGraph::auto_date_time_tables` — the provenance-based verdict (in use /
+unused by reports / dead) that scan renders in its own section. That verdict is
+deliberately *not* reachability: the engine's own relationship keeps the machinery alive
+for as long as the user's date column is used, so "alive" says nothing about whether a
+report binds it.
 
 **Partition sources are four, not two.** M (Power Query), DAX (calculated table), a legacy
 native query in the data source's own dialect, and `Other` for DirectLake entity

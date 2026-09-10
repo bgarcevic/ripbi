@@ -30,8 +30,8 @@ listing them), none is an error.
 
 | Code | Meaning |
 |---|---|
-| `0` | Clean: nothing unused (objects suppressed by `[scan].ignore` count as handled) |
-| `1` | Unused objects found |
+| `0` | Clean: nothing unused, and no auto date/time table unused by reports or dead (objects suppressed by `[scan].ignore` count as handled; an *in use* auto date/time table is informational) |
+| `1` | Unused objects found, or auto date/time machinery no report binds |
 | `2` | Error: usage, bad PATH, model-only input, unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
 ## Flags
@@ -77,18 +77,33 @@ Columns (28)
   - `← used by 'X' — <where>` — the consumer is live but its use could not keep this
     object alive (a key column held only by an active relationship endpoint, or the
     table of an inactive relationship nothing activates).
-- The `⭘ Power Query also names it (…)` annotation appears on columns named by M
+- The `⭘ Power Query also names it (…)` annotation appears on Data columns named by M
   expressions. It is supply-chain context, not a consumer: unloading the column cannot
   break refresh, but removing it from the Power Query script *entirely* means editing
   each named partition or expression too. Columns without the annotation are also gone
-  from every Power Query step.
+  from every Power Query step — and engine-computed columns (calculated columns, auto
+  date/time machinery) never carry it, because an M step can only name a column it
+  produces.
+- The **Auto date/time** section follows the findings: one verdict per
+  `LocalDateTable_*`/`DateTableTemplate_*` table, naming the user's date column the
+  machinery serves. It is a *provenance* verdict, not a reachability one — the engine's
+  own relationship keeps the machinery alive, so "alive" says nothing:
+  - `in use — replace with a real date table` — a report binding lands on the
+    machinery (usually a visual's date hierarchy over the varied column). Informational;
+    it never fails the exit code.
+  - `unused by reports — disable auto date/time` — nothing binds it, yet reachability
+    keeps it alive: pure bloat the findings list cannot express, because the object is
+    not dead.
+  - `dead` — nothing reaches it at all; the table's own finding (with its chain
+    annotations) is filed here instead of the generic `Tables` group.
 
 ## `--summary`
 
 The human mode for big models: the summary line and one `label: count` line per
-non-empty group, with no findings list. Same stdout, same exit codes, same stderr
-(notices still print). Use `--plain` or `--json` when you want the individual
-objects.
+non-empty group, plus one `Auto date/time:` line when the model has such tables
+(`Auto date/time: 1 in use, 2 unused by reports, 5 dead`), with no findings list. Same
+stdout, same exit codes, same stderr (notices still print). Use `--plain` or `--json`
+when you want the individual objects.
 
 ```text
 3781 objects, 1207 reachable from 2962 roots, 2574 unused
@@ -100,11 +115,14 @@ Report measures: 149
 
 ## `--plain`
 
-One record per finding on stdout, tab-separated, greppable:
+One record per finding on stdout, tab-separated, greppable — followed by one
+`auto_date_time:<verdict>` record per auto date/time table:
 
 ```
 measure	'Sales'[Legacy Total]
 column	'Sales'[Legacy]
+auto_date_time:in_use	table 'LocalDateTable_9e0bbdfc-…'
+auto_date_time:dead	table 'DateTableTemplate_0039983e-…'
 ```
 
 ## `--json`
@@ -121,7 +139,12 @@ Pretty-printed JSON, stable field order, additive schema:
     "reachable": 74,
     "roots": 51,
     "unused": 56,
-    "ignored": 0
+    "ignored": 0,
+    "auto_date_time": {
+      "in_use": 0,
+      "unused_by_reports": 0,
+      "dead": 0
+    }
   },
   "unused": [
     {
@@ -137,6 +160,14 @@ Pretty-printed JSON, stable field order, additive schema:
       "named_in_power_query": []
     }
   ],
+  "auto_date_time": [
+    {
+      "verdict": "in_use",
+      "id": "table 'LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228'",
+      "source_column": "'Opportunity Calendar'[Date]",
+      "finding": null
+    }
+  ],
   "skips": {
     "count": 0,
     "notices": []
@@ -145,7 +176,16 @@ Pretty-printed JSON, stable field order, additive schema:
 ```
 
 - `summary.unused` is the length of `unused`; `summary.ignored` counts objects
-  suppressed by `[scan].ignore`; `reachable = objects − (unused + ignored)`.
+  suppressed by `[scan].ignore`; `reachable = objects − (unused + ignored +
+  summary.auto_date_time.dead)` — a dead auto date/time table's own row moves out of
+  `unused` into the section below, and `summary.auto_date_time.dead` counts those rows.
+- `summary.auto_date_time` counts the section's rows by verdict.
+- `auto_date_time` carries one row per `LocalDateTable_*`/`DateTableTemplate_*` table:
+  `verdict` is `in_use`, `unused_by_reports`, or `dead`; `source_column` names the
+  varied user column the machinery serves (`null` when none resolves, e.g. the
+  template); `finding` is the table's own unused finding — with its `used_by` chain —
+  present exactly when `verdict` is `"dead"` (the row moved here from `unused`). Rows
+  suppressed by `[scan].ignore` are absent entirely.
 - `type` is one of `table`, `column`, `measure`, `hierarchy`, `partition`,
   `relationship`, `role`, `calculation_item`, `expression`, `function`,
   `report_measure`.
@@ -190,9 +230,12 @@ object is ever flagged. The accepted deltas are documented in each fixture heade
 dead `Time Intelligence` field-parameter cluster on Adventure Works; fully-dead
 relationship-only tables the exports don't list as rows (a table referenced by nothing
 but a relationship is unused by the documented containment rule); and, on the
-Artificial Intelligence sample, the engine-generated auto date/time machinery, which
-the report reaches only through the date variations this crate deliberately does not
-model (a known gap, see `crates/ripbi-core/docs/formats.md`). One conservatism policy
+Artificial Intelligence sample, the auto date/time machinery of the five date columns
+whose hierarchies no visual binds. The one bound table — the report's date hierarchy
+over `'Opportunity Calendar'[Date]`, resolved through the model's variation
+declaration — is fully live, its columns are gone from the findings, and its
+`in use` verdict (with the other five tables' verdicts) is pinned by the same test
+through the `auto_date_time` section. One conservatism policy
 the external analyses do not share, visible in that baseline: bookmark saved filters
 count as bindings (re-applying a bookmark re-binds its fields). Inactive relationships
 are the opposite correction: they are live only when a live `USERELATIONSHIP` reference
