@@ -41,3 +41,4 @@ samples/**/.pbi/
 /.claude/worktrees
 /.claude/settings.local.json
 /.zcode/
+/.pi/

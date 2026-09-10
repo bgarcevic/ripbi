@@ -75,6 +75,10 @@ mod output_modes {
             .find(|finding| finding["id"] == "'Sales'[Legacy Total]")
             .expect("finding");
         assert_eq!(legacy_total["type"], "measure");
+        assert_eq!(
+            legacy_total["table"], "'Sales'",
+            "the finding carries its model table"
+        );
         assert!(
             legacy_total["used_by"]
                 .as_array()
@@ -143,8 +147,12 @@ mod output_modes {
         assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
         assert!(stdout.contains("Columns: 1"), "count line:\n{stdout}");
         assert!(
+            stdout.contains("Worst tables:\n  'Sales'  2"),
+            "the breakdown counts both survivors on their one table:\n{stdout}"
+        );
+        assert!(
             !stdout.contains("'Sales'[Legacy"),
-            "no finding ids on stdout:\n{stdout}"
+            "no finding ids on stdout — the breakdown names tables only:\n{stdout}"
         );
         assert!(!stdout.contains("←"), "no annotations:\n{stdout}");
     }
@@ -311,6 +319,42 @@ mod type_filters {
         assert!(
             !stdout.contains("Columns"),
             "unselected counts vanish:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("Worst tables:\n  'Sales'  1"),
+            "the breakdown follows the type filter too:\n{stdout}"
+        );
+    }
+
+    /// The breakdown is cut from the same surviving findings as the per-type
+    /// counts (issue #38): what `[scan].ignore` suppresses never surfaces in
+    /// it. The pattern matches the column's bare name but not the measure's
+    /// (`Legacy Total` does not end in `Legacy`), so exactly one finding
+    /// survives to be counted.
+    #[test]
+    fn the_worst_tables_breakdown_excludes_suppressed_objects() {
+        let temp = TempDir::new("summary-ignore");
+        project_into(&temp.0, "Mini");
+        temp.write(
+            "ripbi.toml",
+            "target = \"Mini.SemanticModel\"\n\n[scan]\nignore = [\"*Legacy\"]\n",
+        );
+
+        let args = ScanArgs {
+            summary: true,
+            ..ScanArgs::default()
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the measure survives the suppression");
+        assert!(
+            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            "suppression note:\n{stdout}"
+        );
+        assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
+        assert!(
+            stdout.contains("Worst tables:\n  'Sales'  1"),
+            "the breakdown counts only the surviving finding:\n{stdout}"
         );
     }
 

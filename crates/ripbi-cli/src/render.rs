@@ -3,9 +3,10 @@
 //! The full contract (shapes, examples, schema) lives in `docs/output.md`
 //! beside this crate.
 
+use std::collections::HashMap;
 use std::io;
 
-use ripbi_core::ObjectId;
+use ripbi_core::{NameKey, ObjectId};
 use serde::Serialize;
 
 use crate::style::Palette;
@@ -68,6 +69,10 @@ pub struct Finding {
     pub kind: &'static str,
     /// The human-readable id, e.g. `'Sales'[Draft Amount]`.
     pub id: String,
+    /// The object's model table — a relationship's "from" side, `None` for
+    /// table-less kinds. `--json` renders it quoted; `--summary`'s worst-tables
+    /// breakdown groups by it. Populated only for those two modes (issue #38).
+    pub table: Option<NameKey>,
     /// Every object still referencing this one.
     pub used_by: Vec<UsedByOut>,
     /// The Power Query expressions that name this column — the supply chain
@@ -115,6 +120,21 @@ pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("function", "Functions"),
     ("report_measure", "Report measures"),
 ];
+
+/// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
+/// on purpose — the section answers "where do I start", which a top-10 list does
+/// without another flag.
+const WORST_TABLES_LIMIT: usize = 10;
+
+/// The worst-tables breakdown of `--summary` (issue #38).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorstTables {
+    /// `(table display name, surviving finding count)`, count descending then
+    /// table name, capped at [`WORST_TABLES_LIMIT`] rows.
+    rows: Vec<(String, usize)>,
+    /// Tables with findings beyond the shown rows.
+    more: usize,
+}
 
 /// The object kind of an id, as used in `--plain`, JSON, and grouping.
 #[must_use]
@@ -265,6 +285,64 @@ fn write_auto_date_time(
     writeln!(out)
 }
 
+/// Groups findings by their model table: where does the bloat concentrate.
+/// Table-less findings (report measures, shared expressions, functions) belong to
+/// no table and are skipped; relationships count under their "from" side. Count
+/// descending, then table name folded (case-insensitively, like every other
+/// ordering), so the output is deterministic across runs.
+fn worst_tables(findings: &[Finding]) -> WorstTables {
+    let mut counts: HashMap<&NameKey, usize> = HashMap::new();
+    for finding in findings {
+        if let Some(table) = &finding.table {
+            *counts.entry(table).or_default() += 1;
+        }
+    }
+    let mut ranked: Vec<(&NameKey, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let more = ranked.len().saturating_sub(WORST_TABLES_LIMIT);
+    let rows = ranked
+        .into_iter()
+        .take(WORST_TABLES_LIMIT)
+        .map(|(table, count)| (table.quoted().to_string(), count))
+        .collect();
+    WorstTables { rows, more }
+}
+
+/// Writes the `Worst tables:` block of `--summary` (issue #38): a bounded list of
+/// the tables carrying the most surviving findings. Nothing prints when every
+/// surviving finding is table-less.
+fn write_worst_tables(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    findings: &[Finding],
+) -> io::Result<()> {
+    let worst = worst_tables(findings);
+    if worst.rows.is_empty() {
+        return Ok(());
+    }
+    let name_width = worst
+        .rows
+        .iter()
+        .map(|(name, _)| name.chars().count())
+        .max()
+        .unwrap_or(0);
+    let count_width = worst
+        .rows
+        .iter()
+        .map(|(_, count)| count.to_string().len())
+        .max()
+        .unwrap_or(0);
+    writeln!(out)?;
+    writeln!(out, "{}", palette.bold("Worst tables:"))?;
+    for (name, count) in &worst.rows {
+        writeln!(out, "  {name:<name_width$}  {count:>count_width$}")?;
+    }
+    if worst.more > 0 {
+        writeln!(out, "  ... and {} more tables with findings", worst.more)?;
+    }
+    Ok(())
+}
+
 /// Writes `--summary` output: the summary line and per-type totals, without
 /// the findings list — the shape for models with thousands of findings.
 ///
@@ -290,6 +368,7 @@ pub fn human_summary(
                 writeln!(out, "{}: {}", palette.bold(label), count)?;
             }
         }
+        write_worst_tables(out, palette, &report.findings)?;
     }
     if report.auto_date_time.is_empty() {
         return Ok(());
@@ -444,6 +523,10 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             .map(|finding| JsonFinding {
                 kind: finding.kind,
                 id: finding.id.clone(),
+                table: finding
+                    .table
+                    .as_ref()
+                    .map(|table| table.quoted().to_string()),
                 used_by: finding
                     .used_by
                     .iter()
@@ -466,6 +549,10 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 finding: row.finding.as_ref().map(|finding| JsonFinding {
                     kind: finding.kind,
                     id: finding.id.clone(),
+                    table: finding
+                        .table
+                        .as_ref()
+                        .map(|table| table.quoted().to_string()),
                     used_by: finding
                         .used_by
                         .iter()
@@ -553,6 +640,10 @@ struct JsonFinding {
     #[serde(rename = "type")]
     kind: &'static str,
     id: String,
+    /// The finding's model table, quoted (`'Sales'`) — a relationship's "from"
+    /// side. `null` for table-less kinds (roles, shared expressions, functions,
+    /// report measures).
+    table: Option<String>,
     used_by: Vec<JsonUsedBy>,
     /// Power Query expressions naming this column — supply-chain context,
     /// not liveness. Empty for everything but columns.
@@ -578,4 +669,177 @@ struct JsonSkip {
     location: Option<String>,
     kind: &'static str,
     detail: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finding(table: Option<&str>) -> Finding {
+        Finding {
+            kind: "measure",
+            id: String::new(),
+            table: table.map(NameKey::new),
+            used_by: Vec::new(),
+            named_in_power_query: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn orders_by_count_then_table_name() {
+        let findings = [
+            finding(Some("B")),
+            finding(Some("A")),
+            finding(Some("A")),
+            finding(Some("C")),
+            finding(Some("C")),
+            finding(Some("C")),
+        ];
+
+        let worst = worst_tables(&findings);
+
+        assert_eq!(
+            worst.rows,
+            vec![
+                ("'C'".to_string(), 3),
+                ("'A'".to_string(), 2),
+                ("'B'".to_string(), 1),
+            ]
+        );
+        assert_eq!(worst.more, 0);
+    }
+
+    /// The tie-break follows the model's case-insensitive identity ordering, not
+    /// the display bytes: `apple` precedes `Zebra` at equal counts.
+    #[test]
+    fn tie_breaks_on_the_folded_table_name() {
+        let findings = [
+            finding(Some("Zebra")),
+            finding(Some("Zebra")),
+            finding(Some("apple")),
+            finding(Some("apple")),
+        ];
+
+        let worst = worst_tables(&findings);
+
+        assert_eq!(
+            worst.rows,
+            vec![("'apple'".to_string(), 2), ("'Zebra'".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn skips_table_less_findings() {
+        let findings = [finding(None), finding(None), finding(Some("Sales"))];
+
+        let worst = worst_tables(&findings);
+
+        assert_eq!(worst.rows, vec![("'Sales'".to_string(), 1)]);
+        assert_eq!(worst.more, 0);
+    }
+
+    #[test]
+    fn is_empty_when_every_finding_is_table_less() {
+        let findings = [finding(None), finding(None)];
+
+        let worst = worst_tables(&findings);
+
+        assert!(worst.rows.is_empty());
+        assert_eq!(worst.more, 0);
+    }
+
+    #[test]
+    fn caps_the_rows_and_counts_the_rest() {
+        let findings: Vec<Finding> = (0..WORST_TABLES_LIMIT + 3)
+            .map(|i| finding(Some(&format!("T{i:02}"))))
+            .collect();
+
+        let worst = worst_tables(&findings);
+
+        assert_eq!(worst.rows.len(), WORST_TABLES_LIMIT);
+        assert_eq!(worst.more, 3);
+    }
+
+    fn scan_output(findings: Vec<Finding>) -> ScanOutput {
+        ScanOutput {
+            target: String::new(),
+            reports: Vec::new(),
+            objects: 0,
+            reachable: 0,
+            roots: 0,
+            unused_raw: findings.len(),
+            ignored: 0,
+            filtered_out: 0,
+            findings,
+            auto_date_time: Vec::new(),
+            skips: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_summary_prints_a_padded_worst_tables_block() {
+        let findings = vec![
+            finding(Some("Sales")),
+            finding(Some("Sales")),
+            finding(Some("Sales")),
+            finding(Some("Customer")),
+            finding(Some("Customer")),
+            finding(None),
+        ];
+
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &scan_output(findings)).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("\nWorst tables:\n  'Sales'     3\n  'Customer'  2\n"),
+            "the block is blank-line separated, count descending, columns aligned:\n{text}"
+        );
+    }
+
+    #[test]
+    fn the_summary_announces_tables_beyond_the_top() {
+        let findings: Vec<Finding> = (0..WORST_TABLES_LIMIT + 2)
+            .map(|i| finding(Some(&format!("T{i:02}"))))
+            .collect();
+
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &scan_output(findings)).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("  ... and 2 more tables with findings\n"),
+            "the cut is announced:\n{text}"
+        );
+    }
+
+    #[test]
+    fn no_worst_tables_block_when_nothing_has_a_table() {
+        let mut out = Vec::new();
+        human_summary(
+            &mut out,
+            &Palette::plain(),
+            &scan_output(vec![finding(None)]),
+        )
+        .unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.contains("Worst tables"),
+            "table-less findings belong to no table:\n{text}"
+        );
+    }
+
+    #[test]
+    fn json_carries_the_quoted_table_and_nulls_table_less_kinds() {
+        let mut tabled = finding(Some("Sales"));
+        tabled.id = "'Sales'[Legacy Total]".to_string();
+
+        let mut out = Vec::new();
+        json(&mut out, &scan_output(vec![tabled, finding(None)])).unwrap();
+
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["unused"][0]["table"], "'Sales'");
+        assert!(value["unused"][1]["table"].is_null());
+    }
 }

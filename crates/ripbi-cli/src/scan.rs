@@ -211,6 +211,10 @@ fn scan(
         });
     }
 
+    // The model table travels with a finding only where a mode reads it: `--json`
+    // (the `table` field) and `--summary` (the worst-tables breakdown). Cloning
+    // it for the default and `--plain` output would allocate for nothing.
+    let want_table = args.json || args.summary;
     let mut filtered_out = 0;
     for finding in unused {
         if is_ignored(&finding.id, patterns) {
@@ -228,6 +232,11 @@ fn scan(
         let finding = Finding {
             kind,
             id: finding.id.to_string(),
+            table: if want_table {
+                finding.id.owning_table().cloned()
+            } else {
+                None
+            },
             used_by: finding
                 .used_by
                 .iter()

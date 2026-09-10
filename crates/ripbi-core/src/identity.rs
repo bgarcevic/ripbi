@@ -80,6 +80,22 @@ impl NameKey {
     pub fn folded(&self) -> &str {
         &self.folded
     }
+
+    /// Writes the name as a single-quoted DAX identifier, doubling any internal
+    /// quote — the same form [`ObjectId`] and [`FieldRef`] display table names in.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ripbi_core::NameKey;
+    ///
+    /// assert_eq!(NameKey::new("Sales").quoted().to_string(), "'Sales'");
+    /// assert_eq!(NameKey::new("O'Brien").quoted().to_string(), "'O''Brien'");
+    /// ```
+    #[must_use]
+    pub fn quoted(&self) -> impl fmt::Display + '_ {
+        Quoted(self.as_str())
+    }
 }
 
 impl PartialEq for NameKey {
@@ -330,6 +346,29 @@ impl fmt::Display for ObjectId {
     }
 }
 
+impl ObjectId {
+    /// The model table this object belongs to — a relationship reports its "from"
+    /// side, and objects with no model table (roles, shared expressions, functions,
+    /// report measures) have none. The name is data, not display: render it with
+    /// [`NameKey::quoted`] for the single-quoted form the finding ids use.
+    #[must_use]
+    pub fn owning_table(&self) -> Option<&NameKey> {
+        match self {
+            ObjectId::Table { table }
+            | ObjectId::Column { table, .. }
+            | ObjectId::Measure { table, .. }
+            | ObjectId::Hierarchy { table, .. }
+            | ObjectId::Partition { table, .. }
+            | ObjectId::CalculationItem { table, .. } => Some(table),
+            ObjectId::Relationship { from_table, .. } => Some(from_table),
+            ObjectId::Role { .. }
+            | ObjectId::Expression { .. }
+            | ObjectId::Function { .. }
+            | ObjectId::ReportMeasure { .. } => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +476,14 @@ mod tests {
         #[test]
         fn folded_is_the_lowercased_form() {
             assert_eq!(NameKey::new("SaLeS").folded(), "sales");
+        }
+
+        #[rstest]
+        #[case::plain("Sales", "'Sales'")]
+        #[case::internal_quote_doubled("O'Brien", "'O''Brien'")]
+        #[case::casing_is_kept("SaLeS", "'SaLeS'")]
+        fn quotes_as_a_dax_identifier(#[case] name: &str, #[case] expected: &str) {
+            assert_eq!(NameKey::new(name).quoted().to_string(), expected);
         }
 
         /// `Ord` must agree with `Eq`, or `BTreeMap` and `sort` misbehave: two keys
@@ -624,6 +671,55 @@ mod tests {
         )]
         fn renders(#[case] id: ObjectId, #[case] expected: &str) {
             assert_eq!(id.to_string(), expected);
+        }
+    }
+
+    mod object_id_owning_table {
+        use super::*;
+
+        #[rstest]
+        #[case::table(ObjectId::Table { table: NameKey::new("Sales") }, Some("Sales"))]
+        #[case::column(column("Sales", "Amount"), Some("Sales"))]
+        #[case::measure(
+            ObjectId::Measure { table: NameKey::new("Sales"), measure: NameKey::new("Total") },
+            Some("Sales")
+        )]
+        #[case::hierarchy(
+            ObjectId::Hierarchy { table: NameKey::new("Date"), hierarchy: NameKey::new("Calendar") },
+            Some("Date")
+        )]
+        #[case::partition(
+            ObjectId::Partition {
+                table: NameKey::new("Sales"),
+                partition: NameKey::new("Sales-Part1"),
+            },
+            Some("Sales")
+        )]
+        #[case::relationship_counts_under_the_from_side(
+            ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new("Dim Old"),
+                to_column: NameKey::new("Key"),
+            },
+            Some("Sales")
+        )]
+        #[case::calculation_item(
+            ObjectId::CalculationItem {
+                table: NameKey::new("Time Intelligence"),
+                item: NameKey::new("YTD"),
+            },
+            Some("Time Intelligence")
+        )]
+        #[case::role(ObjectId::Role { role: NameKey::new("Reader") }, None)]
+        #[case::expression(ObjectId::Expression { name: NameKey::new("Param1") }, None)]
+        #[case::function(ObjectId::Function { name: NameKey::new("Sales.Margin") }, None)]
+        #[case::report_measure(
+            ObjectId::ReportMeasure { measure: NameKey::new("Growth %") },
+            None
+        )]
+        fn resolves(#[case] id: ObjectId, #[case] expected: Option<&str>) {
+            assert_eq!(id.owning_table().map(NameKey::as_str), expected);
         }
     }
 }
