@@ -99,11 +99,11 @@ fabricated. Display name from `.platform`, as on the model side.
 | `report.json` (the anchor) | `filterConfig` → report filters | `themeCollection`, `settings`, `resourcePackages`, `slowDataSourceSettings`, `objects` (canvas formatting) |
 | `definition.pbir` | `DatasetReference` | `version` |
 | `reportExtensions.json` | `entities[].measures[]` → report measures (`name`, `expression`, `formatString`) | `dataType`, `hidden`, `dataCategory`, `displayFolder`, `measureTemplate`, `references`, … |
-| `pages/pages.json` | *never read* — page order and the active page are display state | — |
+| `pages/pages.json` | `pageOrder` only — one of the two authorities on which pages exist that a bookmark section must clear (with the `pages/` folders); page order and the active page themselves are display state | `activePageName`, `landingPageName` |
 | `pages/<dir>/page.json` | `name`, `displayName`, `visibility` (`HiddenInViewMode` → `is_hidden`), `filterConfig`, `pageBinding` (`type`, `parameters[].fieldExpr` → drillthrough) | `displayOption`, `height`, `width`, `objects`, `type`, `visualInteractions` |
 | `pages/<dir>/visuals/<dir>/visual.json` | container `name`, `filterConfig`; `visual.visualType`, `query.queryState` (wells, plus `fieldParameters` as inactive projections), `query.sortDefinition` (sorts), `objects` (see below), `visualContainerObjects.visualTooltip`/`visualHeaderTooltip` `section` → tooltip page | `position`, `isHidden`, `parentGroupName`, `howCreated`, `visualGroup` (a group container carries no query and is skipped whole), `syncGroup`, `expansionStates`, `drillFilterOtherVisuals` |
 | `pages/<dir>/visuals/<dir>/mobile.json` | *never read* — mobile layout binds nothing of its own | — |
-| `bookmarks/*.bookmark.json` | `explorationState.filters` → bookmark report-level filters; `sections.<page>.filters` → section filters; `sections.<page>.visualContainers.<id>.filters` → per-visual saved filters; `singleVisual.projections`/`activeProjections` → saved wells | `options`, `explorationState.objects`/`version`/`activeSection`, `visualContainerGroups`, `singleVisual.display`/`orderBy`/`expansionStates`/… |
+| `bookmarks/*.bookmark.json` | `explorationState.filters` → bookmark report-level filters; `sections.<page>.filters` → section filters, skipped whole as `StaleState` when the section's page is in neither `pageOrder` nor the `pages/` folders; `sections.<page>.visualContainers.<id>.filters` → per-visual saved filters; `singleVisual.projections`/`activeProjections` → saved wells | `options`, `explorationState.objects`/`version`/`dataSourceVariables`, `visualContainerGroups`, `singleVisual.display`/`orderBy`/`expansionStates`/… |
 | `version.json` | *never read* | — |
 
 **Persisted automatic filters.** A visual's own filter normally lives in the
@@ -135,6 +135,19 @@ references, and a `Where` clause's `Target` arrays are references too. Known
 non-drift shapes that yield no reference: `ScopedEval` wrappers (unwrapped
 transparently), `RangePercent` bounds in formatting rules (they reuse the
 `Min`/`Max` keys for gradient ends), and visual-calculation sources (below).
+
+**Bookmark staleness.** Power BI leaves a deleted page's section inside every
+bookmark that captured it — the saved state survives, but nothing can ever
+navigate to or re-apply it. A bookmark section therefore counts as a binding
+only when its page exists, judged by *both* sources: `pages.json` `pageOrder`
+and the `pages/` folders. The live set is their case-insensitive union (a page
+named by either source is real; stripping its bookmarks' bindings would
+under-count roots), a disagreement between the sources is itself a `StaleState`
+notice, and a section outside the set is skipped whole — filters and saved
+projections — with one `StaleState` notice naming the bookmark and section. A
+bookmark whose `activeSection` is stale gets the same treatment (folded into
+the section's notice when they coincide). Report-level `explorationState.filters`
+are page-independent and always bind.
 
 **Errors.** Only the anchor `report.json` can fail the run (`Error::Io` /
 `Error::Json`) — it is what makes the folder a report. An unreadable page,

@@ -10,11 +10,14 @@
 #                 "chained" — externally marked Used by unused (ripbi: every
 #                             consumer itself unused)
 #
-# Objects the export marks dead that ripbi deliberately does NOT flag (they are
-# asserted separately in tests/artificial_intelligence.rs, with reasons):
-#   - nine columns kept alive only by bookmark saved filters — re-applying a
-#     bookmark re-binds its fields, so ripbi counts bookmark state as usage and
-#     the external analysis does not.
+# Bookmark conservatism is bounded by page existence (issue #48): a bookmark's
+# saved filters count as bindings — re-applying a bookmark re-binds its fields —
+# but Power BI leaves sections of *deleted* pages inside bookmarks forever, and
+# a filter on a page nobody can navigate to would keep its columns live with no
+# way to ever re-apply it. Those sections are skipped (a `stale_state` notice,
+# surfaced by --strict); this sample's 15 of 17 bookmarks sit wholly on deleted
+# pages, which is why the nine columns below — whose last consumer was such a
+# saved filter — are findings here, in agreement with the export.
 # Objects both sides mark dead, distilled out of the rows for their chain shape
 # (asserted in the test): the two unactivated inactive SystemUserSeq
 # relationships and their three key columns — externally Unused; ripbi flags
@@ -34,6 +37,14 @@
 #     with their partitions (the export lists no table rows; a table referenced
 #     by nothing but a relationship is unused by the documented containment
 #     rule);
+#   - the stale-bookmark cascade on the 'Cases' and 'Case Calendar' tables:
+#     with their dead sections' filters no longer binding, every remaining
+#     consumer of these two tables is itself unused, so the tables and their
+#     partitions fall to the containment rule, and with them the relationship
+#     'Cases'[Case Created On] -> 'Case Calendar'[Date] and the two columns it
+#     and the calculated-table partition were the last consumers of
+#     ('Cases'[Case Created On], 'Case Calendar'[Date]) — every one "used by
+#     … (also unused)";
 #   - expression 'Query1', which the export does not track: nothing references
 #     it except a leftover refresh-order annotation.
 column	Accounts	Account Name	chained
@@ -56,6 +67,7 @@ column	Case Calendar	DaySeq	orphan
 column	Case Calendar	MONTH	orphan
 column	Case Calendar	MONTH NUMBER	chained
 column	Case Calendar	RELATIVE 07 DAY PERIOD	orphan
+column	Case Calendar	RELATIVE 30 DAY PERIOD	orphan
 column	Case Calendar	RELATIVE DAY	orphan
 column	Case Calendar	RELATIVE MONTH	orphan
 column	Case Calendar	RELATIVE WEEK	orphan
@@ -67,16 +79,22 @@ column	Case Calendar	YEAR MONTH	orphan
 column	Case Calendar	YEAR MONTH NUMBER	chained
 column	Case Calendar	YEAR WEEK	orphan
 column	Cases	Activities	orphan
+column	Cases	Agent	chained
 column	Cases	CaseSeq	orphan
 column	Cases	CSAT	chained
 column	Cases	CSAT Goal	orphan
 column	Cases	CSAT Label	orphan
 column	Cases	Escalations Goal	orphan
+column	Cases	Is Escalated	chained
+column	Cases	Is SLA Violation	chained
 column	Cases	Minutes to First Contact	orphan
+column	Cases	Origin	orphan
 column	Cases	Resolution Minutes	orphan
 column	Cases	Resolution Minutes Goal	orphan
+column	Cases	Severity	orphan
 column	Cases	SLA Compliance Goal	orphan
 column	Cases	Status	orphan
+column	Cases	Subject	chained
 column	Cases	Title	orphan
 column	Cases	Topic	chained
 column	Contacts	City	orphan
@@ -129,6 +147,7 @@ column	Opportunities	Budget	orphan
 column	Opportunities	Days Remaining In Pipeline	orphan
 column	Opportunities	DaysToClose	orphan
 column	Opportunities	Opportunity Owner Name	orphan
+column	Opportunities	PipelineStep	chained
 column	Opportunities	Probability	orphan
 column	Opportunities	Probability (raw)	orphan
 column	Opportunities	Product Name	orphan
@@ -140,6 +159,7 @@ column	Opportunity Calendar	MONTH	orphan
 column	Opportunity Calendar	MONTH NUMBER	chained
 column	Opportunity Calendar	RELATIVE 07 DAY PERIOD	orphan
 column	Opportunity Calendar	RELATIVE 30 DAY PERIOD	orphan
+column	Opportunity Calendar	RELATIVE MONTH	orphan
 column	Opportunity Calendar	RELATIVE WEEK	orphan
 column	Opportunity Calendar	YEAR	orphan
 column	Opportunity Calendar	YEAR WEEK	orphan

@@ -15,11 +15,12 @@
 //! its visual type: field wells (`queryState`), report/page/visual filters and
 //! the fields inside their condition trees, sort definitions, conditional
 //! formatting (`FillRule` and friends), drillthrough parameters, bookmarks'
-//! saved filters and projections, tooltip pages, and the columns behind field
-//! parameters. Filter *values* (slicer selections, comparison literals) are
-//! data, never references, and are ignored.
+//! saved filters and projections (sections whose page the report no longer
+//! defines are skipped as stale, issue #48), tooltip pages, and the columns
+//! behind field parameters. Filter *values* (slicer selections, comparison
+//! literals) are data, never references, and are ignored.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -68,8 +69,10 @@ const FIELD_VARIANTS: &[&str] = &[
 /// Files are processed in a fixed order (the anchor `report.json`, the
 /// dataset reference, `reportExtensions.json`, then pages and their visuals in
 /// folder-name order, then bookmarks in file-name order) so notices come out
-/// deterministic. Pages are discovered by walking `pages/` subdirectories —
-/// `pages.json` records only display order and is deliberately not read.
+/// deterministic. Pages are discovered by walking `pages/` subdirectories;
+/// `pages/pages.json` is read only for `pageOrder`, one of the two authorities
+/// on which pages exist (with the folders themselves) that a bookmark section
+/// must clear to bind — page order and the active page stay unmodeled.
 pub(super) fn load_report(
     definition: &Path,
     name: Option<String>,
@@ -96,7 +99,8 @@ pub(super) fn load_report(
     }
     model.measures = report_extensions(definition, skips);
     model.pages = pages(definition, skips);
-    model.bookmarks = bookmarks(definition, skips);
+    let live = live_sections(definition, &model.pages, skips);
+    model.bookmarks = bookmarks(definition, &live, skips);
     Ok(model)
 }
 
@@ -233,6 +237,105 @@ fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Page> {
         out.push(page);
     }
     out
+}
+
+/// The folded object names of every page the report defines — the authority a
+/// bookmark section must clear to count as a binding (issue #48): Power BI
+/// leaves deleted pages' sections inside bookmarks forever, and saved filters
+/// on a page nobody can navigate to would keep their columns "live" with no
+/// way to ever re-apply them.
+///
+/// The set is the *union* of `pages.json` `pageOrder` and the parsed
+/// `pages/` folders, compared case-insensitively like every object name. A
+/// page named by one source only is still live — its folder or listing is
+/// proof enough, and stripping a real page's bookmark bindings would
+/// under-count roots — but the disagreement is reported, because healthy
+/// reports list every page in both.
+fn live_sections(
+    definition: &Path,
+    pages: &[Page],
+    skips: &mut Vec<SkipNotice>,
+) -> HashSet<String> {
+    let pages_path = definition.join("pages").join("pages.json");
+    let mut page_order = Vec::new();
+    // Disagreement is only reportable against a `pageOrder` that was actually
+    // read: without the file (or with an unreadable one, already noticed)
+    // there is nothing to disagree with, and the folders stand alone.
+    let mut order_known = false;
+    if let Some(value) = read_optional(&pages_path, skips) {
+        let mut ctx = Ctx {
+            path: &pages_path,
+            skips,
+        };
+        check_keys(&value, &PAGES_KEYS, &mut ctx, "");
+        match value.get("pageOrder").and_then(Value::as_array) {
+            Some(list) => {
+                order_known = true;
+                for entry in list {
+                    if let Some(name) = entry.as_str() {
+                        page_order.push(name.to_string());
+                    }
+                }
+            }
+            None => ctx.notice(
+                "/pageOrder",
+                SkipKind::MalformedValue,
+                "pages.json carries no readable pageOrder",
+            ),
+        }
+    }
+    // `pages()` walks folders in name order, so both inputs are deterministic.
+    let folder_pages: Vec<String> = pages
+        .iter()
+        .map(|page| page.name.as_str().to_string())
+        .collect();
+    let mut ctx = Ctx {
+        path: &pages_path,
+        skips,
+    };
+    reconcile_pages(&page_order, &folder_pages, order_known, &mut ctx)
+}
+
+/// Unions the two page-name sources into the folded live-section set. When
+/// `order_known`, every disagreement is reported through `ctx` (the pages.json
+/// side, since `pageOrder` is what disagrees with the folders on disk). Both
+/// inputs are taken in their given order, so notices are deterministic.
+fn reconcile_pages(
+    page_order: &[String],
+    folder_pages: &[String],
+    order_known: bool,
+    ctx: &mut Ctx,
+) -> HashSet<String> {
+    let order_set: HashSet<String> = page_order.iter().map(|name| fold_name(name)).collect();
+    let folder_set: HashSet<String> = folder_pages.iter().map(|name| fold_name(name)).collect();
+
+    if order_known {
+        for (index, name) in page_order.iter().enumerate() {
+            if !folder_set.contains(&fold_name(name)) {
+                ctx.notice(
+                    format!("/pageOrder/{index}"),
+                    SkipKind::StaleState,
+                    format!("pageOrder lists '{name}', which has no page folder under pages/"),
+                );
+            }
+        }
+        for name in folder_pages {
+            if !order_set.contains(&fold_name(name)) {
+                ctx.notice(
+                    "/pageOrder",
+                    SkipKind::StaleState,
+                    format!(
+                        "page '{name}' has a folder under pages/, which pageOrder does not list"
+                    ),
+                );
+            }
+        }
+    }
+
+    order_set
+        .union(&folder_set)
+        .cloned()
+        .collect::<HashSet<String>>()
 }
 
 /// Parses one `page.json`.
@@ -394,7 +497,12 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
 }
 
 /// Parses every `*.bookmark.json` under `bookmarks/`, in file-name order.
-fn bookmarks(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Bookmark> {
+/// `live` is the set of section IDs (folded) whose pages the report defines.
+fn bookmarks(
+    definition: &Path,
+    live: &HashSet<String>,
+    skips: &mut Vec<SkipNotice>,
+) -> Vec<Bookmark> {
     let Ok(entries) = fs::read_dir(definition.join("bookmarks")) else {
         return Vec::new();
     };
@@ -426,14 +534,17 @@ fn bookmarks(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Bookmark> {
             }
         };
         let mut ctx = Ctx { path: &file, skips };
-        out.push(bookmark_file(&value, bookmark_name(&file), &mut ctx));
+        out.push(bookmark_file(&value, bookmark_name(&file), live, &mut ctx));
     }
     out
 }
 
 /// Parses one bookmark file: saved filters (report level, per section, per
-/// visual) and saved projections.
-fn bookmark_file(value: &Value, fallback: &str, ctx: &mut Ctx) -> Bookmark {
+/// visual) and saved projections. Sections whose page the report no longer
+/// defines are skipped whole with a [`SkipKind::StaleState`] notice (issue
+/// #48) — Power BI leaves them behind when a page is deleted, and counting
+/// their saved filters as bindings would keep those columns "live" forever.
+fn bookmark_file(value: &Value, fallback: &str, live: &HashSet<String>, ctx: &mut Ctx) -> Bookmark {
     check_keys(value, &BOOKMARK_KEYS, ctx, "");
     let Some(name) = value.get("name").and_then(Value::as_str) else {
         ctx.notice(
@@ -452,6 +563,13 @@ fn bookmark_file(value: &Value, fallback: &str, ctx: &mut Ctx) -> Bookmark {
     if let Some(state) = state {
         check_keys(state, &EXPLORATION_KEYS, ctx, "/explorationState");
     }
+    let active_section = state
+        .and_then(|state| state.get("activeSection"))
+        .and_then(Value::as_str);
+    let active_folded = active_section.map(fold_name);
+    // Sections this pass skipped as stale; if the active section is among
+    // them it is already covered by that section's notice.
+    let mut stale_sections: Vec<String> = Vec::new();
 
     let mut sections = Vec::new();
     if let Some(map) = state
@@ -459,6 +577,23 @@ fn bookmark_file(value: &Value, fallback: &str, ctx: &mut Ctx) -> Bookmark {
         .and_then(Value::as_object)
     {
         for (page_name, section_state) in map {
+            let folded = fold_name(page_name);
+            if !live.contains(&folded) {
+                let mut detail = format!(
+                    "bookmark '{name}' saves state for page '{page_name}', which the report \
+                     no longer defines; its saved filters bind nothing"
+                );
+                if active_folded.as_deref() == Some(folded.as_str()) {
+                    detail.push_str(" (it is also the bookmark's active section)");
+                }
+                ctx.notice(
+                    format!("/explorationState/sections/{page_name}"),
+                    SkipKind::StaleState,
+                    detail,
+                );
+                stale_sections.push(folded);
+                continue;
+            }
             let location = format!("/explorationState/sections/{page_name}");
             check_keys(section_state, &SECTION_KEYS, ctx, &location);
             let mut visuals = Vec::new();
@@ -481,6 +616,23 @@ fn bookmark_file(value: &Value, fallback: &str, ctx: &mut Ctx) -> Bookmark {
                 visuals,
             });
         }
+    }
+
+    // The active section names where the bookmark was captured; a stale one
+    // is the same deleted page seen from the bookmark's anchor, worth its own
+    // notice only when no section notice already covered it.
+    if let (Some(active), Some(folded_active)) = (active_section, active_folded)
+        && !live.contains(&folded_active)
+        && !stale_sections.contains(&folded_active)
+    {
+        ctx.notice(
+            "/explorationState/activeSection",
+            SkipKind::StaleState,
+            format!(
+                "bookmark '{name}' is anchored on page '{active}', which the report \
+                 no longer defines"
+            ),
+        );
     }
 
     Bookmark {
@@ -1550,10 +1702,19 @@ const BOOKMARK_KEYS: Keys = Keys {
     ignored: &["options"],
 };
 
-/// `explorationState`.
+/// `pages/pages.json`. Page order and the active page stay unmodeled (display
+/// state), but `pageOrder` is read as one of the two authorities on which
+/// pages exist that a bookmark section must clear (issue #48).
+const PAGES_KEYS: Keys = Keys {
+    known: &["$schema", "pageOrder"],
+    ignored: &["activePageName", "landingPageName"],
+};
+
+/// `explorationState`. `activeSection` is read to diagnose stale state (the
+/// deleted page the bookmark was captured on); it binds nothing itself.
 const EXPLORATION_KEYS: Keys = Keys {
-    known: &["filters", "sections"],
-    ignored: &["activeSection", "dataSourceVariables", "objects", "version"],
+    known: &["filters", "sections", "activeSection"],
+    ignored: &["dataSourceVariables", "objects", "version"],
 };
 
 /// One `explorationState.sections.<page>` value.
@@ -2282,6 +2443,208 @@ mod tests {
                     column: NameKey::new("Name"),
                 }]
             );
+        }
+    }
+
+    /// Deleted pages leave their sections inside bookmarks forever (issue
+    /// #48): the stale-section skip and the page-source reconciliation.
+    mod stale_state {
+        use super::*;
+
+        /// A filter expression naming `'Product'[Color]`, valid at any scope.
+        fn color_filter(name: &str) -> String {
+            format!(
+                r#"{{"name": "{name}", "type": "Categorical", "expression": {{
+                    "Column": {{
+                        "Expression": {{"SourceRef": {{"Entity": "Product"}}}},
+                        "Property": "Color"
+                    }}
+                }}}}"#
+            )
+        }
+
+        /// A bookmark with a report-level filter and one section per given
+        /// page name, anchored on `active`.
+        fn bookmark_json(active: &str, pages: &[&str]) -> Value {
+            let section_filters: Vec<String> = pages
+                .iter()
+                .map(|page| {
+                    format!(
+                        r#""{page}": {{"filters": {{"byExpr": [{}]}}}}"#,
+                        color_filter("SectionFilter")
+                    )
+                })
+                .collect();
+            serde_json::from_str(&format!(
+                r#"{{
+                    "name": "B1",
+                    "explorationState": {{
+                        "activeSection": "{active}",
+                        "filters": {{"byExpr": [{}]}},
+                        "sections": {{{}}}
+                    }}
+                }}"#,
+                color_filter("ReportFilter"),
+                section_filters.join(", ")
+            ))
+            .unwrap()
+        }
+
+        fn parse_bookmark(json: &Value, live: &[&str]) -> (Bookmark, Vec<SkipNotice>) {
+            let live: HashSet<String> = live.iter().map(|name| fold_name(name)).collect();
+            let mut skips = Vec::new();
+            let parsed = {
+                let mut ctx = Ctx {
+                    path: Path::new("test/B1.bookmark.json"),
+                    skips: &mut skips,
+                };
+                bookmark_file(json, "B1", &live, &mut ctx)
+            };
+            (parsed, skips)
+        }
+
+        #[test]
+        fn a_stale_section_is_skipped_whole_with_a_notice() {
+            let (bookmark, skips) =
+                parse_bookmark(&bookmark_json("PLive", &["PLive", "PGone"]), &["PLive"]);
+
+            // The live section survives; the stale one is gone whole.
+            assert_eq!(bookmark.sections.len(), 1);
+            assert_eq!(bookmark.sections[0].page.as_str(), "PLive");
+            assert_eq!(bookmark.sections[0].filters.len(), 1);
+            // The report-level saved filter is untouched by its section.
+            assert_eq!(bookmark.filters.len(), 1);
+
+            assert_eq!(skips.len(), 1, "one notice: {skips:?}");
+            assert_eq!(skips[0].kind, SkipKind::StaleState);
+            assert_eq!(
+                skips[0].location.as_deref(),
+                Some("/explorationState/sections/PGone")
+            );
+            assert!(skips[0].detail.contains("PGone"));
+            assert!(skips[0].detail.contains("no longer defines"));
+        }
+
+        /// The section skip is the notice — the active section that coincides
+        /// with it must not fire a second one.
+        #[test]
+        fn a_stale_active_section_folds_into_its_sections_notice() {
+            let (_, skips) = parse_bookmark(&bookmark_json("PGone", &["PGone"]), &[]);
+
+            assert_eq!(skips.len(), 1, "exactly the section notice: {skips:?}");
+            assert_eq!(
+                skips[0].location.as_deref(),
+                Some("/explorationState/sections/PGone")
+            );
+            assert!(skips[0].detail.contains("active section"));
+        }
+
+        /// An active section with no `sections` entry binds nothing, but the
+        /// deleted page it anchors on is still worth reporting.
+        #[test]
+        fn a_stale_active_section_without_a_section_gets_its_own_notice() {
+            let (_, skips) = parse_bookmark(&bookmark_json("PGone", &["PLive"]), &["PLive"]);
+
+            assert_eq!(skips.len(), 1, "exactly the anchor notice: {skips:?}");
+            assert_eq!(
+                skips[0].location.as_deref(),
+                Some("/explorationState/activeSection")
+            );
+        }
+
+        #[test]
+        fn a_fully_live_bookmark_parses_unchanged() {
+            let (bookmark, skips) =
+                parse_bookmark(&bookmark_json("PLive", &["PLive"]), &["Pother", "PLive"]);
+
+            assert_eq!(bookmark.sections.len(), 1);
+            assert_eq!(bookmark.sections[0].filters.len(), 1);
+            assert_eq!(bookmark.filters.len(), 1);
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+        }
+
+        /// The common case behind issue #48: sections are matched
+        /// case-insensitively like every object name.
+        #[test]
+        fn section_ids_match_case_insensitively() {
+            let (bookmark, skips) = parse_bookmark(&bookmark_json("plive", &["PLIVE"]), &["plive"]);
+
+            assert_eq!(bookmark.sections.len(), 1);
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+        }
+
+        /// Reconciles two page-name sources, returning (set, notices).
+        fn reconcile(order: &[&str], folders: &[&str]) -> (HashSet<String>, Vec<SkipNotice>) {
+            reconcile_with(order, folders, true)
+        }
+
+        fn reconcile_with(
+            order: &[&str],
+            folders: &[&str],
+            order_known: bool,
+        ) -> (HashSet<String>, Vec<SkipNotice>) {
+            let order: Vec<String> = order.iter().map(|s| s.to_string()).collect();
+            let folders: Vec<String> = folders.iter().map(|s| s.to_string()).collect();
+            let mut skips = Vec::new();
+            let set = {
+                let mut ctx = Ctx {
+                    path: Path::new("test/pages.json"),
+                    skips: &mut skips,
+                };
+                reconcile_pages(&order, &folders, order_known, &mut ctx)
+            };
+            (set, skips)
+        }
+
+        #[test]
+        fn agreeing_page_sources_union_without_notices() {
+            let (set, skips) = reconcile(&["P1", "P2"], &["P2", "P1"]);
+
+            assert_eq!(set.len(), 2);
+            assert!(set.contains(&fold_name("P1")));
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+        }
+
+        /// Either source alone proves a page exists, so the union keeps it —
+        /// but the disagreement is reported at the pageOrder side.
+        #[test]
+        fn a_page_in_page_order_only_is_live_but_noticed() {
+            let (set, skips) = reconcile(&["P1", "P2"], &["P1"]);
+
+            assert!(set.contains(&fold_name("P2")));
+            assert_eq!(skips.len(), 1, "one notice: {skips:?}");
+            assert_eq!(skips[0].kind, SkipKind::StaleState);
+            assert_eq!(skips[0].location.as_deref(), Some("/pageOrder/1"));
+            assert!(skips[0].detail.contains("P2"));
+        }
+
+        #[test]
+        fn a_page_with_a_folder_only_is_live_but_noticed() {
+            let (set, skips) = reconcile(&["P1"], &["P1", "P2"]);
+
+            assert!(set.contains(&fold_name("P2")));
+            assert_eq!(skips.len(), 1, "one notice: {skips:?}");
+            assert_eq!(skips[0].kind, SkipKind::StaleState);
+            assert_eq!(skips[0].location.as_deref(), Some("/pageOrder"));
+            assert!(skips[0].detail.contains("P2"));
+        }
+
+        #[test]
+        fn a_page_missing_from_neither_source_is_never_in_the_set() {
+            let (set, skips) = reconcile(&["P1"], &["P1"]);
+
+            assert!(!set.contains(&fold_name("PGone")));
+            assert!(skips.is_empty());
+        }
+
+        /// Without a readable `pageOrder` there is nothing to disagree with:
+        /// the folders stand alone, silently.
+        #[test]
+        fn an_unknown_page_order_union_the_folders_without_notices() {
+            let (set, skips) = reconcile_with(&[], &["P1", "P2"], false);
+
+            assert_eq!(set.len(), 2);
+            assert!(skips.is_empty(), "no notices: {skips:?}");
         }
     }
 }

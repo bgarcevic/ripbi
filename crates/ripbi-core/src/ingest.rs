@@ -53,6 +53,9 @@ pub enum SkipKind {
     MalformedValue,
     /// A query alias that could not be resolved (PBIR `SourceRef.Source`).
     UnresolvedAlias,
+    /// Saved or indexed state that refers to objects which no longer exist —
+    /// e.g. a bookmark section whose page was deleted from the report.
+    StaleState,
 }
 
 /// A parsed value plus everything unexpected the parser skipped on the way.

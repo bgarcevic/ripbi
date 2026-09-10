@@ -32,28 +32,7 @@ fn sample_pbip() -> PathBuf {
         .join("../../samples/Artificial Intelligence Sample.pbip")
 }
 
-/// Objects the export marks dead that ripbi deliberately keeps alive: bookmark
-/// saved filters. Re-applying a bookmark re-binds its fields, so ripbi counts
-/// bookmark state as usage and the external analysis does not.
-const POLICY_KEPT_ALIVE: &[(&str, &str)] = &[
-    ("'Cases'[Subject]", "bookmark saved filters"),
-    ("'Cases'[Agent]", "bookmark saved filters"),
-    ("'Cases'[Origin]", "bookmark saved filters"),
-    ("'Cases'[Severity]", "bookmark saved filters"),
-    ("'Cases'[Is Escalated]", "bookmark saved filters"),
-    ("'Cases'[Is SLA Violation]", "bookmark saved filters"),
-    ("'Opportunities'[PipelineStep]", "bookmark saved filters"),
-    (
-        "'Opportunity Calendar'[RELATIVE MONTH]",
-        "bookmark saved filters",
-    ),
-    (
-        "'Case Calendar'[RELATIVE 30 DAY PERIOD]",
-        "bookmark saved filters",
-    ),
-];
-
-/// Columns the export marks dead that ripbi agrees are dead, but annotates
+/// Objects the export marks dead that ripbi agrees are dead, but annotates
 /// with the inactive relationship that names them: an inactive relationship
 /// confers no liveness — only a live `USERELATIONSHIP` reference can activate
 /// it — so its key columns surface as findings pointing back at it.
@@ -86,7 +65,7 @@ const LIVE_GUARDS: &[&str] = &[
 /// The only findings allowed beyond the baseline: the engine-generated auto
 /// date/time machinery of the five date columns whose hierarchies no visual
 /// binds (the tables and partitions; the export lists no table rows), the
-/// fully-dead relationship-only tables with their partitions, the two
+/// stale-bookmark cascade on the 'Cases' and 'Case Calendar' tables, the two
 /// unactivated inactive relationships and their SystemUserSeq key columns, and
 /// the orphaned `Query1` expression. The one bound table
 /// (`LocalDateTable_9e0bbdfc-…`) is fully live and its columns are gone from
@@ -97,10 +76,20 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
             || id.contains("DateTableTemplate")
             || id.contains("'Contacts'")
             || id.contains("'Opportunity Forecast Adjustment'"));
+    // With the deleted pages' saved filters no longer binding (issue #48),
+    // every remaining consumer of 'Cases' and 'Case Calendar' is itself
+    // unused: the tables and their partitions fall to the containment rule,
+    // and with them the active relationship between the two and the columns
+    // it and the calculated-table partition were the last consumers of.
+    let stale_bookmark_cascade = matches!(kind, "table" | "partition")
+        && (id.contains("'Cases'") || id.contains("'Case Calendar'"))
+        || kind == "relationship"
+            && id.contains("'Cases'[Case Created On] -> 'Case Calendar'[Date]")
+        || kind == "column" && (id == "'Case Calendar'[Date]" || id == "'Cases'[Case Created On]");
     let inactive_relationship =
         id.contains("SystemUserSeq") && matches!(kind, "column" | "relationship");
     let orphaned_expression = kind == "expression" && id.contains("'Query1'");
-    machinery_table || inactive_relationship || orphaned_expression
+    machinery_table || stale_bookmark_cascade || inactive_relationship || orphaned_expression
 }
 
 #[test]
@@ -130,7 +119,7 @@ fn scan_agrees_with_the_committed_baseline() {
             )
         })
         .collect();
-    assert_eq!(baseline.len(), 135, "the distilled baseline is complete");
+    assert_eq!(baseline.len(), 144, "the distilled baseline is complete");
 
     let temp = TempDir::new("ai-baseline");
     let args = ScanArgs {
@@ -185,15 +174,7 @@ fn scan_agrees_with_the_committed_baseline() {
         );
     }
 
-    // 3. ...and the objects kept alive by documented policy stay unflagged.
-    for (id, policy) in POLICY_KEPT_ALIVE {
-        assert!(
-            !by_id.contains_key(id),
-            "ripbi flags '{id}': kept alive only by {policy}, which must count as usage"
-        );
-    }
-
-    // 3b. The inactive-relationship keys follow the standard chain shape: the
+    // 3. The inactive-relationship keys follow the standard chain shape: the
     //     relationship naming them is itself an unactivated finding, so the
     //     keys read `only used by … (also unused)`.
     for id in INACTIVE_RELATIONSHIP_FINDINGS {
@@ -346,7 +327,7 @@ fn the_auto_datetime_section_follows_the_tables_flag() {
         "only the selected measures are reported"
     );
     assert_eq!(
-        payload["summary"]["unused_total"], 155,
+        payload["summary"]["unused_total"], 171,
         "the model-wide count is unfiltered, dead tables included"
     );
 

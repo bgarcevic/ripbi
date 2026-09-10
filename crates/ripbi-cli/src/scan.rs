@@ -274,10 +274,13 @@ fn scan(
                 .map_err(ScanError::from)?;
         }
         // Notices are stderr's job in text modes; --json carries them itself.
+        // Not all notices are drift — a stale_state notice reports understood
+        // saved state pointing at deleted objects — so the header stays kind-
+        // neutral; each line's `[kind]` says which it is.
         if !args.json && !output.skips.is_empty() {
             writeln!(
                 streams.err,
-                "{} skip notice(s) from parsing (unexpected schema drift):",
+                "{} skip notice(s) from parsing:",
                 output.skips.len()
             )
             .map_err(ScanError::from)?;
@@ -486,5 +489,6 @@ fn skip_kind_out(kind: SkipKind) -> &'static str {
         SkipKind::UnknownProperty => "unknown_property",
         SkipKind::MalformedValue => "malformed_value",
         SkipKind::UnresolvedAlias => "unresolved_alias",
+        SkipKind::StaleState => "stale_state",
     }
 }

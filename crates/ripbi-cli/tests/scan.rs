@@ -710,6 +710,93 @@ mod extras {
         assert_eq!(strict_code, 2, "--strict turns the notice into an error");
     }
 
+    /// A bookmark's saved filter binds only when its section's page still
+    /// exists (issue #48). Two bookmarks save a filter on `'Sales'[Legacy]`,
+    /// which nothing else binds except the dead measure: the live-page one is
+    /// a root, the deleted-page one is skipped with a `stale_state` notice
+    /// that `--strict` promotes to an error.
+    #[test]
+    fn a_bookmark_filter_binds_only_on_a_live_page() {
+        fn bookmark(name: &str, section: &str) -> String {
+            format!(
+                r#"{{
+                    "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/bookmark/2.1.0/schema.json",
+                    "name": "{name}",
+                    "explorationState": {{
+                        "activeSection": "{section}",
+                        "sections": {{
+                            "{section}": {{
+                                "filters": {{
+                                    "byExpr": [
+                                        {{
+                                            "name": "Filter1",
+                                            "type": "Categorical",
+                                            "expression": {{
+                                                "Column": {{
+                                                    "Expression": {{"SourceRef": {{"Entity": "Sales"}}}},
+                                                    "Property": "Legacy"
+                                                }}
+                                            }}
+                                        }}
+                                    ]
+                                }}
+                            }}
+                        }}
+                    }}
+                }}"#
+            )
+        }
+        let temp = TempDir::new("stale-bookmark");
+        project_into(&temp.0, "Mini");
+        temp.write(
+            "Mini.Report/definition/bookmarks/Live.bookmark.json",
+            &bookmark("Live", "P1"),
+        );
+        temp.write(
+            "Mini.Report/definition/bookmarks/Stale.bookmark.json",
+            &bookmark("Stale", "Pgone"),
+        );
+
+        let args = ScanArgs {
+            json: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the dead measure is still unused");
+        let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+
+        // The live bookmark's saved filter is a root: 'Sales'[Legacy] stays
+        // alive, leaving only the dead measure.
+        let unused = payload["unused"].as_array().expect("unused array");
+        assert_eq!(unused.len(), 1, "only the measure: {unused:?}");
+        assert_eq!(unused[0]["id"], "'Sales'[Legacy Total]");
+
+        // The deleted page's section is skipped, and the skip is reported.
+        assert_eq!(payload["skips"]["count"], 1);
+        let notices = payload["skips"]["notices"].as_array().expect("notices");
+        assert_eq!(notices[0]["kind"], "stale_state");
+        assert_eq!(
+            notices[0]["location"], "/explorationState/sections/Pgone",
+            "the JSON pointer names the stale section"
+        );
+        let detail = notices[0]["detail"].as_str().expect("detail");
+        assert!(
+            detail.contains("'Stale'") && detail.contains("no longer defines"),
+            "the notice names the bookmark and the cause: {detail}"
+        );
+
+        let strict_args = ScanArgs {
+            strict: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (strict_code, _, _) = run_scan(&strict_args, &temp.0, "");
+        assert_eq!(
+            strict_code, 2,
+            "--strict turns the stale-state notice into an error"
+        );
+    }
+
     #[test]
     fn duplicate_report_paths_are_ingested_once() {
         let temp = TempDir::new("dedupe");
