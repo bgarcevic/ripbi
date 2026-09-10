@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-type scan filters** (`#31`) — `ripbi scan --measures`, `--columns`,
+  `--tables`, `--hierarchies`, `--partitions`, `--relationships`, `--calc-items`,
+  `--expressions`, `--functions`, and `--report-measures` report only unused objects
+  of the passed types, in every output mode and in the exit code; the auto date/time
+  section prints only when `--tables` is among them. `--json` gains
+  `summary.unused_total`, the model-wide unused count, so consumers can tell a
+  filtered-away finding from an absent one.
 - **User guide on GitHub Pages** — an mdBook at
   [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/), assembled
   by a Pages workflow from the docs that live next to the code, with a link

@@ -27,13 +27,18 @@ pub struct ScanOutput {
     pub unused_raw: usize,
     /// Objects suppressed by `[scan].ignore` patterns.
     pub ignored: usize,
+    /// Unused objects hidden by the type flags (`--measures` and friends).
+    /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
+    /// instead.
+    pub filtered_out: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
     /// A dead auto date/time table's own row lives in [`ScanOutput::auto_date_time`]
     /// instead, under its verdict.
     pub findings: Vec<Finding>,
     /// One row per auto date/time table (`LocalDateTable_*` /
     /// `DateTableTemplate_*`): the provenance verdict no reachability pass can
-    /// produce. Rows suppressed by `[scan].ignore` are absent.
+    /// produce. Rows suppressed by `[scan].ignore` are absent, and so is the
+    /// whole section when a type filter runs without `--tables`.
     pub auto_date_time: Vec<AutoDateTimeRow>,
     /// Every skip notice ingestion recorded.
     pub skips: Vec<SkipNoticeOut>,
@@ -95,8 +100,10 @@ pub struct SkipNoticeOut {
     pub detail: String,
 }
 
-/// Group order and labels: the fixed section order of human output.
-const GROUPS: &[(&str, &str)] = &[
+/// Group order and labels: the fixed section order of human output. The
+/// `scan` type flags (`--measures` and friends) select exactly these kinds —
+/// `cli.rs`'s lockstep test pins the two together.
+pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("measure", "Measures"),
     ("column", "Columns"),
     ("hierarchy", "Hierarchies"),
@@ -328,6 +335,13 @@ fn write_summary(
             report.ignored
         )?;
     }
+    if report.filtered_out > 0 {
+        writeln!(
+            out,
+            "({} unused hidden by type filters)",
+            report.filtered_out
+        )?;
+    }
     writeln!(out)
 }
 
@@ -405,6 +419,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             reachable: report.reachable,
             roots: report.roots,
             unused: report.findings.len(),
+            unused_total: report.unused_raw,
             ignored: report.ignored,
             auto_date_time: JsonAutoDateTimeCounts {
                 in_use: count_verdict(&report.auto_date_time, "in_use"),
@@ -488,7 +503,13 @@ struct JsonSummary {
     objects: usize,
     reachable: usize,
     roots: usize,
+    /// Unused findings after `[scan].ignore` and the type flags — the length
+    /// of `unused`.
     unused: usize,
+    /// Every unused object in the model: before `[scan].ignore`, the type
+    /// flags, and the auto date/time section move. `reachable` is always
+    /// `objects − unused_total`.
+    unused_total: usize,
     ignored: usize,
     auto_date_time: JsonAutoDateTimeCounts,
 }

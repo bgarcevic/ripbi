@@ -183,6 +183,15 @@ fn scan(
     let mut findings = Vec::new();
     let mut ignored = 0;
 
+    // The type flags narrow what is reported (issue #31): findings they hide
+    // are counted in `filtered_out`, and the auto date/time section — which
+    // is table-shaped — prints and gates the exit code only when tables are
+    // among the reported kinds.
+    let selected = args.selected_kinds();
+    let section_visible = selected
+        .as_ref()
+        .is_none_or(|kinds| kinds.contains("table"));
+
     // One verdict row per auto date/time table the ignore list does not
     // suppress; a dead table's own finding is filed under its row so the
     // verdict and the dead-chain note read together. Filed by object identity —
@@ -190,7 +199,7 @@ fn scan(
     let mut auto_date_time: Vec<AutoDateTimeRow> = Vec::new();
     let mut row_by_table: HashMap<&ObjectId, usize> = HashMap::new();
     for verdict in &verdicts {
-        if is_ignored(&verdict.id, patterns) {
+        if !section_visible || is_ignored(&verdict.id, patterns) {
             continue;
         }
         row_by_table.insert(&verdict.id, auto_date_time.len());
@@ -202,14 +211,22 @@ fn scan(
         });
     }
 
+    let mut filtered_out = 0;
     for finding in unused {
         if is_ignored(&finding.id, patterns) {
             ignored += 1;
             continue;
         }
+        let kind = render::kind_of(&finding.id);
+        if let Some(kinds) = &selected
+            && !kinds.contains(kind)
+        {
+            filtered_out += 1;
+            continue;
+        }
         let section_row = row_by_table.get(&finding.id).copied();
         let finding = Finding {
-            kind: render::kind_of(&finding.id),
+            kind,
             id: finding.id.to_string(),
             used_by: finding
                 .used_by
@@ -239,6 +256,7 @@ fn scan(
         roots,
         unused_raw: objects - reachable,
         ignored,
+        filtered_out,
         findings,
         auto_date_time,
         skips,
@@ -287,7 +305,9 @@ fn scan(
             .all(|row| row.verdict == "in_use")
     {
         // Suppressed by [scan].ignore counts as handled; an in-use auto
-        // date/time table is informational advice, not a failure.
+        // date/time table is informational advice, not a failure. Both the
+        // findings and the rows above are already type-flag-filtered, so
+        // the exit code describes what was reported.
         Ok(EXIT_CLEAN)
     } else {
         Ok(EXIT_UNUSED)

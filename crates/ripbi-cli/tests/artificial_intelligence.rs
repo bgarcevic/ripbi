@@ -311,3 +311,62 @@ fn scan_agrees_with_the_committed_baseline() {
         );
     }
 }
+
+/// This sample's five dead auto date/time tables normally force exit 1. The
+/// type flags hide the whole section unless `--tables` is among them, and a
+/// hidden section cannot fail the run — with no findings left, the exit code
+/// is clean even though five dead tables exist.
+#[test]
+fn the_auto_datetime_section_follows_the_tables_flag() {
+    let sample = sample_pbip();
+    let temp = TempDir::new("ai-section");
+
+    let measures = ScanArgs {
+        json: true,
+        measures: true,
+        path: Some(sample.clone()),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&measures, &temp.0, "");
+    assert_eq!(code, 1, "the sample has 17 unused measures");
+    let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert!(
+        payload["auto_date_time"]
+            .as_array()
+            .expect("auto array")
+            .is_empty(),
+        "without --tables the section is hidden entirely"
+    );
+    assert_eq!(
+        payload["summary"]["auto_date_time"]["dead"], 0,
+        "the hidden section's counts are zero too"
+    );
+    assert_eq!(
+        payload["summary"]["unused"], 17,
+        "only the selected measures are reported"
+    );
+    assert_eq!(
+        payload["summary"]["unused_total"], 155,
+        "the model-wide count is unfiltered, dead tables included"
+    );
+
+    let tables = ScanArgs {
+        json: true,
+        tables: true,
+        path: Some(sample),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&tables, &temp.0, "");
+    assert_eq!(
+        code, 1,
+        "--tables keeps the section and its exit-code weight"
+    );
+    let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    let rows = payload["auto_date_time"].as_array().expect("auto array");
+    assert_eq!(rows.len(), 6, "--tables restores all six verdict rows");
+    assert_eq!(payload["summary"]["auto_date_time"]["in_use"], 1);
+    assert_eq!(
+        payload["summary"]["auto_date_time"]["dead"], 5,
+        "the dead verdicts gate the exit code again"
+    );
+}

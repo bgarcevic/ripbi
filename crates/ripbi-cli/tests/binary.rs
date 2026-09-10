@@ -98,6 +98,50 @@ fn scan_sets_the_documented_exit_codes() {
 }
 
 #[test]
+fn scan_help_lists_the_type_flags() {
+    let help = ripbi()
+        .args(["scan", "--help"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let help = String::from_utf8(help).expect("help is utf-8");
+    for flag in [
+        "--measures",
+        "--columns",
+        "--hierarchies",
+        "--tables",
+        "--partitions",
+        "--relationships",
+        "--calc-items",
+        "--expressions",
+        "--functions",
+        "--report-measures",
+    ] {
+        assert!(help.contains(flag), "help must list {flag}:\n{help}");
+    }
+}
+
+#[test]
+fn a_type_flag_runs_end_to_end_and_exits_by_what_it_reported() {
+    // The only unused measure → exit 1 with just its record.
+    ripbi()
+        .args(["scan", &mini_pbip(), "--plain", "--measures"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("measure\t'Sales'[Legacy Total]"))
+        .stdout(predicate::str::contains("column\t").not());
+
+    // Both findings are non-tables → nothing reported → exit 0.
+    ripbi()
+        .args(["scan", &mini_pbip(), "--plain", "--tables"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
 fn bare_path_argument_no_longer_works_without_a_subcommand() {
     ripbi()
         .arg(mini_pbip())
