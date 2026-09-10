@@ -28,9 +28,32 @@ pub struct ScanOutput {
     /// Objects suppressed by `[scan].ignore` patterns.
     pub ignored: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
+    /// A dead auto date/time table's own row lives in [`ScanOutput::auto_date_time`]
+    /// instead, under its verdict.
     pub findings: Vec<Finding>,
+    /// One row per auto date/time table (`LocalDateTable_*` /
+    /// `DateTableTemplate_*`): the provenance verdict no reachability pass can
+    /// produce. Rows suppressed by `[scan].ignore` are absent.
+    pub auto_date_time: Vec<AutoDateTimeRow>,
     /// Every skip notice ingestion recorded.
     pub skips: Vec<SkipNoticeOut>,
+}
+
+/// One auto date/time table with its verdict — does a report bind the
+/// machinery, or is it alive only through the engine's own relationship?
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoDateTimeRow {
+    /// The verdict: `in_use`, `unused_by_reports`, or `dead`.
+    pub verdict: &'static str,
+    /// The table's display id, e.g. `table 'LocalDateTable_9e0bbdfc-…'`.
+    pub id: String,
+    /// The user's date column the machinery serves, when one resolves — the
+    /// `for 'Date'[OrderDate]` context.
+    pub source_column: Option<String>,
+    /// The table's own unused finding, present exactly when the verdict is
+    /// `dead`: the row moved here from the generic findings so the verdict
+    /// and its dead-chain note read together.
+    pub finding: Option<Finding>,
 }
 
 /// One unused finding.
@@ -104,6 +127,17 @@ pub fn kind_of(id: &ObjectId) -> &'static str {
     }
 }
 
+/// The verdict label of an auto date/time table, as used in `--plain` and JSON.
+#[must_use]
+pub fn verdict_of(verdict: ripbi_core::graph::AutoDateTimeStatus) -> &'static str {
+    use ripbi_core::graph::AutoDateTimeStatus;
+    match verdict {
+        AutoDateTimeStatus::InUse => "in_use",
+        AutoDateTimeStatus::UnusedByReports => "unused_by_reports",
+        AutoDateTimeStatus::Dead => "dead",
+    }
+}
+
 /// The Power Query expressions that name a finding's column, as display
 /// labels — the partition is named by its table (that is what the user
 /// edits), not by its GUID. Order-preserving and deduplicated.
@@ -133,29 +167,87 @@ pub fn human(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) ->
 
     if report.findings.is_empty() {
         writeln!(out, "No unused objects.")?;
+    } else {
+        for (kind, label) in GROUPS {
+            let group: Vec<&Finding> = report
+                .findings
+                .iter()
+                .filter(|finding| finding.kind == *kind)
+                .collect();
+            if group.is_empty() {
+                continue;
+            }
+            writeln!(
+                out,
+                "{}",
+                palette.bold(&format!("{label} ({})", group.len()))
+            )?;
+            for finding in group {
+                writeln!(out, "  {}", finding.id)?;
+                write_annotations(out, palette, finding, "    ")?;
+            }
+            writeln!(out)?;
+        }
+    }
+    write_auto_date_time(out, palette, report)
+}
+
+/// The auto date/time section, rendered in both human modes after the
+/// reachability findings: a different verdict (report bindings, not
+/// reachability), so it survives even a clean "No unused objects." scan.
+fn write_auto_date_time(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
+    if report.auto_date_time.is_empty() {
         return Ok(());
     }
-    for (kind, label) in GROUPS {
-        let group: Vec<&Finding> = report
-            .findings
+    const SECTIONS: &[(&str, &str)] = &[
+        ("in_use", "in use — replace with a real date table"),
+        (
+            "unused_by_reports",
+            "unused by reports — disable auto date/time",
+        ),
+        ("dead", "dead"),
+    ];
+    let actionable = report
+        .auto_date_time
+        .iter()
+        .any(|row| row.verdict != "in_use");
+    let header = format!("Auto date/time ({})", report.auto_date_time.len());
+    writeln!(
+        out,
+        "{}",
+        if actionable {
+            palette.yellow(&header)
+        } else {
+            palette.bold(&header)
+        }
+    )?;
+    for (verdict, label) in SECTIONS {
+        let group: Vec<&AutoDateTimeRow> = report
+            .auto_date_time
             .iter()
-            .filter(|finding| finding.kind == *kind)
+            .filter(|row| row.verdict == *verdict)
             .collect();
         if group.is_empty() {
             continue;
         }
-        writeln!(
-            out,
-            "{}",
-            palette.bold(&format!("{label} ({})", group.len()))
-        )?;
-        for finding in group {
-            writeln!(out, "  {}", finding.id)?;
-            write_annotations(out, palette, finding)?;
+        writeln!(out, "  {label}:")?;
+        for row in group {
+            let source = row
+                .source_column
+                .as_deref()
+                .map(|column| format!(" — for {column}"))
+                .unwrap_or_default();
+            writeln!(out, "    {}{source}", row.id)?;
+            if let Some(finding) = &row.finding {
+                write_annotations(out, palette, finding, "      ")?;
+            }
         }
-        writeln!(out)?;
     }
-    Ok(())
+    writeln!(out)
 }
 
 /// Writes `--summary` output: the summary line and per-type totals, without
@@ -172,19 +264,42 @@ pub fn human_summary(
 
     if report.findings.is_empty() {
         writeln!(out, "No unused objects.")?;
-        return Ok(());
-    }
-    for (kind, label) in GROUPS {
-        let count = report
-            .findings
-            .iter()
-            .filter(|finding| finding.kind == *kind)
-            .count();
-        if count > 0 {
-            writeln!(out, "{}: {}", palette.bold(label), count)?;
+    } else {
+        for (kind, label) in GROUPS {
+            let count = report
+                .findings
+                .iter()
+                .filter(|finding| finding.kind == *kind)
+                .count();
+            if count > 0 {
+                writeln!(out, "{}: {}", palette.bold(label), count)?;
+            }
         }
     }
-    Ok(())
+    if report.auto_date_time.is_empty() {
+        return Ok(());
+    }
+    let mut counts = Vec::new();
+    for (verdict, label) in [
+        ("in_use", "in use"),
+        ("unused_by_reports", "unused by reports"),
+        ("dead", "dead"),
+    ] {
+        let count = report
+            .auto_date_time
+            .iter()
+            .filter(|row| row.verdict == verdict)
+            .count();
+        if count > 0 {
+            counts.push(format!("{count} {label}"));
+        }
+    }
+    writeln!(
+        out,
+        "{}: {}",
+        palette.bold("Auto date/time"),
+        counts.join(", ")
+    )
 }
 
 /// The summary line both human modes open with, plus the `[scan].ignore`
@@ -220,9 +335,14 @@ fn write_annotations(
     out: &mut dyn io::Write,
     palette: &Palette,
     finding: &Finding,
+    indent: &str,
 ) -> io::Result<()> {
     if finding.used_by.is_empty() {
-        writeln!(out, "{}", palette.dim("    ← nothing references it"))?;
+        writeln!(
+            out,
+            "{}",
+            palette.dim(&format!("{indent}← nothing references it"))
+        )?;
     } else {
         let only = finding.used_by.len() == 1;
         for used in &finding.used_by {
@@ -236,7 +356,7 @@ fn write_annotations(
                 out,
                 "{}",
                 palette.dim(&format!(
-                    "    ← {prefix}used by {} — {}{also}",
+                    "{indent}← {prefix}used by {} — {}{also}",
                     used.id, used.provenance
                 ))
             )?;
@@ -248,7 +368,7 @@ fn write_annotations(
             out,
             "{}",
             palette.dim(&format!(
-                "    ⭘ Power Query also names it ({named}) — safe to stop loading; \
+                "{indent}⭘ Power Query also names it ({named}) — safe to stop loading; \
                  removing it from the script means editing those steps too"
             ))
         )?;
@@ -256,13 +376,17 @@ fn write_annotations(
     Ok(())
 }
 
-/// Writes `--plain` output: one `<type>\t<id>` record per finding.
+/// Writes `--plain` output: one `<type>\t<id>` record per finding, then one
+/// `auto_date_time:<verdict>\t<id>` record per auto date/time table.
 ///
 /// # Errors
 /// Propagates stream write failures.
 pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     for finding in &report.findings {
         writeln!(out, "{}\t{}", finding.kind, finding.id)?;
+    }
+    for row in &report.auto_date_time {
+        writeln!(out, "auto_date_time:{}\t{}", row.verdict, row.id)?;
     }
     Ok(())
 }
@@ -282,6 +406,11 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             roots: report.roots,
             unused: report.findings.len(),
             ignored: report.ignored,
+            auto_date_time: JsonAutoDateTimeCounts {
+                in_use: count_verdict(&report.auto_date_time, "in_use"),
+                unused_by_reports: count_verdict(&report.auto_date_time, "unused_by_reports"),
+                dead: count_verdict(&report.auto_date_time, "dead"),
+            },
         },
         unused: report
             .findings
@@ -299,6 +428,29 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                     })
                     .collect(),
                 named_in_power_query: finding.named_in_power_query.clone(),
+            })
+            .collect(),
+        auto_date_time: report
+            .auto_date_time
+            .iter()
+            .map(|row| JsonAutoDateTimeRow {
+                verdict: row.verdict,
+                id: row.id.clone(),
+                source_column: row.source_column.clone(),
+                finding: row.finding.as_ref().map(|finding| JsonFinding {
+                    kind: finding.kind,
+                    id: finding.id.clone(),
+                    used_by: finding
+                        .used_by
+                        .iter()
+                        .map(|used| JsonUsedBy {
+                            id: used.id.clone(),
+                            provenance: used.provenance.clone(),
+                            also_unused: used.also_unused,
+                        })
+                        .collect(),
+                    named_in_power_query: finding.named_in_power_query.clone(),
+                }),
             })
             .collect(),
         skips: JsonSkips {
@@ -327,6 +479,7 @@ struct JsonReport {
     reports: Vec<String>,
     summary: JsonSummary,
     unused: Vec<JsonFinding>,
+    auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
 }
 
@@ -337,6 +490,30 @@ struct JsonSummary {
     roots: usize,
     unused: usize,
     ignored: usize,
+    auto_date_time: JsonAutoDateTimeCounts,
+}
+
+#[derive(Serialize)]
+struct JsonAutoDateTimeCounts {
+    in_use: usize,
+    unused_by_reports: usize,
+    dead: usize,
+}
+
+#[derive(Serialize)]
+struct JsonAutoDateTimeRow {
+    verdict: &'static str,
+    id: String,
+    /// The user's date column the machinery serves, when one resolves.
+    source_column: Option<String>,
+    /// The dead table's own finding — chain annotations included — moved here
+    /// from `unused` so the verdict and the chain read together. Present
+    /// exactly when `verdict` is `"dead"`.
+    finding: Option<JsonFinding>,
+}
+
+fn count_verdict(rows: &[AutoDateTimeRow], verdict: &str) -> usize {
+    rows.iter().filter(|row| row.verdict == verdict).count()
 }
 
 #[derive(Serialize)]

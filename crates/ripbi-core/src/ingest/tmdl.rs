@@ -19,8 +19,8 @@ use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
-    HierarchyLevel, Kpi, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
-    Table, TablePermission, TabularDatabase,
+    HierarchyLevel, HierarchyRef, Kpi, Measure, Partition, PartitionSource, Relationship, Role,
+    SharedExpression, Table, TablePermission, TabularDatabase, Variation,
 };
 use crate::{Error, Result};
 
@@ -55,14 +55,10 @@ const IGNORED_KEYS: &[&str] = &[
     "tableDetailPosition",
     // Measure and table metadata
     "displayFolder",
-    "isPrivate",
     "excludeFromModelRefresh",
-    // Date variations bind columns to hierarchies; deliberately unmodeled
-    // (a variation-only hierarchy could be mis-reported — known gap, see
-    // docs/formats.md)
-    "variation",
-    "defaultHierarchy",
-    "isDefault",
+    // Engine-only table visibility flag on the auto date/time machinery; the
+    // machinery itself is identified by its `__PBI_*DateTable` annotations and
+    // the name prefixes, so this flag carries nothing the AST needs.
     "showAsVariationsOnly",
     // Model and database metadata
     "culture",
@@ -968,6 +964,20 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
         ..Default::default()
     };
     for child in &node.children {
+        // Annotations are otherwise-uninteresting metadata, but these two name
+        // the auto date/time machinery and map straight onto Table flags — the
+        // same facts VertiPaq Analyzer exposes as IsLocalDateTable and
+        // IsTemplateDateTable.
+        if child.key == "annotation" {
+            if let (Some(name), Some("true")) = (child.name.as_deref(), child.text()) {
+                match name {
+                    "__PBI_LocalDateTable" => table.is_local_date_table = true,
+                    "__PBI_TemplateDateTable" => table.is_template_date_table = true,
+                    _ => {}
+                }
+            }
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -981,6 +991,7 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
                 table.calculation_group = Some(map_calculation_group(child, path, skips));
             }
             "isHidden" => table.is_hidden = true,
+            "isPrivate" => table.is_private = true,
             "defaultDetailRowsDefinition" => {
                 table.detail_rows_expression = child.text().map(str::to_string);
             }
@@ -993,6 +1004,10 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
             ),
         }
     }
+    // Formats that carry no flags or annotations still name the machinery:
+    // the prefixes are the engine's own convention.
+    table.is_local_date_table |= table.name.starts_with("LocalDateTable_");
+    table.is_template_date_table |= table.name.starts_with("DateTableTemplate_");
     table
 }
 
@@ -1087,6 +1102,7 @@ fn map_column(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Column {
         match child.key.as_str() {
             "isHidden" => column.is_hidden = true,
             "sortByColumn" => column.sort_by_column = child.text().map(unquote),
+            "variation" => column.variations.push(map_variation(child, path, skips)),
             // Group-by columns live inside a nameless relatedColumnDetails
             // object, one groupByColumn per grouped column (verified shape —
             // samples/…/Toggle for breakdown.tmdl).
@@ -1117,6 +1133,62 @@ fn map_column(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Column {
         }
     }
     column
+}
+
+/// Parses a column `variation` object: the model's declaration that the column
+/// is served by a hierarchy on another table — for auto date/time, the engine's
+/// hidden `LocalDateTable_*` via a hidden relationship.
+///
+/// Report bindings written against the varied column resolve through this
+/// declaration (see the graph's hierarchy-level resolution), so the
+/// relationship and default-hierarchy references are load-bearing, not
+/// diagnostics.
+fn map_variation(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Variation {
+    let mut variation = Variation {
+        name: unquote(node.name.as_deref().unwrap_or_default()),
+        ..Default::default()
+    };
+    for child in &node.children {
+        if is_ignored(child) {
+            continue;
+        }
+        match child.key.as_str() {
+            "isDefault" => variation.is_default = true,
+            "relationship" => variation.relationship = child.text().map(str::to_string),
+            // `Table.'Hierarchy'`, parsed with the same reader as column refs.
+            "defaultHierarchy" => {
+                variation.default_hierarchy = child.text().and_then(|text| {
+                    parse_column_ref(text).map(|(table, hierarchy)| HierarchyRef {
+                        table: table.unwrap_or_default(),
+                        hierarchy,
+                    })
+                });
+                if variation.default_hierarchy.is_none() {
+                    notice(
+                        skips,
+                        path,
+                        Some(child.line),
+                        SkipKind::MalformedValue,
+                        format!(
+                            "variation '{}' has an unreadable defaultHierarchy",
+                            variation.name
+                        ),
+                    );
+                }
+            }
+            other => notice(
+                skips,
+                path,
+                Some(child.line),
+                SkipKind::UnknownProperty,
+                format!(
+                    "unknown property '{other}' on variation '{}'",
+                    variation.name
+                ),
+            ),
+        }
+    }
+    variation
 }
 
 fn map_hierarchy(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Hierarchy {
@@ -1829,6 +1901,143 @@ mod tests {
             assert_eq!(table.measures.len(), 1);
         }
 
+        /// The auto date/time machinery, exactly as the engine writes it: the
+        /// annotation names the table kind and the flags stay silent — the
+        /// same facts VertiPaq Analyzer exposes as IsLocalDateTable.
+        #[test]
+        fn the_engine_annotations_mark_a_local_date_table() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "table 'LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228'\n\tisHidden\n\tshowAsVariationsOnly\n\tannotation __PBI_LocalDateTable = true\n\tannotation SummarizationSetBy = Automatic\n",
+                "table",
+            );
+            let table = map_table(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert!(table.is_hidden);
+            assert!(table.is_local_date_table);
+            assert!(!table.is_template_date_table);
+            assert!(!table.is_private);
+        }
+
+        /// The template table carries `isPrivate` instead of
+        /// `showAsVariationsOnly` — VertiPaq's IsPrivate.
+        #[test]
+        fn the_engine_annotation_and_isprivate_mark_the_template_table() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "table 'DateTableTemplate_0039983e-de71-45fb-bd88-812f61c0ff38'\n\tisHidden\n\tisPrivate\n\tannotation __PBI_TemplateDateTable = true\n",
+                "table",
+            );
+            let table = map_table(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert!(table.is_private);
+            assert!(table.is_template_date_table);
+            assert!(!table.is_local_date_table);
+        }
+
+        /// A format that carries neither the annotations nor the flags still
+        /// names the machinery: the prefixes are the engine's own convention.
+        #[test]
+        fn the_name_prefixes_fall_back_when_no_metadata_names_the_machinery() {
+            let mut skips = Vec::new();
+            let local = map_one("table LocalDateTable_deadbeef-1\n", "table");
+            let local = map_table(&local, Path::new("t"), &mut skips);
+            assert!(skips.is_empty());
+            assert!(local.is_local_date_table);
+            assert!(!local.is_template_date_table);
+
+            let template = map_one("table DateTableTemplate_deadbeef-1\n", "table");
+            let template = map_table(&template, Path::new("t"), &mut skips);
+            assert!(template.is_template_date_table);
+
+            let plain = map_one("table Sales\n", "table");
+            let plain = map_table(&plain, Path::new("t"), &mut skips);
+            assert!(!plain.is_local_date_table);
+            assert!(!plain.is_template_date_table);
+        }
+
+        /// A plain user table may be engine-private too (seen in the Store
+        /// Sales sample) — private is not date machinery.
+        #[test]
+        fn a_private_user_table_is_not_date_machinery() {
+            let mut skips = Vec::new();
+            let node = map_one("table 'ClusterMappingTable 2'\n\tisPrivate\n", "table");
+            let table = map_table(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert!(table.is_private);
+            assert!(!table.is_local_date_table);
+            assert!(!table.is_template_date_table);
+        }
+
+        /// The declaration a report's date-hierarchy binding resolves through:
+        /// the relationship GUID and the table-qualified default hierarchy.
+        #[test]
+        fn a_variation_declares_its_relationship_and_default_hierarchy() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "column Date\n\tisHidden\n\tvariation Variation\n\t\tisDefault\n\t\trelationship: b10a0bfa-b7fe-4437-8b2d-85624b0f085f\n\t\tdefaultHierarchy: LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228.'Date Hierarchy'\n",
+                "column",
+            );
+            let column = map_column(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert_eq!(column.variations.len(), 1);
+            let variation = &column.variations[0];
+            assert_eq!(variation.name, "Variation");
+            assert!(variation.is_default);
+            assert_eq!(
+                variation.relationship.as_deref(),
+                Some("b10a0bfa-b7fe-4437-8b2d-85624b0f085f")
+            );
+            assert_eq!(
+                variation.default_hierarchy,
+                Some(HierarchyRef {
+                    table: "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228".to_string(),
+                    hierarchy: "Date Hierarchy".to_string(),
+                })
+            );
+        }
+
+        /// TMDL writes `isDefault` only when true.
+        #[test]
+        fn an_unmarked_variation_is_not_the_default() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "column Date\n\tvariation Variation\n\t\trelationship: r1\n",
+                "column",
+            );
+            let column = map_column(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert!(!column.variations[0].is_default);
+            assert_eq!(column.variations[0].relationship.as_deref(), Some("r1"));
+            assert_eq!(column.variations[0].default_hierarchy, None);
+        }
+
+        #[test]
+        fn an_unknown_variation_child_is_drift() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "column Date\n\tvariation Variation\n\t\tdefaultHierarchy: 'D'.'Date Hierarchy'\n\t\taiHint: x\n",
+                "column",
+            );
+            let column = map_column(&node, Path::new("t"), &mut skips);
+
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::UnknownProperty);
+            assert!(skips[0].detail.contains("aiHint"));
+            assert_eq!(
+                column.variations[0].default_hierarchy,
+                Some(HierarchyRef {
+                    table: "D".to_string(),
+                    hierarchy: "Date Hierarchy".to_string(),
+                })
+            );
+        }
+
         /// Real Desktop models assign Power Query query groups to expressions
         /// and partitions; purely organizational, so never a notice.
         #[test]
@@ -2197,11 +2406,22 @@ mod tests {
                 .collect::<String>()
                 + "\tvariation V\n\t\tdefaultHierarchy: H\n\t\tisDefault\n\tshowAsVariationsOnly\n";
             let node = map_one(&text, "column");
-            map_column(&node, Path::new("t"), &mut skips);
+            let column = map_column(&node, Path::new("t"), &mut skips);
 
             assert!(skips.is_empty(), "metadata keys must be silent: {skips:?}");
             // The child scan still finds modeled keys among the noise.
             assert!(key_at(&node, "dataType").value == NodeValue::Inline("x".to_string()));
+            // The variation is no longer ignore-list noise: it is modeled, and
+            // its children are consumed by the variation mapper, not the list.
+            let variation = &column.variations[0];
+            assert!(variation.is_default);
+            assert_eq!(
+                variation
+                    .default_hierarchy
+                    .as_ref()
+                    .map(|h| h.hierarchy.as_str()),
+                Some("H")
+            );
         }
     }
 }

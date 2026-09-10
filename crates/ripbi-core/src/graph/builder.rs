@@ -22,7 +22,10 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use crate::dax::{self, RawRef, unescape_name};
 use crate::identity::{NameKey, ObjectId, fold_name};
 use crate::model::index::{ModelIndex, Resolved, UnqualifiedMatches};
-use crate::model::{ColumnKind, DaxExpressionRef, Table, TabularDatabase};
+use crate::model::{
+    ColumnKind, DaxExpressionRef, Hierarchy, HierarchyRef, Relationship, Table, TabularDatabase,
+    Variation,
+};
 use crate::report::{BindingKind, FieldTarget, ReportModel};
 
 use super::DependencyGraph;
@@ -506,7 +509,11 @@ impl Builder {
     ///   keeps producing it and the model stops mapping it. Unloading the
     ///   column cannot break refresh, so there is deliberately *no* liveness
     ///   edge; the naming expression is recorded in `m_named` instead, so
-    ///   findings can say what a *full* removal — script included — must edit;
+    ///   findings can say what a *full* removal — script included — must edit.
+    ///   Only Data columns qualify: an M step can only name a column it
+    ///   produces, so a calculated column (or a calculated-table column)
+    ///   matching an M name is coincidence, not supply chain — the auto
+    ///   date/time columns named like Desktop's date-template query, for one;
     /// - a **table or shared expression** named in M is different: deleting it
     ///   deletes the query this expression reads or joins, which breaks
     ///   refresh. Those stay real edges.
@@ -516,11 +523,20 @@ impl Builder {
             for binding in crate::m::bindings(db, index, expression.text) {
                 for target in binding.targets() {
                     match target {
-                        ObjectId::Column { .. } => {
-                            self.m_named
-                                .entry(target.clone())
-                                .or_default()
-                                .push(owner.clone());
+                        ObjectId::Column { table, column } => {
+                            let produced_by_m = index
+                                .resolve_qualified(table.as_str(), column.as_str())
+                                .and_then(|resolved| match resolved {
+                                    Resolved::Column(handle) => db.column(handle),
+                                    Resolved::Measure(_) => None,
+                                })
+                                .is_some_and(|column| matches!(column.kind, ColumnKind::Data));
+                            if produced_by_m {
+                                self.m_named
+                                    .entry(target.clone())
+                                    .or_default()
+                                    .push(owner.clone());
+                            }
                         }
                         ObjectId::Table { table } => {
                             // A partition naming its own table says nothing
@@ -625,6 +641,8 @@ impl Builder {
                 table,
                 hierarchy,
                 level,
+                via_column,
+                via_variation,
             } => {
                 let mut out = Vec::new();
                 if let Some(t) = table_struct(db, index, table.as_str()) {
@@ -633,20 +651,24 @@ impl Builder {
                         .iter()
                         .find(|h| NameKey::new(&h.name) == *hierarchy)
                     {
-                        out.push(ObjectId::Hierarchy {
-                            table: NameKey::new(&t.name),
-                            hierarchy: NameKey::new(&h.name),
-                        });
-                        // Drilling to a level uses the level's column too.
-                        if let Some(level_column) = h
-                            .levels
-                            .iter()
-                            .find(|l| NameKey::new(&l.name) == *level)
-                            .and_then(|l| same_table_column(t, &l.column))
-                        {
-                            out.push(level_column);
-                        }
-                        return out;
+                        return hierarchy_targets(t, h, level);
+                    }
+                    // A hierarchy reached over a column variation names the
+                    // *varied* table, but the hierarchy lives on the
+                    // variation's target — resolve the declaration before
+                    // giving up on the binding.
+                    if let Some(via_column) = via_column
+                        && let Some(targets) = variation_hierarchy_targets(
+                            db,
+                            index,
+                            t,
+                            via_column,
+                            via_variation.as_ref(),
+                            hierarchy,
+                            level,
+                        )
+                    {
+                        return targets;
                     }
                     // A hierarchy binding naming a table with no such hierarchy
                     // still keeps the table alive.
@@ -739,6 +761,146 @@ fn same_table_column(table: &Table, name: &str) -> Option<ObjectId> {
             table: NameKey::new(&table.name),
             column: NameKey::new(&column.name),
         })
+}
+
+/// The binding targets of a resolved hierarchy: the hierarchy node plus the
+/// drilled level's column.
+fn hierarchy_targets(table: &Table, hierarchy: &Hierarchy, level: &NameKey) -> Vec<ObjectId> {
+    let mut out = vec![ObjectId::Hierarchy {
+        table: NameKey::new(&table.name),
+        hierarchy: NameKey::new(&hierarchy.name),
+    }];
+    // Drilling to a level uses the level's column too.
+    if let Some(level_column) = hierarchy
+        .levels
+        .iter()
+        .find(|l| NameKey::new(&l.name) == *level)
+        .and_then(|l| same_table_column(table, &l.column))
+    {
+        out.push(level_column);
+    }
+    out
+}
+
+/// Resolves a hierarchy binding that arrived over a column variation
+/// (`PropertyVariationSource`): the binding names the *varied* (base) table,
+/// but the hierarchy lives on the variation's target — for auto date/time the
+/// engine's hidden `LocalDateTable_*`.
+///
+/// The primary path is the model's own declaration: the varied column's
+/// [`Variation`] names the relationship (and the default hierarchy)
+/// realizing it. When no declaration matches — a serialization that carries
+/// the relationship but dropped the variation object — the variation
+/// relationship is found by shape instead: the one touching the varied column
+/// whose other endpoint is a flagged auto date/time table. `None` when nothing
+/// resolves; the caller keeps its own fallback.
+fn variation_hierarchy_targets(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    base: &Table,
+    via_column: &NameKey,
+    via_variation: Option<&NameKey>,
+    hierarchy: &NameKey,
+    level: &NameKey,
+) -> Option<Vec<ObjectId>> {
+    let column = base
+        .columns
+        .iter()
+        .find(|column| NameKey::new(&column.name) == *via_column)?;
+
+    // The declarations to try, most specific first: the variation the binding
+    // named, then the column's remaining variations in source order.
+    let mut variations: Vec<&Variation> = column.variations.iter().collect();
+    if let Some(name) = via_variation {
+        variations.sort_by_key(|variation| NameKey::new(&variation.name) != *name);
+    }
+
+    // Candidate target tables in try order, each carrying the default
+    // hierarchy declared for it, if any.
+    let mut candidates: Vec<(&Table, Option<&HierarchyRef>)> = Vec::new();
+    for variation in &variations {
+        if let Some(relationship) = &variation.relationship
+            && let Some(rel) = db
+                .relationships
+                .iter()
+                .find(|rel| rel.name.as_deref() == Some(relationship.as_str()))
+            && let Some(table) = variation_endpoint(db, index, rel, base, &column.name)
+        {
+            push_candidate(&mut candidates, table, variation.default_hierarchy.as_ref());
+        }
+        if let Some(reference) = &variation.default_hierarchy
+            && let Some(table) = table_struct(db, index, &reference.table)
+        {
+            push_candidate(&mut candidates, table, Some(reference));
+        }
+    }
+    for rel in &db.relationships {
+        if let Some(table) = variation_endpoint(db, index, rel, base, &column.name)
+            && table.is_local_date_table
+        {
+            push_candidate(&mut candidates, table, None);
+        }
+    }
+
+    for (table, default_ref) in candidates {
+        let found = table
+            .hierarchies
+            .iter()
+            .find(|h| NameKey::new(&h.name) == *hierarchy)
+            .or_else(|| {
+                // The binding named a hierarchy this table does not carry, but
+                // the declaration names the table's default — the default is
+                // what the engine binds the varied column to.
+                let reference = default_ref
+                    .filter(|reference| fold_name(&reference.table) == fold_name(&table.name))?;
+                table
+                    .hierarchies
+                    .iter()
+                    .find(|h| fold_name(&h.name) == fold_name(&reference.hierarchy))
+            });
+        if let Some(h) = found {
+            return Some(hierarchy_targets(table, h, level));
+        }
+    }
+    None
+}
+
+/// Adds a candidate target table unless it is already present; the variation's
+/// default-hierarchy reference rides along when it points at this table.
+fn push_candidate<'a>(
+    candidates: &mut Vec<(&'a Table, Option<&'a HierarchyRef>)>,
+    table: &'a Table,
+    default_ref: Option<&'a HierarchyRef>,
+) {
+    if !candidates
+        .iter()
+        .any(|(seen, _)| fold_name(&seen.name) == fold_name(&table.name))
+    {
+        candidates.push((table, default_ref));
+    }
+}
+
+/// The relationship's endpoint table away from the given base column — only
+/// when that base column is one of the endpoints.
+fn variation_endpoint<'a>(
+    db: &'a TabularDatabase,
+    index: &ModelIndex,
+    rel: &Relationship,
+    base: &Table,
+    column: &str,
+) -> Option<&'a Table> {
+    let from_matches = fold_name(&rel.from_table) == fold_name(&base.name)
+        && fold_name(&rel.from_column) == fold_name(column);
+    let to_matches = fold_name(&rel.to_table) == fold_name(&base.name)
+        && fold_name(&rel.to_column) == fold_name(column);
+    let other = if from_matches {
+        &rel.to_table
+    } else if to_matches {
+        &rel.from_table
+    } else {
+        return None;
+    };
+    table_struct(db, index, other)
 }
 
 /// The table node for a table name, if the table exists.

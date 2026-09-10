@@ -119,7 +119,11 @@ deliberately **no liveness edge**. Unloading the column is always safe; removing
 *entirely* (model and script) means editing the steps that name it, which is the
 context that rides on the finding (`UnusedObject::named_by_m`, the
 `named_in_power_query` JSON field, the `⭘ Power Query also names it` annotation).
-Measure Killer's classification agrees column-for-column here.
+The binding itself stays name-conservative; the graph applies one production rule on
+top — only **Data** columns carry the context, because an M step can only name a
+column it produces, so a calculated column matching an M name (the auto date/time
+columns vs Desktop's date-template query) is coincidence. Measure Killer's
+classification agrees column-for-column here.
 
 A **table or shared expression** named in M is different: deleting it deletes the query
 the expression reads or joins, and *that* breaks refresh. Those stay real

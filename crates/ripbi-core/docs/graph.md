@@ -62,7 +62,10 @@ split:
   travel with the finding instead (`UnusedObject::named_by_m`, rendered as the
   `named_in_power_query` JSON field and the `⭘ Power Query also names it` annotation):
   unloading is safe, and removing the column from the script *entirely* means editing
-  those steps too.
+  those steps too. Only **Data** columns carry that context — an M step can only name
+  a column it produces, so a calculated column matching an M name is coincidence
+  (auto date/time columns named like Desktop's date-template query), never supply
+  chain.
 
 Matching is by identifier tokens, case-insensitively: names inside comments and
 unrelated strings do not count (the one deliberate narrowing against the old substring
@@ -74,6 +77,17 @@ its provenance. Measure targets resolve report-first: within its report, a repor
 measure shadows a model measure of the same name. `Aggregation` unwraps to its inner
 field; `HierarchyLevel` keeps the hierarchy and the level's underlying column;
 `Written` falls through the same ladder as a written qualified reference.
+
+**Date-hierarchy bindings over a variation.** A visual's date hierarchy under auto
+date/time is written against the *varied* (base) table — `HierarchyLevel` with a
+`PropertyVariationSource` — but the hierarchy lives on the engine's hidden
+`LocalDateTable_*`. When the named table carries no such hierarchy, resolution follows
+the model's declaration: the varied column's `variation` names the relationship (and
+the default hierarchy), and the binding lands on the related date table's hierarchy
+and level column. If the serialization dropped the variation object, the relationship
+is found by shape instead — the one touching the varied column whose other endpoint is
+a flagged auto date/time table. Without a resolution the coarse fallback applies: the
+table the binding names stays alive.
 
 **Calculation-item selection.** A report binding that lands on a calculation-group
 column — a slicer over the field column, a filter naming an item — can select any of
@@ -139,6 +153,26 @@ special-casing to annotate chains.
 A model scanned with no reports and no roles has no reachability roots; every object
 comes back unused. That is the honest answer, not a special case: callers (the CLI)
 decide whether it is a finding or a missing report and should say so.
+
+## The second verdict: auto date/time is a provenance question
+
+Reachability answers "does anything keep this alive?" For the engine's auto date/time
+machinery (`LocalDateTable_*` / `DateTableTemplate_*`) that answer is misleading, because
+the framework relationship to the user's date column keeps the machinery alive for as
+long as that column is used — a framework-generated edge, not a real consumer. So the
+graph carries a second, deliberately *non-reachability* verdict beside `unused_objects`:
+`auto_date_time_tables` reads the same resolved roots and the same reachability set with
+a different question — does a *report binding* land on the machinery?
+
+- **In use** — a `Provenance::Binding` root (or selection edge) lands on the table or
+  one of its members. Alive and used; the advice is to replace it with a real date table.
+- **Unused by reports** — nothing binds it, yet reachability keeps it alive: pure bloat
+  no dead-code finding can express, because the object is not dead. Disable auto date/time.
+- **Dead** — reachability never reached it; its own finding moves into the section so
+  the verdict and the dead chain read together.
+
+The flags identifying the machinery (`is_local_date_table`, `is_template_date_table`,
+`is_private`) are display-only metadata and never touch either verdict's inputs.
 
 ## Determinism
 

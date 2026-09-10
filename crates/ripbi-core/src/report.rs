@@ -269,12 +269,22 @@ pub enum FieldTarget {
     /// A hierarchy level: the level a visual drills to, which keeps the whole
     /// hierarchy (and its level columns) alive.
     HierarchyLevel {
-        /// Owning table as written.
+        /// Owning table as written. For a hierarchy reached over a column
+        /// variation this is the *varied* (base) table; the hierarchy itself
+        /// lives on the variation's target table.
         table: NameKey,
         /// Hierarchy name as written.
         hierarchy: NameKey,
         /// Level name as written.
         level: NameKey,
+        /// The varied column (PBIR `PropertyVariationSource.Property`), when
+        /// the hierarchy is reached over a column variation — the key that
+        /// joins this binding to the model-side
+        /// [`crate::model::Column::variations`] declaration.
+        via_column: Option<NameKey>,
+        /// The variation's name (PBIR `PropertyVariationSource.Name`), which
+        /// picks between a column's variations when there are several.
+        via_variation: Option<NameKey>,
     },
     /// An aggregation over an inner reference, e.g. Sum of `'Sales'[Units]`.
     /// The inner target is what stays alive; the function is diagnostics.
@@ -310,6 +320,7 @@ impl fmt::Display for FieldTarget {
                 table,
                 hierarchy,
                 level,
+                ..
             } => write!(
                 f,
                 "hierarchy {}[{}] level {}",
@@ -660,6 +671,8 @@ mod tests {
                 table: NameKey::new("Accounts"),
                 hierarchy: NameKey::new("Street Hierarchy"),
                 level: NameKey::new("State or Province"),
+                via_column: None,
+                via_variation: None,
             },
             "hierarchy 'Accounts'[Street Hierarchy] level 'State or Province'"
         )]

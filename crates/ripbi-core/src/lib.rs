@@ -57,7 +57,8 @@ pub mod report;
 
 pub use dax::{Binding, RawRef, Token, TokenKind, bind, references, tokenize, unescape_name};
 pub use graph::{
-    BindingEdge, BindingSite, DependencyGraph, Provenance, StructuralEdge, UnusedObject, UsedBy,
+    AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, DependencyGraph, Provenance,
+    StructuralEdge, UnusedObject, UsedBy,
 };
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};
@@ -67,9 +68,9 @@ pub use model::index::{
 };
 pub use model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, DaxExpressionKind,
-    DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel, Kpi, MExpressionRef,
-    Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
-    TablePermission, TabularDatabase,
+    DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel, HierarchyRef, Kpi,
+    MExpressionRef, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
+    Table, TablePermission, TabularDatabase, Variation,
 };
 pub use report::{
     BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, DatasetReference,

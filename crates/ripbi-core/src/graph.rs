@@ -37,6 +37,9 @@
 //!   **column** named in M is the column's *supply chain*, not a consumer:
 //!   the query keeps producing it and the model just stops mapping it, so
 //!   unloading cannot break refresh and there is deliberately no edge.
+//!   Only Data columns qualify — an M step can only name a column it
+//!   produces, so a calculated column matching an M name (the auto date/time
+//!   columns named like Desktop's date-template query) is not recorded.
 //!   Instead the naming expressions ride along on the finding
 //!   ([`UnusedObject::named_by_m`]) — the what-a-full-removal-must-edit
 //!   context. Liveness still flows through the owner, so a dead table's
@@ -150,7 +153,7 @@ mod reachability;
 pub use provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
 pub use reachability::{UnusedObject, UsedBy};
 
-use crate::identity::ObjectId;
+use crate::identity::{NameKey, ObjectId, fold_name};
 use crate::model::TabularDatabase;
 use crate::report::ReportModel;
 
@@ -169,8 +172,10 @@ pub struct DependencyGraph {
     /// The reachability roots: report bindings pointing at model objects, with
     /// their binding provenance, in report order.
     roots: Vec<(ObjectId, Provenance)>,
-    /// Columns named by M expressions: the supply chain that is deliberately
-    /// *not* edges. Key: the column. Value: the naming expressions, sorted.
+    /// Data columns named by M expressions: the supply chain that is
+    /// deliberately *not* edges. Key: the column. Value: the naming
+    /// expressions, sorted. Engine-computed columns are excluded — an M step
+    /// can only name a column it produces.
     m_named: HashMap<ObjectId, Vec<ObjectId>>,
 }
 
@@ -237,7 +242,9 @@ impl DependencyGraph {
     /// name is not a consumer: unloading a column these expressions produce
     /// cannot break refresh. But removing the column *entirely* — model and
     /// script — means editing each of them, which is what this answers.
-    /// Non-empty only ever for columns.
+    /// Non-empty only ever for Data columns: an M step can only name a column
+    /// it produces, so an engine-computed column matching an M name is
+    /// coincidence, not supply chain.
     pub fn named_by_m(&self, id: &ObjectId) -> &[ObjectId] {
         self.m_named.get(id).map(Vec::as_slice).unwrap_or_default()
     }
@@ -276,6 +283,73 @@ impl DependencyGraph {
             .collect();
         out.sort_by(|a, b| a.id.cmp(&b.id));
         out
+    }
+
+    /// Every auto date/time table — flagged at ingestion or matching the
+    /// engine's `LocalDateTable_` / `DateTableTemplate_` name prefixes — with
+    /// the second verdict over the same graph the reachability findings come
+    /// from, sorted by object identity.
+    ///
+    /// The verdict is deliberately *not* reachability. The engine's own
+    /// relationship to the user's date column keeps the machinery alive for
+    /// as long as that column is used, so "alive" says nothing about whether
+    /// a report binds it; a table counts as used only when a report binding
+    /// ([`Provenance::Binding`]) lands on the table itself or on one of its
+    /// members. This is the same data the reachability findings are computed
+    /// from, read with a different question — not a separate analysis.
+    pub fn auto_date_time_tables(&self, db: &TabularDatabase) -> Vec<AutoDateTimeVerdict> {
+        let reach = reachability::Reachability::compute(self);
+        let mut out: Vec<AutoDateTimeVerdict> = db
+            .tables
+            .iter()
+            .filter(|table| table.is_local_date_table || table.is_template_date_table)
+            .map(|table| {
+                let id = ObjectId::Table {
+                    table: NameKey::new(&table.name),
+                };
+                let verdict = if self.bound_with_reports(&id) {
+                    AutoDateTimeStatus::InUse
+                } else if !reach.is_live(&id) {
+                    AutoDateTimeStatus::Dead
+                } else {
+                    AutoDateTimeStatus::UnusedByReports
+                };
+                AutoDateTimeVerdict {
+                    id,
+                    verdict,
+                    source_column: variation_source_column(db, &table.name),
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out
+    }
+
+    /// Whether any report binding lands on the table itself or on one of its
+    /// members (columns, measures, hierarchies, partitions, calculation
+    /// items). Binding roots are not edges, so both the root list and the
+    /// incoming `Binding` edges (the calculation-item selection case) count.
+    /// A binding on the *varied* (user-side) column does not count: the
+    /// framework relationship is not a consumer.
+    fn bound_with_reports(&self, table: &ObjectId) -> bool {
+        let ObjectId::Table { table: name } = table else {
+            return false;
+        };
+        let is_member = |id: &ObjectId| match id {
+            ObjectId::Column { table, .. }
+            | ObjectId::Measure { table, .. }
+            | ObjectId::Hierarchy { table, .. }
+            | ObjectId::Partition { table, .. }
+            | ObjectId::CalculationItem { table, .. } => table == name,
+            _ => false,
+        };
+        let is_binding = |provenance: &Provenance| matches!(provenance, Provenance::Binding(_));
+        self.roots.iter().any(|(target, provenance)| {
+            is_binding(provenance) && (target == table || is_member(target))
+        }) || self
+            .consumers_of(table)
+            .iter()
+            .any(|(_, provenance)| is_binding(provenance))
     }
 
     fn neighbors(&self, id: &ObjectId, direction: Direction) -> Vec<(ObjectId, Provenance)> {
@@ -338,13 +412,80 @@ impl DependencyGraph {
     }
 }
 
+/// One auto date/time table with the second, provenance-based verdict: does a
+/// report *bind* the machinery, or is it kept alive only by the engine's own
+/// relationship?
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoDateTimeVerdict {
+    /// The auto date/time table.
+    pub id: ObjectId,
+    /// The verdict.
+    pub verdict: AutoDateTimeStatus,
+    /// The user's date column the machinery serves, when a variation
+    /// declaration or the hidden relationship ties the table to one — the
+    /// `for 'Date'[OrderDate]` display. `None` for the template table, which
+    /// relates to nothing.
+    pub source_column: Option<ObjectId>,
+}
+
+/// The provenance-based verdict for one auto date/time table — the three
+/// states of issue #16, none of which plain reachability can produce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AutoDateTimeStatus {
+    /// A report binding lands on the table or one of its members: the
+    /// machinery is in use, and the advice is to replace it with a real date
+    /// table.
+    InUse,
+    /// No report binding touches it, yet the machinery is still live: the
+    /// framework relationship to a used date column keeps it alive. Pure
+    /// bloat — disable auto date/time.
+    UnusedByReports,
+    /// Reachability never reached it at all: dead with its dead chain.
+    Dead,
+}
+
+/// The user's date column whose variation points at `table` — through the
+/// variation's relationship or its default-hierarchy reference.
+fn variation_source_column(db: &TabularDatabase, table: &str) -> Option<ObjectId> {
+    let target = fold_name(table);
+    for t in &db.tables {
+        for column in &t.columns {
+            for variation in &column.variations {
+                let via_hierarchy = variation
+                    .default_hierarchy
+                    .as_ref()
+                    .is_some_and(|reference| fold_name(&reference.table) == target);
+                let via_relationship = variation
+                    .relationship
+                    .as_ref()
+                    .and_then(|name| {
+                        db.relationships
+                            .iter()
+                            .find(|rel| rel.name.as_deref() == Some(name.as_str()))
+                    })
+                    .is_some_and(|rel| {
+                        fold_name(&rel.from_table) == target || fold_name(&rel.to_table) == target
+                    });
+                if via_hierarchy || via_relationship {
+                    return Some(ObjectId::Column {
+                        table: NameKey::new(&t.name),
+                        column: NameKey::new(&column.name),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::identity::NameKey;
     use crate::model::{
-        Column, ColumnKind, DaxExpressionKind, Function, Measure, Partition, PartitionSource,
-        Relationship, Role, SharedExpression, Table, TablePermission,
+        Column, ColumnKind, DaxExpressionKind, Function, Hierarchy, HierarchyLevel, HierarchyRef,
+        Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
+        TablePermission, Variation,
     };
     use crate::report::{
         Bookmark, BookmarkSection, BookmarkVisual, FieldTarget, FieldWell, Filter, Page,
@@ -1826,6 +1967,247 @@ mod tests {
             assert_eq!(page.as_ref().map(NameKey::as_str), Some("P2"));
             assert_eq!(visual.as_ref().map(NameKey::as_str), Some("Card"));
             assert!(bookmark.is_none());
+        }
+    }
+
+    /// The auto date/time story end to end: a varied date column, the engine's
+    /// hidden `LocalDateTable_*`, and the three verdicts no reachability pass
+    /// can produce on its own.
+    mod auto_date_time {
+        use super::*;
+
+        fn hierarchy_level_target(
+            table: &str,
+            hierarchy: &str,
+            level: &str,
+            via_column: Option<&str>,
+            via_variation: Option<&str>,
+        ) -> FieldTarget {
+            FieldTarget::HierarchyLevel {
+                table: NameKey::new(table),
+                hierarchy: NameKey::new(hierarchy),
+                level: NameKey::new(level),
+                via_column: via_column.map(NameKey::new),
+                via_variation: via_variation.map(NameKey::new),
+            }
+        }
+
+        /// `'Sales'[Date]` varying through `LocalDateTable_x` — the model's
+        /// declaration plus the hidden relationship it names.
+        fn varied_model(variation: Option<Variation>) -> TabularDatabase {
+            let local_date_table = Table {
+                name: "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228".to_string(),
+                is_local_date_table: true,
+                is_hidden: true,
+                columns: vec![column("Date"), column("Year"), column("Month")],
+                hierarchies: vec![Hierarchy {
+                    name: "Date Hierarchy".to_string(),
+                    levels: vec![
+                        HierarchyLevel {
+                            name: "Year".to_string(),
+                            column: "Year".to_string(),
+                        },
+                        HierarchyLevel {
+                            name: "Month".to_string(),
+                            column: "Month".to_string(),
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let mut date = column("Date");
+            date.variations = variation.into_iter().collect();
+            TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![date, column("Amount")],
+                        ..Default::default()
+                    },
+                    local_date_table,
+                ],
+                relationships: vec![Relationship {
+                    from_table: "Sales".to_string(),
+                    from_column: "Date".to_string(),
+                    to_table: "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228".to_string(),
+                    to_column: "Date".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+        }
+
+        fn declared_variation() -> Variation {
+            Variation {
+                name: "Variation".to_string(),
+                is_default: true,
+                relationship: Some("b10a0bfa-b7fe-4437-8b2d-85624b0f085f".to_string()),
+                default_hierarchy: Some(HierarchyRef {
+                    table: "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228".to_string(),
+                    hierarchy: "Date Hierarchy".to_string(),
+                }),
+            }
+        }
+
+        fn local_table_id() -> ObjectId {
+            table_id("LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228")
+        }
+
+        fn hierarchy_id() -> ObjectId {
+            ObjectId::Hierarchy {
+                table: NameKey::new("LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228"),
+                hierarchy: NameKey::new("Date Hierarchy"),
+            }
+        }
+
+        /// The headline fix: a visual's date hierarchy over a varied column
+        /// resolves through the variation declaration onto the hidden table's
+        /// hierarchy, and the whole machinery goes alive.
+        #[test]
+        fn a_variation_bound_date_hierarchy_keeps_the_machinery_alive() {
+            let db = varied_model(Some(declared_variation()));
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[hierarchy_level_target(
+                    "Sales",
+                    "Date Hierarchy",
+                    "Year",
+                    Some("Date"),
+                    Some("Variation"),
+                )],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            assert_eq!(
+                graph.roots_of(&hierarchy_id()).len(),
+                1,
+                "the binding lands on the date table's hierarchy"
+            );
+            not_unused(&unused, &hierarchy_id());
+            not_unused(&unused, &local_table_id());
+            not_unused(
+                &unused,
+                &column_id(
+                    "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228",
+                    "Year",
+                ),
+            );
+            // The machinery is bound, so the verdict is InUse and names the
+            // varied column.
+            let verdicts = graph.auto_date_time_tables(&db);
+            assert_eq!(verdicts.len(), 1);
+            assert_eq!(verdicts[0].verdict, AutoDateTimeStatus::InUse);
+            assert_eq!(verdicts[0].source_column, Some(column_id("Sales", "Date")));
+        }
+
+        /// A serialization that dropped the variation object still carries the
+        /// relationship — and the flag marks which related table is the
+        /// machinery.
+        #[test]
+        fn the_relationship_fallback_resolves_without_the_declaration() {
+            let db = varied_model(None);
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[hierarchy_level_target(
+                    "Sales",
+                    "Date Hierarchy",
+                    "Month",
+                    Some("Date"),
+                    None,
+                )],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(graph.roots_of(&hierarchy_id()).len(), 1);
+            let unused = graph.unused_objects();
+            not_unused(&unused, &local_table_id());
+            not_unused(
+                &unused,
+                &column_id(
+                    "LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228",
+                    "Month",
+                ),
+            );
+        }
+
+        /// The flag keeps the fallback honest: a related table that is not
+        /// date machinery does not absorb the binding.
+        #[test]
+        fn a_related_table_that_is_not_date_machinery_does_not_resolve() {
+            let mut db = varied_model(None);
+            db.tables[1].is_local_date_table = false;
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[hierarchy_level_target(
+                    "Sales",
+                    "Date Hierarchy",
+                    "Year",
+                    Some("Date"),
+                    None,
+                )],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.roots_of(&hierarchy_id()).is_empty());
+            // The coarse fallback still keeps the table the binding named.
+            assert_eq!(graph.roots_of(&table_id("Sales")).len(), 1);
+        }
+
+        /// The verdict no reachability pass can produce: DAX keeps the
+        /// machinery alive, so it is not dead — but no report binds it, which
+        /// is the bloat the scan findings cannot express.
+        #[test]
+        fn machinery_alive_only_through_dax_is_unused_by_reports() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        measures: vec![measure("Years", "COUNTROWS('LocalDateTable_x')")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "LocalDateTable_x".to_string(),
+                        is_local_date_table: true,
+                        columns: vec![column("Year")],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Years")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &local_table_id());
+            let verdicts = graph.auto_date_time_tables(&db);
+            assert_eq!(verdicts.len(), 1);
+            assert_eq!(verdicts[0].verdict, AutoDateTimeStatus::UnusedByReports);
+            assert_eq!(verdicts[0].source_column, None);
+        }
+
+        /// With no DAX and no variation keeping it alive, the machinery is
+        /// simply dead.
+        #[test]
+        fn unbound_unreferenced_machinery_is_dead() {
+            let db = varied_model(Some(declared_variation()));
+
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            let dead = find(&unused, &local_table_id());
+            assert!(dead.used_by.iter().all(|used| used.also_unused));
+            let verdicts = graph.auto_date_time_tables(&db);
+            assert_eq!(verdicts[0].verdict, AutoDateTimeStatus::Dead);
+            assert_eq!(verdicts[0].source_column, Some(column_id("Sales", "Date")));
         }
     }
 }

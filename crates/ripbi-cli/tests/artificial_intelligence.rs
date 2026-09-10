@@ -72,8 +72,9 @@ const LIVE_GUARDS: &[&str] = &[
     "'Opportunity Calendar'[YEAR MONTH]",
     // The sort-by column of that date label: kept alive transitively.
     "'Opportunity Calendar'[YEAR MONTH NUMBER]",
-    // Weak liveness: an auto date/time table's Date column stays alive through
-    // its variation relationship, though its table does not.
+    // The variation-bound machinery: the report's date hierarchy resolves
+    // through 'Opportunity Calendar'[Date]'s variation declaration onto
+    // LocalDateTable_9e0bbdfc-…, keeping the whole table alive.
     "'LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228'[Date]",
     // Plain visual and page-filter usage.
     "'Opportunities'[Status]",
@@ -83,23 +84,23 @@ const LIVE_GUARDS: &[&str] = &[
 ];
 
 /// The only findings allowed beyond the baseline: the engine-generated auto
-/// date/time machinery (unused — the report reaches it only through the date
-/// variations this crate does not model, a documented known gap), the four
-/// LocalDateTable hierarchy columns the export counts as used through that
-/// machinery, the fully-dead relationship-only tables with their partitions,
-/// the two unactivated inactive relationships and their SystemUserSeq key
-/// columns, and the orphaned `Query1` expression.
+/// date/time machinery of the five date columns whose hierarchies no visual
+/// binds (the tables and partitions; the export lists no table rows), the
+/// fully-dead relationship-only tables with their partitions, the two
+/// unactivated inactive relationships and their SystemUserSeq key columns, and
+/// the orphaned `Query1` expression. The one bound table
+/// (`LocalDateTable_9e0bbdfc-…`) is fully live and its columns are gone from
+/// the findings entirely.
 fn is_expected_extra(kind: &str, id: &str) -> bool {
     let machinery_table = matches!(kind, "table" | "partition")
         && (id.contains("LocalDateTable")
             || id.contains("DateTableTemplate")
             || id.contains("'Contacts'")
             || id.contains("'Opportunity Forecast Adjustment'"));
-    let variation_gap_column = kind == "column" && id.contains("LocalDateTable");
     let inactive_relationship =
         id.contains("SystemUserSeq") && matches!(kind, "column" | "relationship");
     let orphaned_expression = kind == "expression" && id.contains("'Query1'");
-    machinery_table || variation_gap_column || inactive_relationship || orphaned_expression
+    machinery_table || inactive_relationship || orphaned_expression
 }
 
 #[test]
@@ -129,7 +130,7 @@ fn scan_agrees_with_the_committed_baseline() {
             )
         })
         .collect();
-    assert_eq!(baseline.len(), 138, "the distilled baseline is complete");
+    assert_eq!(baseline.len(), 135, "the distilled baseline is complete");
 
     let temp = TempDir::new("ai-baseline");
     let args = ScanArgs {
@@ -237,6 +238,76 @@ fn scan_agrees_with_the_committed_baseline() {
         assert!(
             is_expected_extra(kind, id),
             "undocumented extra finding '{id}' ({kind}) — triage it against the baseline export"
+        );
+    }
+
+    // 5. The auto date/time verdicts: the one bound table is in use and fully
+    //    live; the machinery of the five unbound date columns is dead — and
+    //    its tables' own findings moved out of the generic list into the
+    //    section, where the verdict and the dead chain read together.
+    let auto = payload["auto_date_time"].as_array().expect("auto array");
+    let by_table: HashMap<&str, &serde_json::Value> = auto
+        .iter()
+        .map(|row| (row["id"].as_str().expect("id"), row))
+        .collect();
+    assert_eq!(
+        auto.len(),
+        6,
+        "every flagged table gets exactly one verdict"
+    );
+
+    let bound = by_table
+        .get("table 'LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228'")
+        .expect("the bound table has a verdict");
+    assert_eq!(bound["verdict"], "in_use");
+    assert_eq!(
+        bound["source_column"], "'Opportunity Calendar'[Date]",
+        "the verdict names the varied column the machinery serves"
+    );
+    assert!(
+        !by_id.contains_key("table 'LocalDateTable_9e0bbdfc-9803-41d0-b204-481ce398f228'"),
+        "an in-use table is alive, so it has no generic finding to move"
+    );
+
+    for unbound in [
+        "table 'DateTableTemplate_0039983e-de71-45fb-bd88-812f61c0ff38'",
+        "table 'LocalDateTable_16a9f7af-fed3-4e54-9b5a-15d1cdfee444'",
+        "table 'LocalDateTable_36e7cc16-9aa7-44be-8b25-7a2fa51c55d8'",
+        "table 'LocalDateTable_b0573d09-ef3e-45e2-9f39-8a331c91c6c3'",
+        "table 'LocalDateTable_de73616c-e116-4a69-92e1-907ce2a4d5db'",
+    ] {
+        let row = by_table.get(unbound).unwrap_or_else(|| {
+            panic!("'{unbound}' has a verdict — it is the section that flags the bloat")
+        });
+        assert_eq!(row["verdict"], "dead", "{unbound}: nothing binds it");
+        if unbound.contains("DateTableTemplate") {
+            // The template relates to no user column, so it has none to name.
+            assert!(
+                row["source_column"].is_null(),
+                "{unbound}: no source column"
+            );
+        } else {
+            let source = row["source_column"].as_str().unwrap_or_else(|| {
+                panic!("{unbound}: the varied user column is the verdict's context")
+            });
+            assert!(
+                source.starts_with("'Opportunity Calendar'[")
+                    || source.starts_with("'Opportunities'["),
+                "{unbound}: the source column is the varied user column, got {source}"
+            );
+        }
+        let finding = &row["finding"];
+        assert!(
+            finding.is_object(),
+            "{unbound}: the dead table's own finding lives in the section, chain included"
+        );
+        assert_eq!(
+            finding["type"], "table",
+            "{unbound}: the moved finding is the table row"
+        );
+        assert!(
+            !by_id.contains_key(unbound),
+            "{unbound}: the row is section-owned, not a generic finding"
         );
     }
 }

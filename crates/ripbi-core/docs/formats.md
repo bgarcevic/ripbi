@@ -121,7 +121,10 @@ scope: the filtered field under `field` (bookmark states spell it
 (`Version: 2`, `From`, `Where`). `From` maps query aliases to entities; a
 `SourceRef.Source` resolves through it case-insensitively, a
 `SourceRef.Entity` names the table directly, and a hierarchy on a date
-variation sources its table through `PropertyVariationSource`. An alias that
+variation sources its table through `PropertyVariationSource`, whose
+`Property` (the varied column) and `Name` (the variation) are carried on the
+`FieldTarget::HierarchyLevel` for the graph's variation resolution. An alias
+that
 matches no `From` entry yields `FieldTarget::Written` plus an
 `UnresolvedAlias` notice — the alias is not a table name, so it is never
 written in as one. Condition trees are walked *structurally*, not
@@ -186,7 +189,12 @@ Columns: `dataType`, `formatString` (static), `summarizeBy`, `sourceColumn`,
 `isNullable`, `isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`,
 `keepUniqueRows`, `relatedColumnDetails`, `tableDetailPosition`.
 
-Measures/tables: `displayFolder`, `isPrivate`, `excludeFromModelRefresh`.
+Measures: `displayFolder`, `excludeFromModelRefresh`. Tables:
+`excludeFromModelRefresh`, `showAsVariationsOnly` (engine-only visibility of
+the auto date/time machinery — the machinery itself is identified by the
+`__PBI_LocalDateTable`/`__PBI_TemplateDateTable` annotations, the `isPrivate`
+flag, and the `LocalDateTable_`/`DateTableTemplate_` name prefixes, all mapped
+onto `Table` flags).
 
 Model/database: `culture`, `sourceQueryCulture`,
 `defaultPowerBIDataSourceVersion`, `discourageImplicitMeasures`,
@@ -243,11 +251,17 @@ golden fixture is held to the same standard — it loads clean in the engine:
 
 ### TMDL known gaps
 
-- **Date variations** (`variation`, `defaultHierarchy`, `isDefault`,
-  `showAsVariationsOnly`) are deliberately unmodeled. A variation references a
-  hierarchy *by name*; a hierarchy kept alive only by a variation could be
-  mis-reported as unused. Tracked for a future AST extension; until then the
-  keys are on the ignore list so healthy models do not drown in notices.
+- **Date variations are modeled** (`Column::variations`): a `variation` object
+  on a date column declares the relationship and the table-qualified default
+  hierarchy through which the engine serves the column — for auto date/time,
+  a hidden relationship to an engine-generated `LocalDateTable_*`. The graph
+  layer resolves a report's date-hierarchy binding written over the varied
+  column through this declaration, so a hierarchy reachable only through a
+  variation is no longer mis-reported as unused. Only
+  `showAsVariationsOnly` (engine-only table visibility) stays on the ignore
+  list; the machinery's identity comes from the `__PBI_LocalDateTable` /
+  `__PBI_TemplateDateTable` annotations, `isPrivate`, and the name prefixes,
+  all mapped onto `Table` flags.
 - **`ColumnKind::CalculatedTableColumn`** has no sampled TMDL form; the
   column kind is not mapped. If it appears, the drift policy notices it —
   which is the correct signal, not silence. (The table-level `calendar`

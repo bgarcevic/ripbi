@@ -256,3 +256,56 @@ fn an_m_column_string_names_same_named_columns_on_every_table() {
         "both same-named columns are named"
     );
 }
+
+/// The graph layers the production rule on top of the conservative binding:
+/// an M step can only *name* a column it produces, so an engine-computed
+/// column matching an M name — auto date/time columns named like Desktop's
+/// date-template query — gets no supply-chain context.
+#[test]
+fn an_engine_computed_column_matching_an_m_name_gets_no_supply_chain() {
+    let db = TabularDatabase {
+        tables: vec![
+            Table {
+                name: "Fact".to_string(),
+                columns: vec![Column {
+                    name: "Join Key".to_string(),
+                    ..Default::default() // Data: produced by the M query
+                }],
+                partitions: vec![ripbi_core::Partition {
+                    name: "Fact".to_string(),
+                    source: ripbi_core::PartitionSource::M {
+                        expression: r#"Table.SelectRows(Source, each [Join Key] <> null)"#
+                            .to_string(),
+                    },
+                }],
+                ..Default::default()
+            },
+            Table {
+                name: "Date Template".to_string(),
+                columns: vec![Column {
+                    name: "Join Key".to_string(),
+                    kind: ripbi_core::ColumnKind::Calculated {
+                        expression: "YEAR([Date])".to_string(),
+                    },
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let graph = DependencyGraph::build(&db, &[]);
+
+    let data_column = column_id("Fact", "Join Key");
+    let calculated = column_id("Date Template", "Join Key");
+    assert_eq!(
+        graph.named_by_m(&data_column),
+        &[partition_id("Fact", "Fact")],
+        "the M-produced column carries its supply chain"
+    );
+    assert!(
+        graph.named_by_m(&calculated).is_empty(),
+        "an engine-computed column matching the M name is coincidence, not supply chain"
+    );
+}
