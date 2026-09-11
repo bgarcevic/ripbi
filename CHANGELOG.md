@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Power Query labels escape apostrophes in names** (`#63`) — `named_in_power_query`
+  labels hand-wrapped names in single quotes without doubling internal ones, so a
+  table `O'Brien` rendered as `'O'Brien' partition` instead of the DAX-escaped
+  `'O''Brien' partition` that ObjectId's own `Display` produces. Partition and
+  shared-expression labels now go through `NameKey::quoted()`, the same escaping as
+  every finding id.
+
 ## [0.2.0] - 2026-09-11
 
 ### Added
