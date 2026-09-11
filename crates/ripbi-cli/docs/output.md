@@ -58,7 +58,8 @@ Ignored 1 report(s) bound to other models: HR.Report
   different existing model. It is informational: those reports are not ingested, they
   appear in no output mode, and they never fail `--strict` — a healthy multi-model folder
   must stay scannable. Report items whose reference resolves to nothing become
-  `unresolved_dataset_reference` skip notices instead, and those *do* fail `--strict`.
+  `unresolved_dataset_reference` skip notices instead, and a `*.Report` folder with no
+  `report.json` anchor becomes a `malformed_report_item` notice; both *do* fail `--strict`.
 - Reports passed explicitly with `--report` are taken at face value: they are never
   binding-checked and produce none of these notices, exactly as in a `PATH` scan.
 
@@ -288,7 +289,8 @@ Pretty-printed JSON, stable field order, additive schema:
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
   `stale_state`, and — in `--model` mode — `unresolved_dataset_reference` (a report item
-  under a search folder with no usable `datasetReference`). Under `--strict`,
+  under a search folder with no usable `datasetReference`) and `malformed_report_item`
+  (an anchor-less `.Report` folder the search walk pruned). Under `--strict`,
   `count > 0` corresponds to exit code `2`.
 
 ## `ripbi.toml`

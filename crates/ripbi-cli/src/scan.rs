@@ -250,10 +250,10 @@ fn scan(
         reports.push(ingested.value);
     }
     if let Some(scan) = &model_scan {
-        // Unresolved dataset references are notices like any parser skip:
-        // stderr, the JSON `skips` array, and `--strict` all see them.
-        // Bound-elsewhere reports deliberately stay out, so a healthy
-        // multi-model folder can still pass `--strict`.
+        // Unresolved dataset references and anchor-less `.Report` folders are
+        // notices like any parser skip: stderr, the JSON `skips` array, and
+        // `--strict` all see them. Bound-elsewhere reports deliberately stay
+        // out, so a healthy multi-model folder can still pass `--strict`.
         skips.extend(
             scan.bound
                 .unresolved
@@ -265,6 +265,12 @@ fn scan(
                     detail: detail.clone(),
                 }),
         );
+        skips.extend(scan.bound.malformed.iter().map(|path| SkipNoticeOut {
+            path: path.display().to_string(),
+            location: None,
+            kind: "malformed_report_item",
+            detail: "missing report.json".to_string(),
+        }));
         skips.extend(scan.bound.parse_skips.iter().map(skip_notice_out));
     }
 

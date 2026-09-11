@@ -208,6 +208,11 @@ pub struct BoundReports {
     pub ignored_elsewhere: Vec<PathBuf>,
     /// Report items no tier matched: the item root and a one-sentence reason.
     pub unresolved: Vec<(PathBuf, String)>,
+    /// Anchor-less `.Report` folders the walk pruned: malformed items whose
+    /// bindings cannot be read, sorted by canonical path like the other
+    /// buckets. Explicit `--report` items never land here — an anchor-less
+    /// one fails before the walk, a valid one is excluded from it.
+    pub malformed: Vec<PathBuf>,
     /// `definition.pbir` read or parse drift from the unresolved items.
     pub parse_skips: Vec<SkipNotice>,
 }
@@ -243,8 +248,9 @@ pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
 ///
 /// `exclude` holds canonical paths of explicitly passed report items: they are
 /// never re-walked, so an explicit `--report` produces no walk notice. A
-/// directory holding a report item is not searched further, and unreadable
-/// directories are skipped silently, mirroring [`discover`].
+/// directory holding a report item is not searched further, an anchor-less
+/// `.Report` directory is recorded as malformed rather than vanishing, and
+/// unreadable directories are skipped silently, mirroring [`discover`].
 #[must_use]
 pub fn discover_bound_reports(
     model: &ModelTarget,
@@ -252,11 +258,13 @@ pub fn discover_bound_reports(
     exclude: &HashSet<PathBuf>,
 ) -> BoundReports {
     let mut items = Vec::new();
+    let mut malformed = Vec::new();
     let mut visited = exclude.clone();
     for root in roots {
-        walk_report_items(root, &mut visited, &mut items);
+        walk_report_items(root, &mut visited, &mut items, &mut malformed);
     }
     items.sort_by_cached_key(|item| canonical_key(item));
+    malformed.sort_by_cached_key(|path| canonical_key(path));
 
     let model_root = canonical_key(&model.item_root);
     let model_definition = canonical_key(&model.definition);
@@ -278,6 +286,7 @@ pub fn discover_bound_reports(
             }
         }
     }
+    bound.malformed = malformed;
     bound
 }
 
@@ -370,11 +379,17 @@ fn name_matches(model: &ModelTarget, catalog: &str) -> bool {
 ///
 /// Entries are visited in name order (deterministic output); a directory
 /// holding `report.json` or `definition/report.json` is itself an item and is
-/// not searched further. Hidden, `.SemanticModel`, and `.Report` directories
-/// are pruned from descent, and directory symlinks are skipped outright, so a
-/// traversal cycle can never trap the walk. Unreadable directories are
-/// skipped silently.
-fn walk_report_items(dir: &Path, visited: &mut HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+/// not searched further. Hidden and `.SemanticModel` directories are pruned
+/// from descent silently; a `.Report` directory without an anchor cannot be a
+/// report item and is pushed to `malformed` instead. Directory symlinks are
+/// skipped outright, so a traversal cycle can never trap the walk. Unreadable
+/// directories are skipped silently.
+fn walk_report_items(
+    dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+    malformed: &mut Vec<PathBuf>,
+) {
     if !visited.insert(canonical_key(dir)) {
         return;
     }
@@ -404,10 +419,14 @@ fn walk_report_items(dir: &Path, visited: &mut HashSet<PathBuf>, out: &mut Vec<P
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_lowercase();
-        if name.starts_with('.') || name.ends_with(".semanticmodel") || name.ends_with(".report") {
+        if name.starts_with('.') || name.ends_with(".semanticmodel") {
             continue;
         }
-        walk_report_items(&path, visited, out);
+        if name.ends_with(".report") {
+            malformed.push(path);
+            continue;
+        }
+        walk_report_items(&path, visited, out, malformed);
     }
 }
 
@@ -952,12 +971,12 @@ mod tests {
             temp.write("r/Sub/Deep.Report/definition/report.json", "{}");
             temp.write("r/.hidden/Buried.Report/report.json", "{}");
             temp.write("r/Model.SEMANTICMODEL/Embedded.Report/report.json", "{}");
-            temp.write("r/Empty.REPORT/placeholder.txt", "x");
             temp.write("r/not-a-report.txt", "x");
 
             let mut visited = HashSet::new();
             let mut out = Vec::new();
-            walk_report_items(&temp.0.join("r"), &mut visited, &mut out);
+            let mut malformed = Vec::new();
+            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed);
 
             assert_eq!(
                 out,
@@ -966,6 +985,31 @@ mod tests {
                     temp.0.join("r/Sub/Deep.Report"),
                 ],
                 "name order, convention pruned, nested item kept"
+            );
+            assert!(
+                malformed.is_empty(),
+                "hidden and .SemanticModel prunes stay silent: {malformed:?}"
+            );
+        }
+
+        #[test]
+        fn the_walker_records_anchorless_report_folders() {
+            let temp = TempDir::new("walk-malformed");
+            temp.mkdir("r/Empty.REPORT");
+            temp.write("r/Empty.REPORT/placeholder.txt", "x");
+            temp.write("r/.hidden/Buried.Report/report.json", "{}");
+            temp.write("r/Model.SEMANTICMODEL/Embedded.Report/report.json", "{}");
+
+            let mut visited = HashSet::new();
+            let mut out = Vec::new();
+            let mut malformed = Vec::new();
+            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed);
+
+            assert!(out.is_empty(), "no report item lives under r");
+            assert_eq!(
+                malformed,
+                vec![temp.0.join("r/Empty.REPORT")],
+                "only the anchor-less .Report folder is recorded"
             );
         }
 
@@ -983,7 +1027,8 @@ mod tests {
 
             let mut visited = HashSet::new();
             let mut out = Vec::new();
-            walk_report_items(&temp.0.join("real"), &mut visited, &mut out);
+            let mut malformed = Vec::new();
+            walk_report_items(&temp.0.join("real"), &mut visited, &mut out, &mut malformed);
 
             assert!(out.is_empty(), "a linked directory is never entered");
         }

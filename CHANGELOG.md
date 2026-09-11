@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--model` search walks surface malformed `.Report` folders** (`#66`) — a `*.Report`
+  folder found under a search folder without a `report.json` / `definition/report.json`
+  anchor was pruned silently, so its bindings could not keep objects alive and they
+  surfaced as false "unused" findings. The walk now records it as a
+  `malformed_report_item` skip notice, which stderr, `--json`, and `--strict` all see —
+  matching the explicit `--report` error path.
 - **Power Query labels escape apostrophes in names** (`#63`) — `named_in_power_query`
   labels hand-wrapped names in single quotes without doubling internal ones, so a
   table `O'Brien` rendered as `'O'Brien' partition` instead of the DAX-escaped

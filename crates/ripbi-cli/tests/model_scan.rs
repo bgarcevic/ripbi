@@ -218,6 +218,50 @@ mod exclusions_and_unresolved {
             "the detail names the dangling path: {notices:?}"
         );
     }
+
+    #[test]
+    fn an_anchorless_report_folder_in_a_search_walk_is_a_notice() {
+        let temp = TempDir::new("model-walk-malformed");
+        model_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "reports/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        temp.mkdir("reports/Broken.Report");
+
+        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the valid report keeps the scan running");
+        assert!(
+            stderr.contains("[malformed_report_item]"),
+            "the anchor-less folder is a skip notice:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Broken.Report"),
+            "the notice names the folder:\n{stderr}"
+        );
+
+        let args = ScanArgs {
+            json: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        let payload = json_payload(&stdout);
+        assert_eq!(payload["skips"]["count"], 1);
+        let notices = payload["skips"]["notices"].as_array().expect("notices");
+        assert_eq!(notices[0]["kind"], "malformed_report_item");
+        assert!(
+            notices[0]["path"]
+                .as_str()
+                .expect("path")
+                .ends_with("Broken.Report"),
+            "the notice carries the folder path: {notices:?}"
+        );
+    }
 }
 
 mod refusals {
@@ -544,6 +588,29 @@ mod strict_mode {
         assert_eq!(code, 2, "unresolved references are strict-fatal:\n{stderr}");
 
         let lenient = model_args(temp.0.join("X.SemanticModel"), Vec::new());
+        let (code, _, _) = run_scan(&lenient, &temp.0, "");
+        assert_eq!(code, 1, "without --strict the scan still runs");
+    }
+
+    #[test]
+    fn an_anchorless_report_folder_in_a_search_walk_fails_strict() {
+        let temp = TempDir::new("model-strict-walk-malformed");
+        model_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "reports/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        temp.mkdir("reports/Broken.Report");
+
+        let strict = ScanArgs {
+            strict: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, _, stderr) = run_scan(&strict, &temp.0, "");
+        assert_eq!(code, 2, "malformed walk items are strict-fatal:\n{stderr}");
+
+        let lenient = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
         let (code, _, _) = run_scan(&lenient, &temp.0, "");
         assert_eq!(code, 1, "without --strict the scan still runs");
     }
