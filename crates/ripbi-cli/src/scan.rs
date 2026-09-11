@@ -38,6 +38,9 @@ pub struct Streams<'a> {
     /// Whether `input` is interactive. A generic reader cannot answer this
     /// itself, so the caller states it (the binary inspects the real stdin).
     pub stdin_is_tty: bool,
+    /// Whether `err` is a terminal. The ambient update notifier only prints
+    /// on an interactive stderr, so the caller states this too.
+    pub stderr_is_tty: bool,
 }
 
 /// Runs `scan` against the process's working directory.

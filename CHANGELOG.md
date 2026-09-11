@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--power-query` flag** (`#57`) — the "⭘ Power Query also names it" annotation on
   unused Data columns is now hidden by default and shown on request. `--json` always
   carries the underlying `named_in_power_query` field.
+- **`ripbi update` and a daily update notice** (`#44`) — the new `update`
+  subcommand resolves the latest GitHub release, verifies the archive's sha256
+  against `sha256sums.txt`, and atomically replaces `ripbi` and `rib` for
+  script-installed binaries. `--check` reports latest vs. current and exits 1
+  when newer; errors exit 2. Cargo-managed installs and source builds print
+  the matching update command instead of self-replacing. Every foreground
+  command also checks (at most once a day, via a detached hidden child) and
+  prints one dim stderr line when a newer release exists; the check sends no
+  data and is disabled by `RIPBI_NO_UPDATE_CHECK`, non-TTY stderr, `CI`, or
+  `-q`.
 - **User guide on GitHub Pages** — an mdBook at
   [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/), assembled
   by a Pages workflow from the docs that live next to the code, with a link

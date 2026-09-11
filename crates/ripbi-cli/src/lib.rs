@@ -8,9 +8,11 @@ pub mod discover;
 pub mod entry;
 pub mod error;
 pub mod glob;
+pub mod notify;
 pub mod render;
 pub mod scan;
 pub mod style;
+pub mod update;
 
 #[cfg(test)]
 pub(crate) mod test_support;

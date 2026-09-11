@@ -180,3 +180,36 @@ fn rib_help_says_rib() {
         .success()
         .stdout(predicate::str::contains("Usage: rib"));
 }
+
+#[test]
+fn update_help_renders_with_examples() {
+    ripbi()
+        .args(["update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Examples:"))
+        .stdout(predicate::str::contains("--check"))
+        .stdout(predicate::str::contains("--quiet"));
+}
+
+#[test]
+fn update_check_and_quiet_parse() {
+    // Tests run from `target/`, which the channel heuristic classifies as a
+    // source build: this exits 0 with guidance and never touches the network.
+    // `-q` also suppresses the guidance, so the run is completely silent.
+    ripbi()
+        .args(["update", "--check", "-q"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn the_update_check_child_is_hidden_from_help() {
+    ripbi()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("__update-check").not());
+}
