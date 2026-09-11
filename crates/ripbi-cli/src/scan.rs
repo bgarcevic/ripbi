@@ -89,18 +89,8 @@ fn scan(
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 
-    // Target: PATH argument, else config `target`, else folder discovery.
-    let explicit = args
-        .path
-        .clone()
-        .or_else(|| config.as_ref().and_then(|target| target.target.clone()));
-    let (paired, mut announce) = match explicit {
-        Some(path) => (resolve_explicit(&path)?, Vec::new()),
-        None => discover_target(args, cwd, streams, palette_err)?,
-    };
-
-    // Report roots: discovered siblings, plus --report flags (which replace
-    // the config's `reports`), deduplicated.
+    // Report roots: --report flags replace the config's `reports`; in model
+    // mode a plain folder among them becomes a search root.
     let extras: Vec<PathBuf> = if args.reports.is_empty() {
         config
             .as_ref()
@@ -109,22 +99,82 @@ fn scan(
     } else {
         args.reports.clone()
     };
-    let mut report_paths = paired.reports.clone();
-    for extra in &extras {
-        if !is_report_dir(extra) {
-            return Err(ScanError::new(format!(
-                "--report {} is not a report folder",
-                extra.display()
-            ))
-            .with_hint(
-                "point --report at a .Report folder (or any folder holding a report.json)",
-            ));
+
+    // Target: --model (explicit, picker-free), else PATH argument, else config
+    // `target`, else folder discovery.
+    let mut model_scan: Option<ModelScan> = None;
+    let (paired, mut announce) = if let Some(model_path) = &args.model {
+        let target = discover::resolve_model(model_path)?;
+        let mut direct = Vec::new();
+        let mut search_roots = Vec::new();
+        for extra in &extras {
+            partition_report_value(extra, &mut direct, &mut search_roots)?;
         }
-        report_paths.push(extra.clone());
-    }
-    let report_paths = dedupe(report_paths);
+        if direct.is_empty() && search_roots.is_empty() {
+            search_roots.push(default_search_root(&target.item_root));
+        }
+        let excluded: HashSet<PathBuf> = direct
+            .iter()
+            .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+            .collect();
+        let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+        let mut reports = bound.reports.clone();
+        reports.extend(direct.iter().cloned());
+        let paired = discover::Paired {
+            model: target.item_root,
+            reports,
+        };
+        model_scan = Some(ModelScan {
+            bound,
+            search_roots,
+        });
+        (paired, Vec::new())
+    } else {
+        let explicit = args
+            .path
+            .clone()
+            .or_else(|| config.as_ref().and_then(|target| target.target.clone()));
+        let (paired, announce) = match explicit {
+            Some(path) => (resolve_explicit(&path)?, Vec::new()),
+            None => discover_target(args, cwd, streams, palette_err)?,
+        };
+        let mut report_paths = paired.reports.clone();
+        for extra in &extras {
+            if is_report_item(extra) {
+                report_paths.push(extra.clone());
+                continue;
+            }
+            if extra.is_dir() {
+                if is_report_suffixed(extra) {
+                    return Err(malformed_report_folder_error(extra));
+                }
+                return Err(plain_report_folder_error(extra, &paired.model));
+            }
+            if !extra.exists() {
+                return Err(ScanError::new(format!("no such path: {}", extra.display())).with_hint(
+                    "point --report at an existing .Report folder (or a folder holding report.json)",
+                ));
+            }
+            return Err(
+                ScanError::new(format!("--report {} is not a folder", extra.display())).with_hint(
+                    "point --report at a .Report folder (or a folder holding report.json)",
+                ),
+            );
+        }
+        (
+            discover::Paired {
+                model: paired.model,
+                reports: report_paths,
+            },
+            announce,
+        )
+    };
+    let report_paths = dedupe(paired.reports);
 
     if report_paths.is_empty() {
+        if let Some(scan) = &model_scan {
+            return Err(no_bound_reports_error(&paired.model, scan));
+        }
         return Err(ScanError::new(format!(
             "nothing to scan against: {} has no reports",
             paired.model.display()
@@ -136,11 +186,42 @@ fn scan(
     }
 
     if !args.quiet {
-        announce.push(format!(
-            "Scanning {} with {} report(s)",
-            paired.model.display(),
-            report_paths.len()
-        ));
+        match &model_scan {
+            Some(scan) => {
+                let names: Vec<String> =
+                    report_paths.iter().map(|path| report_name(path)).collect();
+                announce.push(format!(
+                    "Scanning {} with {} report(s): {}",
+                    paired.model.display(),
+                    report_paths.len(),
+                    names.join(", ")
+                ));
+                for (path, catalog) in &scan.bound.name_matched {
+                    announce.push(format!(
+                        "Note: {} matched by dataset name only (byConnection 'initial catalog' = '{catalog}').",
+                        path.display()
+                    ));
+                }
+                if !scan.bound.ignored_elsewhere.is_empty() {
+                    let names: Vec<String> = scan
+                        .bound
+                        .ignored_elsewhere
+                        .iter()
+                        .map(|path| report_name(path))
+                        .collect();
+                    announce.push(format!(
+                        "Ignored {} report(s) bound to other models: {}",
+                        scan.bound.ignored_elsewhere.len(),
+                        names.join(", ")
+                    ));
+                }
+            }
+            None => announce.push(format!(
+                "Scanning {} with {} report(s)",
+                paired.model.display(),
+                report_paths.len()
+            )),
+        }
         for line in &announce {
             writeln!(streams.err, "{line}").map_err(ScanError::from)?;
         }
@@ -164,6 +245,24 @@ fn scan(
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
         reports.push(ingested.value);
+    }
+    if let Some(scan) = &model_scan {
+        // Unresolved dataset references are notices like any parser skip:
+        // stderr, the JSON `skips` array, and `--strict` all see them.
+        // Bound-elsewhere reports deliberately stay out, so a healthy
+        // multi-model folder can still pass `--strict`.
+        skips.extend(
+            scan.bound
+                .unresolved
+                .iter()
+                .map(|(path, detail)| SkipNoticeOut {
+                    path: path.display().to_string(),
+                    location: None,
+                    kind: "unresolved_dataset_reference",
+                    detail: detail.clone(),
+                }),
+        );
+        skips.extend(scan.bound.parse_skips.iter().map(skip_notice_out));
     }
 
     // Analysis: entirely core's job.
@@ -327,6 +426,93 @@ fn scan(
     }
 }
 
+/// Model-centric mode's walk result, kept for the announcements and the
+/// zero-connected-report diagnostics.
+struct ModelScan {
+    /// How every discovered report item binds to the model.
+    bound: discover::BoundReports,
+    /// The folders actually walked, for the refusal message.
+    search_roots: Vec<PathBuf>,
+}
+
+/// Sorts one `--report` value in model mode into a direct report item or a
+/// search folder. A `.Report`-named folder without a report anchor is
+/// malformed — fail before any walk rather than at ingestion.
+fn partition_report_value(
+    path: &Path,
+    direct: &mut Vec<PathBuf>,
+    search_roots: &mut Vec<PathBuf>,
+) -> Result<(), ScanError> {
+    if is_report_item(path) {
+        direct.push(path.to_path_buf());
+        return Ok(());
+    }
+    if path.is_dir() {
+        if is_report_suffixed(path) {
+            return Err(malformed_report_folder_error(path));
+        }
+        search_roots.push(path.to_path_buf());
+        return Ok(());
+    }
+    if !path.exists() {
+        return Err(ScanError::new(format!("no such path: {}", path.display()))
+            .with_hint("pass a report folder or an existing folder to search for bound reports"));
+    }
+    Err(ScanError::new(format!(
+        "--report {} is not a report folder or search folder",
+        path.display()
+    ))
+    .with_hint("point --report at a .Report folder or an existing folder to search"))
+}
+
+/// The default search root when `--model` is given with no reports at all:
+/// the model's parent folder.
+fn default_search_root(item_root: &Path) -> PathBuf {
+    match item_root.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        // `--model X.SemanticModel` in the working directory: search here.
+        Some(_) if item_root.file_name().is_some() => PathBuf::from("."),
+        // `--model .` (or a filesystem root): the model folder *is* the
+        // working directory, so its siblings live one level up.
+        _ => PathBuf::from(".."),
+    }
+}
+
+/// The zero-connected-report refusal in model mode, with per-category counts
+/// so a mixed search folder explains itself.
+fn no_bound_reports_error(model: &Path, scan: &ModelScan) -> ScanError {
+    let roots: Vec<String> = scan
+        .search_roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect();
+    let roots = roots.join(", ");
+    let detail = if scan.bound.ignored_elsewhere.is_empty() && scan.bound.unresolved.is_empty() {
+        format!("no report items found under {roots}")
+    } else {
+        format!(
+            "{} bound to other models, {} unresolved dataset references under {roots}",
+            scan.bound.ignored_elsewhere.len(),
+            scan.bound.unresolved.len()
+        )
+    };
+    ScanError::new(format!(
+        "nothing to scan against: {} has no reports ({detail})",
+        model.display()
+    ))
+    .with_hint(
+        "reachability starts from report bindings — pass one with --report <path>, \
+         or scan a .pbip project folder",
+    )
+}
+
+/// The display name of a report path: its final folder component.
+fn report_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
 /// Resolves an explicit PATH (argument or config `target`).
 fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
     if !path.exists() {
@@ -423,17 +609,49 @@ fn ambiguous_error(dir: &Path, candidates: &[Candidate]) -> ScanError {
         .with_hint("pass a PATH to scan one project; --no-input keeps this non-interactive")
 }
 
-fn is_report_dir(path: &Path) -> bool {
-    if !path.is_dir() {
-        return false;
-    }
-    let name = path
-        .file_name()
+/// The error for a `.Report`-named folder without a report anchor.
+fn malformed_report_folder_error(path: &Path) -> ScanError {
+    ScanError::new(format!(
+        "malformed report folder '{}': missing report.json",
+        path.display()
+    ))
+    .with_hint("a report item needs report.json or definition/report.json directly inside")
+}
+
+/// The error for a plain folder passed to `--report` in PATH mode, where
+/// `--report` accepts report items only. The hint names the mode switch and the
+/// exact rerun instead of implying the model was not given.
+fn plain_report_folder_error(path: &Path, model: &Path) -> ScanError {
+    ScanError::new(format!(
+        "--report {} is a folder, but not a report item (no report.json or definition/report.json)",
+        path.display()
+    ))
+    .with_hint(format!(
+        "plain folders are searched only in --model mode: ripbi scan --model \"{}\" --report \"{}\"",
+        model.display(),
+        path.display()
+    ))
+}
+
+/// True when `path` carries the `.Report` item-name convention.
+fn is_report_suffixed(path: &Path) -> bool {
+    file_name_lower(path).ends_with(".report")
+}
+
+/// The lowercase final path component, or an empty string when there is none.
+fn file_name_lower(path: &Path) -> String {
+    path.file_name()
         .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    name.ends_with(".report")
-        || path.join("report.json").is_file()
-        || path.join("definition").join("report.json").is_file()
+        .unwrap_or_default()
+}
+
+/// True when `path` is a folder directly holding a report anchor — the same
+/// property core's report locator accepts (a folder that is a report item,
+/// whatever it is named).
+fn is_report_item(path: &Path) -> bool {
+    path.is_dir()
+        && (path.join("report.json").is_file()
+            || path.join("definition").join("report.json").is_file())
 }
 
 fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Model-centric scans** (`#32`) — `ripbi scan --model <path>` analyzes one named
+  semantic model against every PBIR report bound to it. Plain `--report` folders become
+  search folders walked recursively for report items; pairing is by `definition.pbir`
+  `byPath`, then the PBIP stem convention, then `byConnection` `initial catalog` (name
+  only, since service `semanticmodelid`s and local `logicalId`s are disjoint GUID
+  namespaces). By-name matches are flagged with a `Note:` line; reports bound to other
+  models are listed (`Ignored … bound to other models`) and never fail `--strict`, while
+  dangling or malformed references join the skip notices that `--strict` and `--json`
+  already carry. Zero connected reports refuse with per-category diagnostics instead of
+  scanning model-only.
 - **Worst-tables breakdown in `--summary`** (`#38`) — the summary mode now ends the
   per-type counts with a `Worst tables:` block: the (at most 10) tables carrying the
   most surviving findings, count descending then table name (case-insensitively, the

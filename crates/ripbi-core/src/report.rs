@@ -44,8 +44,9 @@ pub struct ReportModel {
 /// How a report reaches its semantic model (PBIR `datasetReference`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DatasetReference {
-    /// Relative path to a sibling semantic-model folder (`byPath`). Forward slashes,
-    /// never absolute.
+    /// Relative path to a sibling semantic-model folder (`byPath`). Forward
+    /// slashes are the Power BI-written form; hand-edited files may carry
+    /// backslashes, so the CLI accepts both when resolving.
     ByPath {
         /// Path as written, e.g. `../Sales.SemanticModel`.
         path: String,

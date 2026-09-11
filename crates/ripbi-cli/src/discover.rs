@@ -14,12 +14,18 @@
 //!   — in a folder dedicated to one project — with all `.Report` siblings.
 //! - A `.Report` folder pairs with its stem-named model, then the sole model
 //!   sibling, then the model its `definition.pbir` points at.
+//! - A `--model` target pairs with every report item found under its search
+//!   folders whose `definition.pbir` resolves to it, whose folder stem names
+//!   it (`X.Report` beside `X.SemanticModel`), or whose `byConnection` names
+//!   its dataset.
 //! - `.pbix`/`.pbit`/`model.bim` are recognized but not yet ingestable.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use ripbi_core::DatasetReference;
+use ripbi_core::ingest::{self, SkipNotice};
 
 use crate::error::ScanError;
 
@@ -173,6 +179,287 @@ pub fn pair_report(report_dir: &Path) -> Result<Paired, ScanError> {
     })
 }
 
+/// A resolved semantic-model item to scan named reports against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelTarget {
+    /// The semantic-model item root — the folder Power BI names
+    /// `X.SemanticModel`, where `.platform` and `definition/` live.
+    pub item_root: PathBuf,
+    /// The `definition/` folder, as core's locator resolved it.
+    pub definition: PathBuf,
+    /// `X` when `item_root` is named `X.SemanticModel`; `None` otherwise.
+    pub stem: Option<String>,
+    /// `.platform`'s `metadata.displayName`, when the item carries one.
+    pub display_name: Option<String>,
+}
+
+/// Report items discovered under the search folders, classified by how they
+/// bind to one model.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BoundReports {
+    /// Connected report item roots, sorted by canonical path.
+    pub reports: Vec<PathBuf>,
+    /// The connected reports matched by `byConnection`'s `initial catalog`
+    /// rather than by path or stem, each with the catalog that matched.
+    pub name_matched: Vec<(PathBuf, String)>,
+    /// Report items bound to a different existing model — informational, and
+    /// deliberately never fatal, so a healthy multi-model folder can be
+    /// scanned with `--strict`.
+    pub ignored_elsewhere: Vec<PathBuf>,
+    /// Report items no tier matched: the item root and a one-sentence reason.
+    pub unresolved: Vec<(PathBuf, String)>,
+    /// `definition.pbir` read or parse drift from the unresolved items.
+    pub parse_skips: Vec<SkipNotice>,
+}
+
+/// Resolves a `--model` PATH into the model item it names.
+///
+/// The three accepted shapes are core's: a `.SemanticModel` folder, its
+/// `definition/` subfolder, or any folder directly containing `model.tmdl`.
+///
+/// # Errors
+/// When `path` is none of those. The message starts with core's
+/// "not a semantic model" and the hint lists the accepted shapes.
+pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
+    let definition = ingest::locate_definition(path).map_err(|error| {
+        ScanError::new(error.to_string()).with_hint(
+            "pass a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl",
+        )
+    })?;
+    let item_root = parent_of(&definition);
+    let stem = strip_suffix(&file_name(&item_root), ".SemanticModel");
+    let display_name = ingest::platform_display_name(&item_root);
+    Ok(ModelTarget {
+        item_root,
+        definition,
+        stem,
+        display_name,
+    })
+}
+
+/// Walks `roots` for report items and classifies each one's binding to
+/// `model` — by written path, then folder stem, then dataset name; the first
+/// tier to speak wins.
+///
+/// `exclude` holds canonical paths of explicitly passed report items: they are
+/// never re-walked, so an explicit `--report` produces no walk notice. A
+/// directory holding a report item is not searched further, and unreadable
+/// directories are skipped silently, mirroring [`discover`].
+#[must_use]
+pub fn discover_bound_reports(
+    model: &ModelTarget,
+    roots: &[PathBuf],
+    exclude: &HashSet<PathBuf>,
+) -> BoundReports {
+    let mut items = Vec::new();
+    let mut visited = exclude.clone();
+    for root in roots {
+        walk_report_items(root, &mut visited, &mut items);
+    }
+    items.sort_by_cached_key(|item| canonical_key(item));
+
+    let model_root = canonical_key(&model.item_root);
+    let model_definition = canonical_key(&model.definition);
+
+    let mut bound = BoundReports::default();
+    for item in items {
+        let (dataset, skips) = ingest::dataset_reference(&item);
+        match classify_binding(model, &item, &dataset, &model_root, &model_definition) {
+            Binding::Connected { catalog } => {
+                if let Some(catalog) = catalog {
+                    bound.name_matched.push((item.clone(), catalog));
+                }
+                bound.reports.push(item);
+            }
+            Binding::Elsewhere => bound.ignored_elsewhere.push(item),
+            Binding::Unresolved(detail) => {
+                bound.unresolved.push((item, detail));
+                bound.parse_skips.extend(skips);
+            }
+        }
+    }
+    bound
+}
+
+/// What one report item's dataset reference says about its binding to the
+/// model under scan.
+enum Binding {
+    /// Connected; `Some(catalog)` when the hit was `byConnection`'s name.
+    Connected { catalog: Option<String> },
+    /// Bound to a different existing model — not this scan's business.
+    Elsewhere,
+    /// No tier matched; the string is the one-sentence reason.
+    Unresolved(String),
+}
+
+/// The three pairing tiers, in order, each final once it speaks.
+fn classify_binding(
+    model: &ModelTarget,
+    item: &Path,
+    dataset: &DatasetReference,
+    model_root: &Path,
+    model_definition: &Path,
+) -> Binding {
+    // Tier 1: the written `byPath`. A hit on another existing folder is final
+    // — the report says where it lives, and it does not live here. A dangling
+    // path falls through: it may be stale while the name still holds.
+    if let DatasetReference::ByPath { path } = dataset {
+        let resolved = resolve_by_path(item, path);
+        if resolved.is_dir()
+            && let Ok(canonical) = resolved.canonicalize()
+        {
+            return if canonical == model_root || canonical == model_definition {
+                Binding::Connected { catalog: None }
+            } else {
+                Binding::Elsewhere
+            };
+        }
+    }
+
+    // Tier 2: the PBIP stem convention, `X.Report` beside `X.SemanticModel`.
+    if let Some(stem) = &model.stem
+        && strip_suffix(&file_name(item), ".Report")
+            .is_some_and(|report_stem| report_stem.eq_ignore_ascii_case(stem))
+    {
+        return Binding::Connected { catalog: None };
+    }
+
+    // Tier 3: the dataset name a live connection names.
+    match dataset {
+        DatasetReference::ByConnection { connection_string } => {
+            let Some(catalog) = initial_catalog(connection_string) else {
+                return Binding::Unresolved(
+                    "byConnection carries no 'initial catalog' to match the model against"
+                        .to_string(),
+                );
+            };
+            if name_matches(model, &catalog) {
+                return Binding::Connected {
+                    catalog: Some(catalog),
+                };
+            }
+            if model.stem.is_some() || model.display_name.is_some() {
+                return Binding::Elsewhere;
+            }
+            Binding::Unresolved(format!(
+                "byConnection names dataset '{catalog}', which the unnamed model cannot be matched against"
+            ))
+        }
+        DatasetReference::ByPath { path } => Binding::Unresolved(format!(
+            "datasetReference byPath '{path}' does not resolve to a folder and no name matches"
+        )),
+        DatasetReference::Unresolved => {
+            Binding::Unresolved("definition.pbir carries no usable datasetReference".to_string())
+        }
+    }
+}
+
+/// Whether the dataset `catalog` names this model, by item stem or display name.
+fn name_matches(model: &ModelTarget, catalog: &str) -> bool {
+    model
+        .stem
+        .as_deref()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case(catalog))
+        || model
+            .display_name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(catalog))
+}
+
+/// Collects report item roots under `dir`, recursively.
+///
+/// Entries are visited in name order (deterministic output); a directory
+/// holding `report.json` or `definition/report.json` is itself an item and is
+/// not searched further. Hidden, `.SemanticModel`, and `.Report` directories
+/// are pruned from descent, and directory symlinks are skipped outright, so a
+/// traversal cycle can never trap the walk. Unreadable directories are
+/// skipped silently.
+fn walk_report_items(dir: &Path, visited: &mut HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+    if !visited.insert(canonical_key(dir)) {
+        return;
+    }
+    if is_report_item(dir) {
+        out.push(dir.to_path_buf());
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<fs::DirEntry> = entries.filter_map(|entry| entry.ok()).collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        // `file_type` does not follow symlinks, so a linked directory never
+        // reports `is_dir` and is skipped here.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        if is_report_item(&path) {
+            if visited.insert(canonical_key(&path)) {
+                out.push(path);
+            }
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.starts_with('.') || name.ends_with(".semanticmodel") || name.ends_with(".report") {
+            continue;
+        }
+        walk_report_items(&path, visited, out);
+    }
+}
+
+/// True when `path` is a folder that makes a report item: one directly
+/// holding `report.json` or `definition/report.json`.
+fn is_report_item(path: &Path) -> bool {
+    path.is_dir()
+        && (path.join("report.json").is_file()
+            || path.join("definition").join("report.json").is_file())
+}
+
+/// Resolves a report's `byPath` against the report item root.
+///
+/// Power BI writes forward slashes relative to the `.Report` folder;
+/// hand-edited files may use backslashes. `.` and `..` are folded textually so
+/// the result reads like the written layout instead of carrying the ladder
+/// along; callers still canonicalize before comparing directories.
+fn resolve_by_path(item_root: &Path, written: &str) -> PathBuf {
+    let mut resolved = item_root.to_path_buf();
+    for part in written.replace('\\', "/").split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                resolved.pop();
+            }
+            part => resolved.push(part),
+        }
+    }
+    resolved
+}
+
+/// Extracts `Initial Catalog` from a `;`-separated connection string.
+///
+/// Keys compare case-insensitively; the value is trimmed of whitespace and
+/// surrounding quotes.
+fn initial_catalog(connection_string: &str) -> Option<String> {
+    connection_string.split(';').find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        if !key.trim().eq_ignore_ascii_case("initial catalog") {
+            return None;
+        }
+        let catalog = value.trim().trim_matches(|c| c == '"' || c == '\'');
+        (!catalog.is_empty()).then(|| catalog.to_string())
+    })
+}
+
+/// The canonical spelling of `path`, falling back to the path itself when it
+/// cannot be canonicalized (a missing path still gets a stable identity).
+fn canonical_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// The projects and archives directly inside `dir`, sorted by label.
 ///
 /// A bare `.Report` folder whose stem has no model is not a candidate: it
@@ -313,13 +600,13 @@ fn children_matching(dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<PathBuf> {
 /// Reads a report's model location from its `datasetReference.byPath` by
 /// letting core parse the report — the CLI never re-implements the PBIR
 /// schema. The parsed value is discarded; the report is ingested again for
-/// the scan.
+/// the scan. The path resolves against the report item root, as Power BI
+/// writes it (`Mini.Report/definition.pbir` says `../Mini.SemanticModel`).
 fn model_from_dataset_reference(report_dir: &Path) -> Option<PathBuf> {
     let ingested = ripbi_core::ingest::report(report_dir).ok()?;
     match ingested.value.dataset {
         DatasetReference::ByPath { path } => {
-            let resolved =
-                parent_of(report_dir).join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
+            let resolved = resolve_by_path(report_dir, &path);
             resolved.is_dir().then_some(resolved)
         }
         _ => None,
@@ -524,7 +811,7 @@ mod tests {
         );
         temp.write(
             "Deep/R.Report/definition.pbir",
-            "{\"datasetReference\": {\"byPath\": {\"path\": \"M.SemanticModel\"}}}",
+            "{\"datasetReference\": {\"byPath\": {\"path\": \"../M.SemanticModel\"}}}",
         );
 
         let paired = paired_of(resolve_path(&temp.0.join("Deep/R.Report")).expect("pair"));
@@ -551,5 +838,413 @@ mod tests {
         let resolution = resolve_path(&temp.0.join("plain")).expect("resolution");
 
         assert_eq!(resolution, Resolution::Unrecognized(temp.0.join("plain")));
+    }
+
+    mod model_resolution {
+        use super::*;
+
+        #[test]
+        fn resolve_model_accepts_the_item_definition_and_bare_shapes() {
+            let temp = TempDir::new("resolve-model");
+            temp.write("X.SemanticModel/definition/model.tmdl", "model Model\n");
+            temp.write(
+                "X.SemanticModel/.platform",
+                "{\"metadata\": {\"displayName\": \"Sales\"}}",
+            );
+            temp.write("bare/model.tmdl", "model Model\n");
+
+            let item = resolve_model(&temp.0.join("X.SemanticModel")).expect("item shape");
+            assert_eq!(item.item_root, temp.0.join("X.SemanticModel"));
+            assert_eq!(item.definition, temp.0.join("X.SemanticModel/definition"));
+            assert_eq!(item.stem.as_deref(), Some("X"));
+            assert_eq!(item.display_name.as_deref(), Some("Sales"));
+
+            let definition = resolve_model(&temp.0.join("X.SemanticModel/definition"))
+                .expect("definition shape");
+            assert_eq!(definition.item_root, temp.0.join("X.SemanticModel"));
+            assert_eq!(
+                definition.definition,
+                temp.0.join("X.SemanticModel/definition")
+            );
+
+            let bare = resolve_model(&temp.0.join("bare")).expect("bare shape");
+            assert_eq!(bare.definition, temp.0.join("bare"));
+            assert_eq!(bare.stem, None);
+            assert_eq!(bare.display_name, None);
+        }
+
+        #[test]
+        fn resolve_model_rejects_a_folder_that_is_not_a_model() {
+            let temp = TempDir::new("resolve-model-garbage");
+            temp.mkdir("plain");
+
+            let error = resolve_model(&temp.0.join("plain")).expect_err("not a model");
+
+            assert!(
+                error.message.contains("not a semantic model"),
+                "message: {}",
+                error.message
+            );
+            assert!(error.hint.is_some(), "the accepted shapes are listed");
+        }
+    }
+
+    mod catalog {
+        use super::*;
+
+        #[test]
+        fn initial_catalog_reads_keys_case_insensitively_and_strips_quotes() {
+            assert_eq!(
+                initial_catalog("Data Source=powerbi://x;Initial Catalog=Sales;Other=1"),
+                Some("Sales".to_string())
+            );
+            assert_eq!(
+                initial_catalog("initial catalog=\"Sales Model\";x=y"),
+                Some("Sales Model".to_string())
+            );
+            assert_eq!(
+                initial_catalog("INITIAL CATALOG='Quoted Name'"),
+                Some("Quoted Name".to_string())
+            );
+            assert_eq!(initial_catalog("integrated security=SSPI"), None);
+            assert_eq!(initial_catalog("Initial Catalog=;"), None);
+            assert_eq!(initial_catalog(""), None);
+        }
+    }
+
+    mod by_path_resolution {
+        use super::*;
+
+        #[test]
+        fn resolve_by_path_accepts_both_separators_and_deeper_ladders() {
+            let temp = TempDir::new("by-path-resolve");
+            temp.write("M.SemanticModel/definition/model.tmdl", "model Model\n");
+            temp.mkdir("reports/A.Report");
+            temp.mkdir("reports/sub/B.Report");
+
+            let forward =
+                resolve_by_path(&temp.0.join("reports/A.Report"), "../../M.SemanticModel");
+            assert!(forward.is_dir(), "forward slashes: {}", forward.display());
+
+            let backslash =
+                resolve_by_path(&temp.0.join("reports/A.Report"), "..\\..\\M.SemanticModel");
+            assert!(backslash.is_dir(), "backslashes: {}", backslash.display());
+
+            let deeper = resolve_by_path(
+                &temp.0.join("reports/sub/B.Report"),
+                "../../../M.SemanticModel",
+            );
+            assert!(deeper.is_dir(), "deeper: {}", deeper.display());
+
+            let dangling =
+                resolve_by_path(&temp.0.join("reports/A.Report"), "../../Gone.SemanticModel");
+            assert!(!dangling.is_dir(), "dangling must not resolve");
+        }
+    }
+
+    mod walking {
+        use super::*;
+
+        #[test]
+        fn the_walker_prunes_by_convention_and_keeps_nested_items() {
+            let temp = TempDir::new("walk-prune");
+            temp.write("r/Inner.Report/report.json", "{}");
+            temp.write("r/Sub/Deep.Report/definition/report.json", "{}");
+            temp.write("r/.hidden/Buried.Report/report.json", "{}");
+            temp.write("r/Model.SEMANTICMODEL/Embedded.Report/report.json", "{}");
+            temp.write("r/Empty.REPORT/placeholder.txt", "x");
+            temp.write("r/not-a-report.txt", "x");
+
+            let mut visited = HashSet::new();
+            let mut out = Vec::new();
+            walk_report_items(&temp.0.join("r"), &mut visited, &mut out);
+
+            assert_eq!(
+                out,
+                vec![
+                    temp.0.join("r/Inner.Report"),
+                    temp.0.join("r/Sub/Deep.Report"),
+                ],
+                "name order, convention pruned, nested item kept"
+            );
+        }
+
+        #[test]
+        fn the_walker_skips_symlinked_directories() {
+            let temp = TempDir::new("walk-symlink");
+            temp.mkdir("real");
+            temp.write("elsewhere/Deep.Report/report.json", "{}");
+            let link = temp.0.join("real/link");
+            if symlink_dir(&temp.0.join("elsewhere"), &link).is_err() {
+                // Platforms without symlink permission (Windows without
+                // developer mode) skip the assertion, not the test run.
+                return;
+            }
+
+            let mut visited = HashSet::new();
+            let mut out = Vec::new();
+            walk_report_items(&temp.0.join("real"), &mut visited, &mut out);
+
+            assert!(out.is_empty(), "a linked directory is never entered");
+        }
+
+        #[cfg(unix)]
+        fn symlink_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+            std::os::unix::fs::symlink(from, to)
+        }
+
+        #[cfg(windows)]
+        fn symlink_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+            std::os::windows::fs::symlink_dir(from, to)
+        }
+    }
+
+    mod binding_tiers {
+        use super::*;
+
+        fn model_target(root: &Path) -> ModelTarget {
+            ModelTarget {
+                item_root: root.join("X.SemanticModel"),
+                definition: root.join("X.SemanticModel").join("definition"),
+                stem: Some("X".to_string()),
+                display_name: Some("Sales Model".to_string()),
+            }
+        }
+
+        /// Writes a report item: the `definition/report.json` anchor plus the
+        /// given `definition.pbir` text (`None` leaves the reference out).
+        fn report(temp: &TempDir, relative: &str, pbir: Option<&str>) -> PathBuf {
+            let root = temp.mkdir(relative);
+            temp.write(&format!("{relative}/definition/report.json"), "{}");
+            if let Some(text) = pbir {
+                temp.write(&format!("{relative}/definition.pbir"), text);
+            }
+            root
+        }
+
+        fn by_path(written: &str) -> String {
+            format!("{{\"datasetReference\": {{\"byPath\": {{\"path\": \"{written}\"}}}}}}")
+        }
+
+        fn by_connection(connection: &str) -> String {
+            format!(
+                "{{\"datasetReference\": {{\"byConnection\": {{\"connectionString\": \"{connection}\"}}}}}}"
+            )
+        }
+
+        /// The model every tier test resolves against; the folders must exist
+        /// so canonical comparison sees the same spelling on every platform.
+        fn target(temp: &TempDir) -> ModelTarget {
+            temp.write("X.SemanticModel/definition/model.tmdl", "model Model\n");
+            model_target(&temp.0)
+        }
+
+        #[test]
+        fn by_path_connects_to_the_item_root_and_the_definition_folder() {
+            let temp = TempDir::new("tier-bypath");
+            let model = target(&temp);
+            let item_root = report(&temp, "r/A.Report", Some(&by_path("../../X.SemanticModel")));
+            let definition = report(
+                &temp,
+                "r/B.Report",
+                Some(&by_path("../../X.SemanticModel/definition")),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.reports, vec![item_root, definition]);
+            assert!(bound.name_matched.is_empty());
+            assert!(bound.ignored_elsewhere.is_empty());
+            assert!(bound.unresolved.is_empty());
+        }
+
+        #[test]
+        fn a_by_path_to_another_model_is_bound_elsewhere_without_falling_through() {
+            let temp = TempDir::new("tier-elsewhere");
+            let model = target(&temp);
+            temp.write("Y.SemanticModel/definition/model.tmdl", "model Model\n");
+            // The folder stem says X, but the written path names Y: byPath speaks first.
+            let elsewhere = report(&temp, "r/X.Report", Some(&by_path("../../Y.SemanticModel")));
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert!(bound.reports.is_empty());
+            assert_eq!(bound.ignored_elsewhere, vec![elsewhere]);
+            assert!(bound.unresolved.is_empty());
+        }
+
+        #[test]
+        fn a_dangling_by_path_falls_through_to_the_stem() {
+            let temp = TempDir::new("tier-dangling");
+            let model = target(&temp);
+            let stem = report(
+                &temp,
+                "r/X.Report",
+                Some(&by_path("../../Gone.SemanticModel")),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.reports, vec![stem]);
+            assert!(bound.unresolved.is_empty());
+        }
+
+        #[test]
+        fn the_stem_tier_compares_without_case() {
+            let temp = TempDir::new("tier-stem-case");
+            let model = target(&temp);
+            let stem = report(&temp, "r/x.REPORT", None);
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.reports, vec![stem]);
+        }
+
+        #[test]
+        fn by_connection_matches_the_platform_display_name() {
+            let temp = TempDir::new("tier-connection");
+            let model = target(&temp);
+            let thin = report(
+                &temp,
+                "r/Thin.Report",
+                Some(&by_connection(
+                    "Data Source=powerbi://x;Initial Catalog=Sales Model",
+                )),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.reports, vec![thin.clone()]);
+            assert_eq!(bound.name_matched, vec![(thin, "Sales Model".to_string())]);
+        }
+
+        #[test]
+        fn by_connection_to_another_dataset_is_bound_elsewhere() {
+            let temp = TempDir::new("tier-connection-other");
+            let model = target(&temp);
+            let elsewhere = report(
+                &temp,
+                "r/Thin.Report",
+                Some(&by_connection(
+                    "Initial Catalog=Other;Data Source=powerbi://x",
+                )),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert!(bound.reports.is_empty());
+            assert_eq!(bound.ignored_elsewhere, vec![elsewhere]);
+            assert!(bound.name_matched.is_empty());
+        }
+
+        #[test]
+        fn by_connection_without_a_catalog_is_unresolved() {
+            let temp = TempDir::new("tier-connection-nocatalog");
+            let model = target(&temp);
+            let item = report(
+                &temp,
+                "r/Thin.Report",
+                Some(&by_connection("Data Source=powerbi://x")),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert!(bound.reports.is_empty());
+            assert_eq!(bound.unresolved.len(), 1);
+            assert_eq!(bound.unresolved[0].0, item);
+            assert!(bound.unresolved[0].1.contains("initial catalog"));
+        }
+
+        #[test]
+        fn a_malformed_definition_pbir_is_unresolved_and_reported() {
+            let temp = TempDir::new("tier-malformed");
+            let model = target(&temp);
+            let item = report(&temp, "r/Thin.Report", Some("{\"datasetReference\": {}}"));
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.unresolved.len(), 1);
+            assert_eq!(bound.unresolved[0].0, item);
+            assert_eq!(
+                bound.parse_skips.len(),
+                1,
+                "core's malformed-value notice travels"
+            );
+            assert_eq!(
+                bound.parse_skips[0].kind,
+                ripbi_core::SkipKind::MalformedValue
+            );
+        }
+
+        #[test]
+        fn a_missing_definition_pbir_is_unresolved_without_a_notice() {
+            let temp = TempDir::new("tier-no-pbir");
+            let model = target(&temp);
+            let item = report(&temp, "r/Thin.Report", None);
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.unresolved.len(), 1);
+            assert_eq!(bound.unresolved[0].0, item);
+            assert!(bound.parse_skips.is_empty());
+        }
+
+        #[test]
+        fn excluded_report_items_are_never_walked_again() {
+            let temp = TempDir::new("tier-exclude");
+            let model = target(&temp);
+            let explicit = report(
+                &temp,
+                "r/Explicit.Report",
+                Some(&by_path("../../Gone.SemanticModel")),
+            );
+            let mut exclude = HashSet::new();
+            exclude.insert(canonical_key(&explicit));
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &exclude);
+
+            assert!(bound.reports.is_empty());
+            assert!(bound.unresolved.is_empty(), "explicit is explicit");
+            assert!(bound.ignored_elsewhere.is_empty());
+        }
+
+        #[test]
+        fn connected_reports_come_out_in_canonical_order() {
+            let temp = TempDir::new("tier-sorted");
+            let model = target(&temp);
+            let zebra = report(
+                &temp,
+                "r/Zebra.Report",
+                Some(&by_path("../../X.SemanticModel")),
+            );
+            let alpha = report(
+                &temp,
+                "r/Alpha.Report",
+                Some(&by_path("../../X.SemanticModel")),
+            );
+
+            let bound = discover_bound_reports(&model, &[temp.0.join("r")], &HashSet::new());
+
+            assert_eq!(bound.reports, vec![alpha, zebra]);
+        }
+
+        #[test]
+        fn overlapping_search_roots_do_not_duplicate_reports() {
+            let temp = TempDir::new("tier-overlap");
+            let model = target(&temp);
+            let item = report(
+                &temp,
+                "r/sub/A.Report",
+                Some(&by_path("../../../X.SemanticModel")),
+            );
+
+            let bound = discover_bound_reports(
+                &model,
+                &[temp.0.join("r"), temp.0.join("r/sub")],
+                &HashSet::new(),
+            );
+
+            assert_eq!(bound.reports, vec![item]);
+        }
     }
 }

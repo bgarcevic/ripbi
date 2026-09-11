@@ -21,7 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::model::TabularDatabase;
-use crate::report::ReportModel;
+use crate::report::{DatasetReference, ReportModel};
 use crate::{Error, Result};
 
 /// One thing a parser skipped, and why.
@@ -108,11 +108,26 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     Ok(Ingested { value, skips })
 }
 
+/// Reads a report item's `definition.pbir` dataset reference without parsing
+/// the rest of the report.
+///
+/// `item_root` is the `.Report` folder (the file sits beside `definition/`).
+/// Intended for callers that must pair many report items cheaply — a folder
+/// walk can read thousands of `definition.pbir` files while only the connected
+/// reports are ingested in full. Unexpected drift is returned as
+/// [`SkipNotice`]s, exactly as [`report`] would record it.
+#[must_use]
+pub fn dataset_reference(item_root: &Path) -> (DatasetReference, Vec<SkipNotice>) {
+    let mut skips = Vec::new();
+    let reference = pbir::dataset_reference(item_root, &mut skips);
+    (reference, skips)
+}
+
 /// Resolves the `definition/` folder of a semantic-model item.
 ///
 /// Accepts the `.SemanticModel` folder itself, its `definition/` subfolder, or
 /// any directory that directly contains a `model.tmdl`.
-fn locate_definition(path: &Path) -> Result<PathBuf> {
+pub fn locate_definition(path: &Path) -> Result<PathBuf> {
     if !path.is_dir() {
         return Err(Error::UnsupportedFormat(format!(
             "not a semantic model: {} is not a directory",
@@ -165,7 +180,8 @@ fn locate_report_definition(path: &Path) -> Result<PathBuf> {
 /// TMDL itself records no usable model name (`model.tmdl` names its root
 /// object `Model`), so the Fabric item metadata is the only source. Any
 /// absence or drift yields `None` — a name is provenance, never liveness.
-fn platform_display_name(item_root: &Path) -> Option<String> {
+#[must_use]
+pub fn platform_display_name(item_root: &Path) -> Option<String> {
     let text = fs::read_to_string(item_root.join(".platform")).ok()?;
     let platform: serde_json::Value = serde_json::from_str(&text).ok()?;
     platform

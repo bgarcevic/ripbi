@@ -529,18 +529,77 @@ mod refusals {
     }
 
     #[test]
-    fn a_non_report_extra_report_flag_errors() {
+    fn a_plain_extra_folder_without_model_errors_with_the_mode_switch_hint() {
         let temp = TempDir::new("bad-report");
+        temp.mkdir("NotAReport");
         let args = ScanArgs {
             reports: vec![temp.0.join("NotAReport")],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
-        temp.mkdir("NotAReport");
         let (code, _, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 2);
         assert!(
-            stderr.contains("is not a report folder"),
+            stderr.contains("is a folder, but not a report item"),
+            "error:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("plain folders are searched only in --model mode"),
+            "the mode switch is named:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("ripbi scan --model"),
+            "the hint shows the rerun:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_missing_extra_report_flag_says_no_such_path() {
+        let temp = TempDir::new("missing-report");
+        let args = ScanArgs {
+            reports: vec![temp.0.join("Gone.Report")],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(stderr.contains("no such path"), "error:\n{stderr}");
+        assert!(
+            !stderr.contains("is a folder, but not a report item"),
+            "a missing path is not a folder-shape problem:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_report_suffixed_extra_without_an_anchor_is_malformed() {
+        let temp = TempDir::new("broken-report-path-mode");
+        temp.mkdir("Broken.Report");
+        let args = ScanArgs {
+            reports: vec![temp.0.join("Broken.Report")],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("malformed report folder") && stderr.contains("missing report.json"),
+            "error:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn an_extra_report_flag_that_is_a_file_is_not_a_folder() {
+        let temp = TempDir::new("file-report");
+        temp.write("notes.txt", "x");
+        let args = ScanArgs {
+            reports: vec![temp.0.join("notes.txt")],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("is not a folder") && !stderr.contains("not a report item"),
             "error:\n{stderr}"
         );
     }

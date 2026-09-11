@@ -29,6 +29,7 @@ const EXAMPLES: &str = "\
 Examples:
   ripbi scan \"samples/AdventureWorks Sales.pbip\"
   ripbi scan models/Sales.SemanticModel --report reports/Sales.Report
+  ripbi scan --model models/Sales.SemanticModel --report reports/
   ripbi scan                       discover a project in the current directory
   ripbi scan --json > findings.json
   ripbi scan --summary             counts only, when the list would flood the terminal
@@ -43,8 +44,16 @@ pub struct ScanArgs {
     /// current directory.
     pub path: Option<PathBuf>,
 
+    /// The semantic model to analyze: a .SemanticModel folder, its definition/,
+    /// or any folder containing model.tmdl. Disables cwd discovery and the
+    /// ripbi.toml `target`; --report values that are plain folders become search
+    /// folders for reports bound to this model (default: the model's parent).
+    #[arg(long, value_name = "PATH", conflicts_with = "path")]
+    pub model: Option<PathBuf>,
+
     /// Extra report root to scan against; repeatable. Replaces `reports` from
-    /// ripbi.toml.
+    /// ripbi.toml. With --model, a plain folder is searched recursively for
+    /// report items bound to the model.
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
 

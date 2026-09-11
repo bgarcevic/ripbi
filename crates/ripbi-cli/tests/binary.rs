@@ -35,7 +35,17 @@ fn scan_help_leads_with_examples() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Examples:"))
-        .stdout(predicate::str::contains("--report"));
+        .stdout(predicate::str::contains("--report"))
+        .stdout(predicate::str::contains("--model"));
+}
+
+#[test]
+fn model_and_path_conflict() {
+    ripbi()
+        .args(["scan", "--model", "X.SemanticModel", &mini_pbip()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
 }
 
 #[test]
