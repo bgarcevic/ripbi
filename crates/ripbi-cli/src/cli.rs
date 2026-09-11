@@ -22,6 +22,14 @@ pub enum Command {
     /// Report the objects no report reaches: the dead measures, columns, and tables.
     #[command(after_help = EXAMPLES)]
     Scan(ScanArgs),
+
+    /// Update ripbi to the latest GitHub release.
+    #[command(after_help = UPDATE_EXAMPLES)]
+    Update(UpdateArgs),
+
+    /// Internal: refresh the cached update state. Not for direct use.
+    #[command(name = "__update-check", hide = true)]
+    __UpdateCheck(UpdateCheckArgs),
 }
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).
@@ -35,6 +43,36 @@ Examples:
   ripbi scan --summary             counts only, when the list would flood the terminal
   ripbi scan --measures --columns  only these unused object types
   ripbi scan -q                    exit code only: 0 clean, 1 unused found, 2 error";
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const UPDATE_EXAMPLES: &str = "\
+Examples:
+  ripbi update                  update to the latest release in place
+  ripbi update --check          report only: exit 1 when a newer release exists
+  ripbi update --check -q       exit code only: 1 = update available, 0 = current
+  RIPBI_NO_UPDATE_CHECK=1 ripbi scan …   silence the daily update notice";
+
+/// `ripbi update` arguments.
+#[derive(Args, Debug, Default)]
+pub struct UpdateArgs {
+    /// Report the latest release and whether it is newer; download and install
+    /// nothing. Exit code 1 means a newer release exists.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// Never color output, even on a TTY (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+}
+
+/// `ripbi __update-check` arguments: none. The hidden child only refreshes the
+/// cached update state for the ambient daily notification.
+#[derive(Args, Debug, Default)]
+pub struct UpdateCheckArgs {}
 
 /// `ripbi scan` arguments.
 #[derive(Args, Debug, Default)]
@@ -175,7 +213,21 @@ impl ScanArgs {
 mod tests {
     use super::*;
     use crate::render::GROUPS;
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
+
+    /// The update flags parse, and the hidden notifier child parses too.
+    #[test]
+    fn update_flags_parse() {
+        let cli = Cli::try_parse_from(["ripbi", "update", "--check", "-q", "--no-color"])
+            .expect("update flags parse");
+        let Command::Update(args) = cli.command else {
+            panic!("expected the update subcommand");
+        };
+        assert!(args.check && args.quiet && args.no_color);
+
+        let cli = Cli::try_parse_from(["ripbi", "__update-check"]).expect("hidden child parses");
+        assert!(matches!(cli.command, Command::__UpdateCheck(_)));
+    }
 
     /// The type flags are sugar over the render groups: one flag per group,
     /// selecting exactly its kind, in the groups' order. This is the

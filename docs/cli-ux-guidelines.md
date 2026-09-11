@@ -126,4 +126,7 @@ Tashian, Parish). These govern `ripbi-cli` design decisions.
 
 - Name: simple, memorable, lowercase, short, easy to type (`curl`, not `DownloadURL`).
 - Distribute as a single binary where possible; make uninstalling easy.
-- Never phone home usage/crash data without explicit, well-documented consent.
+- Never phone home usage/crash data without explicit, well-documented consent. A
+  rate-limited, data-free, opt-out-able version check — a plain `GET` of public release
+  metadata that sends no identifier or usage data — is not telemetry; document it and
+  provide an environment-variable opt-out.

@@ -21,6 +21,11 @@ anyhow = "1"
 rstest = "0.26"
 assert_cmd = "2"
 predicates = "3"
+ureq = "3"
+sha2 = "0.11"
+semver = "1"
+tar = "0.4"
+flate2 = "1"
 
 # Ch2 of the Rust best-practices handbook: declare lints here so a local
 # `cargo clippy` matches CI. `redundant_clone` and `needless_collect` are nursery
