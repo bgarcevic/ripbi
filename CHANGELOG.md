@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-09-11
 
 ### Added
 
@@ -38,6 +38,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--power-query` flag** (`#57`) — the "⭘ Power Query also names it" annotation on
   unused Data columns is now hidden by default and shown on request. `--json` always
   carries the underlying `named_in_power_query` field.
+- **Power Query (M) reference extraction** (`#39`) — table partitions and shared
+  expressions are tokenized by a hand-written lexer (mirroring the DAX lexer) and
+  their references bind against the model. A table or shared expression named in M
+  (a merge source, a referenced parameter query) stays live, because deleting it
+  breaks refresh; a column named in M is the column's supply chain, not a consumer,
+  so it rides along on the finding as `named_in_power_query` instead of an edge.
+  `named_by_m` attaches to Data columns only — an M step names a column it produces —
+  so auto date/time columns matching Desktop's date-template query no longer carry
+  the supply-chain note. Inactive relationships are now live only through a
+  `USERELATIONSHIP` call site; an unactivated inactive relationship is a finding
+  itself, with its key columns.
+- **Auto date/time identity and in-scan verdict** (`#16`) — tables now carry the
+  engine identity flags (`is_private`, `is_local_date_table`, `is_template_date_table`)
+  from TOM `isPrivate`, the `__PBI_*DateTable` annotations, and the
+  `LocalDateTable_`/`DateTableTemplate_` name prefixes. `scan` renders the three-state
+  verdict (in use / unused by reports / dead) in its own section; unused-by-reports
+  and dead gate the exit code, while in use stays informational. Date variations are
+  modeled on `Column`, so a report's date-hierarchy binding written over a varied
+  column resolves through the model onto the related `LocalDateTable_*` and used
+  machinery is no longer false-flagged.
+- **Short `rib` alias** (`#56`) — `rib` is the same tool as `ripbi` under a shorter
+  name: both binaries share one entry point, clap derives the displayed name from
+  `argv[0]`, the installers hard-link the alias next to the binary, and the release
+  archives ship both names.
 - **`ripbi update` and a daily update notice** (`#44`) — the new `update`
   subcommand resolves the latest GitHub release, verifies the archive's sha256
   against `sha256sums.txt`, and atomically replaces `ripbi` and `rib` for
@@ -52,6 +76,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/), assembled
   by a Pages workflow from the docs that live next to the code, with a link
   checker so a broken internal link fails CI.
+- **CONTRIBUTING.md** (`#41`) — dev setup, the CI gates, and where things live, so
+  first contributions land against the same definition of done.
+
+### Fixed
+
+- **Bookmark saved filters on deleted pages no longer bind** (`#48`) — Power BI
+  leaves deleted pages' sections inside bookmarks forever, and a saved filter on a
+  page nobody can navigate to kept its columns alive with no way to re-apply it. A
+  bookmark section now binds only when its page exists (the case-folded union of
+  `pages.json` `pageOrder` and the `pages/` folders; when the two disagree, that is
+  itself a notice). A stale section is skipped whole with one `StaleState` notice
+  naming the bookmark and section. On the Artificial Intelligence Sample this closes
+  the bookmark-kept-alive delta against the external baseline: `unused_total`
+  155 → 171.
 
 ## [0.1.0] - 2026-09-07
 
@@ -103,5 +141,6 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bgarcevic/ripbi/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bgarcevic/ripbi/releases/tag/v0.1.0
