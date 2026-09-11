@@ -107,6 +107,13 @@ or its only consumer is itself unused.
 folder, a `.SemanticModel`, or a `.Report`, or nothing to scan the current
 directory.
 
+To scan one named model against every report bound to it, pass `--model`; each
+`--report` folder is searched recursively for reports bound to that model:
+
+```sh
+ripbi scan --model "samples/AdventureWorks Sales.SemanticModel" --report samples/
+```
+
 Exit codes:
 
 | Code | Meaning |

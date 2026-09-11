@@ -152,7 +152,7 @@ fn report_extensions(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Repo
 /// Parses `definition.pbir` (beside `definition/`): which semantic model the
 /// report connects to. The file is absent in some standalone layouts and is
 /// provenance only, so any absence or drift yields [`DatasetReference::Unresolved`].
-fn dataset_reference(item_root: &Path, skips: &mut Vec<SkipNotice>) -> DatasetReference {
+pub(super) fn dataset_reference(item_root: &Path, skips: &mut Vec<SkipNotice>) -> DatasetReference {
     let path = item_root.join("definition.pbir");
     let Some(value) = read_optional(&path, skips) else {
         return DatasetReference::Unresolved;
