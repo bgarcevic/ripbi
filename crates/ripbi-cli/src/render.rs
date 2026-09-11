@@ -173,8 +173,8 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
     let mut labels: Vec<String> = Vec::new();
     for id in ids {
         let label = match id {
-            ObjectId::Partition { table, .. } => format!("'{}' partition", table.as_str()),
-            ObjectId::Expression { name } => format!("'{}' expression", name.as_str()),
+            ObjectId::Partition { table, .. } => format!("{} partition", table.quoted()),
+            ObjectId::Expression { name } => format!("{} expression", name.quoted()),
             other => other.to_string(),
         };
         if !labels.contains(&label) {
@@ -841,5 +841,28 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(value["unused"][0]["table"], "'Sales'");
         assert!(value["unused"][1]["table"].is_null());
+    }
+
+    /// Labels are DAX identifiers, so an internal apostrophe doubles — the same
+    /// escaping `ObjectId`'s own `Display` uses (issue #63).
+    #[test]
+    fn power_query_labels_escape_apostrophes() {
+        let ids = [
+            ObjectId::Partition {
+                table: NameKey::new("O'Brien"),
+                partition: NameKey::new("O'Brien"),
+            },
+            ObjectId::Expression {
+                name: NameKey::new("O'Brien"),
+            },
+        ];
+
+        assert_eq!(
+            power_query_labels(&ids),
+            vec![
+                "'O''Brien' partition".to_string(),
+                "'O''Brien' expression".to_string(),
+            ]
+        );
     }
 }
