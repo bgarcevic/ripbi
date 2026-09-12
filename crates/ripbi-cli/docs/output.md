@@ -31,7 +31,7 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 |---|---|---|
 | Findings, summary, JSON, plain records | stdout | the machine-readable side |
 | Discovery/selection announce, scanning line | stderr | one line each; in `--model` mode the scanning line names every bound report |
-| Model-centric pairings (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | `--model` only; informational, never `--strict`-fatal |
+| Model-centric pairings (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | `--model` only; informational, never `--strict`-fatal; by-name notes collapse to one line per catalog in `--summary`/`--plain`/`--json` |
 | Coverage caveat | stderr | once per run |
 | Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
 | Errors + hints | stderr | `error: …` / `hint: …` |
@@ -53,7 +53,14 @@ Ignored 1 report(s) bound to other models: HR.Report
 - The scanning line's names are report folder names, in ingestion order (walked reports
   by canonical path, then explicitly passed ones).
 - The `Note:` line flags reports connected by dataset *name* rather than by path or stem,
-  because that pairing is weaker than the written `definition.pbir` path.
+  because that pairing is weaker than the written `definition.pbir` path. The default mode
+  lists one line per report; `--summary`, `--plain`, and `--json` collapse them to one
+  line per `initial catalog` with the count and up to three names (a longer tail becomes
+  `… and N more`), since those modes are read for counts and records, not audit trails:
+
+  ```text
+  Note: 2 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin1.Report, Thin2.Report
+  ```
 - The `Ignored …` line lists report items under the search folders that resolve to a
   different existing model. It is informational: those reports are not ingested, they
   appear in no output mode, and they never fail `--strict` — a healthy multi-model folder
