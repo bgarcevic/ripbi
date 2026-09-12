@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-09-12
 
 ### Changed
 
@@ -167,6 +167,7 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/bgarcevic/ripbi/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/bgarcevic/ripbi/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bgarcevic/ripbi/releases/tag/v0.1.0
