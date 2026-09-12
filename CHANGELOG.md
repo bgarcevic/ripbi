@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **By-name pairing notes collapse in count-oriented modes** (`#65`) — in `--summary`,
+  `--plain`, and `--json`, the `Note:` lines for reports matched only by a `byConnection`
+  `initial catalog` now print once per catalog with the count and up to three names
+  (`… and N more`), instead of one line per report. The default human mode keeps the
+  per-report list, and `-q` still suppresses everything. The notes stay informational:
+  never `--strict`-fatal and never in the JSON `skips` array.
+
 ### Fixed
 
 - **`--model` search walks surface malformed `.Report` folders** (`#66`) — a `*.Report`

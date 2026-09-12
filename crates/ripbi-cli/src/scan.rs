@@ -199,11 +199,19 @@ fn scan(
                     report_paths.len(),
                     names.join(", ")
                 ));
-                for (path, catalog) in &scan.bound.name_matched {
-                    announce.push(format!(
-                        "Note: {} matched by dataset name only (byConnection 'initial catalog' = '{catalog}').",
-                        path.display()
-                    ));
+                // The per-report note list is auditability for a human; the
+                // count-oriented modes get one line per catalog instead, so a
+                // dozen thin reports do not print a dozen stderr lines
+                // before the useful output (issue #65).
+                if args.json || args.plain || args.summary {
+                    announce.extend(collapse_name_matched(&scan.bound.name_matched));
+                } else {
+                    for (path, catalog) in &scan.bound.name_matched {
+                        announce.push(format!(
+                            "Note: {} matched by dataset name only (byConnection 'initial catalog' = '{catalog}').",
+                            path.display()
+                        ));
+                    }
                 }
                 if !scan.bound.ignored_elsewhere.is_empty() {
                     let names: Vec<String> = scan
@@ -520,6 +528,40 @@ fn report_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// The by-name pairing notes collapsed to one line per `initial catalog`,
+/// in first-appearance order. Names are listed up to three per catalog; a
+/// longer tail becomes `… and N more` so the line stays one line (issue #65).
+fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
+    let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
+    let mut positions: HashMap<&str, usize> = HashMap::new();
+    for (path, catalog) in name_matched {
+        match positions.get(catalog.as_str()) {
+            Some(&position) => grouped[position].1.push(report_name(path)),
+            None => {
+                positions.insert(catalog, grouped.len());
+                grouped.push((catalog.clone(), vec![report_name(path)]));
+            }
+        }
+    }
+    grouped
+        .into_iter()
+        .map(|(catalog, names)| {
+            let count = names.len();
+            let listed: Vec<String> = names.iter().take(3).cloned().collect();
+            let more = count - listed.len();
+            let names = if more > 0 {
+                format!("{}, … and {more} more", listed.join(", "))
+            } else {
+                listed.join(", ")
+            };
+            format!(
+                "Note: {count} report(s) matched by dataset name only \
+                 (byConnection 'initial catalog' = '{catalog}'): {names}"
+            )
+        })
+        .collect()
 }
 
 /// Resolves an explicit PATH (argument or config `target`).

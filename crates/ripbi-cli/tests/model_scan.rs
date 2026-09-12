@@ -516,6 +516,100 @@ mod name_based_binding {
             "name-only matches are flagged:\n{stderr}"
         );
     }
+
+    /// A model whose display name `Sales Model` and `count` thin reports
+    /// connected only through it, plus the stem-tier `X.Report`.
+    fn thin_reports(dir: &Path, count: usize) -> Vec<PathBuf> {
+        model_into(dir, "X");
+        fs::write(
+            dir.join("X.SemanticModel/.platform"),
+            "{\"metadata\": {\"displayName\": \"Sales Model\"}}",
+        )
+        .expect("write .platform");
+        let connection =
+            by_connection("Data Source=powerbi://api;Initial Catalog=\\\"Sales Model\\\"");
+        let mut reports = vec![report_into(dir, "reports/X.Report", None)];
+        for index in 1..=count {
+            reports.push(report_into(
+                dir,
+                &format!("reports/Thin{index}.Report"),
+                Some(&connection),
+            ));
+        }
+        reports
+    }
+
+    #[test]
+    fn the_default_mode_keeps_one_note_per_report() {
+        let temp = TempDir::new("model-notes-human");
+        thin_reports(&temp.0, 2);
+
+        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let (_, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(
+            stderr
+                .lines()
+                .filter(|line| line.starts_with("Note: ")
+                    && line.contains("matched by dataset name only"))
+                .count(),
+            2,
+            "the human mode lists every report:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn count_oriented_modes_collapse_the_notes_to_one_line_per_catalog() {
+        let temp = TempDir::new("model-notes-collapsed");
+        thin_reports(&temp.0, 2);
+
+        for mode in ["summary", "plain", "json"] {
+            let mut args = ScanArgs {
+                summary: mode == "summary",
+                plain: mode == "plain",
+                json: mode == "json",
+                ..ScanArgs::default()
+            };
+            args.model = Some(temp.0.join("X.SemanticModel"));
+            args.reports = vec![temp.0.join("reports")];
+            let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+            assert_eq!(code, 1, "{mode}: exit code");
+            let notes: Vec<&str> = stderr
+                .lines()
+                .filter(|line| line.contains("matched by dataset name only"))
+                .collect();
+            assert_eq!(notes.len(), 1, "{mode}: one line per catalog:\n{stderr}");
+            assert!(
+                notes[0].contains("2 report(s) matched by dataset name only")
+                    && notes[0].contains("'initial catalog' = 'Sales Model'")
+                    && notes[0].contains("Thin1.Report")
+                    && notes[0].contains("Thin2.Report"),
+                "{mode}: the line carries count, catalog, and names:\n{stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_name_tail_is_capped_with_and_n_more() {
+        let temp = TempDir::new("model-notes-cap");
+        thin_reports(&temp.0, 5);
+
+        let args = ScanArgs {
+            summary: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (_, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert!(
+            stderr.contains(
+                "5 report(s) matched by dataset name only \
+                 (byConnection 'initial catalog' = 'Sales Model'): \
+                 Thin1.Report, Thin2.Report, Thin3.Report, … and 2 more"
+            ),
+            "the tail is capped:\n{stderr}"
+        );
+    }
 }
 
 mod binding_spellings {
