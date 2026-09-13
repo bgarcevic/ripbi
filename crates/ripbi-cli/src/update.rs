@@ -3,8 +3,11 @@
 //!
 //! Only self-managed installs (the install scripts) are replaced in place.
 //! Cargo-managed installs and source builds under `target/` get guidance and
-//! exit 0 without touching the network. Exit codes mirror `scan`: 0 success or
-//! up to date, 1 update available (only from `--check`), 2 error.
+//! exit 0 without touching the network. The `rib` alias the install scripts
+//! hard-link to `ripbi` is replaced through the same move-aside path on
+//! Windows, where a running image cannot be overwritten. Exit codes mirror
+//! `scan`: 0 success or up to date, 1 update available (only from `--check`),
+//! 2 error.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -494,38 +497,81 @@ fn set_staged_permissions(staging: &Path, exe: &Path) {
 /// install does not have. Unix `rename` is atomic per file. On Windows the
 /// running executable cannot be overwritten while it runs, so it is renamed
 /// to `<name>.old` first; the `.old` removal is best-effort and documented.
+/// The install scripts create the `rib` alias as a hard link to `ripbi`, so a
+/// name whose path differs from the running binary's can still be another
+/// link to the same mapped image; those targets get the same move-aside
+/// treatment when a plain rename is refused. The running binary goes last,
+/// so a failure on a sibling cannot leave this process half-installed.
 fn replace_binaries(staging: &Path, install_dir: &Path, exe: &Path) -> Result<(), ScanError> {
+    sweep_old_backups(install_dir);
     #[cfg(windows)]
     let running = canonical(exe);
     #[cfg(not(windows))]
     let _ = exe;
-    for name in binary_names() {
+    let names: Vec<String> = binary_names()
+        .into_iter()
+        .filter(|name| staging.join(name).is_file() && install_dir.join(name).is_file())
+        .collect();
+    #[cfg(windows)]
+    let names = running_last(names, install_dir, &running);
+    for name in names {
         let staged = staging.join(&name);
-        if !staged.is_file() {
-            continue;
-        }
         let target = install_dir.join(&name);
-        if !target.is_file() {
-            continue;
-        }
         #[cfg(windows)]
         if canonical(&target) == running {
-            let old = install_dir.join(format!("{name}.old"));
-            let _ = fs::remove_file(&old);
-            fs::rename(&target, &old).map_err(|error| {
-                io_error("cannot move the running binary aside", &target, error)
-            })?;
-            fs::rename(&staged, &target)
-                .map_err(|error| io_error("cannot install the new binary", &target, error))?;
-            // The old image is still mapped and cannot be deleted while this
-            // process runs; the next update cleans it up.
-            let _ = fs::remove_file(&old);
+            rename_aside(install_dir, &name, &staged, &target)?;
             continue;
         }
-        fs::rename(&staged, &target)
-            .map_err(|error| io_error("cannot install the new binary", &target, error))?;
+        if let Err(error) = fs::rename(&staged, &target) {
+            #[cfg(windows)]
+            if rename_aside(install_dir, &name, &staged, &target).is_ok() {
+                continue;
+            }
+            return Err(io_error("cannot install the new binary", &target, error));
+        }
     }
     Ok(())
+}
+
+/// Orders the candidate names so the running executable's name comes last:
+/// replacing the siblings first means a failure cannot leave this process's
+/// own image replaced while a sibling is not.
+#[cfg(windows)]
+fn running_last(mut names: Vec<String>, install_dir: &Path, running: &Path) -> Vec<String> {
+    // `false` sorts before `true`, pushing the running name to the end.
+    names.sort_by_key(|name| canonical(&install_dir.join(name)) == running);
+    names
+}
+
+/// The Windows move-aside replacement: the installed file is renamed to
+/// `<name>.old` first — renaming is allowed where overwriting or deleting a
+/// mapped image is not — the staged binary takes the freed name, and the
+/// `.old` removal is best-effort because the image may still be mapped; the
+/// sweep on the next update cleans it up.
+#[cfg(windows)]
+fn rename_aside(
+    install_dir: &Path,
+    name: &str,
+    staged: &Path,
+    target: &Path,
+) -> Result<(), ScanError> {
+    let old = install_dir.join(format!("{name}.old"));
+    let _ = fs::remove_file(&old);
+    fs::rename(target, &old)
+        .map_err(|error| io_error("cannot move the running binary aside", target, error))?;
+    fs::rename(staged, target)
+        .map_err(|error| io_error("cannot install the new binary", target, error))?;
+    let _ = fs::remove_file(&old);
+    Ok(())
+}
+
+/// Removes the `<name>.old` backups a previous Windows update may have left
+/// beside the install. Best-effort: an image still mapped by a running
+/// process cannot be deleted, and the next update sweeps it again.
+fn sweep_old_backups(install_dir: &Path) {
+    for name in binary_names() {
+        let _ = fs::remove_file(install_dir.join(format!("{name}.old")));
+    }
 }
 
 /// Classifies an executable path against the cargo home. Pure, so tests feed
@@ -809,6 +855,39 @@ mod tests {
             detect_channel(Path::new("/home/u/targeted/ripbi"), Some(cargo_home)),
             Channel::SelfManaged
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn replacement_orders_the_running_binary_name_last() {
+        let dir = scratch("running-last");
+        fs::write(dir.join("ripbi.exe"), b"old").expect("seed ripbi");
+        fs::write(dir.join("rib.exe"), b"old").expect("seed rib");
+        let ordered = running_last(binary_names(), &dir, &canonical(&dir.join("rib.exe")));
+        assert_eq!(ordered.last().map(String::as_str), Some("rib.exe"));
+        let ordered = running_last(binary_names(), &dir, &canonical(&dir.join("ripbi.exe")));
+        assert_eq!(ordered.first().map(String::as_str), Some("rib.exe"));
+        assert_eq!(ordered.last().map(String::as_str), Some("ripbi.exe"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn replacement_handles_a_hard_linked_alias() {
+        let dir = scratch("hardlink-alias");
+        fs::write(dir.join("ripbi.exe"), b"old").expect("seed ripbi");
+        // Mirror install.ps1: the alias is another link to the same image.
+        fs::hard_link(dir.join("ripbi.exe"), dir.join("rib.exe")).expect("hard link");
+        let staging = scratch("hardlink-alias-staging");
+        fs::write(staging.join("ripbi.exe"), b"new").expect("stage ripbi");
+        fs::write(staging.join("rib.exe"), b"new").expect("stage rib");
+
+        replace_binaries(&staging, &dir, &dir.join("ripbi.exe")).expect("replace");
+
+        assert_eq!(fs::read(dir.join("ripbi.exe")).expect("new ripbi"), b"new");
+        assert_eq!(fs::read(dir.join("rib.exe")).expect("new rib"), b"new");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&staging);
     }
 
     #[test]

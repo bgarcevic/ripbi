@@ -22,8 +22,9 @@ CI-friendly output, and exit codes.
 `ExitCode`. The lib target exists so integration tests drive `scan` and `update`
 without spawning a process (`Streams` injects stdout/stderr/stdin and the
 stdin/stderr-are-TTY bits; `ReleaseClient` fakes the network).
-The short alias `rib` (`src/bin/rib.rs`) shares `entry::run` with `main.rs`; clap
-derives the displayed name from argv[0], so help says whichever name was typed.
+The short alias `rib` (`src/bin/rib.rs`) shares `entry::run` with `main.rs`; the clap
+command name is pinned to `ripbi` (`cli.rs`), so help and `--version` always say
+`ripbi`, whichever binary was typed.
 
 | Module | Role |
 |---|---|
@@ -32,7 +33,7 @@ derives the displayed name from argv[0], so help says whichever name was typed.
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery; `--model` target resolution and bound-report folder walking (byPath → stem → `byConnection` name) |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code → the update notifier hook |
 | `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → type filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict; the section prints only when no type filter runs without `--tables`) |
-| `update.rs` | `ripbi update`: GitHub release lookup (ureq), `sha256sums.txt` verification, tar.gz/zip extraction, channel detection, atomic replacement of `ripbi`/`rib`. `ReleaseClient` is the network seam; `run_in_with_home` injects the exe and cargo home |
+| `update.rs` | `ripbi update`: GitHub release lookup (ureq), `sha256sums.txt` verification, tar.gz/zip extraction, channel detection, atomic replacement of `ripbi`/`rib` — the running binary last, and on Windows a locked target (the install scripts hard-link `rib` to `ripbi`) is moved aside to `<name>.old` instead of failing. `ReleaseClient` is the network seam; `run_in_with_home` injects the exe and cargo home |
 | `notify.rs` | the ambient daily check: XDG/LOCALAPPDATA state file, detached `__update-check` child, the `after_command` notice hook, and env/CI/TTY/`-q` suppression. `NotifyContext` is the test seam |
 | `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them. `GROUPS` is the fixed kind order the type flags select from. `Finding.table` (`ObjectId::owning_table`, set in `scan.rs` only for `--json`/`--summary`) feeds the JSON `table` field and `--summary`'s worst-tables breakdown |
 | `style.rs` | ANSI palette gated on TTY / `NO_COLOR` / `TERM=dumb` / `--no-color` |
