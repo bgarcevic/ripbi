@@ -304,6 +304,81 @@ fn full_update_replaces_both_binaries_and_exits_zero() {
 }
 
 #[test]
+#[cfg(windows)]
+fn hard_linked_alias_updates_both_names() {
+    let temp = TempDir::new("hardlink-alias");
+    let dir = install_dir(&temp, "bin");
+    let ripbi = binary("ripbi");
+    let rib = binary("rib");
+    // Mirror install.ps1: the alias is another link to the same image, so
+    // replacing the running `ripbi` must still reach `rib`.
+    fs::remove_file(dir.join(&rib)).expect("drop the seeded alias");
+    fs::hard_link(dir.join(&ripbi), dir.join(&rib)).expect("hard link");
+    let files: [(&str, &[u8]); 2] = [
+        (&ripbi, b"new-ripbi".as_slice()),
+        (&rib, b"new-rib".as_slice()),
+    ];
+    let (release, downloads) = fixture("99.0.0", &files);
+    let client = FakeClient::with(release, downloads);
+
+    let (code, _, stderr) = run_update(&UpdateArgs::default(), &client, &dir.join(&ripbi));
+
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(fs::read(dir.join(&ripbi)).expect("new ripbi"), b"new-ripbi");
+    assert_eq!(fs::read(dir.join(&rib)).expect("new rib"), b"new-rib");
+}
+
+#[test]
+#[cfg(windows)]
+fn locked_alias_falls_back_to_moving_aside() {
+    let temp = TempDir::new("locked-alias");
+    let dir = install_dir(&temp, "bin");
+    let ripbi = binary("ripbi");
+    let rib = binary("rib");
+    fs::remove_file(dir.join(&rib)).expect("drop the seeded alias");
+    fs::hard_link(dir.join(&ripbi), dir.join(&rib)).expect("hard link");
+    // A read-only target refuses the plain rename with access denied,
+    // standing in for the mapped image of a running process.
+    let mut permissions = fs::metadata(dir.join(&rib)).expect("alias").permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(dir.join(&rib), permissions).expect("lock the alias");
+    let files: [(&str, &[u8]); 2] = [
+        (&ripbi, b"new-ripbi".as_slice()),
+        (&rib, b"new-rib".as_slice()),
+    ];
+    let (release, downloads) = fixture("99.0.0", &files);
+    let client = FakeClient::with(release, downloads);
+
+    let (code, _, stderr) = run_update(&UpdateArgs::default(), &client, &dir.join(&ripbi));
+
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(fs::read(dir.join(&ripbi)).expect("new ripbi"), b"new-ripbi");
+    assert_eq!(fs::read(dir.join(&rib)).expect("new rib"), b"new-rib");
+}
+
+#[test]
+fn stale_old_backups_are_swept() {
+    let temp = TempDir::new("sweep-old");
+    let dir = install_dir(&temp, "bin");
+    let ripbi_old = format!("{}.old", binary("ripbi"));
+    let rib_old = format!("{}.old", binary("rib"));
+    fs::write(dir.join(&ripbi_old), b"stale").expect("seed old ripbi");
+    fs::write(dir.join(&rib_old), b"stale").expect("seed old rib");
+    let files: [(&str, &[u8]); 2] = [
+        (&binary("ripbi"), b"new-ripbi".as_slice()),
+        (&binary("rib"), b"new-rib".as_slice()),
+    ];
+    let (release, downloads) = fixture("99.0.0", &files);
+    let client = FakeClient::with(release, downloads);
+
+    let (code, _, stderr) = run_update(&UpdateArgs::default(), &client, &dir.join(binary("ripbi")));
+
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(!dir.join(&ripbi_old).exists(), "stale ripbi backup swept");
+    assert!(!dir.join(&rib_old).exists(), "stale rib backup swept");
+}
+
+#[test]
 fn quiet_update_prints_nothing() {
     let temp = TempDir::new("quiet-update");
     let dir = install_dir(&temp, "bin");
