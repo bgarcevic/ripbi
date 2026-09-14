@@ -123,7 +123,8 @@ Columns (28)
 ```
 
 - The summary line: total graph objects, how many reachability reached, from how many
-  report binding roots, and the unused count. Roots are report bindings; RLS roles also
+  report binding roots, and the unused count. Roots are report bindings — the desktop
+  tree and the phone layout (`definition.mobile/`, issue #49) alike; RLS roles also
   seed reachability without counting here. When `[scan].ignore` suppressed objects, a
   second line says how many; when the type flags hid findings, a third line counts them
   (`(2 unused hidden by type filters)`); and when auto date/time machinery members are
@@ -335,7 +336,9 @@ Pretty-printed JSON, stable field order, additive schema:
   `expression`, `function`, `report_measure`). `--plain` deliberately omits it: its
   records are a two-column grep contract.
 - `provenance` is the human phrase for how the use is made (e.g. `measure expression`,
-  `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`).
+  `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`). A
+  binding from the phone layout prefixes `mobile layout ` (`mobile layout field well
+  'Y' — visual 'V' on page 'P' in report 'R'`), so an audit names the right surface.
 - `named_in_power_query` lists the M expressions (partitions by their table, shared
   expressions by name) that mention the column — supply-chain context, never a
   consumer. Empty for every non-column finding and for columns no M step names.
@@ -402,6 +405,14 @@ tables and everything chained under them). Inactive relationships
 are the opposite correction: they are live only when a live `USERELATIONSHIP` reference
 activates them, so an unactivated one is a finding itself, with its key columns chained
 under it — `only used by relationship … (also unused)`.
+
+The phone layout is the same conservatism on the report side (issue #49): a report can
+ship a `definition.mobile/` tree beside `definition/`, and its visuals render on
+phones, so its bindings enumerate as roots exactly like the desktop tree's — a field
+referenced only there never surfaces as a finding, because deleting it would break the
+report for phone users. Its provenance reads `mobile layout …`, and the summary's root
+count includes it. Page visibility stays display-only in the phone layout, as on
+desktop; report-level state (report measures, bookmarks) remains desktop-only.
 
 A fourth, uncommitted validation ran against a large production model (≈3.8k graph
 objects, 14 reports, ≈2.5k columns/measures measured externally): 99.3% of the

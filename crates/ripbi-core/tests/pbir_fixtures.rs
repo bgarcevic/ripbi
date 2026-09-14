@@ -148,6 +148,33 @@ fn golden_report() -> ReportModel {
                 visuals: Vec::new(),
             },
         ],
+        // The phone layout (`definition.mobile/`, issue #49): mirrors the
+        // desktop card on P1. Report-level state — anchor, report measures,
+        // bookmarks — is desktop-only and absent here.
+        mobile_pages: vec![Page {
+            name: NameKey::new("P1"),
+            display_name: Some("Overview".to_string()),
+            is_hidden: false,
+            filters: Vec::new(),
+            binding: None,
+            visuals: vec![Visual {
+                name: NameKey::new("VM"),
+                visual_type: "card".to_string(),
+                wells: vec![FieldWell {
+                    role: "Values".to_string(),
+                    projections: vec![Projection {
+                        target: measure("Sales", "Sales"),
+                        query_ref: Some("Sales.Sales".to_string()),
+                        active: true,
+                    }],
+                }],
+                filters: Vec::new(),
+                sorts: Vec::new(),
+                conditional_formatting: Vec::new(),
+                alt_text: Vec::new(),
+                tooltip_page: None,
+            }],
+        }],
         bookmarks: vec![
             Bookmark {
                 name: NameKey::new("B1"),
@@ -221,12 +248,13 @@ fn golden_report_parses_exactly_with_expected_skips() {
 fn the_extracted_root_set_is_complete_and_ordered() {
     let ingested = report(&fixture(&["golden", "Mini.Report"])).expect("golden fixture parses");
 
-    /// One root's full provenance: page, visual, bookmark, kind, and the
-    /// target as `Display`.
+    /// One root's full provenance: page, visual, bookmark, layout, kind, and
+    /// the target as `Display`.
     type Root<'a> = (
         Option<&'a str>,
         Option<&'a str>,
         Option<&'a str>,
+        bool,
         BindingKind<'a>,
         String,
     );
@@ -240,6 +268,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 binding.page.map(NameKey::as_str),
                 binding.visual.map(NameKey::as_str),
                 binding.bookmark.map(NameKey::as_str),
+                binding.mobile,
                 binding.kind,
                 binding.target.to_string(),
             )
@@ -254,6 +283,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 None,
                 None,
                 None,
+                false,
                 BindingKind::Filter,
                 "'Product'[Category]".to_string()
             ),
@@ -262,6 +292,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 None,
                 None,
+                false,
                 BindingKind::Filter,
                 "'Date'[Calendar Year]".to_string()
             ),
@@ -270,6 +301,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 None,
+                false,
                 BindingKind::FieldWell { role: "Category" },
                 "'Product'[Category]".to_string()
             ),
@@ -277,6 +309,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 None,
+                false,
                 BindingKind::Filter,
                 "'Reseller'[Business Type]".to_string()
             ),
@@ -284,6 +317,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 None,
+                false,
                 BindingKind::Filter,
                 "'Reseller'[Business Type]".to_string()
             ),
@@ -291,6 +325,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 None,
+                false,
                 BindingKind::Sort,
                 "'Product'[Category]".to_string()
             ),
@@ -299,6 +334,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V2"),
                 None,
+                false,
                 BindingKind::FieldWell { role: "Values" },
                 "'Sales'[Sales]".to_string()
             ),
@@ -306,6 +342,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V2"),
                 None,
+                false,
                 BindingKind::FieldWell { role: "Values" },
                 "Sum('Sales'[Units])".to_string()
             ),
@@ -313,6 +350,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V2"),
                 None,
+                false,
                 BindingKind::Filter,
                 "'Date'[Date Role]".to_string()
             ),
@@ -320,6 +358,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V2"),
                 None,
+                false,
                 BindingKind::ConditionalFormatting,
                 "'Sales'[Cost]".to_string()
             ),
@@ -328,6 +367,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V2"),
                 None,
+                false,
                 BindingKind::AltText,
                 "'Sales'[Units]".to_string()
             ),
@@ -336,14 +376,26 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P2"),
                 None,
                 None,
+                false,
                 BindingKind::Drillthrough,
                 "'Industry'[Industry]".to_string()
+            ),
+            // The phone layout's card: same binding shape, tagged mobile,
+            // enumerating after every desktop page (issue #49).
+            (
+                Some("P1"),
+                Some("VM"),
+                None,
+                true,
+                BindingKind::FieldWell { role: "Values" },
+                "'Sales'[Sales]".to_string()
             ),
             // Bookmark: report-level filter, section filter, well, visual filter.
             (
                 None,
                 None,
                 Some("B1"),
+                false,
                 BindingKind::Filter,
                 "'Geography'[Country]".to_string()
             ),
@@ -351,6 +403,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 None,
                 Some("B1"),
+                false,
                 BindingKind::Filter,
                 "'Owners'[Sales owner]".to_string()
             ),
@@ -358,6 +411,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 Some("B1"),
+                false,
                 BindingKind::FieldWell { role: "Rows" },
                 "'Product'[Subcategory]".to_string()
             ),
@@ -365,6 +419,7 @@ fn the_extracted_root_set_is_complete_and_ordered() {
                 Some("P1"),
                 Some("V1"),
                 Some("B1"),
+                false,
                 BindingKind::Filter,
                 "'Product'[Color]".to_string()
             ),
@@ -504,4 +559,50 @@ fn a_malformed_page_is_skipped_and_noticed_but_the_report_parses() {
             .and_then(|name| name.to_str()),
         Some("page.json")
     );
+}
+
+/// Drift inside the phone layout behaves like desktop drift: the page is
+/// dropped, the notice points into `definition.mobile/` so the user can find
+/// it, and the report itself still parses (issue #49).
+#[test]
+fn a_malformed_mobile_page_is_skipped_and_noticed_but_the_report_parses() {
+    let ingested = report(&fixture(&["resilience", "malformed-mobile"]))
+        .expect("drift must not fail the parse");
+
+    assert!(
+        ingested.value.mobile_pages.is_empty(),
+        "the unreadable phone page must not reach the AST"
+    );
+    assert!(
+        ingested.value.pages.is_empty(),
+        "the desktop tree is unaffected"
+    );
+
+    assert_eq!(ingested.skips.len(), 1);
+    assert_eq!(ingested.skips[0].kind, SkipKind::MalformedValue);
+    assert_eq!(
+        ingested.skips[0]
+            .path
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some("page.json")
+    );
+    assert!(
+        ingested.skips[0]
+            .path
+            .components()
+            .any(|component| component.as_os_str() == "definition.mobile"),
+        "the notice must point into the phone layout: {:?}",
+        ingested.skips[0].path
+    );
+}
+
+/// A report that ships no phone layout — the common case — parses to no
+/// mobile pages and no notices.
+#[test]
+fn a_report_without_a_phone_layout_has_no_mobile_pages() {
+    let ingested = report(&fixture(&["resilience", "malformed-page"]))
+        .expect("the desktop-only report parses");
+
+    assert!(ingested.value.mobile_pages.is_empty());
 }

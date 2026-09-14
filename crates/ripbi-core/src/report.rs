@@ -34,6 +34,14 @@ pub struct ReportModel {
     pub filters: Vec<Filter>,
     /// Pages in source order.
     pub pages: Vec<Page>,
+    /// Pages of the phone layout (PBIR `definition.mobile/`), in source order.
+    ///
+    /// The phone layout mirrors the desktop tree and binds the same model: a
+    /// field referenced only there still renders — on phones — so its bindings
+    /// are reachability roots like any other (issue #49). Report-level state
+    /// (`report.json`, report measures, bookmarks) is desktop-only and is not
+    /// read from the mobile tree.
+    pub mobile_pages: Vec<Page>,
     /// Bookmarks in source order.
     pub bookmarks: Vec<Bookmark>,
     /// Report-level measures (PBIR `reportExtensions.json`): DAX that lives in the
@@ -375,6 +383,11 @@ pub struct BindingRef<'a> {
     pub visual: Option<&'a NameKey>,
     /// Bookmark whose saved state carries the binding; `None` for live bindings.
     pub bookmark: Option<&'a NameKey>,
+    /// Whether the binding lives in the phone layout (`definition.mobile/`)
+    /// rather than the desktop tree. Pure provenance — both layouts bind
+    /// identically — but it tells a user auditing a survivor which surface to
+    /// look at (issue #49).
+    pub mobile: bool,
     /// What kind of binding this is.
     pub kind: BindingKind<'a>,
     /// The model object referenced, as written.
@@ -390,6 +403,8 @@ impl ReportModel {
     /// conditional formatting; then per bookmark: report-level filters, and per
     /// section: section filters and each visual's wells and filters), so the
     /// result is deterministic for a given report and diffable across runs.
+    /// Mobile-layout pages ([`ReportModel::mobile_pages`]) enumerate after the
+    /// desktop pages, same shape, tagged [`BindingRef::mobile`].
     ///
     /// Everything borrows from the report, so this allocates only the returned
     /// `Vec`.
@@ -423,88 +438,51 @@ impl ReportModel {
         let mut out = Vec::new();
 
         for filter in &self.filters {
-            extend_with_filter(&mut out, None, None, None, filter);
+            extend_with_filter(&mut out, None, None, None, false, filter);
         }
 
         for page in &self.pages {
-            let page_id = Some(&page.name);
+            extend_with_page(&mut out, page, false);
+        }
 
-            if let Some(binding) = &page.binding {
-                for parameter in &binding.parameters {
-                    out.push(BindingRef {
-                        page: page_id,
-                        visual: None,
-                        bookmark: None,
-                        kind: BindingKind::Drillthrough,
-                        target: &parameter.target,
-                    });
-                }
-            }
-
-            for filter in &page.filters {
-                extend_with_filter(&mut out, page_id, None, None, filter);
-            }
-
-            for visual in &page.visuals {
-                let visual_id = Some(&visual.name);
-                extend_with_wells(&mut out, page_id, visual_id, None, &visual.wells);
-
-                for filter in &visual.filters {
-                    extend_with_filter(&mut out, page_id, visual_id, None, filter);
-                }
-
-                for target in &visual.sorts {
-                    out.push(BindingRef {
-                        page: page_id,
-                        visual: visual_id,
-                        bookmark: None,
-                        kind: BindingKind::Sort,
-                        target,
-                    });
-                }
-
-                for target in &visual.conditional_formatting {
-                    out.push(BindingRef {
-                        page: page_id,
-                        visual: visual_id,
-                        bookmark: None,
-                        kind: BindingKind::ConditionalFormatting,
-                        target,
-                    });
-                }
-
-                for target in &visual.alt_text {
-                    out.push(BindingRef {
-                        page: page_id,
-                        visual: visual_id,
-                        bookmark: None,
-                        kind: BindingKind::AltText,
-                        target,
-                    });
-                }
-            }
+        for page in &self.mobile_pages {
+            extend_with_page(&mut out, page, true);
         }
 
         for bookmark in &self.bookmarks {
             let bookmark_id = Some(&bookmark.name);
 
             for filter in &bookmark.filters {
-                extend_with_filter(&mut out, None, None, bookmark_id, filter);
+                extend_with_filter(&mut out, None, None, bookmark_id, false, filter);
             }
 
             for section in &bookmark.sections {
                 let page_id = Some(&section.page);
 
                 for filter in &section.filters {
-                    extend_with_filter(&mut out, page_id, None, bookmark_id, filter);
+                    extend_with_filter(&mut out, page_id, None, bookmark_id, false, filter);
                 }
 
                 for visual in &section.visuals {
                     let visual_id = Some(&visual.visual);
-                    extend_with_wells(&mut out, page_id, visual_id, bookmark_id, &visual.wells);
+                    extend_with_wells(
+                        &mut out,
+                        page_id,
+                        visual_id,
+                        bookmark_id,
+                        false,
+                        &visual.wells,
+                    );
 
                     for filter in &visual.filters {
-                        extend_with_filter(&mut out, page_id, visual_id, bookmark_id, filter);
+                        extend_with_filter(
+                            &mut out,
+                            page_id,
+                            visual_id,
+                            bookmark_id,
+                            false,
+                            filter,
+                        );
                     }
                 }
             }
@@ -550,6 +528,73 @@ impl ReportModel {
     }
 }
 
+/// Appends the bindings of one page — drillthrough parameters, page filters,
+/// and each visual's wells, filters, sorts, conditional formatting, and alt
+/// text — in report order. `mobile` tags every binding with the layout it came
+/// from; the two layouts parse to the same shapes and bind identically.
+fn extend_with_page<'a>(out: &mut Vec<BindingRef<'a>>, page: &'a Page, mobile: bool) {
+    let page_id = Some(&page.name);
+
+    if let Some(binding) = &page.binding {
+        for parameter in &binding.parameters {
+            out.push(BindingRef {
+                page: page_id,
+                visual: None,
+                bookmark: None,
+                mobile,
+                kind: BindingKind::Drillthrough,
+                target: &parameter.target,
+            });
+        }
+    }
+
+    for filter in &page.filters {
+        extend_with_filter(out, page_id, None, None, mobile, filter);
+    }
+
+    for visual in &page.visuals {
+        let visual_id = Some(&visual.name);
+        extend_with_wells(out, page_id, visual_id, None, mobile, &visual.wells);
+
+        for filter in &visual.filters {
+            extend_with_filter(out, page_id, visual_id, None, mobile, filter);
+        }
+
+        for target in &visual.sorts {
+            out.push(BindingRef {
+                page: page_id,
+                visual: visual_id,
+                bookmark: None,
+                mobile,
+                kind: BindingKind::Sort,
+                target,
+            });
+        }
+
+        for target in &visual.conditional_formatting {
+            out.push(BindingRef {
+                page: page_id,
+                visual: visual_id,
+                bookmark: None,
+                mobile,
+                kind: BindingKind::ConditionalFormatting,
+                target,
+            });
+        }
+
+        for target in &visual.alt_text {
+            out.push(BindingRef {
+                page: page_id,
+                visual: visual_id,
+                bookmark: None,
+                mobile,
+                kind: BindingKind::AltText,
+                target,
+            });
+        }
+    }
+}
+
 /// Appends one [`BindingRef`] per field a filter carries, all tagged
 /// [`BindingKind::Filter`]: the declared `target` first, then the condition tree's
 /// `references`, preserving file order for stable diffs.
@@ -558,6 +603,7 @@ fn extend_with_filter<'a>(
     page: Option<&'a NameKey>,
     visual: Option<&'a NameKey>,
     bookmark: Option<&'a NameKey>,
+    mobile: bool,
     filter: &'a Filter,
 ) {
     for target in filter.target.iter().chain(&filter.references) {
@@ -565,6 +611,7 @@ fn extend_with_filter<'a>(
             page,
             visual,
             bookmark,
+            mobile,
             kind: BindingKind::Filter,
             target,
         });
@@ -578,6 +625,7 @@ fn extend_with_wells<'a>(
     page: Option<&'a NameKey>,
     visual: Option<&'a NameKey>,
     bookmark: Option<&'a NameKey>,
+    mobile: bool,
     wells: &'a [FieldWell],
 ) {
     for well in wells {
@@ -586,6 +634,7 @@ fn extend_with_wells<'a>(
                 page,
                 visual,
                 bookmark,
+                mobile,
                 kind: BindingKind::FieldWell {
                     role: well.role.as_str(),
                 },
@@ -746,12 +795,20 @@ mod tests {
             }
         }
 
-        /// One binding's full provenance: page, visual, bookmark, kind, and the
-        /// target as `Display` — what resolution consumes.
+        fn sample_with_mobile_page(page: Page) -> ReportModel {
+            ReportModel {
+                mobile_pages: vec![page],
+                ..sample()
+            }
+        }
+
+        /// One binding's full provenance: page, visual, bookmark, layout,
+        /// kind, and the target as `Display` — what resolution consumes.
         type Provenance<'a> = (
             Option<&'a str>,
             Option<&'a str>,
             Option<&'a str>,
+            bool,
             BindingKind<'a>,
             String,
         );
@@ -767,6 +824,7 @@ mod tests {
                         binding.page.map(NameKey::as_str),
                         binding.visual.map(NameKey::as_str),
                         binding.bookmark.map(NameKey::as_str),
+                        binding.mobile,
                         binding.kind,
                         binding.target.to_string(),
                     )
@@ -919,6 +977,196 @@ mod tests {
             assert_eq!(bindings[0].kind, BindingKind::FieldWell { role: "Rows" });
         }
 
+        /// Enumeration walks report order — report filters, page (parameters,
+        /// filters, visuals: wells, filters, sorts, conditional formatting),
+        /// mobile-layout pages, then bookmarks — so runs are diffable. Every
+        /// binding's full provenance is pinned, not just its kind: a slipped
+        /// page, visual, bookmark, or layout flag on any site must fail here.
+        #[test]
+        fn order_follows_report_structure() {
+            let report = ReportModel {
+                filters: vec![filter_on(column_target("Product", "Category"))],
+                pages: vec![
+                    Page {
+                        binding: Some(PageBinding {
+                            kind: PageBindingKind::Drillthrough,
+                            parameters: vec![DrillthroughParameter {
+                                name: None,
+                                target: column_target("Industries", "Industry"),
+                            }],
+                        }),
+                        filters: vec![filter_on(column_target("Owners", "Sales owner"))],
+                        visuals: vec![Visual {
+                            wells: vec![well("Category", &[column_target("Product", "Category")])],
+                            filters: vec![filter_on(column_target("Region", "Country"))],
+                            sorts: vec![measure_target(Some("Sales"), "Sales")],
+                            conditional_formatting: vec![measure_target(Some("Sales"), "Margin")],
+                            ..visual("visual1", "donutChart")
+                        }],
+                        ..page("ReportSection1")
+                    },
+                    Page {
+                        visuals: vec![Visual {
+                            wells: vec![well(
+                                "Tooltips",
+                                &[measure_target(Some("Sales"), "Customers %")],
+                            )],
+                            ..visual("visual2", "slicer")
+                        }],
+                        ..page("ReportSection2")
+                    },
+                ],
+                // The phone layout mirrors page 1; its bindings enumerate after
+                // every desktop page.
+                mobile_pages: vec![Page {
+                    visuals: vec![Visual {
+                        wells: vec![well("Values", &[measure_target(Some("Sales"), "Total")])],
+                        ..visual("visual1", "card")
+                    }],
+                    ..page("ReportSection1")
+                }],
+                bookmarks: vec![Bookmark {
+                    name: NameKey::new("Bookmark1"),
+                    display_name: None,
+                    filters: vec![filter_on(measure_target(None, "Total Units"))],
+                    sections: vec![BookmarkSection {
+                        page: NameKey::new("ReportSection1"),
+                        filters: vec![filter_on(column_target("Products", "Product category"))],
+                        visuals: vec![BookmarkVisual {
+                            visual: NameKey::new("visual1"),
+                            wells: vec![well("Rows", &[column_target("Product", "Subcategory")])],
+                            filters: vec![filter_on(column_target("Product", "Color"))],
+                        }],
+                    }],
+                }],
+                measures: Vec::new(),
+                ..sample()
+            };
+
+            assert_eq!(
+                provenance(&report),
+                vec![
+                    // Report filter.
+                    (
+                        None,
+                        None,
+                        None,
+                        false,
+                        BindingKind::Filter,
+                        "'Product'[Category]".to_string(),
+                    ),
+                    // Page 1 drillthrough parameter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        None,
+                        false,
+                        BindingKind::Drillthrough,
+                        "'Industries'[Industry]".to_string(),
+                    ),
+                    // Page 1 filter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        None,
+                        false,
+                        BindingKind::Filter,
+                        "'Owners'[Sales owner]".to_string(),
+                    ),
+                    // Visual 1 well.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        false,
+                        BindingKind::FieldWell { role: "Category" },
+                        "'Product'[Category]".to_string(),
+                    ),
+                    // Visual 1 filter.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        false,
+                        BindingKind::Filter,
+                        "'Region'[Country]".to_string(),
+                    ),
+                    // Visual 1 sort.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        false,
+                        BindingKind::Sort,
+                        "'Sales'[Sales]".to_string(),
+                    ),
+                    // Visual 1 conditional formatting.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        false,
+                        BindingKind::ConditionalFormatting,
+                        "'Sales'[Margin]".to_string(),
+                    ),
+                    // Visual 2 well.
+                    (
+                        Some("ReportSection2"),
+                        Some("visual2"),
+                        None,
+                        false,
+                        BindingKind::FieldWell { role: "Tooltips" },
+                        "'Sales'[Customers %]".to_string(),
+                    ),
+                    // Mobile-layout page (mirror of page 1) well.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        None,
+                        true,
+                        BindingKind::FieldWell { role: "Values" },
+                        "'Sales'[Total]".to_string(),
+                    ),
+                    // Bookmark report-level filter: no page, no visual.
+                    (
+                        None,
+                        None,
+                        Some("Bookmark1"),
+                        false,
+                        BindingKind::Filter,
+                        "[Total Units]".to_string(),
+                    ),
+                    // Bookmark section filter.
+                    (
+                        Some("ReportSection1"),
+                        None,
+                        Some("Bookmark1"),
+                        false,
+                        BindingKind::Filter,
+                        "'Products'[Product category]".to_string(),
+                    ),
+                    // Bookmark well.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        Some("Bookmark1"),
+                        false,
+                        BindingKind::FieldWell { role: "Rows" },
+                        "'Product'[Subcategory]".to_string(),
+                    ),
+                    // Bookmark visual filter.
+                    (
+                        Some("ReportSection1"),
+                        Some("visual1"),
+                        Some("Bookmark1"),
+                        false,
+                        BindingKind::Filter,
+                        "'Product'[Color]".to_string(),
+                    ),
+                ]
+            );
+        }
+
         /// The declared target comes first, then the condition tree's references,
         /// in file order.
         #[test]
@@ -1022,164 +1270,57 @@ mod tests {
             assert_eq!(bindings[0].kind, BindingKind::FieldWell { role: "Values" });
         }
 
-        /// Enumeration walks report order — report filters, page (parameters,
-        /// filters, visuals: wells, filters, sorts, conditional formatting), then
-        /// bookmarks — so runs are diffable. Every binding's full provenance is
-        /// pinned, not just its kind: a slipped page, visual, or bookmark on any
-        /// site must fail here.
+        /// The phone layout binds exactly like the desktop tree — same shapes,
+        /// same liveness — with only the provenance flag differing (issue #49).
         #[test]
-        fn order_follows_report_structure() {
-            let report = ReportModel {
-                filters: vec![filter_on(column_target("Product", "Category"))],
-                pages: vec![
-                    Page {
-                        binding: Some(PageBinding {
-                            kind: PageBindingKind::Drillthrough,
-                            parameters: vec![DrillthroughParameter {
-                                name: None,
-                                target: column_target("Industries", "Industry"),
-                            }],
-                        }),
-                        filters: vec![filter_on(column_target("Owners", "Sales owner"))],
-                        visuals: vec![Visual {
-                            wells: vec![well("Category", &[column_target("Product", "Category")])],
-                            filters: vec![filter_on(column_target("Region", "Country"))],
-                            sorts: vec![measure_target(Some("Sales"), "Sales")],
-                            conditional_formatting: vec![measure_target(Some("Sales"), "Margin")],
-                            ..visual("visual1", "donutChart")
-                        }],
-                        ..page("ReportSection1")
-                    },
-                    Page {
-                        visuals: vec![Visual {
-                            wells: vec![well(
-                                "Tooltips",
-                                &[measure_target(Some("Sales"), "Customers %")],
-                            )],
-                            ..visual("visual2", "slicer")
-                        }],
-                        ..page("ReportSection2")
-                    },
-                ],
-                bookmarks: vec![Bookmark {
-                    name: NameKey::new("Bookmark1"),
-                    display_name: None,
-                    filters: vec![filter_on(measure_target(None, "Total Units"))],
-                    sections: vec![BookmarkSection {
-                        page: NameKey::new("ReportSection1"),
-                        filters: vec![filter_on(column_target("Products", "Product category"))],
-                        visuals: vec![BookmarkVisual {
-                            visual: NameKey::new("visual1"),
-                            wells: vec![well("Rows", &[column_target("Product", "Subcategory")])],
-                            filters: vec![filter_on(column_target("Product", "Color"))],
-                        }],
-                    }],
+        fn a_mobile_page_visual_binds_and_is_tagged_mobile() {
+            let report = sample_with_mobile_page(Page {
+                visuals: vec![Visual {
+                    wells: vec![well("Values", &[column_target("Sales", "Units")])],
+                    ..visual("visual1", "card")
                 }],
-                measures: Vec::new(),
-                ..sample()
-            };
+                ..page("ReportSection1")
+            });
 
-            assert_eq!(
-                provenance(&report),
-                vec![
-                    // Report filter.
-                    (
-                        None,
-                        None,
-                        None,
-                        BindingKind::Filter,
-                        "'Product'[Category]".to_string(),
-                    ),
-                    // Page 1 drillthrough parameter.
-                    (
-                        Some("ReportSection1"),
-                        None,
-                        None,
-                        BindingKind::Drillthrough,
-                        "'Industries'[Industry]".to_string(),
-                    ),
-                    // Page 1 filter.
-                    (
-                        Some("ReportSection1"),
-                        None,
-                        None,
-                        BindingKind::Filter,
-                        "'Owners'[Sales owner]".to_string(),
-                    ),
-                    // Visual 1 well.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        None,
-                        BindingKind::FieldWell { role: "Category" },
-                        "'Product'[Category]".to_string(),
-                    ),
-                    // Visual 1 filter.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        None,
-                        BindingKind::Filter,
-                        "'Region'[Country]".to_string(),
-                    ),
-                    // Visual 1 sort.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        None,
-                        BindingKind::Sort,
-                        "'Sales'[Sales]".to_string(),
-                    ),
-                    // Visual 1 conditional formatting.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        None,
-                        BindingKind::ConditionalFormatting,
-                        "'Sales'[Margin]".to_string(),
-                    ),
-                    // Visual 2 well.
-                    (
-                        Some("ReportSection2"),
-                        Some("visual2"),
-                        None,
-                        BindingKind::FieldWell { role: "Tooltips" },
-                        "'Sales'[Customers %]".to_string(),
-                    ),
-                    // Bookmark report-level filter: no page, no visual.
-                    (
-                        None,
-                        None,
-                        Some("Bookmark1"),
-                        BindingKind::Filter,
-                        "[Total Units]".to_string(),
-                    ),
-                    // Bookmark section filter.
-                    (
-                        Some("ReportSection1"),
-                        None,
-                        Some("Bookmark1"),
-                        BindingKind::Filter,
-                        "'Products'[Product category]".to_string(),
-                    ),
-                    // Bookmark well.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        Some("Bookmark1"),
-                        BindingKind::FieldWell { role: "Rows" },
-                        "'Product'[Subcategory]".to_string(),
-                    ),
-                    // Bookmark visual filter.
-                    (
-                        Some("ReportSection1"),
-                        Some("visual1"),
-                        Some("Bookmark1"),
-                        BindingKind::Filter,
-                        "'Product'[Color]".to_string(),
-                    ),
-                ]
-            );
+            let bindings = report.bindings();
+            assert_eq!(bindings.len(), 1);
+            assert_eq!(bindings[0].page.unwrap().as_str(), "ReportSection1");
+            assert_eq!(bindings[0].visual.unwrap().as_str(), "visual1");
+            assert_eq!(bindings[0].bookmark, None);
+            assert!(bindings[0].mobile);
+            assert_eq!(bindings[0].kind, BindingKind::FieldWell { role: "Values" });
+        }
+
+        /// Visibility is display-only in both layouts: a hidden phone page still
+        /// renders on demand, so skipping it would under-count roots.
+        #[test]
+        fn a_hidden_mobile_pages_visuals_still_bind() {
+            let report = sample_with_mobile_page(Page {
+                is_hidden: true,
+                visuals: vec![Visual {
+                    wells: vec![well("Values", &[column_target("Sales", "Units")])],
+                    ..visual("visual1", "card")
+                }],
+                ..page("ReportSection1")
+            });
+
+            let bindings = report.bindings();
+            assert_eq!(bindings.len(), 1);
+            assert!(bindings[0].mobile);
+        }
+
+        /// A mobile page's non-well sites (filters, sorts) carry the flag too.
+        #[test]
+        fn a_mobile_page_filter_is_tagged_mobile() {
+            let report = sample_with_mobile_page(Page {
+                filters: vec![filter_on(column_target("Sales", "Units"))],
+                ..page("ReportSection1")
+            });
+
+            let bindings = report.bindings();
+            assert_eq!(bindings.len(), 1);
+            assert!(bindings[0].mobile);
+            assert_eq!(bindings[0].kind, BindingKind::Filter);
         }
     }
 

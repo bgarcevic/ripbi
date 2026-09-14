@@ -57,6 +57,11 @@ pub struct BindingEdge {
     /// The bookmark whose saved state carries the binding; `None` for live
     /// bindings.
     pub bookmark: Option<NameKey>,
+    /// Whether the binding lives in the phone layout (`definition.mobile/`)
+    /// rather than the desktop tree. Provenance only — both layouts bind
+    /// identically — but it tells a user auditing a survivor which surface to
+    /// look at (issue #49).
+    pub mobile: bool,
 }
 
 impl Provenance {
@@ -111,7 +116,11 @@ impl fmt::Display for Provenance {
                     page,
                     visual,
                     bookmark,
+                    mobile,
                 } = edge.as_ref();
+                if *mobile {
+                    f.write_str("mobile layout ")?;
+                }
                 write_site(f, kind)?;
                 if let Some(visual) = visual {
                     write!(f, " — visual {}", Quoted(visual.as_str()))?;
@@ -264,6 +273,7 @@ mod tests {
             page: Some(NameKey::new("P1")),
             visual: Some(NameKey::new("V1")),
             bookmark: None,
+            mobile: false,
         }))
     }
 
@@ -289,11 +299,33 @@ mod tests {
                 page: Some(NameKey::new("P1")),
                 visual: Some(NameKey::new("V1")),
                 bookmark: Some(NameKey::new("B1")),
+                mobile: false,
             }));
 
             assert_eq!(
                 provenance.to_string(),
                 "filter — visual 'V1' on page 'P1' in bookmark 'B1'"
+            );
+        }
+
+        /// A phone-layout binding says so up front: a user auditing why a field
+        /// survived needs to know which surface to look at (issue #49).
+        #[test]
+        fn a_mobile_layout_binding_says_so() {
+            let provenance = Provenance::Binding(Box::new(BindingEdge {
+                kind: BindingSite::FieldWell {
+                    role: "Values".to_string(),
+                },
+                report: Some(NameKey::new("Mini")),
+                page: Some(NameKey::new("P1")),
+                visual: Some(NameKey::new("V1")),
+                bookmark: None,
+                mobile: true,
+            }));
+
+            assert_eq!(
+                provenance.to_string(),
+                "mobile layout field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
             );
         }
 
@@ -305,6 +337,7 @@ mod tests {
                 page: None,
                 visual: None,
                 bookmark: None,
+                mobile: false,
             }));
 
             assert_eq!(provenance.to_string(), "filter");

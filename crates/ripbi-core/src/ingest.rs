@@ -95,16 +95,23 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
 /// `path` is a `.Report` folder (its `definition/` subfolder is located
 /// automatically) or a `definition/` folder itself. A report is parsed
 /// standalone: the semantic model it connects to need not sit beside it, so
-/// one model can be scanned against several reports. Unexpected drift is
-/// reported in [`Ingested::skips`]; only an unreadable or malformed
-/// `report.json` — the file that makes the folder a report — fails.
+/// one model can be scanned against several reports. When the report ships a
+/// phone layout — a `definition.mobile/` folder beside `definition/` — its
+/// pages are parsed into [`ReportModel::mobile_pages`] and bind the model
+/// exactly like desktop pages (issue #49). Unexpected drift is reported in
+/// [`Ingested::skips`]; only an unreadable or malformed `report.json` — the
+/// file that makes the folder a report — fails. A missing or anchor-less
+/// phone layout is the common case and is silent.
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     let definition = locate_report_definition(path)?;
     // `.platform` (which carries the display name) sits beside `definition/`.
     let item_root = definition.parent().unwrap_or(path);
     let name = platform_display_name(item_root);
     let mut skips = Vec::new();
-    let value = pbir::load_report(&definition, name, &mut skips)?;
+    let mut value = pbir::load_report(&definition, name, &mut skips)?;
+    if let Some(mobile) = locate_mobile_definition(&definition) {
+        value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips);
+    }
     Ok(Ingested { value, skips })
 }
 
@@ -173,6 +180,21 @@ fn locate_report_definition(path: &Path) -> Result<PathBuf> {
         "not a report: no definition/report.json or report.json under {}",
         path.display()
     )))
+}
+
+/// Resolves the `definition.mobile/` phone layout of a report item, if it
+/// ships one.
+///
+/// The layout is optional and anchor-less — unlike `definition/`, it carries
+/// no `report.json` — so presence is decided by its `pages/` folder, and any
+/// absence is silent, never drift.
+fn locate_mobile_definition(definition: &Path) -> Option<PathBuf> {
+    let mobile = definition.parent()?.join("definition.mobile");
+    if mobile.join("pages").is_dir() {
+        Some(mobile)
+    } else {
+        None
+    }
 }
 
 /// Reads the item's display name from `.platform`, best-effort.

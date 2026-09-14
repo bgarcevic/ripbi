@@ -574,6 +574,7 @@ impl Builder {
                 page: binding.page.cloned(),
                 visual: binding.visual.cloned(),
                 bookmark: binding.bookmark.cloned(),
+                mobile: binding.mobile,
             }));
             for target in self.field_target_targets(db, index, report, binding.target) {
                 self.root(target.clone(), provenance.clone());

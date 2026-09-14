@@ -598,6 +598,14 @@ mod tests {
         }
     }
 
+    /// A visual in the phone layout (`definition.mobile/`) projecting `targets`
+    /// into its Values well — the layout-aware twin of [`visual_page`].
+    fn visual_mobile_page(page: &str, visual: &str, targets: &[FieldTarget]) -> ReportModel {
+        let mut report = visual_page(page, visual, targets);
+        report.mobile_pages = std::mem::take(&mut report.pages);
+        report
+    }
+
     /// The finding for `id`, panicking with a readable message when absent.
     fn find<'a>(unused: &'a [UnusedObject], id: &ObjectId) -> &'a UnusedObject {
         unused
@@ -721,6 +729,39 @@ mod tests {
 
     mod liveness {
         use super::*;
+
+        /// A field bound only by the phone layout is live: phone users see it,
+        /// so ignoring `definition.mobile/` would report a false "unused"
+        /// (issue #49).
+        #[test]
+        fn a_mobile_only_binding_keeps_its_target_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Units")],
+                    measures: vec![measure("Total", "SUM('Sales'[Units])")],
+                    partitions: vec![m_partition("Sales", "let Source = 1 in Source")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_mobile_page("P1", "VM", &[measure_target("Sales", "Total")]);
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &measure_id("Sales", "Total"));
+            not_unused(&unused, &table_id("Sales"));
+
+            // The root carries the phone-layout marker, so an audit can tell
+            // the two layouts apart.
+            let roots = graph.roots();
+            assert_eq!(roots.len(), 1);
+            assert_eq!(roots[0].0, measure_id("Sales", "Total"));
+            let Provenance::Binding(edge) = &roots[0].1 else {
+                panic!("a root carries binding provenance");
+            };
+            assert!(edge.mobile);
+        }
 
         /// The far-table policy: a live table keeps its relationship and both
         /// key columns alive, but the far table stays unused — its key column,
@@ -1961,12 +2002,14 @@ mod tests {
                 page,
                 visual,
                 bookmark,
+                mobile,
             } = edge.as_ref();
             assert!(matches!(kind, BindingSite::FieldWell { role } if role == "Values"));
             assert_eq!(report_name.as_ref().map(NameKey::as_str), Some("Mini"));
             assert_eq!(page.as_ref().map(NameKey::as_str), Some("P2"));
             assert_eq!(visual.as_ref().map(NameKey::as_str), Some("Card"));
             assert!(bookmark.is_none());
+            assert!(!mobile);
         }
     }
 

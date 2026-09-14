@@ -1144,3 +1144,117 @@ mod extras {
         );
     }
 }
+
+/// The phone layout (`Report/definition.mobile/`, issue #49): its visuals bind
+/// the same model as the desktop tree, so a field referenced only there is
+/// live — phone users see it — and must never surface as an "unused" finding.
+mod mobile_layout {
+    use super::*;
+
+    /// A phone-layout card projecting the mini fixture's dead column, written
+    /// beside the desktop `definition/` as `definition.mobile/`.
+    fn plant_mobile_tree(temp: &TempDir) {
+        temp.write(
+            "Mini.Report/definition.mobile/pages/P1/page.json",
+            &r#"{
+                    "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+                    "name": "P1",
+                    "displayName": "Overview",
+                    "displayOption": "FitToPage",
+                    "height": 1280,
+                    "width": 720
+                }"#
+            .replace("    ", ""),
+        );
+        temp.write(
+            "Mini.Report/definition.mobile/pages/P1/visuals/VM/visual.json",
+            &r#"{
+                    "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+                    "name": "VM",
+                    "position": {"x": 0, "y": 0, "z": 0, "height": 200, "width": 340, "tabOrder": 10},
+                    "visual": {
+                        "visualType": "card",
+                        "query": {
+                            "queryState": {
+                                "Values": {
+                                    "projections": [
+                                        {
+                                            "field": {
+                                                "Column": {
+                                                    "Expression": {"SourceRef": {"Entity": "Sales"}},
+                                                    "Property": "Legacy"
+                                                }
+                                            },
+                                            "queryRef": "Sales.Legacy",
+                                            "active": true
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "drillFilterOtherVisuals": true
+                    }
+                }"#
+            .replace("    ", ""),
+        );
+    }
+
+    /// The issue's acceptance: a field appearing only under the mobile tree
+    /// reports zero findings — here the dead column `'Sales'[Legacy]`, kept
+    /// alive by the phone card alone.
+    #[test]
+    fn a_field_bound_only_in_the_phone_layout_stays_live() {
+        let temp = TempDir::new("mobile-live");
+        project_into(&temp.0, "Mini");
+        plant_mobile_tree(&temp);
+
+        let args = ScanArgs {
+            json: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        // The column is live; the untouched dead measure is still a finding.
+        assert_eq!(code, 1);
+        let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        let unused = payload["unused"].as_array().expect("unused array");
+        assert_eq!(unused.len(), 1, "only the measure: {unused:?}");
+        assert_eq!(unused[0]["id"], "'Sales'[Legacy Total]");
+
+        // The phone card is a root beside the desktop one, so the summary's
+        // root count sees both layouts.
+        assert_eq!(payload["summary"]["roots"], 2);
+
+        // No skips: the anchor-less phone layout is parsed silently.
+        assert_eq!(payload["skips"]["count"], 0);
+    }
+
+    /// The flip side: with the phone layout removed, the same project flags
+    /// the column — the two tests together prove the mobile tree alone
+    /// decides the field's liveness.
+    #[test]
+    fn the_same_project_without_the_phone_layout_flags_the_field() {
+        let temp = TempDir::new("mobile-absent");
+        project_into(&temp.0, "Mini");
+
+        let args = ScanArgs {
+            json: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        let unused = payload["unused"].as_array().expect("unused array");
+        let ids: Vec<&str> = unused
+            .iter()
+            .map(|finding| finding["id"].as_str().expect("id"))
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["'Sales'[Legacy]", "'Sales'[Legacy Total]"],
+            "both dead objects are flagged: {unused:?}"
+        );
+        assert_eq!(payload["summary"]["roots"], 1, "desktop root only");
+    }
+}

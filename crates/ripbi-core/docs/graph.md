@@ -76,7 +76,11 @@ scan, which this rule replaced), while bare identifiers still over-mark — most
 its provenance. Measure targets resolve report-first: within its report, a report
 measure shadows a model measure of the same name. `Aggregation` unwraps to its inner
 field; `HierarchyLevel` keeps the hierarchy and the level's underlying column;
-`Written` falls through the same ladder as a written qualified reference.
+`Written` falls through the same ladder as a written qualified reference. The phone
+layout's pages (`ReportModel::mobile_pages`, issue #49) enumerate like any other
+page's: a field bound only by a `definition.mobile/` visual is live, because phone
+users see it, and its roots carry the `mobile` marker so an audit can tell the two
+layouts apart.
 
 **Date-hierarchy bindings over a variation.** A visual's date hierarchy under auto
 date/time is written against the *varied* (base) table — `HierarchyLevel` with a
