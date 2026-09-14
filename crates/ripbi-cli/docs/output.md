@@ -117,8 +117,9 @@ Columns (28)
   report binding roots, and the unused count. Roots are report bindings; RLS roles also
   seed reachability without counting here. When `[scan].ignore` suppressed objects, a
   second line says how many; when the type flags hid findings, a third line counts them
-  (`(2 unused hidden by type filters)`) so a filtered `0 unused` never reads as a clean
-  model.
+  (`(2 unused hidden by type filters)`); and when auto date/time machinery members are
+  covered by the section's table verdicts, a fourth counts them, so `0 unused` from a
+  filtered or machinery-heavy model never reads as a clean one by accident.
 - Findings are grouped by object type (measures, columns, hierarchies, tables,
   partitions, relationships, calculation items, expressions, functions, report
   measures — fixed order, empty groups omitted), sorted by object identity. The type
@@ -163,14 +164,38 @@ Columns (28)
   - `dead` — nothing reaches it at all; the table's own finding (with its chain
     annotations) is filed here instead of the generic `Tables` group.
 
+  The section is also the only place the machinery appears (issue #47): its unused
+  members — the GUID-named columns, hierarchies, and partitions under those tables —
+  are never generic findings, because they are not separately actionable. Removing the
+  table removes them, and disabling auto date/time on the named column is the fix; the
+  summary line accounts for them (`(41 unused auto date/time members covered by their
+  tables' verdicts)`), and `--json` reports the count as
+  `summary.auto_date_time.member_findings`.
+- Auto date/time is a recommendation, not a law: a legacy model that keeps the feature
+  can silence the section through the ordinary `[scan].ignore` globs —
+
+  ```toml
+  [scan]
+  ignore = ["LocalDateTable_*", "DateTableTemplate_*"]
+  ```
+
+  Suppressed tables count as handled, so they cannot fail the exit code, and a dead
+  table's own finding — suppressed with its row — counts in `summary.ignored`. The
+  trade-off: the recipe also hides the
+  `in use` tables' advice, which is the part worth reading when you plan the migration
+  to a real date table.
+
 ## `--summary`
 
 The human mode for big models: the summary line, one `label: count` line per non-empty
 group, a `Worst tables:` breakdown, and one `Auto date/time:` line when the model has
-such tables (`Auto date/time: 1 in use, 2 unused by reports, 5 dead`) — with no findings
-list. Type flags filter the counts and the breakdown like any other mode. Same stdout,
-same exit codes, same stderr (notices still print). Use `--plain` or `--json` when you
-want the individual objects.
+such tables — the machinery and the distinct date columns its local tables serve, with
+the verdicts as the breakdown (`Auto date/time: 6 hidden tables over 5 date columns
+(1 in use, 5 dead)`; the shared `DateTableTemplate_*` serves no column, so the columns
+can be fewer than the tables, and a model whose machinery pairs with no column at all
+drops the clause). No findings list. Type flags filter the counts and the breakdown
+like any other mode. Same stdout, same exit codes, same stderr (notices still print).
+Use `--plain` or `--json` when you want the individual objects.
 
 ```text
 3781 objects, 1207 reachable from 2962 roots, 2574 unused
@@ -230,9 +255,12 @@ Pretty-printed JSON, stable field order, additive schema:
     "unused_total": 56,
     "ignored": 0,
     "auto_date_time": {
-      "in_use": 0,
+      "hidden_tables": 6,
+      "date_columns": 5,
+      "member_findings": 41,
+      "in_use": 1,
       "unused_by_reports": 0,
-      "dead": 0
+      "dead": 5
     }
   },
   "unused": [
@@ -269,8 +297,15 @@ Pretty-printed JSON, stable field order, additive schema:
   flags. `summary.unused_total` counts every unused object in the model before any
   suppression, filter, or section move, so `reachable = objects − unused_total` always
   holds and a consumer can tell a filtered-away finding from an absent one.
-  `summary.ignored` counts objects suppressed by `[scan].ignore`.
-- `summary.auto_date_time` counts the section's rows by verdict.
+  `summary.ignored` counts objects suppressed by `[scan].ignore`. On a model with
+  auto date/time machinery, the remaining gap between `unused` and `unused_total` is
+  the machinery: `summary.auto_date_time.member_findings` counts its unused members
+  and the `dead` verdict count its nested own findings.
+- `summary.auto_date_time` counts the section's rows by verdict, plus
+  `hidden_tables` (every row, all verdicts together), `date_columns` (the distinct
+  user date columns the machinery serves — the shared template serves none), and
+  `member_findings` (the machinery's unused members covered by the rows, absent from
+  `unused` individually).
 - Type flags filter the `unused` array and `summary.unused`; `summary.unused_total`
   stays model-wide. The `auto_date_time` array and `summary.auto_date_time` counts
   follow the section rule: present in full when no type flags are passed or `--tables`
@@ -280,7 +315,9 @@ Pretty-printed JSON, stable field order, additive schema:
   varied user column the machinery serves (`null` when none resolves, e.g. the
   template); `finding` is the table's own unused finding — with its `used_by` chain —
   present exactly when `verdict` is `"dead"` (the row moved here from `unused`). Rows
-  suppressed by `[scan].ignore` are absent entirely.
+  suppressed by `[scan].ignore` are absent entirely. The machinery's other unused
+  members are in no array at all: the row covers them (issue #47), and
+  `summary.auto_date_time.member_findings` counts them.
 - `type` is one of `table`, `column`, `measure`, `hierarchy`, `partition`,
   `relationship`, `role`, `calculation_item`, `expression`, `function`,
   `report_measure`.
@@ -318,7 +355,9 @@ and `?` exactly one; everything else (quotes and brackets included — they appe
 display ids) is literal. A pattern matches a finding when it matches the full display
 id (`'Sales'[Draft Amount]`) or the bare object name. Suppressed objects are excluded
 from the output and the exit code, and counted in `summary.ignored`. The suppression
-applies before the type flags: an object matched by both is simply gone.
+applies before the type flags: an object matched by both is simply gone. The auto
+date/time machinery can be silenced wholesale this way — see the recipe under the Auto
+date/time section.
 
 ## Validation
 
@@ -334,9 +373,11 @@ dead `Time Intelligence` field-parameter cluster on Adventure Works; fully-dead
 relationship-only tables the exports don't list as rows (a table referenced by nothing
 but a relationship is unused by the documented containment rule); and, on the
 Artificial Intelligence sample, the auto date/time machinery of the five date columns
-whose hierarchies no visual binds. The one bound table — the report's date hierarchy
-over `'Opportunity Calendar'[Date]`, resolved through the model's variation
-declaration — is fully live, its columns are gone from the findings, and its
+whose hierarchies no visual binds — reported only through the `auto_date_time` section
+(its members are covered by the per-table verdicts, and the baseline's machinery rows
+are asserted *absent* from the generic findings). The one bound table — the report's
+date hierarchy over `'Opportunity Calendar'[Date]`, resolved through the model's
+variation declaration — is fully live, its columns are gone from the findings, and its
 `in use` verdict (with the other five tables' verdicts) is pinned by the same test
 through the `auto_date_time` section. One conservatism policy
 the external analyses do not share, visible in that baseline: bookmark saved filters

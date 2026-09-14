@@ -3,7 +3,7 @@
 //! The full contract (shapes, examples, schema) lives in `docs/output.md`
 //! beside this crate.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 
 use ripbi_core::{NameKey, ObjectId};
@@ -32,9 +32,16 @@ pub struct ScanOutput {
     /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
     /// instead.
     pub filtered_out: usize,
+    /// Unused members of auto date/time tables — columns, hierarchies,
+    /// partitions — that are not reported individually: the section's per-table
+    /// verdict covers them, and removing the table removes its members (issue
+    /// #47). Counted here so the summary line's arithmetic stays explicable.
+    pub machinery_members: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
-    /// A dead auto date/time table's own row lives in [`ScanOutput::auto_date_time`]
-    /// instead, under its verdict.
+    /// A dead auto date/time table's own finding lives in
+    /// [`ScanOutput::auto_date_time`] instead, under its verdict, and the
+    /// machinery's other members are not findings at all — they are counted
+    /// in [`ScanOutput::machinery_members`] (issue #47).
     pub findings: Vec<Finding>,
     /// One row per auto date/time table (`LocalDateTable_*` /
     /// `DateTableTemplate_*`): the provenance verdict no reachability pass can
@@ -388,12 +395,34 @@ pub fn human_summary(
             counts.push(format!("{count} {label}"));
         }
     }
+    // Issue #47: the aggregation is the machinery and the date columns it
+    // serves, with the verdicts as the breakdown. The shared template table
+    // pairs with no column, so the scope clause only makes sense when at
+    // least one column resolves.
+    let hidden_tables = report.auto_date_time.len();
+    let date_columns = date_column_count(&report.auto_date_time);
+    let scope = if date_columns > 0 {
+        format!("{hidden_tables} hidden tables over {date_columns} date columns")
+    } else {
+        format!("{hidden_tables} hidden tables")
+    };
     writeln!(
         out,
-        "{}: {}",
+        "{}: {} ({})",
         palette.bold("Auto date/time"),
+        scope,
         counts.join(", ")
     )
+}
+
+/// Distinct user date columns the section's machinery serves — the "over M
+/// date columns" of `--summary` (issue #47). Each `LocalDateTable_*` serves
+/// one column; the shared `DateTableTemplate_*` serves none.
+fn date_column_count(rows: &[AutoDateTimeRow]) -> usize {
+    rows.iter()
+        .filter_map(|row| row.source_column.as_deref())
+        .collect::<HashSet<&str>>()
+        .len()
 }
 
 /// The summary line both human modes open with, plus the `[scan].ignore`
@@ -427,6 +456,13 @@ fn write_summary(
             out,
             "({} unused hidden by type filters)",
             report.filtered_out
+        )?;
+    }
+    if report.machinery_members > 0 {
+        writeln!(
+            out,
+            "({} unused auto date/time members covered by their tables' verdicts)",
+            report.machinery_members
         )?;
     }
     writeln!(out)
@@ -512,6 +548,9 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             unused_total: report.unused_raw,
             ignored: report.ignored,
             auto_date_time: JsonAutoDateTimeCounts {
+                hidden_tables: report.auto_date_time.len(),
+                date_columns: date_column_count(&report.auto_date_time),
+                member_findings: report.machinery_members,
                 in_use: count_verdict(&report.auto_date_time, "in_use"),
                 unused_by_reports: count_verdict(&report.auto_date_time, "unused_by_reports"),
                 dead: count_verdict(&report.auto_date_time, "dead"),
@@ -614,6 +653,16 @@ struct JsonSummary {
 
 #[derive(Serialize)]
 struct JsonAutoDateTimeCounts {
+    /// Every auto date/time table the section reports, all verdicts together —
+    /// the sum of the three verdict counts.
+    hidden_tables: usize,
+    /// Distinct user date columns the machinery serves (issue #47). The shared
+    /// `DateTableTemplate_*` pairs with no column, so this can be smaller
+    /// than `hidden_tables`.
+    date_columns: usize,
+    /// The machinery's unused members (columns, hierarchies, partitions) that
+    /// are not in `unused` individually — the per-table rows cover them.
+    member_findings: usize,
     in_use: usize,
     unused_by_reports: usize,
     dead: usize,
@@ -770,6 +819,7 @@ mod tests {
             unused_raw: findings.len(),
             ignored: 0,
             filtered_out: 0,
+            machinery_members: 0,
             findings,
             auto_date_time: Vec::new(),
             skips: Vec::new(),
@@ -864,5 +914,143 @@ mod tests {
                 "'O''Brien' expression".to_string(),
             ]
         );
+    }
+
+    fn auto_row(verdict: &'static str, id: &str, source_column: Option<&str>) -> AutoDateTimeRow {
+        AutoDateTimeRow {
+            verdict,
+            id: id.to_string(),
+            source_column: source_column.map(str::to_string),
+            finding: None,
+        }
+    }
+
+    fn scan_output_with_auto_date_time(
+        findings: Vec<Finding>,
+        auto_date_time: Vec<AutoDateTimeRow>,
+    ) -> ScanOutput {
+        let mut output = scan_output(findings);
+        output.auto_date_time = auto_date_time;
+        output
+    }
+
+    /// Issue #47: the summary aggregates the machinery and the date columns it
+    /// serves, with the verdicts as the breakdown. Columns count distinctly —
+    /// two tables over one column — and the shared template table, which
+    /// serves no column, still counts toward the tables.
+    #[test]
+    fn the_summary_counts_hidden_tables_over_distinct_date_columns() {
+        let rows = vec![
+            auto_row(
+                "in_use",
+                "table 'LocalDateTable_a'",
+                Some("'Opportunity Calendar'[Date]"),
+            ),
+            auto_row(
+                "dead",
+                "table 'LocalDateTable_b'",
+                Some("'Opportunity'[Date]"),
+            ),
+            auto_row(
+                "dead",
+                "table 'LocalDateTable_c'",
+                Some("'Opportunity'[Date]"),
+            ),
+            auto_row("dead", "table 'DateTableTemplate_d'", None),
+        ];
+
+        let mut out = Vec::new();
+        human_summary(
+            &mut out,
+            &Palette::plain(),
+            &scan_output_with_auto_date_time(vec![], rows),
+        )
+        .unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains(
+                "Auto date/time: 4 hidden tables over 2 date columns (1 in use, 3 dead)\n"
+            ),
+            "the aggregation names the machinery, the columns, and the verdicts:\n{text}"
+        );
+    }
+
+    /// A model whose machinery pairs with no column at all (only the template,
+    /// or unresolvable pairings) still aggregates — without a scope clause.
+    #[test]
+    fn the_summary_drops_the_column_clause_when_no_column_resolves() {
+        let rows = vec![
+            auto_row("dead", "table 'LocalDateTable_a'", None),
+            auto_row("dead", "table 'DateTableTemplate_b'", None),
+        ];
+
+        let mut out = Vec::new();
+        human_summary(
+            &mut out,
+            &Palette::plain(),
+            &scan_output_with_auto_date_time(vec![], rows),
+        )
+        .unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("Auto date/time: 2 hidden tables (2 dead)\n"),
+            "no column clause without a resolvable column:\n{text}"
+        );
+    }
+
+    /// The members the section covers leave a gap in the summary line's
+    /// arithmetic (objects ≠ reachable + unused), so the note explains it —
+    /// the same convention as the `[scan].ignore` and type-filter notes.
+    #[test]
+    fn the_summary_explains_the_machinery_members_gap() {
+        let mut output = scan_output_with_auto_date_time(
+            vec![],
+            vec![auto_row(
+                "dead",
+                "table 'LocalDateTable_a'",
+                Some("'Opportunity'[Date]"),
+            )],
+        );
+        output.machinery_members = 8;
+
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &output).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("(8 unused auto date/time members covered by their tables' verdicts)\n"),
+            "the covered members are accounted for:\n{text}"
+        );
+    }
+
+    #[test]
+    fn json_counts_the_machinery_and_its_date_columns() {
+        let rows = vec![
+            auto_row(
+                "dead",
+                "table 'LocalDateTable_a'",
+                Some("'Opportunity'[Date]"),
+            ),
+            auto_row(
+                "dead",
+                "table 'LocalDateTable_b'",
+                Some("'Opportunity'[Date]"),
+            ),
+            auto_row("dead", "table 'DateTableTemplate_c'", None),
+        ];
+        let mut output = scan_output_with_auto_date_time(vec![], rows);
+        output.machinery_members = 12;
+
+        let mut out = Vec::new();
+        json(&mut out, &output).unwrap();
+
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let counts = &value["summary"]["auto_date_time"];
+        assert_eq!(counts["hidden_tables"], 3);
+        assert_eq!(counts["date_columns"], 1);
+        assert_eq!(counts["member_findings"], 12);
+        assert_eq!(counts["dead"], 3);
     }
 }

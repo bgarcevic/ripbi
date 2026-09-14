@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The auto date/time section is the machinery's only surface** (`#47`) — the
+  engine-generated tables' unused members (the GUID-named columns, hierarchies, and
+  partitions under `LocalDateTable_*`/`DateTableTemplate_*`) no longer appear as
+  generic findings indistinguishable from genuine orphans. The section's one verdict
+  per table — with the date column it serves and the dead chain — is the deliberate,
+  actionable report, because the members are not separately actionable: removing the
+  table removes them, and disabling auto date/time on the named column is the fix.
+  The summary line accounts for the covered members (`(41 unused auto date/time
+  members covered by their tables' verdicts)` on the Artificial Intelligence sample),
+  and `--json` counts them in `summary.auto_date_time.member_findings`.
+- **The `--summary` auto date/time line aggregates the machinery** (`#47`) — it now
+  reads `Auto date/time: 6 hidden tables over 5 date columns (1 in use, 5 dead)`,
+  counting the distinct date columns the local tables serve; the shared
+  `DateTableTemplate_*` serves none, so the columns can be fewer than the tables, and
+  a model whose machinery pairs with no column drops the clause. `--json` gains
+  `summary.auto_date_time.hidden_tables` and `summary.auto_date_time.date_columns`
+  alongside the verdict counts.
+- **A documented opt-out for legacy auto date/time models** (`#47`) — `docs/output.md`
+  now gives the `[scan].ignore` recipe (`ignore = ["LocalDateTable_*",
+  "DateTableTemplate_*"]`) that silences the whole section, with the exit-code
+  treatment (suppressed tables count as handled) and the trade-off: the recipe also
+  hides the `in use` tables' replace-with-a-real-date-table advice.
+
 ## [0.2.2] - 2026-09-13
 
 ### Fixed
