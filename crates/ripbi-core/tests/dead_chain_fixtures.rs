@@ -138,6 +138,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
                 tooltip_page: None,
             }],
         }],
+        mobile_pages: Vec::new(),
         bookmarks: Vec::new(),
         measures: vec![ReportMeasure {
             name: NameKey::new("Local Total"),

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Phone-layout bindings keep fields live** (`#49`) — a report's phone layout
+  (`Report/definition.mobile/`) is now ingested beside the desktop tree: its pages
+  parse with the same walker, their visuals bind the same model, and the bindings
+  become reachability roots — so a field referenced only there, still rendered for
+  phone users, no longer surfaces as an unused finding. Only the page/visual tree is
+  read (no report anchor, report measures, or bookmarks); a missing or anchor-less
+  layout is the common case and is silent. The bindings' provenance reads
+  `mobile layout …` so an audit of a survivor names the surface that kept it alive,
+  and the summary's root count includes them.
+
 ### Changed
 
 - **A plain `--report` folder pairs with a PATH that names a semantic model** (`#67`) —

@@ -106,6 +106,19 @@ pub(super) fn load_report(
 
 // --- File-level parsers ------------------------------------------------------
 
+/// Parses a report's `definition.mobile/` phone layout into pages.
+///
+/// The layout mirrors `definition/` — `pages/*/page.json` and
+/// `pages/*/visuals/*/visual.json` — so the same walker parses it, and every
+/// page it yields binds the model exactly like a desktop page's (issue #49).
+/// Only the page/visual tree is read: the mobile layout carries no report
+/// anchor, report measures, or bookmarks, and any other file it contains is
+/// layout state the AST does not model. Callers probe for the tree first; a
+/// `pages/` folder with no page folders simply yields no pages.
+pub(super) fn load_mobile_pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Page> {
+    pages(definition, skips)
+}
+
 /// Parses `reportExtensions.json`: report-level measures, grouped by extension
 /// entity and flattened in file order.
 fn report_extensions(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<ReportMeasure> {

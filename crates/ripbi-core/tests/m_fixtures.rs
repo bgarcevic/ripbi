@@ -65,6 +65,7 @@ fn report_binding(table: &str, column: &str) -> ReportModel {
                 tooltip_page: None,
             }],
         }],
+        mobile_pages: Vec::new(),
         bookmarks: Vec::new(),
         measures: Vec::new(),
     }

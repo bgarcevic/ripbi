@@ -9,16 +9,29 @@ format.
 
 Modeled: report identity and its dataset link, pages (filters, drillthrough/tooltip
 bindings, visuals), visuals (field wells, filters, sort-by, conditional formatting,
-tooltip-page references), bookmarks (saved filters and active projections), and
-report-level measures (`reportExtensions.json`).
+tooltip-page references), bookmarks (saved filters and active projections),
+report-level measures (`reportExtensions.json`), and the phone layout's pages
+(`definition.mobile/`, issue #49).
 
 Deliberately absent: page order and the active/landing page (`pages.json` — the
 one exception, `pageOrder`, is read at ingest as a bookmark-section liveness
-authority, but never modeled), mobile layouts (`mobile.json`), themes and
+authority, but never modeled), themes and
 resource packages, `semanticModelDiagramLayout.json`, and every literal *value*
-a filter or slicer selection persists. None of them reference model objects, so
-none can keep one alive. They describe the report; they never bind. Adding them
-later is additive — but do not add them speculatively.
+a filter or slicer selection persists.
+
+The phone layout is not in that list, but it is a near miss worth spelling out.
+`Report/definition.mobile/` mirrors `definition/` page for page and binds the
+*same* model — phone users see those visuals — so its pages are parsed into
+`ReportModel::mobile_pages` and enumerate as roots exactly like desktop pages.
+Only the page/visual tree is read there: no report anchor, report measures, or
+bookmarks. What stays absent is the per-visual `mobile.json` *inside* the
+desktop tree (`visualContainerMobileState`): a visual's phone position and
+styling. It carries no field projections of its own — its `objects` selectors,
+where they occur at all, name fields the same visual's `visual.json` already
+binds (verified across the sample corpus) — so it is skipped silently. Themes,
+resource packages, and the diagram layout never reference model objects either;
+none of the absent artifacts can keep one alive. Adding any of them later is
+additive — but do not add them speculatively.
 
 ## Power BI semantics the types don't show
 
@@ -104,6 +117,9 @@ slicing:
 
 The kind (`FieldWell { role }`, `Filter`, `Sort`, `Drillthrough`,
 `ConditionalFormatting`) says what the binding *does*; the role string preserves the
-well's name as written (`"Category"`, `"Y"`, `"Tooltips"`).
+well's name as written (`"Category"`, `"Y"`, `"Tooltips"`). The `mobile` flag says
+which surface the binding lives on — the desktop tree or the phone layout
+(`definition.mobile/`); both bind identically, the flag exists so an audit of a
+survivor names the right surface (issue #49).
 
 [`BindingRef`]: ../src/report.rs

@@ -355,9 +355,10 @@ fn golden_roots_carry_binding_provenance() {
     let (db, report) = golden_pair();
     let graph = DependencyGraph::build(&db, &[&report]);
 
-    // The card binds the `Sales` measure through its Values well…
+    // The card binds the `Sales` measure through its Values well, and the
+    // phone layout's mirror card binds it a second time (issue #49)…
     let sales_roots = graph.roots_of(&measure_id("Sales", "Sales"));
-    assert_eq!(sales_roots.len(), 1);
+    assert_eq!(sales_roots.len(), 2);
     let Provenance::Binding(edge) = sales_roots[0] else {
         panic!("a root carries binding provenance");
     };
@@ -368,6 +369,15 @@ fn golden_roots_carry_binding_provenance() {
     assert_eq!(edge.page.as_ref().map(NameKey::as_str), Some("P1"));
     assert_eq!(edge.visual.as_ref().map(NameKey::as_str), Some("V2"));
     assert!(edge.bookmark.is_none());
+    assert!(!edge.mobile);
+
+    // …and the mobile root carries the phone-layout marker, so an audit can
+    // tell the two layouts apart.
+    let Provenance::Binding(mobile_edge) = sales_roots[1] else {
+        panic!("a root carries binding provenance");
+    };
+    assert_eq!(mobile_edge.visual.as_ref().map(NameKey::as_str), Some("VM"));
+    assert!(mobile_edge.mobile);
 
     // …and the stale `Units` aggregation keeps the qualifying table alive —
     // the nearest resolvable candidate of a reference matching nothing. The

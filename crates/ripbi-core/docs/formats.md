@@ -79,12 +79,17 @@ per-file *key policies* — keys the AST models are parsed, keys deliberately
 unmodeled are silent, anything else is `UnknownProperty` drift (see the
 `Keys` tables in `src/ingest/pbir.rs`). Files are read in a fixed order
 (`report.json` → `definition.pbir` → `reportExtensions.json` → pages in
-folder-name order → bookmarks in file-name order) so notices are
+folder-name order → bookmarks in file-name order, then the phone layout's
+pages in folder-name order) so notices are
 deterministic.
 
 **Detection.** `ingest::report(path)` accepts a `.Report` item folder (its
 `definition/` is located automatically) or a `definition/` folder itself (any
-directory directly containing a `report.json`). A report is parsed
+directory directly containing a `report.json`). When the report ships a phone
+layout — a `definition.mobile/` folder beside `definition/` containing a
+`pages/` folder (issue #49) — its pages are parsed like the desktop tree's and
+land in `ReportModel::mobile_pages`; the layout is optional and anchor-less,
+so any absence is silent. A report is parsed
 *standalone* — the semantic model it references need not sit beside it,
 because several reports can share one model. The reference is read from
 `definition.pbir` beside `definition/` (`byPath.path` or
@@ -102,7 +107,10 @@ fabricated. Display name from `.platform`, as on the model side.
 | `pages/pages.json` | `pageOrder` only — one of the two authorities on which pages exist that a bookmark section must clear (with the `pages/` folders); page order and the active page themselves are display state | `activePageName`, `landingPageName` |
 | `pages/<dir>/page.json` | `name`, `displayName`, `visibility` (`HiddenInViewMode` → `is_hidden`), `filterConfig`, `pageBinding` (`type`, `parameters[].fieldExpr` → drillthrough) | `displayOption`, `height`, `width`, `objects`, `type`, `visualInteractions` |
 | `pages/<dir>/visuals/<dir>/visual.json` | container `name`, `filterConfig`; `visual.visualType`, `query.queryState` (wells, plus `fieldParameters` as inactive projections), `query.sortDefinition` (sorts), `objects` (see below), `visualContainerObjects.visualTooltip`/`visualHeaderTooltip` `section` → tooltip page | `position`, `isHidden`, `parentGroupName`, `howCreated`, `visualGroup` (a group container carries no query and is skipped whole), `syncGroup`, `expansionStates`, `drillFilterOtherVisuals` |
-| `pages/<dir>/visuals/<dir>/mobile.json` | *never read* — mobile layout binds nothing of its own | — |
+| `pages/<dir>/visuals/<dir>/mobile.json` | *never read* — a visual's phone position and styling (`visualContainerMobileState`); the `objects` selectors it can carry name fields the same visual's `visual.json` already binds, so skipping it never drops a root | — |
+| `definition.mobile/pages/<dir>/page.json` | same policy as the desktop `pages/<dir>/page.json` — the phone layout binds the same model, so its pages land in `ReportModel::mobile_pages` and enumerate as roots (issue #49) | same ignore list as the desktop page row |
+| `definition.mobile/pages/<dir>/visuals/<dir>/visual.json` | same policy as the desktop visual row | same ignore list as the desktop visual row |
+| `definition.mobile/*` (everything else) | *never read* — the layout carries no report anchor, report measures, or bookmarks; report-level state is desktop-only | — |
 | `bookmarks/*.bookmark.json` | `explorationState.filters` → bookmark report-level filters; `sections.<page>.filters` → section filters, skipped whole as `StaleState` when the section's page is in neither `pageOrder` nor the `pages/` folders; `sections.<page>.visualContainers.<id>.filters` → per-visual saved filters; `singleVisual.projections`/`activeProjections` → saved wells | `options`, `explorationState.objects`/`version`/`dataSourceVariables`, `visualContainerGroups`, `singleVisual.display`/`orderBy`/`expansionStates`/… |
 | `version.json` | *never read* | — |
 
