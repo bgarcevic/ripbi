@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
-use ripbi_core::{ObjectId, ReportModel};
+use ripbi_core::{NameKey, ObjectId, ReportModel};
 
 use crate::cli::ScanArgs;
 use crate::config;
@@ -291,6 +291,20 @@ fn scan(
     let roots = graph.roots().len();
     let reachable = objects - unused.len();
 
+    // The auto date/time machinery's members are never standalone findings
+    // (issue #47): GUID-named columns reading as orphans is exactly the noise
+    // the section exists to prevent. The section's one row per machinery
+    // table — verdict, the date column it serves, and the dead table's own
+    // chain — is the deliberate surface; a table only ever goes away with its
+    // members.
+    let machinery: HashSet<NameKey> = model
+        .value
+        .tables
+        .iter()
+        .filter(|table| table.is_local_date_table || table.is_template_date_table)
+        .map(|table| NameKey::new(&table.name))
+        .collect();
+
     // Presentation-level suppression: [scan].ignore patterns.
     let patterns: &[String] = config
         .as_ref()
@@ -332,7 +346,12 @@ fn scan(
     // it for the default and `--plain` output would allocate for nothing.
     let want_table = args.json || args.summary;
     let mut filtered_out = 0;
+    let mut machinery_members = 0;
     for finding in unused {
+        if is_machinery_member(&finding.id, &machinery) {
+            machinery_members += 1;
+            continue;
+        }
         if is_ignored(&finding.id, patterns) {
             ignored += 1;
             continue;
@@ -382,6 +401,7 @@ fn scan(
         unused_raw: objects - reachable,
         ignored,
         filtered_out,
+        machinery_members,
         findings,
         auto_date_time,
         skips,
@@ -715,6 +735,16 @@ fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
         }
     }
     kept
+}
+
+/// True for a finding the machinery verdicts already cover (issue #47): any
+/// object owned by an auto date/time table, except the table's own finding,
+/// which nests under its row.
+fn is_machinery_member(id: &ObjectId, machinery: &HashSet<NameKey>) -> bool {
+    !matches!(id, ObjectId::Table { .. })
+        && id
+            .owning_table()
+            .is_some_and(|table| machinery.contains(table))
 }
 
 fn is_ignored(id: &ObjectId, patterns: &[String]) -> bool {

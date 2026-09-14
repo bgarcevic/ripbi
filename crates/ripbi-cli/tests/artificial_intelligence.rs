@@ -62,20 +62,20 @@ const LIVE_GUARDS: &[&str] = &[
     "'Territories'[Region]",
 ];
 
-/// The only findings allowed beyond the baseline: the engine-generated auto
-/// date/time machinery of the five date columns whose hierarchies no visual
-/// binds (the tables and partitions; the export lists no table rows), the
-/// stale-bookmark cascade on the 'Cases' and 'Case Calendar' tables, the two
-/// unactivated inactive relationships and their SystemUserSeq key columns, and
-/// the orphaned `Query1` expression. The one bound table
-/// (`LocalDateTable_9e0bbdfc-…`) is fully live and its columns are gone from
-/// the findings entirely.
+/// The only findings allowed beyond the baseline: the stale-bookmark cascade
+/// on the 'Cases' and 'Case Calendar' tables, the two unactivated inactive
+/// relationships and their SystemUserSeq key columns, and the orphaned
+/// `Query1` expression. The auto date/time machinery is never findings
+/// material (issue #47): its members are covered by the section's per-table
+/// verdicts, and the one bound table (`LocalDateTable_9e0bbdfc-…`) is fully
+/// live, its columns gone from the findings entirely.
 fn is_expected_extra(kind: &str, id: &str) -> bool {
-    let machinery_table = matches!(kind, "table" | "partition")
-        && (id.contains("LocalDateTable")
-            || id.contains("DateTableTemplate")
-            || id.contains("'Contacts'")
-            || id.contains("'Opportunity Forecast Adjustment'"));
+    // The fully-dead 'Contacts' and 'Opportunity Forecast Adjustment' tables
+    // with their partitions: the export lists no table rows, and a table
+    // referenced by nothing but a relationship is unused by the documented
+    // containment rule.
+    let dead_table_with_partition = matches!(kind, "table" | "partition")
+        && (id.contains("'Contacts'") || id.contains("'Opportunity Forecast Adjustment'"));
     // With the deleted pages' saved filters no longer binding (issue #48),
     // every remaining consumer of 'Cases' and 'Case Calendar' is itself
     // unused: the tables and their partitions fall to the containment rule,
@@ -89,7 +89,18 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
     let inactive_relationship =
         id.contains("SystemUserSeq") && matches!(kind, "column" | "relationship");
     let orphaned_expression = kind == "expression" && id.contains("'Query1'");
-    machinery_table || stale_bookmark_cascade || inactive_relationship || orphaned_expression
+    dead_table_with_partition
+        || stale_bookmark_cascade
+        || inactive_relationship
+        || orphaned_expression
+}
+
+/// Whether a baseline row sits on the engine's auto date/time machinery
+/// (`LocalDateTable_*` / `DateTableTemplate_*`): the section's per-table
+/// verdicts cover such objects, so they are deliberately absent from the
+/// generic findings (issue #47).
+fn is_machinery_table(table: &str) -> bool {
+    table.starts_with("LocalDateTable_") || table.starts_with("DateTableTemplate_")
 }
 
 #[test]
@@ -137,13 +148,23 @@ fn scan_agrees_with_the_committed_baseline() {
         .map(|finding| (finding["id"].as_str().expect("id"), finding))
         .collect();
 
-    // 1. Every baseline-dead object is a ripbi finding with the matching chain.
+    // 1. Every baseline-dead object is a ripbi finding with the matching chain —
+    //    except the auto date/time machinery's members (issue #47): the
+    //    section's per-table verdicts cover them, so they must be absent.
     for (kind, table, name, chain) in &baseline {
         let id = match kind.as_str() {
             "column" | "measure" => format!("'{table}'[{name}]"),
             "hierarchy" => format!("hierarchy '{table}'[{name}]"),
             other => panic!("unhandled baseline type {other}"),
         };
+        if is_machinery_table(table) {
+            assert!(
+                !by_id.contains_key(id.as_str()),
+                "'{id}' is auto date/time machinery: the section's verdict covers it, \
+                 so it must not be a generic finding"
+            );
+            continue;
+        }
         let finding = by_id.get(id.as_str()).unwrap_or_else(|| {
             panic!("the baseline marks '{id}' dead, but ripbi does not report it");
         });
@@ -192,8 +213,14 @@ fn scan_agrees_with_the_committed_baseline() {
         );
     }
 
-    // 4. The findings are exactly baseline + the documented extras.
-    let baseline_ids: Vec<String> = baseline
+    // 4. The findings are exactly the non-machinery baseline + the documented
+    //    extras: the machinery's baseline rows are covered by the section, not
+    //    reported generically (issue #47).
+    let reported_baseline = baseline
+        .iter()
+        .filter(|(_, table, _, _)| !is_machinery_table(table))
+        .collect::<Vec<_>>();
+    let baseline_ids: Vec<String> = reported_baseline
         .iter()
         .map(|(kind, table, name, _)| match kind.as_str() {
             "column" | "measure" => format!("'{table}'[{name}]"),
@@ -210,7 +237,7 @@ fn scan_agrees_with_the_committed_baseline() {
         .collect();
     assert_eq!(
         extras.len(),
-        findings.len() - baseline.len(),
+        findings.len() - reported_baseline.len(),
         "every finding is baseline or a known extra"
     );
     for extra in &extras {
@@ -291,6 +318,24 @@ fn scan_agrees_with_the_committed_baseline() {
             "{unbound}: the row is section-owned, not a generic finding"
         );
     }
+
+    //    The section is also the only place the machinery appears (issue #47):
+    //    no generic finding names the engine-generated tables — their members
+    //    ride with the table verdicts — and the summary aggregates the
+    //    machinery over its date columns.
+    assert!(
+        findings.iter().all(|finding| {
+            let id = finding["id"].as_str().expect("id");
+            !id.contains("LocalDateTable") && !id.contains("DateTableTemplate")
+        }),
+        "the machinery is the section's subject, never a generic finding"
+    );
+    let auto_summary = &payload["summary"]["auto_date_time"];
+    assert_eq!(auto_summary["hidden_tables"], 6);
+    assert_eq!(
+        auto_summary["date_columns"], 5,
+        "the five local tables serve five date columns; the shared template serves none"
+    );
 }
 
 /// This sample's five dead auto date/time tables normally force exit 1. The
@@ -349,5 +394,68 @@ fn the_auto_datetime_section_follows_the_tables_flag() {
     assert_eq!(
         payload["summary"]["auto_date_time"]["dead"], 5,
         "the dead verdicts gate the exit code again"
+    );
+}
+
+/// `--summary` aggregates the machinery over its date columns (issue #47):
+/// the shared template serves none, so six tables span five columns, and the
+/// members the section covers are accounted for so the summary line's
+/// arithmetic stays explicable.
+#[test]
+fn the_summary_aggregates_the_machinery_over_its_date_columns() {
+    let temp = TempDir::new("ai-summary");
+    let args = ScanArgs {
+        summary: true,
+        path: Some(sample_pbip()),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1);
+    assert!(
+        stdout.contains("Auto date/time: 6 hidden tables over 5 date columns (1 in use, 5 dead)\n"),
+        "the aggregation names the machinery, the columns, and the verdicts:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("41 unused auto date/time members covered by their tables' verdicts"),
+        "the covered members leave a gap the note explains:\n{stdout}"
+    );
+}
+
+/// The documented opt-out (issue #47): `[scan].ignore` globs on the engine's
+/// name prefixes silence the whole section — verdict rows and the dead
+/// tables' own findings — and suppressed verdicts count as handled. They do
+/// not silence the rest of the model, so this sample still exits 1.
+#[test]
+fn the_ignore_recipe_silences_the_machinery_section() {
+    let temp = TempDir::new("ai-recipe");
+    temp.write(
+        "ripbi.toml",
+        "[scan]\nignore = [\"LocalDateTable_*\", \"DateTableTemplate_*\"]\n",
+    );
+    let args = ScanArgs {
+        json: true,
+        path: Some(sample_pbip()),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &temp.0, "");
+    assert_eq!(
+        code, 1,
+        "the recipe removes the machinery, not the real bloat"
+    );
+
+    let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert!(
+        payload["auto_date_time"]
+            .as_array()
+            .expect("auto array")
+            .is_empty(),
+        "the recipe removes every verdict row"
+    );
+    let counts = &payload["summary"]["auto_date_time"];
+    assert_eq!(counts["hidden_tables"], 0, "suppressed rows are absent");
+    assert_eq!(counts["dead"], 0, "and cannot fail the run");
+    assert_eq!(
+        payload["summary"]["ignored"], 5,
+        "the five dead tables' own findings are suppressed as handled"
     );
 }

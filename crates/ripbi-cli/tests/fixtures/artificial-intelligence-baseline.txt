@@ -24,15 +24,15 @@
 # the relationships themselves and chains the keys under them
 # (`only used by … (also unused)`): nothing but a live USERELATIONSHIP
 # reference can activate an inactive relationship, and the report has none.
+# The machinery rows below — the columns and hierarchies of the engine's
+# LocalDateTable_*/DateTableTemplate_* tables — are also objects both sides
+# mark dead, but ripbi reports them nowhere: since issue #47 the auto
+# date/time section's per-table verdicts cover the machinery
+# ('LocalDateTable_9e0bbdfc-…' is in use — its Date Hierarchy is the visual's
+# date hierarchy over 'Opportunity Calendar'[Date], resolved through the
+# model's variation declaration — and fully live; the other five tables are
+# dead), so these rows are asserted *absent* from the generic findings.
 # Objects ripbi flags that the export does not (asserted as the only extras):
-#   - the engine-generated auto date/time machinery of the five date columns
-#     whose hierarchies no visual binds (LocalDateTable_*/DateTableTemplate_*
-#     tables with their partitions and columns) — the verdict for every table,
-#     bound or not, is in scan's `auto_date_time` section:
-#     'LocalDateTable_9e0bbdfc-…' is in use (its Date Hierarchy is the visual's
-#     date hierarchy over 'Opportunity Calendar'[Date], resolved through the
-#     model's variation declaration) and therefore fully live; the other five
-#     are dead;
 #   - the fully-dead 'Contacts' and 'Opportunity Forecast Adjustment' tables
 #     with their partitions (the export lists no table rows; a table referenced
 #     by nothing but a relationship is unused by the documented containment
