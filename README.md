@@ -142,6 +142,10 @@ To scan one named model against every report bound to it, pass `--model`; each
 ripbi scan --model "samples/AdventureWorks Sales.SemanticModel" --report samples/
 ```
 
+The same search works without the flag when the path already names a semantic
+model — `ripbi scan "samples/AdventureWorks Sales.SemanticModel" --report samples/`
+walks plain `--report` folders exactly like `--model` mode.
+
 Exit codes:
 
 | Code | Meaning |

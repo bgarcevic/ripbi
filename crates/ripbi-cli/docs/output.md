@@ -13,14 +13,19 @@ ripbi scan --model PATH [--report PATH]... [flags]
 `.Report` item folder. Without PATH (and without `target` in `ripbi.toml`), scan
 discovers projects in the current directory: one candidate is announced and scanned,
 several prompt with a numbered picker (on a TTY stdin only — otherwise the scan fails
-listing them), none is an error.
+listing them), none is an error. When PATH (or the `ripbi.toml` `target`) names a
+semantic model itself, plain `--report` folders are search folders exactly as with
+`--model`; any other target accepts report items only.
 
 `--model PATH` names the semantic model explicitly: a `.SemanticModel` folder, its
 `definition/` folder, or any folder directly containing `model.tmdl`. It disables
 current-directory discovery and the `ripbi.toml` `target`, and reinterprets every
 `--report` (or config `reports`) value that is not itself a report item as a **search
 folder**: the folder is walked recursively for report items bound to the model. With no
-report values at all, the model's parent folder is searched. Reports pair with the model
+report values at all, the model's parent folder is searched. A PATH that names a
+semantic model gets the same search-folder walk for plain `--report` values, but keeps
+its convention sibling pairing and does not gain a default search root. Reports pair
+with the model
 by their `definition.pbir` path first, then by the PBIP stem convention (`X.Report`
 beside `X.SemanticModel`), then by the dataset name in a `byConnection` `initial
 catalog`. A scan with no connected reports refuses with exit `2` and per-category counts.
@@ -30,17 +35,19 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 | Content | Stream | Notes |
 |---|---|---|
 | Findings, summary, JSON, plain records | stdout | the machine-readable side |
-| Discovery/selection announce, scanning line | stderr | one line each; in `--model` mode the scanning line names every bound report |
-| Model-centric pairings (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | `--model` only; informational, never `--strict`-fatal; by-name notes collapse to one line per catalog in `--summary`/`--plain`/`--json` |
+| Discovery/selection announce, scanning line | stderr | one line each; when reports are discovered by walking search folders, the scanning line names every bound report |
+| Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; by-name notes collapse to one line per catalog in `--summary`/`--plain`/`--json` |
 | Coverage caveat | stderr | once per run |
 | Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
 
-## Model-centric scans (`--model`)
+## Model-centric scans (`--model`, or a PATH naming a semantic model)
 
-The scanning line names every connected report — direct `--report` items included — and
+Whenever reports are discovered by walking search folders — under `--model`, or under a
+PATH that names a semantic model with plain `--report` folders (issue #67) — the
+scanning line names every connected report — direct `--report` items included — and
 the pairings that would otherwise be invisible are spelled out on stderr (all suppressed
 by `-q`):
 
@@ -50,8 +57,9 @@ Note: reports/Thin.Report matched by dataset name only (byConnection 'initial ca
 Ignored 1 report(s) bound to other models: HR.Report
 ```
 
-- The scanning line's names are report folder names, in ingestion order (walked reports
-  by canonical path, then explicitly passed ones).
+- The scanning line's names are report folder names, in ingestion order: under `--model`,
+  walked reports by canonical path, then explicitly passed ones; under a model-naming
+  PATH, the convention siblings and explicit items first, then the walked ones.
 - The `Note:` line flags reports connected by dataset *name* rather than by path or stem,
   because that pairing is weaker than the written `definition.pbir` path. The default mode
   lists one line per report; `--summary`, `--plain`, and `--json` collapse them to one
@@ -68,7 +76,8 @@ Ignored 1 report(s) bound to other models: HR.Report
   `unresolved_dataset_reference` skip notices instead, and a `*.Report` folder with no
   `report.json` anchor becomes a `malformed_report_item` notice; both *do* fail `--strict`.
 - Reports passed explicitly with `--report` are taken at face value: they are never
-  binding-checked and produce none of these notices, exactly as in a `PATH` scan.
+  binding-checked and produce none of these notices. Under a model-naming PATH the
+  convention siblings count as explicit in the same sense.
 
 ## Exit codes
 
@@ -91,7 +100,7 @@ fail the run. `--strict` and `-q/--quiet` are unaffected.
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json` and `--plain` |
 | `-q`, `--quiet` | No output; exit code only |
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, or a folder holding `model.tmdl`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
-| `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. With `--model`, a folder that is not itself a report item is searched recursively for reports bound to the model |
+| `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model |
 | `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Report only unused objects of the passed types; repeatable, and passed together they union (`--measures --columns`). Filters every output mode and the exit code. With none of them, everything is reported |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
@@ -332,7 +341,8 @@ Pretty-printed JSON, stable field order, additive schema:
   consumer. Empty for every non-column finding and for columns no M step names.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
-  `stale_state`, and — in `--model` mode — `unresolved_dataset_reference` (a report item
+  `stale_state`, and — when reports are discovered by walking search folders —
+  `unresolved_dataset_reference` (a report item
   under a search folder with no usable `datasetReference`) and `malformed_report_item`
   (an anchor-less `.Report` folder the search walk pruned). Under `--strict`,
   `count > 0` corresponds to exit code `2`.
@@ -421,12 +431,13 @@ which static analysis deliberately ignores.
   (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; scan prints this
   caveat on every run.
 - A model-only scan is refused: with no report bindings (and no RLS roles) everything
-  is formally unused, which is never the answer the user wants. Pass `--report`. In
-  `--model` mode the same refusal lists how many report items were bound to other models
-  and how many had unresolved dataset references.
-- Folder-walking requires `--model`: a plain `--report` folder without it is
-  rejected with a hint naming the mode switch (in PATH mode `--report` accepts
-  report items only).
+  is formally unused, which is never the answer the user wants. Pass `--report`. When
+  search folders are walked, the same refusal lists how many report items were bound to
+  other models and how many had unresolved dataset references.
+- Folder-walking outside `--model` needs a PATH (or `ripbi.toml` `target`) that names a
+  semantic model itself. Any other target — a `.pbip`, project folder, `.Report`, or a
+  cwd-discovered project — rejects a plain `--report` folder with a hint naming the
+  mode switch (`--report` accepts report items only).
 - `byConnection` pairs by dataset *name* only (case-insensitive `initial catalog` against
   the model's `.platform` display name or item stem). Service `semanticmodelid` GUIDs and
   local `.platform` `logicalId` GUIDs are disjoint namespaces, so no static GUID match

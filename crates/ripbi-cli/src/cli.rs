@@ -90,8 +90,9 @@ pub struct ScanArgs {
     pub model: Option<PathBuf>,
 
     /// Extra report root to scan against; repeatable. Replaces `reports` from
-    /// ripbi.toml. With --model, a plain folder is searched recursively for
-    /// report items bound to the model.
+    /// ripbi.toml. A plain folder is searched recursively for report items
+    /// bound to the model when the target is --model or a PATH that names a
+    /// semantic model itself; otherwise it must be a report item.
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
 

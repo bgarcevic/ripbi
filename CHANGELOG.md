@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A plain `--report` folder pairs with a PATH that names a semantic model** (`#67`) —
+  `ripbi scan models/X.SemanticModel --report references/` now walks the folder as a
+  search root, with the same pairing tiers, notes, exclusions, and `--strict` behavior
+  as `--model` mode, instead of rejecting it with the mode-switch hint. The `ripbi.toml`
+  `target` counts as the same explicit model. Other targets keep the error: a `.pbip`,
+  project folder, `.Report`, or a discovered project still accepts report items only,
+  and anchor-less `.Report` folders stay malformed.
 - **The auto date/time section is the machinery's only surface** (`#47`) — the
   engine-generated tables' unused members (the GUID-named columns, hierarchies, and
   partitions under `LocalDateTable_*`/`DateTableTemplate_*`) no longer appear as
