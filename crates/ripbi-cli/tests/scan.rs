@@ -1,5 +1,6 @@
 //! Integration tests for `ripbi scan` against the mini PBIP fixture: output
-//! modes, exit codes, discovery, `ripbi.toml`, and the interactive picker.
+//! modes, exit codes, discovery, `ripbi.toml`, `--report` search folders for
+//! model-naming PATHs (issue #67), and the interactive picker.
 
 #[allow(dead_code)]
 mod common;
@@ -8,7 +9,10 @@ use std::path::PathBuf;
 
 use ripbi_cli::cli::ScanArgs;
 
-use common::{TempDir, mini_pbip, project_into, run_scan, run_scan_tty, scan_path};
+use common::{
+    TempDir, by_connection, by_path, json_payload, mini_pbip, model_into, project_into,
+    report_into, run_scan, run_scan_tty, scan_path,
+};
 
 fn fixture_args(path: impl Into<PathBuf>) -> ScanArgs {
     ScanArgs {
@@ -758,6 +762,224 @@ mod config {
 
         assert_eq!(code, 2);
         assert!(stderr.contains("cannot parse"), "error:\n{stderr}");
+    }
+}
+
+mod search_folders {
+    use super::*;
+
+    /// A plain `--report` folder paired with a model PATH is walked for bound
+    /// reports (issue #67), with model mode's pairing and announce: the
+    /// convention sibling stays a face-value root, the walked item joins it.
+    #[test]
+    fn a_plain_folder_with_a_model_path_is_a_search_folder() {
+        let temp = TempDir::new("path-search");
+        project_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "refs/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+
+        let args = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the mini model keeps its dead chain");
+        assert!(
+            stderr.contains("with 2 report(s): X.Report, A.Report"),
+            "the convention sibling and the walked report both scan:\n{stderr}"
+        );
+        assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn a_walked_name_matched_report_carries_the_note() {
+        let temp = TempDir::new("path-search-note");
+        project_into(&temp.0, "X");
+        temp.write(
+            "X.SemanticModel/.platform",
+            "{\"metadata\": {\"displayName\": \"Sales Model\"}}",
+        );
+        report_into(
+            &temp.0,
+            "refs/Thin.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://api;Initial Catalog=\\\"Sales Model\\\"",
+            )),
+        );
+
+        let args = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stderr.contains("Note:")
+                && stderr.contains("Thin.Report matched by dataset name only")
+                && stderr.contains("'initial catalog' = 'Sales Model'"),
+            "the walked name-only match is flagged like in model mode:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_walked_report_bound_elsewhere_is_ignored_with_a_count() {
+        let temp = TempDir::new("path-search-ignored");
+        project_into(&temp.0, "X");
+        model_into(&temp.0, "Other");
+        report_into(
+            &temp.0,
+            "refs/HR.Report",
+            Some(&by_path("../../Other.SemanticModel")),
+        );
+
+        let args = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "bound-elsewhere reports never fail the scan");
+        assert!(
+            stderr.contains("Ignored 1 report(s) bound to other models: HR.Report"),
+            "the exclusion is announced like in model mode:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_walked_unresolved_reference_surfaces_in_skips() {
+        let temp = TempDir::new("path-search-skips");
+        project_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "refs/Dangling.Report",
+            Some(&by_path("../../Gone.SemanticModel")),
+        );
+
+        let args = ScanArgs {
+            json: true,
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the convention sibling keeps the scan alive");
+        let payload = json_payload(&stdout);
+        let notices = payload["skips"]["notices"].as_array().expect("notices");
+        let kinds: Vec<&str> = notices
+            .iter()
+            .map(|notice| notice["kind"].as_str().unwrap_or_default())
+            .collect();
+        assert!(
+            kinds.contains(&"unresolved_dataset_reference"),
+            "the unresolved walked item: {kinds:?}"
+        );
+    }
+
+    #[test]
+    fn an_anchorless_report_folder_in_the_walk_fails_strict() {
+        let temp = TempDir::new("path-search-strict");
+        project_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "refs/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        temp.mkdir("refs/Broken.Report");
+
+        let strict = ScanArgs {
+            strict: true,
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, _, stderr) = run_scan(&strict, &temp.0, "");
+        assert_eq!(
+            code, 2,
+            "walked malformed items are strict-fatal:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("skip notice(s)"),
+            "the notice reaches stderr:\n{stderr}"
+        );
+
+        let lenient = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, _, _) = run_scan(&lenient, &temp.0, "");
+        assert_eq!(code, 1, "without --strict the scan still runs");
+    }
+
+    #[test]
+    fn an_empty_search_folder_refuses_naming_the_walked_roots() {
+        let temp = TempDir::new("path-search-empty");
+        model_into(&temp.0, "X");
+        temp.mkdir("refs");
+
+        let args = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.SemanticModel"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("has no reports (no report items found under"),
+            "the refusal names the walked folder:\n{stderr}"
+        );
+        assert!(stderr.contains("--report"), "hint:\n{stderr}");
+    }
+
+    /// Targets that do not name a semantic model keep the mode-switch error:
+    /// a `.Report` positional pairs with its model but unlocks no walk.
+    #[test]
+    fn a_report_positional_still_rejects_plain_folders() {
+        let temp = TempDir::new("path-search-report-pos");
+        project_into(&temp.0, "X");
+        temp.mkdir("refs");
+
+        let args = ScanArgs {
+            reports: vec![temp.0.join("refs")],
+            ..fixture_args(temp.0.join("X.Report"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("is a folder, but not a report item"),
+            "error:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("plain folders are searched only in --model mode"),
+            "the mode switch is named:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn the_config_target_and_reports_search_too() {
+        let temp = TempDir::new("path-search-config");
+        project_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "refs/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        temp.write(
+            "ripbi.toml",
+            "target = \"X.SemanticModel\"\nreports = [\"refs\"]\n",
+        );
+
+        let (code, _, stderr) = run_scan(&ScanArgs::default(), &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stderr.contains("with 2 report(s): X.Report, A.Report"),
+            "config values flow through the same resolution:\n{stderr}"
+        );
     }
 }
 

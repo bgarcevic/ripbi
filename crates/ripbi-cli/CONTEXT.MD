@@ -30,7 +30,7 @@ command name is pinned to `ripbi` (`cli.rs`), so help and `--version` always say
 |---|---|
 | `cli.rs` | clap definitions — the user-facing interface. The type flags' `selected_kinds` is the one filter; its lockstep test pins the flag set to `render::GROUPS` |
 | `config.rs` | `ripbi.toml` discovery (cwd upward), parsing, path resolution |
-| `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery; `--model` target resolution and bound-report folder walking (byPath → stem → `byConnection` name) |
+| `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery; model target resolution and bound-report folder walking (byPath → stem → `byConnection` name), shared by `--model` and PATHs naming a semantic model |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code → the update notifier hook |
 | `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → type filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict; the section prints only when no type filter runs without `--tables`) |
 | `update.rs` | `ripbi update`: GitHub release lookup (ureq), `sha256sums.txt` verification, tar.gz/zip extraction, channel detection, atomic replacement of `ripbi`/`rib` — the running binary last, and on Windows a locked target (the install scripts hard-link `rib` to `ripbi`) is moved aside to `<name>.old` instead of failing. `ReleaseClient` is the network seam; `run_in_with_home` injects the exe and cargo home |

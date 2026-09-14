@@ -81,6 +81,59 @@ pub fn project_into(dir: &Path, stem: &str) {
     }
 }
 
+/// Copies the mini fixture's model item into `dir` under `stem`.
+pub fn model_into(dir: &Path, stem: &str) -> PathBuf {
+    let target = dir.join(format!("{stem}.SemanticModel"));
+    copy_dir(&mini_pbip().join("Mini.SemanticModel"), &target);
+    target
+}
+
+/// Copies the mini fixture's report item to `dir/relative`, rewriting its
+/// `definition.pbir` to `pbir` (`None` removes the reference file).
+pub fn report_into(dir: &Path, relative: &str, pbir: Option<&str>) -> PathBuf {
+    let target = dir.join(relative);
+    copy_dir(&mini_pbip().join("Mini.Report"), &target);
+    match pbir {
+        Some(text) => {
+            fs::write(target.join("definition.pbir"), text).expect("write definition.pbir");
+        }
+        None => {
+            let _ = fs::remove_file(target.join("definition.pbir"));
+        }
+    }
+    target
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("create dir");
+    for entry in fs::read_dir(from).expect("read source") {
+        let entry = entry.expect("entry");
+        let destination = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_dir(&entry.path(), &destination);
+        } else {
+            fs::copy(entry.path(), &destination).expect("copy file");
+        }
+    }
+}
+
+/// A `definition.pbir` bound by written path relative to the report folder.
+pub fn by_path(written: &str) -> String {
+    format!("{{\"datasetReference\": {{\"byPath\": {{\"path\": \"{written}\"}}}}}}")
+}
+
+/// A `definition.pbir` bound by connection string alone.
+pub fn by_connection(connection: &str) -> String {
+    format!(
+        "{{\"datasetReference\": {{\"byConnection\": {{\"connectionString\": \"{connection}\"}}}}}}"
+    )
+}
+
+/// Parses a scan's JSON stdout.
+pub fn json_payload(stdout: &str) -> serde_json::Value {
+    serde_json::from_str(stdout).expect("valid json")
+}
+
 /// Runs `scan` with in-memory streams and returns (exit code, stdout, stderr).
 /// Stdin is non-interactive.
 pub fn run_scan(args: &ScanArgs, cwd: &Path, stdin: &str) -> (i32, String, String) {

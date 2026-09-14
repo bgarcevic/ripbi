@@ -92,8 +92,9 @@ fn scan(
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 
-    // Report roots: --report flags replace the config's `reports`; in model
-    // mode a plain folder among them becomes a search root.
+    // Report roots: --report flags replace the config's `reports`; a plain
+    // folder among them becomes a search root in model mode, or when an
+    // explicit PATH names a semantic model (issue #67).
     let extras: Vec<PathBuf> = if args.reports.is_empty() {
         config
             .as_ref()
@@ -137,19 +138,34 @@ fn scan(
             .path
             .clone()
             .or_else(|| config.as_ref().and_then(|target| target.target.clone()));
-        let (paired, announce) = match explicit {
-            Some(path) => (resolve_explicit(&path)?, Vec::new()),
-            None => discover_target(args, cwd, streams, palette_err)?,
+        let (paired, announce, model_named) = match explicit {
+            Some(path) => {
+                let model_named = names_semantic_model(&path);
+                (resolve_explicit(&path)?, Vec::new(), model_named)
+            }
+            None => {
+                let (paired, announce) = discover_target(args, cwd, streams, palette_err)?;
+                (paired, announce, false)
+            }
         };
         let mut report_paths = paired.reports.clone();
+        let mut direct = Vec::new();
+        let mut search_roots = Vec::new();
         for extra in &extras {
             if is_report_item(extra) {
-                report_paths.push(extra.clone());
+                direct.push(extra.clone());
                 continue;
             }
             if extra.is_dir() {
                 if is_report_suffixed(extra) {
                     return Err(malformed_report_folder_error(extra));
+                }
+                // An explicit PATH that names a semantic model makes a plain
+                // folder a search root, as in model mode (issue #67); every
+                // other target keeps report-items-only `--report`.
+                if model_named {
+                    search_roots.push(extra.clone());
+                    continue;
                 }
                 return Err(plain_report_folder_error(extra, &paired.model));
             }
@@ -163,6 +179,31 @@ fn scan(
                     "point --report at a .Report folder (or a folder holding report.json)",
                 ),
             );
+        }
+        if search_roots.is_empty() {
+            report_paths.extend(direct);
+        } else {
+            // The walk never revisits face-value reports: convention siblings
+            // and explicit items are excluded from it, so the union stays
+            // duplicate-free and none of them produces a walk notice.
+            let target = discover::resolve_model(&paired.model)?;
+            let mut excluded: HashSet<PathBuf> = direct
+                .iter()
+                .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+                .collect();
+            excluded.extend(
+                paired
+                    .reports
+                    .iter()
+                    .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone())),
+            );
+            let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+            report_paths.extend(direct);
+            report_paths.extend(bound.reports.iter().cloned());
+            model_scan = Some(ModelScan {
+                bound,
+                search_roots,
+            });
         }
         (
             discover::Paired {
@@ -463,8 +504,10 @@ fn scan(
     }
 }
 
-/// Model-centric mode's walk result, kept for the announcements and the
-/// zero-connected-report diagnostics.
+/// A bound-report walk's result, kept for the announcements and the
+/// zero-connected-report diagnostics. Always present in model mode; present
+/// in PATH mode when a model-naming PATH turns a plain `--report` folder
+/// into a search root (issue #67).
 struct ModelScan {
     /// How every discovered report item binds to the model.
     bound: discover::BoundReports,
@@ -584,6 +627,17 @@ fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
         .collect()
 }
 
+/// True when an explicit PATH is classified as a semantic model — the same
+/// shapes [`discover::resolve_path`] pairs with `pair_model`, and what
+/// `--model` accepts — so a plain `--report` folder can be a search root
+/// rather than an error (issue #67). A `resolve_model` probe would be too
+/// loose: core's locator accepts any folder with a `definition/` subfolder,
+/// `.Report` folders included.
+fn names_semantic_model(path: &Path) -> bool {
+    path.is_dir()
+        && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())
+}
+
 /// Resolves an explicit PATH (argument or config `target`).
 fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
     if !path.exists() {
@@ -689,9 +743,11 @@ fn malformed_report_folder_error(path: &Path) -> ScanError {
     .with_hint("a report item needs report.json or definition/report.json directly inside")
 }
 
-/// The error for a plain folder passed to `--report` in PATH mode, where
-/// `--report` accepts report items only. The hint names the mode switch and the
-/// exact rerun instead of implying the model was not given.
+/// The error for a plain folder passed to `--report` when the scan target is
+/// not itself a semantic model — a project, `.pbip`, or `.Report` path, or a
+/// cwd-discovered target (issue #67 kept the mode switch for those). The
+/// hint names the mode switch and the exact rerun instead of implying the
+/// model was not given.
 fn plain_report_folder_error(path: &Path, model: &Path) -> ScanError {
     ScanError::new(format!(
         "--report {} is a folder, but not a report item (no report.json or definition/report.json)",
