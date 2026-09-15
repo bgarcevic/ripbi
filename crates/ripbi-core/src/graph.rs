@@ -484,8 +484,8 @@ mod tests {
     use crate::identity::NameKey;
     use crate::model::{
         Column, ColumnKind, DaxExpressionKind, Function, Hierarchy, HierarchyLevel, HierarchyRef,
-        Measure, Partition, PartitionSource, Relationship, Role, SharedExpression, Table,
-        TablePermission, Variation,
+        Measure, Partition, PartitionSource, RefreshPolicy, Relationship, Role, SharedExpression,
+        Table, TablePermission, Variation,
     };
     use crate::report::{
         Bookmark, BookmarkSection, BookmarkVisual, FieldTarget, FieldWell, Filter, Page,
@@ -1685,6 +1685,181 @@ mod tests {
             // reference is dropped, but nothing else could keep the table
             // alive either.
             find(&unused, &table_id("DimOld"));
+        }
+
+        /// The incremental refresh policy's change-detection expression is
+        /// evaluated at refresh time: deleting the measure it names breaks
+        /// refresh, so the reference is an ordinary liveness edge (issue #53).
+        #[test]
+        fn a_change_detection_measure_is_live_while_its_table_is_live() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Pk")],
+                    measures: vec![measure("Change Detector", "COUNTROWS('Sales')")],
+                    partitions: vec![m_partition(
+                        "Sales",
+                        "let Source = Sql.Database(\"s\", \"db\") in Source",
+                    )],
+                    refresh_policy: Some(RefreshPolicy {
+                        policy_type: Some("basicRefreshPolicy".to_string()),
+                        change_detection: Some(
+                            "EVALUATE ROW(\"Bookmark\", 'Sales'[Change Detector])".to_string(),
+                        ),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            // The report binds Pk only: that keeps the table — and with it the
+            // partition whose policy the measure lives through.
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Pk")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &measure_id("Sales", "Change Detector"));
+        }
+
+        /// Liveness flows through the owner: a dead table's partition is
+        /// unreachable, so its policy keeps nothing alive and the measure
+        /// reads as a finding whose only consumer is the policy.
+        #[test]
+        fn a_dead_tables_policy_flags_its_measure_with_policy_provenance() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "DimOld".to_string(),
+                    measures: vec![measure("Change Detector", "COUNTROWS('DimOld')")],
+                    partitions: vec![m_partition(
+                        "DimOld",
+                        "let Source = Sql.Database(\"s\", \"db\") in Source",
+                    )],
+                    refresh_policy: Some(RefreshPolicy {
+                        change_detection: Some(
+                            "EVALUATE ROW(\"Bookmark\", 'DimOld'[Change Detector])".to_string(),
+                        ),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            let finding = find(&unused, &measure_id("DimOld", "Change Detector"));
+            assert_eq!(
+                finding.used_by,
+                [UsedBy {
+                    id: ObjectId::Partition {
+                        table: NameKey::new("DimOld"),
+                        partition: NameKey::new("DimOld"),
+                    },
+                    provenance: Provenance::Dax {
+                        kind: DaxExpressionKind::ChangeDetection,
+                    },
+                    also_unused: true,
+                }],
+                "the partition references the measure through its policy"
+            );
+        }
+
+        /// The policy's source expression names the RangeStart/RangeEnd
+        /// parameters — in the Desktop "Full DataView" shape, the partition's
+        /// own M never does. The M-side keep is what stops them reading as
+        /// orphans (issue #53).
+        #[test]
+        fn a_policy_source_expression_keeps_the_parameters_it_names_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Pk"), column("Modified")],
+                    partitions: vec![m_partition(
+                        "Sales",
+                        "let Source = Sql.Database(\"s\", \"db\") in Source",
+                    )],
+                    refresh_policy: Some(RefreshPolicy {
+                        source_expression: Some(concat!(
+                            "let\n",
+                            "    Source = Sql.Database(\"s\", \"db\"),\n",
+                            "    Filtered = Table.SelectRows(Source, each [Modified] >= RangeStart ",
+                            "and [Modified] < RangeEnd)\n",
+                            "in\n",
+                            "    Filtered",
+                        )
+                        .to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                expressions: vec![
+                    SharedExpression {
+                        name: "RangeStart".to_string(),
+                        expression: "#datetime(2024, 1, 1, 0, 0, 0)".to_string(),
+                    },
+                    SharedExpression {
+                        name: "RangeEnd".to_string(),
+                        expression: "#datetime(2024, 12, 31, 0, 0, 0)".to_string(),
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Pk")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("RangeStart"),
+                },
+            );
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("RangeEnd"),
+                },
+            );
+        }
+
+        /// The documented custom-polling shape: the change-detection expression
+        /// is the *name* of a shared M query. Deleting that query breaks
+        /// refresh, so the M-side keep applies here too.
+        #[test]
+        fn change_detection_polling_by_shared_query_name_keeps_it_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Pk")],
+                    partitions: vec![m_partition(
+                        "Sales",
+                        "let Source = Sql.Database(\"s\", \"db\") in Source",
+                    )],
+                    refresh_policy: Some(RefreshPolicy {
+                        change_detection: Some("DetectDataChangesQuery".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                expressions: vec![SharedExpression {
+                    name: "DetectDataChangesQuery".to_string(),
+                    expression: "let Source = Sql.Database(\"s\", \"db\") in Source".to_string(),
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Sales", "Pk")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            not_unused(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("DetectDataChangesQuery"),
+                },
+            );
         }
 
         /// A table consumed only as another query's merge source is

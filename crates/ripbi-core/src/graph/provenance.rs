@@ -244,6 +244,7 @@ fn dax_site(kind: DaxExpressionKind) -> &'static str {
         DaxExpressionKind::KpiTrend => "KPI trend",
         DaxExpressionKind::CalculatedColumn => "calculated column expression",
         DaxExpressionKind::CalculatedTable => "calculated table expression",
+        DaxExpressionKind::ChangeDetection => "change detection expression",
         DaxExpressionKind::TableDetailRows => "table detail rows",
         DaxExpressionKind::RlsFilter => "RLS filter",
         DaxExpressionKind::CalculationItem => "calculation item expression",

@@ -1000,6 +1000,40 @@ mod extras {
         assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
     }
 
+    /// The baseline mini fixture flags exactly two objects: the dead measure
+    /// `'Sales'[Legacy Total]` and the column it alone names. Giving the Sales
+    /// table an incremental refresh policy whose change-detection expression
+    /// references that measure keeps it — and through it the column — alive,
+    /// so the scan comes back clean (issue #53).
+    #[test]
+    fn an_incremental_refresh_policy_keeps_its_change_detection_measure_alive() {
+        let temp = TempDir::new("refresh-policy");
+        project_into(&temp.0, "Mini");
+        let sales = temp
+            .0
+            .join("Mini.SemanticModel/definition/tables/Sales.tmdl");
+        let text = std::fs::read_to_string(&sales).expect("read Sales.tmdl");
+        let drifted = text.clone()
+            + "\n\trefreshPolicy\n\t\tpolicyType: basicRefreshPolicy\n\t\tpollingExpression = EVALUATE ROW(\"Bookmark\", 'Sales'[Legacy Total])\n";
+        assert_ne!(text, drifted, "the policy must actually be injected");
+        std::fs::write(&sales, drifted).expect("write Sales.tmdl");
+
+        let (code, stdout, stderr) = run_scan(&fixture_args(temp.0.join("Mini.pbip")), &temp.0, "");
+
+        assert_eq!(
+            code, 0,
+            "the policy keeps the measure alive:\n{stdout}\n{stderr}"
+        );
+        assert!(
+            !stdout.contains("'Sales'[Legacy Total]"),
+            "the change-detection measure must not be flagged:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("0 unused"),
+            "nothing is left to report:\n{stdout}"
+        );
+    }
+
     #[test]
     fn strict_mode_promotes_skip_notices_to_an_error() {
         let temp = TempDir::new("strict");

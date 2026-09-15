@@ -1,0 +1,9 @@
+model Incremental
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+
+annotation PBI_QueryOrder = ["Sales","RangeStart","RangeEnd"]
+
+ref table Sales
+
+ref cultureInfo en-US

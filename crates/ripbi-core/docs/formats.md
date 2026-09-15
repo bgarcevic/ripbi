@@ -37,6 +37,7 @@ Object headers, mapped into the AST:
 | `column N` / `column N = dax` | `Column` (data / `ColumnKind::Calculated`; `sortByColumn`, nested `relatedColumnDetails` → group-by columns) |
 | `measure N = dax` | `Measure` (+ `formatStringDefinition`, `detailRowsDefinition`, `kpi`) |
 | `partition N = m\|calculated\|query\|<other>` | `PartitionSource::M`/`Calculated`/`Query`/`Other` |
+| `refreshPolicy` | `Table::refresh_policy` — its `sourceExpression`/`pollingExpression` are kept-alive consumers (see below) |
 | `relationship <guid>` | `Relationship` (`isActive` defaults true, like TOM) |
 | `hierarchy N` + `level N`/`column:` | `Hierarchy` / `HierarchyLevel` |
 | `role N` + `tablePermission T = filter` | `Role` / `TablePermission` |
@@ -232,6 +233,20 @@ Hierarchies/levels: `ordinal`. Relationships: `crossFilteringBehavior`,
 `fromCardinality`, `toCardinality`, `joinOnDateBehavior`, `hideArrows`,
 `securityFilteringBehavior`, `reliability`.
 
+Refresh policies (TMDL `refreshPolicy`, a table-level object) are modeled for
+their two expression properties only: `sourceExpression` (the
+RangeStart/RangeEnd-filtered query new policy-range partitions are created
+from) and `pollingExpression` (change detection). Both are evaluated at
+refresh time — deleting what they reference breaks refresh — so they flow
+through the same keep-alive pipeline as partition M (`sourceExpression`
+always; `pollingExpression` additionally through the DAX lexer, which
+resolves the measure references of the measure-based change-detection form).
+The policy's scalar vocabulary — `policyType` (kept for diagnostics),
+`incrementalGranularity`, `incrementalPeriods`, `incrementalPeriodsOffset`,
+`rollingWindowGranularity`, `rollingWindowPeriods` — names no model object
+and stays silent; an unrecognized key inside the policy is ordinary Tier-2
+drift.
+
 ### Verified spellings (validated against the AS engine)
 
 No `samples/` model exercises these, so the spellings were verified by loading
@@ -272,6 +287,12 @@ golden fixture is held to the same standard — it loads clean in the engine:
 
 ### TMDL known gaps
 
+- **Refresh policies are parsed at table level**, matching TOM
+  (`Table.RefreshPolicy`) and the folder TMDL Desktop serializes. A model
+  that nests `refreshPolicy` under a `partition` is therefore not the modeled
+  position; the drift policy notices it (`unknown property 'refreshPolicy'
+  on partition …`) rather than silently reading it — the correct signal,
+  since the policy's expressions keep objects alive.
 - **Date variations are modeled** (`Column::variations`): a `variation` object
   on a date column declares the relationship and the table-qualified default
   hierarchy through which the engine serves the column — for auto date/time,

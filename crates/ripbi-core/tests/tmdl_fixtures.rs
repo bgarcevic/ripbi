@@ -12,10 +12,11 @@ use std::path::PathBuf;
 
 use ripbi_core::ingest::{SkipKind, semantic_model};
 use ripbi_core::model::{
-    CalculationGroup, CalculationItem, Column, ColumnKind, Hierarchy, HierarchyLevel, Kpi, Measure,
-    Partition, PartitionSource, Relationship, Role, SharedExpression, Table, TablePermission,
-    TabularDatabase,
+    CalculationGroup, CalculationItem, Column, ColumnKind, DaxExpressionKind, Hierarchy,
+    HierarchyLevel, Kpi, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
+    Table, TablePermission, TabularDatabase,
 };
+use ripbi_core::{NameKey, ObjectId};
 
 fn fixture(groups: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -353,4 +354,108 @@ fn malformed_relationship_is_dropped_and_noticed() {
     assert_eq!(ingested.skips.len(), 1);
     assert_eq!(ingested.skips[0].kind, SkipKind::MalformedValue);
     assert_eq!(ingested.skips[0].location.as_deref(), Some("line 1"));
+}
+
+/// The incremental-refresh fixture: `Change Detector` is referenced by the
+/// policy's polling expression alone, and RangeStart/RangeEnd by its source
+/// expression alone. Were the policy not parsed, all three would read as
+/// ordinary orphans (issue #53).
+#[test]
+fn incremental_refresh_policy_parses_with_both_expressions() {
+    let ingested = semantic_model(&fixture(&[
+        "incremental-refresh",
+        "Incremental.SemanticModel",
+    ]))
+    .expect("the policy fixture parses");
+
+    assert!(
+        ingested.skips.is_empty(),
+        "policy vocabulary must not be flagged as drift: {:#?}",
+        ingested.skips
+    );
+
+    let table = &ingested.value.tables[0];
+    let policy = table.refresh_policy.as_ref().expect("policy is parsed");
+    assert_eq!(policy.policy_type.as_deref(), Some("basicRefreshPolicy"));
+    assert_eq!(
+        policy.change_detection.as_deref(),
+        Some("EVALUATE ROW(\"Bookmark\", 'Sales'[Change Detector])"),
+    );
+    assert_eq!(
+        policy.source_expression.as_deref(),
+        Some(concat!(
+            "let\n",
+            "    Source = Sql.Database(\"server\", \"db\"),\n",
+            "    Sales_Data = Source{[Item=\"Sales\",Kind=\"Table\"]}[Data],\n",
+            "    Filtered = Table.SelectRows(Sales_Data, each [Modified] >= RangeStart and ",
+            "[Modified] < RangeEnd)\n",
+            "in\n",
+            "    Filtered",
+        )),
+    );
+
+    // The change-detection expression is a DAX expression of the partition,
+    // one per partition the policy refreshes.
+    let change_detection: Vec<_> = ingested
+        .value
+        .dax_expressions()
+        .into_iter()
+        .filter(|e| e.kind == DaxExpressionKind::ChangeDetection)
+        .collect();
+    assert_eq!(change_detection.len(), 1);
+    assert_eq!(
+        change_detection[0].owner.to_object_id(),
+        ObjectId::Partition {
+            table: NameKey::new("Sales"),
+            partition: NameKey::new("Sales"),
+        }
+    );
+    assert_eq!(change_detection[0].home_table, Some("Sales"));
+
+    // Both policy expressions ride the M enumeration too, owned by the
+    // partition — beside the partition's own M and the two shared parameters.
+    let partition_owner = ObjectId::Partition {
+        table: NameKey::new("Sales"),
+        partition: NameKey::new("Sales"),
+    };
+    let m_refs = ingested.value.m_expressions();
+    assert_eq!(m_refs.len(), 5);
+    for text in [
+        policy.source_expression.as_deref().unwrap(),
+        policy.change_detection.as_deref().unwrap(),
+    ] {
+        assert!(
+            m_refs
+                .iter()
+                .any(|e| e.text == text && e.owner.to_object_id() == partition_owner),
+            "policy expression must be enumerated as M: {text}"
+        );
+    }
+}
+
+/// An unrecognized key inside the policy is drift like any other: the parse
+/// survives, and the notice names the property and the table.
+#[test]
+fn unknown_refresh_policy_key_parses_and_is_noticed_once() {
+    let ingested = semantic_model(&fixture(&["resilience", "refresh-policy"]))
+        .expect("drift must not fail the parse");
+
+    assert_eq!(ingested.value.tables.len(), 1);
+    assert_eq!(ingested.value.tables[0].name, "Sales");
+    let policy = ingested.value.tables[0]
+        .refresh_policy
+        .as_ref()
+        .expect("the recognizable policy keys are parsed");
+    assert_eq!(policy.policy_type.as_deref(), Some("basicRefreshPolicy"));
+
+    assert_eq!(ingested.skips.len(), 1);
+    let skip = &ingested.skips[0];
+    assert_eq!(skip.kind, SkipKind::UnknownProperty);
+    assert_eq!(skip.location.as_deref(), Some("line 19"));
+    assert!(skip.detail.contains("seedGranularity"), "{}", skip.detail);
+    assert!(
+        skip.detail.contains("refresh policy of table 'Sales'"),
+        "{}",
+        skip.detail
+    );
 }

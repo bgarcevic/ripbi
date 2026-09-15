@@ -59,6 +59,8 @@ pub struct Table {
     pub measures: Vec<Measure>,
     /// Partitions supplying the table's rows.
     pub partitions: Vec<Partition>,
+    /// The table's incremental refresh policy (TOM refreshPolicy), when configured.
+    pub refresh_policy: Option<RefreshPolicy>,
     /// User-defined hierarchies.
     pub hierarchies: Vec<Hierarchy>,
     /// Calendars (TOM calendars) binding groups of the table's columns.
@@ -265,6 +267,27 @@ impl Default for PartitionSource {
     fn default() -> Self {
         PartitionSource::Other { kind: None }
     }
+}
+
+/// A table's incremental refresh policy (TMDL refreshPolicy / TOM refreshPolicy).
+///
+/// Only the expressions are modeled. The policy's ranges, periods, and offsets
+/// cannot consume a model object, so they are skipped as Tier-1 metadata — but
+/// both expression properties are evaluated at refresh time, where deleting
+/// what they reference breaks refresh (see [`crate::m`] and
+/// [`DaxExpressionKind::ChangeDetection`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RefreshPolicy {
+    /// Policy type as written (TOM policyType, e.g. `basicRefreshPolicy`).
+    /// Diagnostics only.
+    pub policy_type: Option<String>,
+    /// The policy's source expression (TOM sourceExpression): the M query new
+    /// policy-range partitions are created from, filtered by the
+    /// RangeStart/RangeEnd parameters.
+    pub source_expression: Option<String>,
+    /// The change-detection expression (TOM pollingExpression): evaluated per
+    /// partition at refresh time to decide whether the partition has new data.
+    pub change_detection: Option<String>,
 }
 
 /// A relationship between a column of one table and a column of another.
@@ -491,6 +514,10 @@ pub enum DaxExpressionKind {
     CalculatedColumn,
     /// The DAX partition expression that materializes a calculated table.
     CalculatedTable,
+    /// An incremental refresh policy's change-detection expression (TOM
+    /// pollingExpression): evaluated per partition at refresh time, so deleting
+    /// what it references breaks refresh.
+    ChangeDetection,
     /// A table's default detail-rows (drillthrough) expression.
     TableDetailRows,
     /// A role's row-level-security filter on one table.
@@ -652,9 +679,10 @@ impl TabularDatabase {
     /// Every DAX expression in the model, with its owner and home-table context.
     ///
     /// Order follows model order (tables, then each table's measures, columns,
-    /// partitions, table-level expressions, calculation items and their group's
-    /// selection expressions, then roles, then functions), so the result is
-    /// deterministic for a given model and diffable across runs.
+    /// partitions, refresh-policy change detection, table-level expressions,
+    /// calculation items and their group's selection expressions, then roles,
+    /// then functions), so the result is deterministic for a given model and
+    /// diffable across runs.
     ///
     /// Owners borrow their names, so this allocates only the returned `Vec`.
     #[must_use]
@@ -732,6 +760,28 @@ impl TabularDatabase {
                         kind: DaxExpressionKind::CalculatedTable,
                         home_table: home,
                         text: expression,
+                    });
+                }
+            }
+
+            // A change-detection expression is evaluated per partition at refresh
+            // time, so the policy references what deleting would break. The owner is
+            // each partition the policy refreshes, which keeps the ordinary rule
+            // intact: a dead table's policy keeps nothing alive.
+            if let Some(text) = table
+                .refresh_policy
+                .as_ref()
+                .and_then(|policy| policy.change_detection.as_ref())
+            {
+                for partition in &table.partitions {
+                    out.push(DaxExpressionRef {
+                        owner: ExpressionOwner::Partition {
+                            table: &table.name,
+                            partition: &partition.name,
+                        },
+                        kind: DaxExpressionKind::ChangeDetection,
+                        home_table: home,
+                        text,
                     });
                 }
             }
@@ -835,9 +885,15 @@ impl TabularDatabase {
         out
     }
 
-    /// Every M expression: M partitions plus shared model expressions.
+    /// Every M expression: M partitions, a refresh policy's expressions, and
+    /// shared model expressions.
     ///
-    /// `Query` and `Other` partition sources are not M and are excluded.
+    /// `Query` and `Other` partition sources are not M and are excluded. The
+    /// policy's `sourceExpression` is M by definition; its change-detection
+    /// expression is handed to both lexers — the M side resolves the tables and
+    /// shared expressions it reads (polling by shared-query name is the
+    /// documented custom pattern), while the DAX side ([`TabularDatabase::dax_expressions`])
+    /// resolves its measure references.
     #[must_use]
     pub fn m_expressions(&self) -> Vec<MExpressionRef<'_>> {
         let mut out = Vec::new();
@@ -852,6 +908,27 @@ impl TabularDatabase {
                         },
                         text: expression,
                     });
+                }
+            }
+
+            // Same per-partition ownership as the DAX side: the policy speaks
+            // for the partitions it refreshes, and a partition that does not
+            // exist cannot vouch for anything.
+            if let Some(policy) = &table.refresh_policy {
+                let texts = [
+                    policy.source_expression.as_ref(),
+                    policy.change_detection.as_ref(),
+                ];
+                for text in texts.into_iter().flatten() {
+                    for partition in &table.partitions {
+                        out.push(MExpressionRef {
+                            owner: ExpressionOwner::Partition {
+                                table: &table.name,
+                                partition: &partition.name,
+                            },
+                            text,
+                        });
+                    }
                 }
             }
         }
@@ -956,9 +1033,10 @@ mod tests {
             .collect()
     }
 
-    /// Exercises every [`DaxExpressionKind`] exactly once, plus three objects that
-    /// must contribute nothing: a `Data` column, an M partition, and a
-    /// metadata-only table permission.
+    /// Exercises every [`DaxExpressionKind`] exactly once, plus two objects that
+    /// must contribute nothing on their own: a `Data` column and a metadata-only
+    /// table permission. The M partition contributes no DAX of its own — its
+    /// `ChangeDetection` entry is the refresh policy's, not the M query.
     fn every_kind_fixture() -> TabularDatabase {
         TabularDatabase {
             name: Some("Contoso".to_string()),
@@ -997,6 +1075,15 @@ mod tests {
                             expression: "let Source = Sql.Database() in Source".to_string(),
                         },
                     )],
+                    refresh_policy: Some(RefreshPolicy {
+                        policy_type: Some("basicRefreshPolicy".to_string()),
+                        source_expression: Some(
+                            "let Source = Sql.Database(Server, DB) in Source".to_string(),
+                        ),
+                        change_detection: Some(
+                            "EVALUATE ROW(\"Bookmark\", [Total Sales])".to_string(),
+                        ),
+                    }),
                     detail_rows_expression: Some(
                         "SELECTCOLUMNS('Sales', \"A\", [Amount])".to_string(),
                     ),
@@ -1289,6 +1376,12 @@ mod tests {
                         "'Sales'[Amount] * 0.2",
                     ),
                     (
+                        DaxExpressionKind::ChangeDetection,
+                        partition_id("Sales", "Sales-Part1"),
+                        Some("Sales"),
+                        "EVALUATE ROW(\"Bookmark\", [Total Sales])",
+                    ),
+                    (
                         DaxExpressionKind::TableDetailRows,
                         table_id("Sales"),
                         Some("Sales"),
@@ -1354,7 +1447,7 @@ mod tests {
 
         #[test]
         fn enumerates_one_expression_per_populated_site() {
-            assert_eq!(dax_tuples(&every_kind_fixture()).len(), 17);
+            assert_eq!(dax_tuples(&every_kind_fixture()).len(), 18);
         }
 
         /// `ObjectId` equality is case-insensitive, so the tuple assertion above
@@ -1374,6 +1467,7 @@ mod tests {
                     "'Sales'[Total Sales]",
                     "'Sales'[Total Sales]",
                     "'Sales'[Margin]",
+                    "partition 'Sales'[Sales-Part1]",
                     "table 'Sales'",
                     "partition 'Top Products'[Top Products]",
                     "calculation item 'Time Intelligence'[YTD]",
@@ -1390,7 +1484,6 @@ mod tests {
 
         #[rstest]
         #[case::a_data_column(column_id("Sales", "Amount"))]
-        #[case::an_m_partition(partition_id("Sales", "Sales-Part1"))]
         fn excludes(#[case] unwanted: ObjectId) {
             let db = every_kind_fixture();
 
@@ -1410,6 +1503,64 @@ mod tests {
                     .any(|(_, _, _, text)| text.starts_with("let Source")),
                 "an M query must never be handed to the DAX lexer"
             );
+        }
+
+        /// The policy speaks for each partition it refreshes: the same text is
+        /// enumerated once per partition, under that partition's owner.
+        #[test]
+        fn a_change_detection_expression_is_emitted_once_per_partition() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    partitions: vec![
+                        partition(
+                            "Sales-2023",
+                            PartitionSource::M {
+                                expression: "let Source = 1 in Source".to_string(),
+                            },
+                        ),
+                        partition(
+                            "Sales-2024",
+                            PartitionSource::M {
+                                expression: "let Source = 2 in Source".to_string(),
+                            },
+                        ),
+                    ],
+                    refresh_policy: Some(RefreshPolicy {
+                        change_detection: Some("[Total Sales]".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            let found = dax_tuples(&db);
+            assert_eq!(found.len(), 2);
+            assert!(found.iter().all(|(kind, _, _, text)| *kind
+                == DaxExpressionKind::ChangeDetection
+                && *text == "[Total Sales]"));
+            let owners: Vec<ObjectId> = found.into_iter().map(|(_, owner, _, _)| owner).collect();
+            assert!(owners.contains(&partition_id("Sales", "Sales-2023")));
+            assert!(owners.contains(&partition_id("Sales", "Sales-2024")));
+        }
+
+        /// A policy on a partition-less table has nothing to vouch for.
+        #[test]
+        fn a_change_detection_expression_without_partitions_is_not_emitted() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    refresh_policy: Some(RefreshPolicy {
+                        change_detection: Some("[Total Sales]".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            assert_eq!(db.dax_expressions().len(), 0);
         }
 
         /// The fixture's role filters one table and holds metadata-only permission on
@@ -1479,6 +1630,7 @@ mod tests {
                     DaxExpressionKind::KpiStatus,
                     DaxExpressionKind::KpiTrend,
                     DaxExpressionKind::CalculatedColumn,
+                    DaxExpressionKind::ChangeDetection,
                     DaxExpressionKind::TableDetailRows,
                     DaxExpressionKind::CalculatedTable,
                     DaxExpressionKind::CalculationItem,
@@ -1590,6 +1742,33 @@ mod tests {
             };
 
             assert_eq!(db.m_expressions().len(), 0);
+        }
+
+        /// The policy's expressions ride the M pipeline per partition: the
+        /// source names the query pipeline it partitions, change detection may
+        /// name the shared query it polls. Change detection is deliberately
+        /// double-tracked — the DAX side resolves its measure references.
+        #[test]
+        fn refresh_policy_expressions_flow_through_the_m_enumeration() {
+            let db = every_kind_fixture();
+
+            assert_eq!(
+                m_tuples(&db),
+                vec![
+                    (
+                        partition_id("Sales", "Sales-Part1"),
+                        "let Source = Sql.Database() in Source",
+                    ),
+                    (
+                        partition_id("Sales", "Sales-Part1"),
+                        "let Source = Sql.Database(Server, DB) in Source",
+                    ),
+                    (
+                        partition_id("Sales", "Sales-Part1"),
+                        "EVALUATE ROW(\"Bookmark\", [Total Sales])",
+                    ),
+                ]
+            );
         }
     }
 }

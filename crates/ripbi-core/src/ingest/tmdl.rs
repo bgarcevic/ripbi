@@ -19,8 +19,8 @@ use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
-    HierarchyLevel, HierarchyRef, Kpi, Measure, Partition, PartitionSource, Relationship, Role,
-    SharedExpression, Table, TablePermission, TabularDatabase, Variation,
+    HierarchyLevel, HierarchyRef, Kpi, Measure, Partition, PartitionSource, RefreshPolicy,
+    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase, Variation,
 };
 use crate::{Error, Result};
 
@@ -98,6 +98,20 @@ const IGNORED_KEYS: &[&str] = &[
     "timeUnit",
     // KPIs
     "statusGraphic",
+];
+
+/// Refresh-policy keys that name no model object — the policy type's own
+/// scalars: periods, granularities, offsets. Tier 1 of the drift policy, same
+/// rationale as `IGNORED_KEYS`: skipping them cannot cause a false "unused"
+/// finding. The policy's two expression properties (`sourceExpression`,
+/// `pollingExpression`) are deliberately *not* here — they are modeled, in
+/// `map_refresh_policy`.
+const REFRESH_POLICY_IGNORED_KEYS: &[&str] = &[
+    "incrementalGranularity",
+    "incrementalPeriods",
+    "incrementalPeriodsOffset",
+    "rollingWindowGranularity",
+    "rollingWindowPeriods",
 ];
 
 /// Object descriptors that must carry a name after the descriptor. A file
@@ -995,6 +1009,9 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
             "defaultDetailRowsDefinition" => {
                 table.detail_rows_expression = child.text().map(str::to_string);
             }
+            "refreshPolicy" => {
+                table.refresh_policy = Some(map_refresh_policy(child, &table.name, path, skips));
+            }
             other => notice(
                 skips,
                 path,
@@ -1351,6 +1368,38 @@ fn map_partition(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Parti
         );
     }
     Partition { name, source }
+}
+
+/// A table's incremental refresh policy (TMDL refreshPolicy / TOM
+/// BasicRefreshPolicy). Only its two expression properties are modeled: both
+/// are evaluated at refresh time, where deleting what they reference breaks
+/// refresh. The scalar vocabulary is skipped by `REFRESH_POLICY_IGNORED_KEYS`.
+fn map_refresh_policy(
+    node: &Node,
+    table: &str,
+    path: &Path,
+    skips: &mut Vec<SkipNotice>,
+) -> RefreshPolicy {
+    let mut policy = RefreshPolicy::default();
+    for child in &node.children {
+        if is_ignored(child) {
+            continue;
+        }
+        match child.key.as_str() {
+            "policyType" => policy.policy_type = child.text().map(str::to_string),
+            "sourceExpression" => policy.source_expression = child.text().map(str::to_string),
+            "pollingExpression" => policy.change_detection = child.text().map(str::to_string),
+            other if REFRESH_POLICY_IGNORED_KEYS.contains(&other) => {}
+            other => notice(
+                skips,
+                path,
+                Some(child.line),
+                SkipKind::UnknownProperty,
+                format!("unknown property '{other}' on refresh policy of table '{table}'"),
+            ),
+        }
+    }
+    policy
 }
 
 fn map_calculation_group(
