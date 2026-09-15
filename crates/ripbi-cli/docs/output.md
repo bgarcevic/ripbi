@@ -426,7 +426,15 @@ the pipeline is M → tables/columns → DAX → reports, so an M mention of a c
 supply chain, not a consumer, and those columns surface as findings again, each
 carrying `named_in_power_query` so the script-side steps can be cleaned up alongside.
 What M *does* keep alive is what deletion would break: shared expressions and
-merge-source tables named by other queries' M. Two external-analysis blind spots
+merge-source tables named by other queries' M. The incremental refresh policy
+extends the same rule to refresh time (issue #53): its change-detection
+expression and source expression are evaluated by the engine at every policy
+refresh, so the measures and shared expressions they name — a measure-based
+"detect data changes" polling expression, or the RangeStart/RangeEnd
+parameters named only by the policy's source in the Desktop "Full DataView"
+shape — stay live while the policy's partition is, with `change detection
+expression` as the provenance; the policy's scalar vocabulary (periods,
+granularities) names nothing and stays silent. Two external-analysis blind spots
 surfaced the same run: a measure bound only by a
 drillthrough filter on a hidden page (counted live here; the external tool skipped
 hidden pages), and report-level measures the external tool judges by view telemetry,
