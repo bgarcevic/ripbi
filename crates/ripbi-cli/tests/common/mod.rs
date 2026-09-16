@@ -182,6 +182,7 @@ pub fn run_scan_tty(
         err: &mut err,
         input: &mut input,
         stdin_is_tty,
+        stdout_is_tty: false,
         stderr_is_tty: false,
     };
     let code = scan::run_in(args, cwd, &mut streams);

@@ -27,6 +27,7 @@ pub fn run() -> std::process::ExitCode {
         err: &mut stderr,
         input: &mut stdin,
         stdin_is_tty: io::stdin().is_terminal(),
+        stdout_is_tty: io::stdout().is_terminal(),
         stderr_is_tty: io::stderr().is_terminal(),
     };
     let code = match &cli.command {

@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mobile layout …` so an audit of a survivor names the surface that kept it alive,
   and the summary's root count includes them.
 
+### Fixed
+
+- **Injected streams decide the output palette** — `scan::run_in` probed the
+  process's real stdout/stderr for terminal detection instead of the
+  `Streams` it was given, so a test harness whose real stdout was a terminal
+  got ANSI escapes inside otherwise plain output (and any embedder could hit
+  the same). `Streams` now carries `stdout_is_tty` beside `stderr_is_tty`,
+  both palettes derive from the injected streams, and the binary passes the
+  real terminals' state. Test runs are deterministic regardless of the
+  terminal `cargo test` runs in.
+
 ### Changed
 
 - **A plain `--report` folder pairs with a PATH that names a semantic model** (`#67`) —
