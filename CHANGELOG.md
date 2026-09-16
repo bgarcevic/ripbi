@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dynamic M parameter bindings keep the bound column live** (`#50`) — a model's
+  dynamic M query parameters now record which column they are bound from: the
+  parameter expression's `parameterValuesColumn` property (the authoritative half of
+  the binding; the column side is an anonymous `ParameterMetadata` marker). A consumed
+  parameter keeps its bound column alive with the `dynamic M parameter binding`
+  provenance, so a slicer-fed parameter's column no longer surfaces as unused just
+  because no DAX or report field names it. The chain is report → consuming partition →
+  parameter (Power Query references) → bound column; an unconsumed parameter stays
+  dead and takes its bound column with it, and a binding naming a column the model no
+  longer has keeps nothing alive. Field parameters (`"kind": 2`) and what-if
+  parameters (`"version": 0`) remain unmodeled — their columns were never at risk.
+  DirectQuery-column `sourceProviderType` and the model's `valueFilterBehavior` are
+  now recognized as Tier-1 metadata instead of drift notices.
 - **Phone-layout bindings keep fields live** (`#49`) — a report's phone layout
   (`Report/definition.mobile/`) is now ingested beside the desktop tree: its pages
   parse with the same walker, their visuals bind the same model, and the bindings

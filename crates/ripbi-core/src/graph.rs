@@ -484,8 +484,8 @@ mod tests {
     use crate::identity::NameKey;
     use crate::model::{
         Column, ColumnKind, DaxExpressionKind, Function, Hierarchy, HierarchyLevel, HierarchyRef,
-        Measure, Partition, PartitionSource, RefreshPolicy, Relationship, Role, SharedExpression,
-        Table, TablePermission, Variation,
+        Measure, ParameterValuesColumn, Partition, PartitionSource, RefreshPolicy, Relationship,
+        Role, SharedExpression, Table, TablePermission, Variation,
     };
     use crate::report::{
         Bookmark, BookmarkSection, BookmarkVisual, FieldTarget, FieldWell, Filter, Page,
@@ -713,6 +713,7 @@ mod tests {
                 expressions: vec![SharedExpression {
                     name: "Recursive".to_string(),
                     expression: "Recursive + 1".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             };
@@ -1493,10 +1494,12 @@ mod tests {
                     SharedExpression {
                         name: "ServerName".to_string(),
                         expression: "\"localhost\"".to_string(),
+                        ..Default::default()
                     },
                     SharedExpression {
                         name: "LegacyParam".to_string(),
                         expression: "5".to_string(),
+                        ..Default::default()
                     },
                 ],
                 ..Default::default()
@@ -1532,6 +1535,149 @@ mod tests {
             assert!(matches!(legacy.used_by[0].provenance, Provenance::M));
         }
 
+        /// Issue #50: a dynamic M query parameter keeps its bound column
+        /// alive. The chain: report binding → SampleData[Days] → table →
+        /// partition → `MinDays` (M reference) → `DaysList[Days]` (the
+        /// `parameterValuesColumn` binding). Nothing references the bound
+        /// column directly; no DAX or report field names it.
+        #[test]
+        fn a_consumed_parameter_keeps_its_bound_column_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "DaysList".to_string(),
+                        columns: vec![column("Days")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "SampleData".to_string(),
+                        columns: vec![column("Days")],
+                        partitions: vec![m_partition(
+                            "SampleData",
+                            "let Source = Sql.Database(\"s\", \"db\") in Table.SelectRows(Source, each [Days] >= MinDays)",
+                        )],
+                        ..Default::default()
+                    },
+                ],
+                expressions: vec![SharedExpression {
+                    name: "MinDays".to_string(),
+                    expression: "15".to_string(),
+                    parameter_values_column: Some(ParameterValuesColumn {
+                        table: "DaysList".to_string(),
+                        column: "Days".to_string(),
+                    }),
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("SampleData", "Days")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            assert!(
+                unused.is_empty(),
+                "the whole chain is live, bound column included: {unused:?}"
+            );
+            // The bound column is kept alive by exactly one edge: the
+            // parameter binding.
+            assert_eq!(
+                graph.consumers_of(&column_id("DaysList", "Days")),
+                [(
+                    ObjectId::Expression {
+                        name: NameKey::new("MinDays"),
+                    },
+                    Provenance::Structural {
+                        role: StructuralEdge::MParameterBinding,
+                    }
+                )]
+            );
+        }
+
+        /// The binding propagates liveness only downward (parameter → column):
+        /// an unconsumed parameter is itself a finding, and its bound column
+        /// dies with it; a binding naming a column the model no longer has
+        /// keeps nothing alive.
+        #[test]
+        fn an_unconsumed_or_dangling_binding_keeps_nothing_alive() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "DaysList".to_string(),
+                        columns: vec![column("Days")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "SampleData".to_string(),
+                        columns: vec![column("Days")],
+                        partitions: vec![m_partition(
+                            "SampleData",
+                            "let Source = Sql.Database(\"s\", \"db\") in Source",
+                        )],
+                        ..Default::default()
+                    },
+                ],
+                expressions: vec![
+                    SharedExpression {
+                        name: "Unconsumed".to_string(),
+                        expression: "15".to_string(),
+                        parameter_values_column: Some(ParameterValuesColumn {
+                            table: "DaysList".to_string(),
+                            column: "Days".to_string(),
+                        }),
+                    },
+                    SharedExpression {
+                        name: "Dangling".to_string(),
+                        expression: "1".to_string(),
+                        parameter_values_column: Some(ParameterValuesColumn {
+                            table: "Ghost".to_string(),
+                            column: "Nope".to_string(),
+                        }),
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("SampleData", "Days")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+            let unused = graph.unused_objects();
+
+            let unconsumed = find(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("Unconsumed"),
+                },
+            );
+            assert!(unconsumed.used_by.is_empty(), "no partition names it");
+
+            // The bound column survives only through the dead parameter, so it
+            // is a finding whose annotation points back at the binding.
+            let bound = find(&unused, &column_id("DaysList", "Days"));
+            assert_eq!(bound.used_by.len(), 1);
+            assert_eq!(
+                bound.used_by[0].id,
+                ObjectId::Expression {
+                    name: NameKey::new("Unconsumed"),
+                }
+            );
+            assert!(matches!(
+                bound.used_by[0].provenance,
+                Provenance::Structural {
+                    role: StructuralEdge::MParameterBinding
+                }
+            ));
+            assert!(bound.used_by[0].also_unused);
+
+            // The dangling binding resolved to nothing: recorded on neither
+            // side, never a panic.
+            let dangling = find(
+                &unused,
+                &ObjectId::Expression {
+                    name: NameKey::new("Dangling"),
+                },
+            );
+            assert!(dangling.used_by.is_empty());
+        }
+
         /// Shared expressions reference each other: a partition keeps its
         /// staging query alive, and the staging query keeps the parameter it
         /// names alive — one M edge per hop.
@@ -1550,10 +1696,12 @@ mod tests {
                     SharedExpression {
                         name: "Staging Query".to_string(),
                         expression: "ServerName".to_string(),
+                        ..Default::default()
                     },
                     SharedExpression {
                         name: "ServerName".to_string(),
                         expression: "\"localhost\"".to_string(),
+                        ..Default::default()
                     },
                 ],
                 ..Default::default()
@@ -1626,6 +1774,7 @@ mod tests {
                 expressions: vec![SharedExpression {
                     name: "ServerName".to_string(),
                     expression: "\"localhost\"".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             };
@@ -1797,10 +1946,12 @@ mod tests {
                     SharedExpression {
                         name: "RangeStart".to_string(),
                         expression: "#datetime(2024, 1, 1, 0, 0, 0)".to_string(),
+                        ..Default::default()
                     },
                     SharedExpression {
                         name: "RangeEnd".to_string(),
                         expression: "#datetime(2024, 12, 31, 0, 0, 0)".to_string(),
+                        ..Default::default()
                     },
                 ],
                 ..Default::default()
@@ -1846,6 +1997,7 @@ mod tests {
                 expressions: vec![SharedExpression {
                     name: "DetectDataChangesQuery".to_string(),
                     expression: "let Source = Sql.Database(\"s\", \"db\") in Source".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             };
@@ -1895,6 +2047,7 @@ mod tests {
                 expressions: vec![SharedExpression {
                     name: "ServerName".to_string(),
                     expression: "\"localhost\"".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             };
@@ -1975,6 +2128,7 @@ mod tests {
                 expressions: vec![SharedExpression {
                     name: "ServerName".to_string(),
                     expression: "\"localhost\"".to_string(),
+                    ..Default::default()
                 }],
                 ..Default::default()
             };

@@ -398,6 +398,23 @@ pub struct SharedExpression {
     pub name: String,
     /// M expression text.
     pub expression: String,
+    /// The column this parameter's view-time values are bound from — TMDL
+    /// `parameterValuesColumn: Table.Column` on a dynamic M query parameter.
+    /// The binding keeps the column alive (the graph links the expression to
+    /// it structurally). The column side carries only an anonymous marker
+    /// extended property, so this property is the binding's authoritative
+    /// half; `None` for parameters and shared queries without a binding.
+    pub parameter_values_column: Option<ParameterValuesColumn>,
+}
+
+/// The `Table.Column` a dynamic M query parameter binds its view-time values
+/// from — the parameter-to-column binding of a dynamic M parameter.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ParameterValuesColumn {
+    /// Name of the table owning the bound column.
+    pub table: String,
+    /// Name of the bound column.
+    pub column: String,
 }
 
 /// A user-defined DAX function (TOM function). Referenced from DAX by name;
@@ -1173,10 +1190,12 @@ mod tests {
                 SharedExpression {
                     name: "Server".to_string(),
                     expression: "\"contoso.database.windows.net\"".to_string(),
+                    ..Default::default()
                 },
                 SharedExpression {
                     name: "Database".to_string(),
                     expression: "\"AdventureWorks\"".to_string(),
+                    ..Default::default()
                 },
             ],
             ..Default::default()

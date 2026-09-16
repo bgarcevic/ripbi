@@ -210,6 +210,11 @@ pub enum StructuralEdge {
     /// (calculated-table columns, calculation-group columns, calendar columns)
     /// and cannot be dropped independently.
     EngineManaged,
+    /// A dynamic M query parameter is bound to this column
+    /// (`parameterValuesColumn`): at view time the report feeds the column's
+    /// values into the parameter, so a consumed parameter keeps its bound
+    /// column alive (issue #50).
+    MParameterBinding,
     /// The role grants access to this table.
     RolePermission,
 }
@@ -227,6 +232,7 @@ impl fmt::Display for StructuralEdge {
             StructuralEdge::GroupByColumn => "group-by column",
             StructuralEdge::HierarchyLevel => "hierarchy level",
             StructuralEdge::EngineManaged => "engine-managed column",
+            StructuralEdge::MParameterBinding => "dynamic M parameter binding",
             StructuralEdge::RolePermission => "role permission",
         })
     }

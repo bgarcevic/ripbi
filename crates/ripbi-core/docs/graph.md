@@ -72,6 +72,22 @@ unrelated strings do not count (the one deliberate narrowing against the old sub
 scan, which this rule replaced), while bare identifiers still over-mark — most are
 `let` variables that resolve to nothing. Unresolved references stay data, never errors.
 
+**Dynamic M parameters.** A dynamic M query parameter is a shared expression whose
+view-time values come from a model column, so a report slicer feeds the M query
+directly (issue #50). The model records the binding in two halves: the column carries
+an anonymous marker extended property (`ParameterMetadata` with `"kind": 1`), and the
+parameter expression names the column — `parameterValuesColumn: DaysList.Days`. Only
+the second half is modeled: a consumed parameter keeps its bound column alive with the
+`dynamic M parameter binding` provenance, because deleting the column breaks the
+binding and every partition whose M consumes the parameter. The chain is report →
+consuming table → partition → parameter (M references) → bound column, so the column
+needs no DAX or report reference of its own. The edge flows one way only: an
+unconsumed parameter is itself dead, and its bound column dies with it; a binding
+naming a column the model no longer has keeps nothing alive (misses are data). The
+other `ParameterMetadata` shapes are not bindings: `"kind": 2` marks field parameters
+and `"version": 0` marks what-if parameters — both stay unmodeled, since their columns
+are kept alive by ordinary DAX (`SELECTEDVALUE`) and report references.
+
 **Report bindings.** Every `ReportModel::bindings` target is a reachability root with
 its provenance. Measure targets resolve report-first: within its report, a report
 measure shadows a model measure of the same name. `Aggregation` unwraps to its inner

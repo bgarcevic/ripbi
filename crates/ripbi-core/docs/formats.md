@@ -204,9 +204,17 @@ unknown property not on a list, a modeled value that fails to parse
 ### The ignore list
 
 Universal metadata: `lineageTag`, `sourceLineageTag`, `changedProperty`,
-`description`, `annotation`, `extendedProperty`.
+`description`, `annotation`, `extendedProperty`. Extended properties carry no
+liveness of their own: the dynamic M parameter binding marker on a column
+(`ParameterMetadata` with `"kind": 1`) is the anonymous half of that binding —
+the authoritative half is the parameter expression's `parameterValuesColumn`
+property, which is modeled (see [graph.md](graph.md), "Dynamic M parameters").
+The other `ParameterMetadata` shapes mark field parameters (`"kind": 2`) and
+what-if parameters (`"version": 0`), whose objects stay alive through ordinary
+DAX and report references.
 
 Columns: `dataType`, `formatString` (static), `summarizeBy`, `sourceColumn`,
+`sourceProviderType` (the provider-side type of a DirectQuery column),
 `dataCategory`, `isKey`, `isNameInferred`, `isDataTypeInferred`, `isUnique`,
 `isNullable`, `isDefaultLabel`, `isDefaultImage`, `isAvailableInMdx`,
 `keepUniqueRows`, `relatedColumnDetails`, `tableDetailPosition`.
@@ -220,10 +228,10 @@ onto `Table` flags).
 
 Model/database: `culture`, `sourceQueryCulture`,
 `defaultPowerBIDataSourceVersion`, `discourageImplicitMeasures`,
-`dataAccessOptions`, `compatibilityLevel`, `createOrReplace`,
-`retainDataTillForceCalculate`. Power Query query groups (`queryGroup`) are
-unmodeled in every form they take: block declarations in `model.tmdl` and
-membership properties on expressions and partitions.
+`dataAccessOptions`, `valueFilterBehavior`, `compatibilityLevel`,
+`createOrReplace`, `retainDataTillForceCalculate`. Power Query query groups
+(`queryGroup`) are unmodeled in every form they take: block declarations in
+`model.tmdl` and membership properties on expressions and partitions.
 
 Cultures (folder never read; keys listed for stray uses): `cultureInfo`,
 `linguisticMetadata`, `contentType`.

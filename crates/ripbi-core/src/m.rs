@@ -281,6 +281,7 @@ mod tests {
             expressions: vec![SharedExpression {
                 name: "ServerName".to_string(),
                 expression: "\"localhost\"".to_string(),
+                ..Default::default()
             }],
             ..Default::default()
         }

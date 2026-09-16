@@ -1,0 +1,6 @@
+/// A dynamic M query parameter: the SampleData partition's M consumes it by
+/// name, and its view-time values are bound from DaysList[Days] via the
+/// `parameterValuesColumn` property — the binding's authoritative half. A
+/// consumed parameter keeps its bound column alive.
+expression MinDays = 15 meta [IsParameterQuery=true, Type="Number", IsParameterQueryRequired=true]
+	parameterValuesColumn: DaysList.Days
