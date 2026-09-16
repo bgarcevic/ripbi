@@ -1,0 +1,17 @@
+model DynamicMParameters
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	valueFilterBehavior: independent
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_QueryOrder = ["DaysList","SampleData","MinDays"]
+
+ref table DaysList
+ref table SampleData
+
+ref cultureInfo en-US

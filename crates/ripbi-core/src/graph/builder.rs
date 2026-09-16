@@ -327,6 +327,31 @@ impl Builder {
                 }
             }
         }
+
+        // Dynamic M query parameters: a parameter names the column its
+        // view-time values are bound from (`parameterValuesColumn`), so a
+        // consumed parameter keeps its bound column alive. The parameter
+        // itself goes live through the M references above it — the binding
+        // only propagates that liveness down to the column. A binding naming
+        // a column the model no longer has keeps nothing alive (misses are
+        // data), and an unconsumed parameter is itself dead, leaving its
+        // column a finding.
+        for expression in &db.expressions {
+            let Some(binding) = &expression.parameter_values_column else {
+                continue;
+            };
+            if let Some((_, column_id)) =
+                endpoint_column(db, index, &binding.table, &binding.column)
+            {
+                self.edge(
+                    &ObjectId::Expression {
+                        name: NameKey::new(&expression.name),
+                    },
+                    &column_id,
+                    m_parameter_binding(),
+                );
+            }
+        }
     }
 
     /// Edges from every DAX expression — model-side and report-side — to the
@@ -1083,6 +1108,12 @@ fn hierarchy_level() -> Provenance {
 fn engine_managed() -> Provenance {
     Provenance::Structural {
         role: StructuralEdge::EngineManaged,
+    }
+}
+
+fn m_parameter_binding() -> Provenance {
+    Provenance::Structural {
+        role: StructuralEdge::MParameterBinding,
     }
 }
 

@@ -242,10 +242,12 @@ fn golden_database() -> TabularDatabase {
             SharedExpression {
                 name: "ServerName".to_string(),
                 expression: "\"localhost\"".to_string(),
+                ..Default::default()
             },
             SharedExpression {
                 name: "Calendar".to_string(),
                 expression: "let\n    StartDate = #date(2024, 1, 1),\n    EndDate = #date(2024, 12, 31)\nin\n    {StartDate, EndDate}".to_string(),
+                ..Default::default()
             },
         ],
         functions: Vec::new(),

@@ -503,10 +503,12 @@ mod tests {
                 SharedExpression {
                     name: "Server".to_string(),
                     expression: "\"contoso.database.windows.net\"".to_string(),
+                    ..Default::default()
                 },
                 SharedExpression {
                     name: "Database".to_string(),
                     expression: "\"AdventureWorks\"".to_string(),
+                    ..Default::default()
                 },
             ],
             functions: vec![Function {

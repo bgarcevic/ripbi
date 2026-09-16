@@ -1,0 +1,26 @@
+/// The slicer table. Its Days column carries the column side of the dynamic M
+/// parameter binding: an anonymous `ParameterMetadata` marker (kind 1). The
+/// authoritative half is the MinDays expression's `parameterValuesColumn`.
+table DaysList
+	column Days
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		summarizeBy: sum
+		sourceColumn: Days
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 2,
+				  "kind": 1,
+				  "selectAllValue": "__SelectAll__"
+				}
+
+	partition DaysList = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("example.datawarehouse.fabric.microsoft.com", "Warehouse"),
+				    Probe = Source{[Schema="dbo",Item="DynamicMProbe"]}[Data]
+				in
+				    Probe

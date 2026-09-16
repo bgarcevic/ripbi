@@ -19,8 +19,9 @@ use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
-    HierarchyLevel, HierarchyRef, Kpi, Measure, Partition, PartitionSource, RefreshPolicy,
-    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase, Variation,
+    HierarchyLevel, HierarchyRef, Kpi, Measure, ParameterValuesColumn, Partition,
+    PartitionSource, RefreshPolicy, Relationship, Role, SharedExpression, Table, TablePermission,
+    TabularDatabase, Variation,
 };
 use crate::{Error, Result};
 
@@ -36,6 +37,13 @@ const IGNORED_KEYS: &[&str] = &[
     "changedProperty",
     "description",
     "annotation",
+    // Extended properties carry no liveness of their own. The dynamic M
+    // parameter binding marker (`ParameterMetadata` with kind 1 on a column)
+    // is the anonymous half of that binding — the authoritative half is the
+    // parameter expression's `parameterValuesColumn`, modeled in
+    // `map_expression`. Other `ParameterMetadata` shapes mark field
+    // parameters (kind 2) and what-if parameters (version 0); they keep
+    // their objects alive through ordinary DAX references.
     "extendedProperty",
     // Column metadata
     "dataType",
@@ -43,6 +51,7 @@ const IGNORED_KEYS: &[&str] = &[
     "formatString",
     "summarizeBy",
     "sourceColumn",
+    "sourceProviderType",
     "dataCategory",
     "isKey",
     "isNameInferred",
@@ -66,6 +75,7 @@ const IGNORED_KEYS: &[&str] = &[
     "defaultPowerBIDataSourceVersion",
     "discourageImplicitMeasures",
     "dataAccessOptions",
+    "valueFilterBehavior",
     "compatibilityLevel",
     "createOrReplace",
     "retainDataTillForceCalculate",
@@ -1622,21 +1632,52 @@ fn map_expression(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Shar
             format!("expression '{name}' has no body"),
         );
     }
+    let mut expression = SharedExpression {
+        name,
+        expression: node.text().unwrap_or_default().to_string(),
+        ..Default::default()
+    };
     for child in &node.children {
-        if !is_ignored(child) {
-            notice(
+        if is_ignored(child) {
+            continue;
+        }
+        match child.key.as_str() {
+            // Dynamic M query parameter binding: the parameter names the
+            // column whose values feed it at view time, e.g.
+            // `parameterValuesColumn: DaysList.Days` (validated against a
+            // live Power BI Desktop model). The graph links the expression
+            // to that column structurally, so a consumed parameter keeps
+            // its bound column alive.
+            "parameterValuesColumn" => {
+                expression.parameter_values_column = child.text().and_then(|text| {
+                    parse_column_ref(text).map(|(table, column)| ParameterValuesColumn {
+                        table: table.unwrap_or_default(),
+                        column,
+                    })
+                });
+                if expression.parameter_values_column.is_none() {
+                    notice(
+                        skips,
+                        path,
+                        Some(child.line),
+                        SkipKind::MalformedValue,
+                        format!(
+                            "expression '{}' has an unreadable parameterValuesColumn",
+                            expression.name
+                        ),
+                    );
+                }
+            }
+            other => notice(
                 skips,
                 path,
                 Some(child.line),
                 SkipKind::UnknownProperty,
-                format!("unknown property '{}' on expression '{name}'", child.key),
-            );
+                format!("unknown property '{other}' on expression '{}'", expression.name),
+            ),
         }
     }
-    SharedExpression {
-        name,
-        expression: node.text().unwrap_or_default().to_string(),
-    }
+    expression
 }
 
 fn map_function(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Function {
@@ -2106,6 +2147,103 @@ mod tests {
             assert!(skips.is_empty(), "query groups must be silent: {skips:?}");
             assert!(expression.expression.contains("S = 1"));
             assert!(matches!(partition.source, PartitionSource::M { .. }));
+        }
+
+        /// The dynamic M parameter binding: the parameter expression names the
+        /// column its view-time values are bound from (validated against a
+        /// live Power BI Desktop model). This is the binding's authoritative
+        /// half — the column side only carries an anonymous marker.
+        #[test]
+        fn maps_the_dynamic_m_parameter_binding() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "expression MinDays = 15 meta [IsParameterQuery=true, Type=\"Number\", IsParameterQueryRequired=true]\n\tlineageTag: t\n\tparameterValuesColumn: DaysList.Days\n",
+                "expression",
+            );
+            let expression = map_expression(&node, Path::new("t"), &mut skips);
+
+            assert!(
+                skips.is_empty(),
+                "the binding is modeled, never drift: {skips:?}"
+            );
+            assert_eq!(
+                expression.parameter_values_column,
+                Some(ParameterValuesColumn {
+                    table: "DaysList".to_string(),
+                    column: "Days".to_string(),
+                })
+            );
+        }
+
+        #[test]
+        fn maps_the_binding_with_quoted_names() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "expression P = 1\n\tparameterValuesColumn: 'Days List'.'Days Column'\n",
+                "expression",
+            );
+            let expression = map_expression(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty());
+            assert_eq!(
+                expression.parameter_values_column,
+                Some(ParameterValuesColumn {
+                    table: "Days List".to_string(),
+                    column: "Days Column".to_string(),
+                })
+            );
+        }
+
+        #[test]
+        fn notices_an_unreadable_parameter_values_column() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "expression P = 1\n\tparameterValuesColumn: 'Unclosed\n",
+                "expression",
+            );
+            let expression = map_expression(&node, Path::new("t"), &mut skips);
+
+            assert_eq!(expression.parameter_values_column, None);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+        }
+
+        /// The column side of the binding is an anonymous marker (kind 1 =
+        /// dynamic M parameter); the inline and the block spelling must both
+        /// stay silent — the authoritative half is the expression's property.
+        #[test]
+        fn the_column_side_binding_marker_stays_silent() {
+            let mut skips = Vec::new();
+            let inline = map_one(
+                "column Days\n\tdataType: int64\n\tsourceColumn: Days\n\textendedProperty ParameterMetadata = {\"version\":2,\"kind\":1}\n",
+                "column",
+            );
+            map_column(&inline, Path::new("t"), &mut skips);
+            let block = map_one(
+                "column Days\n\tdataType: int64\n\textendedProperty ParameterMetadata =\n\t\t\t\t{\n\t\t\t\t  \"version\": 2,\n\t\t\t\t  \"kind\": 1,\n\t\t\t\t  \"selectAllValue\": \"__SelectAll__\"\n\t\t\t\t}\n",
+                "column",
+            );
+            map_column(&block, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "markers are Tier 1, never notices: {skips:?}");
+        }
+
+        /// Field parameters (kind 2) and what-if parameters (version 0) share
+        /// the `ParameterMetadata` name; they are not bindings and stay silent.
+        #[test]
+        fn field_and_what_if_parameter_markers_stay_silent() {
+            let mut skips = Vec::new();
+            for shape in ["{\"version\":3,\"kind\":2}", "{\"version\":0}"] {
+                let node = map_one(
+                    &format!(
+                        "column C\n\tdataType: string\n\textendedProperty ParameterMetadata = {shape}\n"
+                    ),
+                    "column",
+                );
+                map_column(&node, Path::new("t"), &mut skips);
+            }
+
+            assert!(skips.is_empty(), "{skips:?}");
         }
 
         #[test]

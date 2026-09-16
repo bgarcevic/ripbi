@@ -1,0 +1,20 @@
+/// The consumer: its partition M filters the source by the parameter, which
+/// keeps MinDays alive through the M reference — and MinDays keeps
+/// DaysList[Days] alive through the parameter binding.
+table SampleData
+	column Days
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		summarizeBy: sum
+		sourceColumn: Days
+
+	partition SampleData = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("example.datawarehouse.fabric.microsoft.com", "Warehouse"),
+				    Probe = Source{[Schema="dbo",Item="DynamicMProbe"]}[Data],
+				    FilterDays = Table.SelectRows(Probe, each [Days] >= MinDays)
+				in
+				    FilterDays
