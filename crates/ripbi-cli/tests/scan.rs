@@ -2,7 +2,9 @@
 //! modes, exit codes, discovery, `ripbi.toml`, `--report` search folders for
 //! model-naming PATHs (issue #67), and the interactive picker.
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::path::PathBuf;

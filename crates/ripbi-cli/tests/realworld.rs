@@ -10,7 +10,9 @@
 //! RIPBI_REALWORLD_PBIP=C:\models\Production.pbip cargo test -p ripbi --test realworld
 //! ```
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::path::PathBuf;

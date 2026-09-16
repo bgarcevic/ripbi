@@ -1,0 +1,4 @@
+relationship 88888888-8888-8888-8888-888888888851
+	joinOnDateBehavior: datePartOnly
+	fromColumn: Sales.Date
+	toColumn: LocalDateTable_00000000-0000-0000-0000-000000000001.Date

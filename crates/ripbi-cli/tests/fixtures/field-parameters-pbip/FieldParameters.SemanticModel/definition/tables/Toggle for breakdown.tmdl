@@ -1,0 +1,56 @@
+/// Field parameter. Lets a report user pick which dimension to break a visual
+/// down by — Category or Region. Put the 'Breakdown by' column on a chart axis
+/// and expose it as a slicer so one visual can pivot across many dimensions.
+table 'Toggle for breakdown'
+	lineageTag: 88888888-8888-8888-8888-888888888821
+
+	/// The choice shown to users — Category or Region — controlling which
+	/// dimension a visual is broken down by.
+	column 'Breakdown by'
+		lineageTag: 88888888-8888-8888-8888-888888888822
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'Parameter Order'
+
+		relatedColumnDetails
+			groupByColumn: 'Parameter Fields'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Holds the NAMEOF() references to each candidate dimension
+	/// column — Power BI substitutes the chosen column at query time.
+	column 'Parameter Fields'
+		isHidden
+		lineageTag: 88888888-8888-8888-8888-888888888823
+		summarizeBy: none
+		sourceColumn: [Value2]
+		sortByColumn: 'Parameter Order'
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 3,
+				  "kind": 2
+				}
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Sort order that keeps the dimensions in the intended sequence
+	/// in the slicer.
+	column 'Parameter Order'
+		isHidden
+		formatString: 0
+		lineageTag: 88888888-8888-8888-8888-888888888824
+		summarizeBy: sum
+		sourceColumn: [Value3]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Toggle for breakdown' = calculated
+		mode: import
+		source =
+				{
+				    ("Category", NAMEOF('Sales'[Category]), 0),
+				    ("Region", NAMEOF('Sales'[Region]), 1)
+				}
+
+	annotation PBI_Id = 88888888888888888888888888888888

@@ -1,0 +1,43 @@
+table Sales
+	lineageTag: 88888888-8888-8888-8888-888888888801
+
+	/// Live: the card projects it.
+	measure Total = SUM('Sales'[Amount])
+		formatString: "$"#,0
+		lineageTag: 88888888-8888-8888-8888-888888888802
+
+	/// Dead: bound by no visual and named by no other expression.
+	measure 'Legacy Total' = SUM('Sales'[Legacy])
+		lineageTag: 88888888-8888-8888-8888-888888888803
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: 88888888-8888-8888-8888-888888888804
+
+	/// Live only through the NAMEOF() in the parameter table's partition —
+	/// the "source columns named inside the parameter expression" clause.
+	column Region
+		dataType: string
+		sourceColumn: Region
+		lineageTag: 88888888-8888-8888-8888-888888888805
+
+	/// Live: actively projected by the parameter-driven chart.
+	column Category
+		dataType: string
+		sourceColumn: Category
+		lineageTag: 88888888-8888-8888-8888-888888888806
+
+	/// Dead, but dragged along by the dead measure above.
+	column Legacy
+		dataType: double
+		sourceColumn: Legacy
+		lineageTag: 88888888-8888-8888-8888-888888888807
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Amount", "Region", "Category", "Legacy"}, {})
+				in
+				    Source

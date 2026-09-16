@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "name": "V3",
+  "position": {
+    "x": 100,
+    "y": 520,
+    "z": 0,
+    "height": 300,
+    "width": 350,
+    "tabOrder": 30
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryFieldParametersByRole": {
+        "Values": [
+          {
+            "index": 0,
+            "length": 1,
+              "expr": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Toggle for variance"
+                    }
+                  },
+                  "Property": "# / %"
+                }
+              }
+          }
+        ]
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

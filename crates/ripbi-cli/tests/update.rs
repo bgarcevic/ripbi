@@ -2,7 +2,9 @@
 //! Everything runs in-process against a `FakeClient`, a temp install dir, and
 //! in-memory streams — no test touches the network.
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::collections::{BTreeMap, HashMap};

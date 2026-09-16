@@ -1,0 +1,53 @@
+/// Field parameter. Lets a report user pick whether the visual's value is
+/// shown in absolute or percentage terms. Bound to its slicer only through
+/// the query-level `queryFieldParametersByRole` map.
+table 'Toggle for variance'
+	lineageTag: 88888888-8888-8888-8888-888888888831
+
+	/// The choice shown to users — absolute or percentage.
+	column '# / %'
+		lineageTag: 88888888-8888-8888-8888-888888888832
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'Parameter Order'
+
+		relatedColumnDetails
+			groupByColumn: 'Parameter Fields'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Holds the NAMEOF() references to each candidate column.
+	column 'Parameter Fields'
+		isHidden
+		lineageTag: 88888888-8888-8888-8888-888888888833
+		summarizeBy: none
+		sourceColumn: [Value2]
+		sortByColumn: 'Parameter Order'
+
+		extendedProperty ParameterMetadata =
+				{
+				  "version": 3,
+				  "kind": 2
+				}
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Hidden. Sort order that keeps the choices in the intended sequence
+	/// in the slicer.
+	column 'Parameter Order'
+		isHidden
+		formatString: 0
+		lineageTag: 88888888-8888-8888-8888-888888888834
+		summarizeBy: sum
+		sourceColumn: [Value3]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition 'Toggle for variance' = calculated
+		mode: import
+		source =
+				{
+				    ("Region", NAMEOF('Sales'[Region]), 0)
+				}
+
+	annotation PBI_Id = 88888888888888888888888888888889

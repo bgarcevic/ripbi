@@ -14,7 +14,9 @@
 //! format). The original analysis export stays in `target/`, which is
 //! gitignored — the distilled baseline is the committed contract.
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::collections::HashMap;
