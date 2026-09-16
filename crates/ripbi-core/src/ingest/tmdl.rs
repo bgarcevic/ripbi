@@ -19,9 +19,9 @@ use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
-    HierarchyLevel, HierarchyRef, Kpi, Measure, ParameterValuesColumn, Partition,
-    PartitionSource, RefreshPolicy, Relationship, Role, SharedExpression, Table, TablePermission,
-    TabularDatabase, Variation,
+    HierarchyLevel, HierarchyRef, Kpi, Measure, ParameterValuesColumn, Partition, PartitionSource,
+    RefreshPolicy, Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
+    Variation,
 };
 use crate::{Error, Result};
 
@@ -1673,7 +1673,10 @@ fn map_expression(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Shar
                 path,
                 Some(child.line),
                 SkipKind::UnknownProperty,
-                format!("unknown property '{other}' on expression '{}'", expression.name),
+                format!(
+                    "unknown property '{other}' on expression '{}'",
+                    expression.name
+                ),
             ),
         }
     }
@@ -2225,7 +2228,10 @@ mod tests {
             );
             map_column(&block, Path::new("t"), &mut skips);
 
-            assert!(skips.is_empty(), "markers are Tier 1, never notices: {skips:?}");
+            assert!(
+                skips.is_empty(),
+                "markers are Tier 1, never notices: {skips:?}"
+            );
         }
 
         /// Field parameters (kind 2) and what-if parameters (version 0) share
