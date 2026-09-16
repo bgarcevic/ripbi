@@ -2,7 +2,9 @@
 //! semantic model with every PBIR report bound to it, and reinterprets
 //! `--report` values that are plain folders as search folders (issue #32).
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::fs;

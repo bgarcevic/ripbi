@@ -1,0 +1,49 @@
+table Sales
+	lineageTag: 88888888-8888-8888-8888-888888888841
+
+	/// Live: the card projects it.
+	measure Total = SUM('Sales'[Amount])
+		formatString: "$"#,0
+		lineageTag: 88888888-8888-8888-8888-888888888842
+
+	/// Dead: bound by no visual and named by no other expression.
+	measure 'Legacy Total' = SUM('Sales'[Legacy])
+		lineageTag: 88888888-8888-8888-8888-888888888843
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: 88888888-8888-8888-8888-888888888844
+
+	/// The auto date/time variation: the engine hangs a hidden
+	/// LocalDateTable off this column and date hierarchies resolve
+	/// through the variation's declaration.
+	column Date
+		dataType: dateTime
+		sourceColumn: Date
+		lineageTag: 88888888-8888-8888-8888-888888888845
+
+		variation Variation
+			isDefault
+			relationship: 88888888-8888-8888-8888-888888888851
+			defaultHierarchy: LocalDateTable_00000000-0000-0000-0000-000000000001.'Date Hierarchy'
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	/// Dead, but dragged along by the dead measure above.
+	column Legacy
+		dataType: double
+		sourceColumn: Legacy
+		lineageTag: 88888888-8888-8888-8888-888888888846
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Amount", "Date", "Legacy"}, {})
+				in
+				    Source

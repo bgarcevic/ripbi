@@ -1,6 +1,13 @@
 //! Helpers shared by the CLI integration tests. Compiled into each test
 //! binary via `mod common;` — integration tests cannot see the crate's
 //! `pub(crate)` test support.
+//!
+//! Every test file includes this module with `#[expect(dead_code)]`: each
+//! binary uses a subset of these helpers, so the dead-code lint fires on the
+//! helpers its sibling files exercise. The expectation (not an allow) turns
+//! the shared-module pattern into a checked invariant — a binary that ends up
+//! using every helper fails its own build on the unfulfilled expectation, and
+//! should drop the attribute at that point.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,6 +70,25 @@ pub fn mini_pbip() -> PathBuf {
         .join("tests")
         .join("fixtures")
         .join("mini-pbip")
+}
+
+/// The field-parameters PBIP fixture: two parameter tables, one bound through
+/// the per-role `fieldParameters` machinery, one only through
+/// `queryFieldParametersByRole` (issue #52).
+pub fn field_parameters_pbip() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("field-parameters-pbip")
+}
+
+/// The auto date/time PBIP fixture: one `LocalDateTable_*` machinery table
+/// behind a varied date column, bound by a hierarchy visual (issue #52).
+pub fn auto_datetime_pbip() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("auto-datetime-pbip")
 }
 
 /// Copies the mini fixture into `dir` under `stem` (renaming its items), so
@@ -156,6 +182,7 @@ pub fn run_scan_tty(
         err: &mut err,
         input: &mut input,
         stdin_is_tty,
+        stdout_is_tty: false,
         stderr_is_tty: false,
     };
     let code = scan::run_in(args, cwd, &mut streams);

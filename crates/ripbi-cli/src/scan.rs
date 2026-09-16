@@ -4,7 +4,7 @@
 //! core and *what to say* — no analysis logic lives in this crate.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, BufRead, IsTerminal};
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::DependencyGraph;
@@ -38,6 +38,10 @@ pub struct Streams<'a> {
     /// Whether `input` is interactive. A generic reader cannot answer this
     /// itself, so the caller states it (the binary inspects the real stdin).
     pub stdin_is_tty: bool,
+    /// Whether `out` is a terminal. The renderer picks the plain-text or ANSI
+    /// palette from this, not from the process stdout — a test driving an
+    /// in-memory buffer must not inherit the terminal it happens to run in.
+    pub stdout_is_tty: bool,
     /// Whether `err` is a terminal. The ambient update notifier only prints
     /// on an interactive stderr, so the caller states this too.
     pub stderr_is_tty: bool,
@@ -62,7 +66,7 @@ pub fn run(args: &ScanArgs, streams: &mut Streams<'_>) -> i32 {
 /// Runs `scan` against an explicit working directory (tests pass one).
 #[must_use = "the return value is the process exit code"]
 pub fn run_in(args: &ScanArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
-    let palette_err = Palette::detect(io::stderr().is_terminal(), args.no_color);
+    let palette_err = Palette::detect(streams.stderr_is_tty, args.no_color);
     match scan(args, cwd, streams, &palette_err) {
         Ok(code) => code,
         Err(error) => {
@@ -88,7 +92,7 @@ fn scan(
     streams: &mut Streams<'_>,
     palette_err: &Palette,
 ) -> Result<i32, ScanError> {
-    let palette_out = Palette::detect(io::stdout().is_terminal(), args.no_color);
+    let palette_out = Palette::detect(streams.stdout_is_tty, args.no_color);
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 

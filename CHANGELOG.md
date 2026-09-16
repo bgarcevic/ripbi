@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Field-parameter role bindings parse and bind; fixture locks for field
+  parameters and auto date/time** (`#52`) — a visual's `query.queryFieldParametersByRole`
+  — the role-keyed map some exports hang off the query instead of the per-role
+  `fieldParameters` arrays — is now a known shape: each role's entries' `expr`
+  fields join that role's well as inactive projections, which bind like any
+  other field, so a parameter table bound only through that key keeps its
+  columns (and, via sort-by/group-by, the hidden auxiliary columns) alive
+  instead of surfacing as drift plus false positives. Two PBIP fixtures lock
+  the no-false-positive guarantees: a field-parameters project whose toggle
+  tables are bound through both mechanisms (with the parameter expression's
+  source columns kept alive by the calculated partition's `NAMEOF()` calls),
+  and an auto date/time project where a date-hierarchy visual over a varied
+  date column keeps the `LocalDateTable_*` machinery at an `in_use` verdict
+  with none of the generated columns flagged — while a plain date-column
+  binding shows the machinery reporting through its `dead` verdict instead.
+  Validation showed the per-role `fieldParameters` path already bound (the
+  fixtures lock it); only `queryFieldParametersByRole` was missed.
 - **Dynamic M parameter bindings keep the bound column live** (`#50`) — a model's
   dynamic M query parameters now record which column they are bound from: the
   parameter expression's `parameterValuesColumn` property (the authoritative half of
@@ -31,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layout is the common case and is silent. The bindings' provenance reads
   `mobile layout …` so an audit of a survivor names the surface that kept it alive,
   and the summary's root count includes them.
+
+### Fixed
+
+- **Injected streams decide the output palette** — `scan::run_in` probed the
+  process's real stdout/stderr for terminal detection instead of the
+  `Streams` it was given, so a test harness whose real stdout was a terminal
+  got ANSI escapes inside otherwise plain output (and any embedder could hit
+  the same). `Streams` now carries `stdout_is_tty` beside `stderr_is_tty`,
+  both palettes derive from the injected streams, and the binary passes the
+  real terminals' state. Test runs are deterministic regardless of the
+  terminal `cargo test` runs in.
 
 ### Changed
 

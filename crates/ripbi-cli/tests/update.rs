@@ -2,7 +2,9 @@
 //! Everything runs in-process against a `FakeClient`, a temp install dir, and
 //! in-memory streams — no test touches the network.
 
-#[allow(dead_code)]
+// Uses only part of `common`; `expect` (not `allow`) fails this build if
+// that stops being true. Contract: common/mod.rs.
+#[expect(dead_code)]
 mod common;
 
 use std::collections::{BTreeMap, HashMap};
@@ -199,6 +201,7 @@ fn run_update_with_home(
         err: &mut err,
         input: &mut input,
         stdin_is_tty: false,
+        stdout_is_tty: false,
         stderr_is_tty: false,
     };
     let code = update::run_in_with_home(args, client, exe, cargo_home, &mut streams);
@@ -538,6 +541,7 @@ fn run_notify(context: &NotifyContext) -> (String, String) {
         err: &mut err,
         input: &mut input,
         stdin_is_tty: false,
+        stdout_is_tty: false,
         stderr_is_tty: context.stderr_is_tty,
     };
     notify::after_command_in(context, &mut streams);

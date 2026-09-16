@@ -487,14 +487,23 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
         ctx,
         "/visual/visualContainerObjects",
     );
+    let mut wells = wells(
+        query.and_then(|query| query.get("queryState")),
+        ctx,
+        "/visual/query/queryState",
+    );
+    if let Some(query) = query {
+        merge_field_parameters_by_role(
+            query.get("queryFieldParametersByRole"),
+            &mut wells,
+            ctx,
+            "/visual/query/queryFieldParametersByRole",
+        );
+    }
     Some(Visual {
         name: NameKey::new(value.get("name").and_then(Value::as_str).unwrap_or(folder)),
         visual_type: visual_type.to_string(),
-        wells: wells(
-            query.and_then(|query| query.get("queryState")),
-            ctx,
-            "/visual/query/queryState",
-        ),
+        wells,
         filters,
         sorts: query
             .map(|query| sorts(query, ctx, "/visual/query"))
@@ -1372,20 +1381,15 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
         // toggle; the columns it stands for bind like any other projection,
         // just never as the active one.
         if let Some(parameters) = role_state.get("fieldParameters").and_then(Value::as_array) {
-            for (index, parameter) in parameters.iter().enumerate() {
-                let parameter_location = format!("{role_location}/fieldParameters/{index}");
-                if let Some(target) = required_field(
-                    parameter.get("parameterExpr"),
-                    &Aliases::new(),
-                    ctx,
-                    &format!("{parameter_location}/parameterExpr"),
-                ) {
-                    projections.push(Projection {
-                        target,
-                        query_ref: None,
-                        active: false,
-                    });
-                }
+            let parameters_location = format!("{role_location}/fieldParameters");
+            for target in
+                field_parameter_targets(parameters, "parameterExpr", ctx, &parameters_location)
+            {
+                projections.push(Projection {
+                    target,
+                    query_ref: None,
+                    active: false,
+                });
             }
         }
         if !projections.is_empty() {
@@ -1396,6 +1400,76 @@ fn wells(query_state: Option<&Value>, ctx: &mut Ctx, location: &str) -> Vec<Fiel
         }
     }
     out
+}
+
+/// Parses one field-parameter entry list — a role's `fieldParameters` array or
+/// a `queryFieldParametersByRole` role entry — into the parameter columns it
+/// stands for. Entries carry the expression under `parameterExpr` (role-level)
+/// or `expr` (query-level) plus index bookkeeping the binder ignores.
+fn field_parameter_targets(
+    parameters: &[Value],
+    expr_key: &str,
+    ctx: &mut Ctx,
+    location: &str,
+) -> Vec<FieldTarget> {
+    parameters
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| {
+            required_field(
+                parameter.get(expr_key),
+                &Aliases::new(),
+                ctx,
+                &format!("{location}/{index}/{expr_key}"),
+            )
+        })
+        .collect()
+}
+
+/// Merges a visual query's `queryFieldParametersByRole` into the wells. Some
+/// exports hang the whole field-parameter map off the query — role name →
+/// entries whose `expr` names the parameter column — rather than, or in
+/// addition to, the per-role `fieldParameters` arrays. The columns bind the
+/// same way as those: like any projection, never as the active one, so a
+/// role the query state never mentions still gets its well.
+fn merge_field_parameters_by_role(
+    value: Option<&Value>,
+    wells: &mut Vec<FieldWell>,
+    ctx: &mut Ctx,
+    location: &str,
+) {
+    let Some(roles) = value.and_then(Value::as_object) else {
+        return;
+    };
+    for (role, parameters) in roles {
+        let role_location = format!("{location}/{role}");
+        let Some(list) = parameters.as_array() else {
+            ctx.notice(
+                &role_location,
+                SkipKind::MalformedValue,
+                "field-parameter role carries no entry list",
+            );
+            continue;
+        };
+        for target in field_parameter_targets(list, "expr", ctx, &role_location) {
+            if let Some(well) = wells.iter_mut().find(|well| well.role == *role) {
+                well.projections.push(Projection {
+                    target,
+                    query_ref: None,
+                    active: false,
+                });
+            } else {
+                wells.push(FieldWell {
+                    role: role.clone(),
+                    projections: vec![Projection {
+                        target,
+                        query_ref: None,
+                        active: false,
+                    }],
+                });
+            }
+        }
+    }
 }
 
 /// Parses a visual query's `sortDefinition` into its sort-by fields.
@@ -1631,7 +1705,7 @@ const VISUAL_KEYS_INNER: Keys = Keys {
 
 /// `visual.json` under `visual.query`.
 const QUERY_KEYS: Keys = Keys {
-    known: &["queryState", "sortDefinition"],
+    known: &["queryFieldParametersByRole", "queryState", "sortDefinition"],
     ignored: &["isDrillDisabled"],
 };
 
@@ -2417,6 +2491,93 @@ mod tests {
                     },
                 ]
             );
+        }
+    }
+
+    /// A visual query's `queryFieldParametersByRole` — the role-keyed
+    /// `query` sibling some exports hang the whole field-parameter map on,
+    /// instead of the per-role `fieldParameters` arrays. The columns bind
+    /// like any projection, just never as the active one (issue #52).
+    mod query_field_parameters {
+        use super::*;
+
+        fn parse_visual(query_json: &str) -> (Option<Visual>, Vec<SkipNotice>) {
+            let json = format!(
+                r#"{{"name": "V1", "visual": {{"visualType": "slicer", "query": {query_json}}}}}"#
+            );
+            let value = serde_json::from_str::<Value>(&json).unwrap();
+            let mut skips = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            let visual = visual(&value, "V1", &mut ctx);
+            (visual, skips)
+        }
+
+        fn toggle_column() -> FieldTarget {
+            FieldTarget::Column {
+                table: NameKey::new("Toggle for breakdown"),
+                column: NameKey::new("Breakdown by"),
+            }
+        }
+
+        #[test]
+        fn the_query_level_map_creates_a_well_for_a_role_query_state_never_mentions() {
+            let (visual, skips) = parse_visual(
+                r#"{"queryFieldParametersByRole": {"Values": [
+                    {"index": 0, "length": 1, "expr": {"Column": {"Expression": {"SourceRef": {"Entity": "Toggle for breakdown"}}, "Property": "Breakdown by"}}}
+                ]}}"#,
+            );
+
+            assert_eq!(
+                visual.unwrap().wells,
+                [FieldWell {
+                    role: "Values".to_string(),
+                    projections: vec![Projection {
+                        target: toggle_column(),
+                        query_ref: None,
+                        active: false,
+                    }],
+                }]
+            );
+            assert!(skips.is_empty(), "the engine's own shape is not drift");
+        }
+
+        #[test]
+        fn the_query_level_map_joins_a_known_role_as_inactive_riders() {
+            let (visual, skips) = parse_visual(
+                r#"{"queryState": {"Category": {"projections": [
+                    {"field": {"Column": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Category"}}, "queryRef": "Sales.Category", "active": true}
+                ]}},
+                "queryFieldParametersByRole": {"Category": [
+                    {"index": 0, "length": 1, "expr": {"Column": {"Expression": {"SourceRef": {"Entity": "Toggle for breakdown"}}, "Property": "Breakdown by"}}}
+                ]}}"#,
+            );
+
+            let wells = visual.unwrap().wells;
+            assert_eq!(wells.len(), 1);
+            assert_eq!(wells[0].role, "Category");
+            assert_eq!(wells[0].projections.len(), 2);
+            assert!(wells[0].projections[0].active);
+            assert_eq!(
+                wells[0].projections[1],
+                Projection {
+                    target: toggle_column(),
+                    query_ref: None,
+                    active: false,
+                }
+            );
+            assert!(skips.is_empty(), "no notices: {skips:?}");
+        }
+
+        #[test]
+        fn a_role_whose_entries_are_no_list_is_noticed_not_swallowed() {
+            let (visual, skips) =
+                parse_visual(r#"{"queryFieldParametersByRole": {"Values": "Breakdown by"}}"#);
+
+            assert_eq!(visual.unwrap().wells, []);
+            assert_eq!(skips.len(), 1);
         }
     }
 
