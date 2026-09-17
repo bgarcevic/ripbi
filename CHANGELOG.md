@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **No stale "update available" notice after a successful `ripbi update`** —
+  the ambient daily notifier ran after `update` too, comparing the cached
+  latest release against the *running* process's compile-time version, which a
+  self-update cannot change: the command's last words were "Updated ripbi
+  0.2.2 → 0.3.0" followed by "ripbi 0.3.0 is available (you have 0.2.2) — run
+  'ripbi update'". The notice never follows `update` now (`--check` already
+  prints both versions); it resumes with the next command, launched from the
+  new binary.
+
 ## [0.3.0] - 2026-09-17
 
 ### Added
