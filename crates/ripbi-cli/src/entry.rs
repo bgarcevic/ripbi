@@ -10,7 +10,7 @@ use crate::{Cli, Command, notify, update};
 
 /// Parse argv, run one command, produce the process exit code, and then give
 /// the ambient update notifier its post-command turn (every command except
-/// `update`; see [`ambient_notice_follows`]). The notifier never changes the
+/// `update`; see `ambient_notice_follows`). The notifier never changes the
 /// exit code.
 pub fn run() -> std::process::ExitCode {
     let cli = Cli::parse();
