@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-09-17
 
 ### Added
 
@@ -117,6 +117,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters (`"version": 0`) remain unmodeled — their columns were never at risk.
   DirectQuery-column `sourceProviderType` and the model's `valueFilterBehavior` are
   now recognized as Tier-1 metadata instead of drift notices.
+- **Incremental refresh change-detection expressions confer liveness** (`#53`) — a
+  table's `refreshPolicy` was the one partition child the TMDL parser did not read,
+  yet its expressions run at refresh time: `pollingExpression` (change detection) and
+  `sourceExpression` (the `RangeStart`/`RangeEnd`-filtered source) name model objects —
+  a measure-based "detect data changes" pick, the shared query a custom polling
+  expression reads, the `RangeStart`/`RangeEnd` parameters named only there in the
+  Desktop Full-DataView shape — and deleting any of them breaks refresh, the one
+  direction the conservatism policy refuses to get wrong. The policy is now parsed and
+  its two expression properties enumerated like any other expression:
+  `pollingExpression` through both the DAX pipeline (provenance `change detection
+  expression`) and the existing M bindings, `sourceExpression` through the M bindings
+  alone. The policy's scalar vocabulary (periods, granularities) names no model object
+  and stays silent; an unrecognized key inside the policy is an ordinary
+  `UnknownProperty` notice.
 - **Phone-layout bindings keep fields live** (`#49`) — a report's phone layout
   (`Report/definition.mobile/`) is now ingested beside the desktop tree: its pages
   parse with the same walker, their visuals bind the same model, and the bindings
@@ -345,7 +359,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/bgarcevic/ripbi/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/bgarcevic/ripbi/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/bgarcevic/ripbi/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/bgarcevic/ripbi/compare/v0.1.0...v0.2.0
