@@ -64,6 +64,41 @@ pub struct BindingEdge {
     pub mobile: bool,
 }
 
+impl fmt::Display for BindingEdge {
+    /// Human-readable site description, e.g.
+    /// `field well 'Y' — visual 'V1' on page 'P1' in report 'Mini'`. The same
+    /// phrase a [`Provenance::Binding`] renders, published on the edge itself
+    /// so findings that carry a binding without being a graph edge (the
+    /// broken-visual records) render identically.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let BindingEdge {
+            kind,
+            report,
+            page,
+            visual,
+            bookmark,
+            mobile,
+        } = self;
+        if *mobile {
+            f.write_str("mobile layout ")?;
+        }
+        write_site(f, kind)?;
+        if let Some(visual) = visual {
+            write!(f, " — visual {}", Quoted(visual.as_str()))?;
+        }
+        if let Some(page) = page {
+            write!(f, " on page {}", Quoted(page.as_str()))?;
+        }
+        if let Some(bookmark) = bookmark {
+            write!(f, " in bookmark {}", Quoted(bookmark.as_str()))?;
+        }
+        if let Some(report) = report {
+            write!(f, " in report {}", Quoted(report.as_str()))?;
+        }
+        Ok(())
+    }
+}
+
 impl Provenance {
     /// True when the strong reachability pass may traverse this edge — every
     /// edge except relationship endpoints (which keep a key column alive
@@ -109,33 +144,7 @@ impl fmt::Display for Provenance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Provenance::Dax { kind } => f.write_str(dax_site(*kind)),
-            Provenance::Binding(edge) => {
-                let BindingEdge {
-                    kind,
-                    report,
-                    page,
-                    visual,
-                    bookmark,
-                    mobile,
-                } = edge.as_ref();
-                if *mobile {
-                    f.write_str("mobile layout ")?;
-                }
-                write_site(f, kind)?;
-                if let Some(visual) = visual {
-                    write!(f, " — visual {}", Quoted(visual.as_str()))?;
-                }
-                if let Some(page) = page {
-                    write!(f, " on page {}", Quoted(page.as_str()))?;
-                }
-                if let Some(bookmark) = bookmark {
-                    write!(f, " in bookmark {}", Quoted(bookmark.as_str()))?;
-                }
-                if let Some(report) = report {
-                    write!(f, " in report {}", Quoted(report.as_str()))?;
-                }
-                Ok(())
-            }
+            Provenance::Binding(edge) => edge.fmt(f),
             Provenance::M => f.write_str("Power Query expression"),
             Provenance::Structural { role } => write!(f, "{role}"),
         }

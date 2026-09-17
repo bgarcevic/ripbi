@@ -1,0 +1,26 @@
+table Sales
+	lineageTag: 99999999-9999-9999-9999-999999999911
+
+	/// Live: V1's card projects it.
+	measure Total = SUM('Sales'[Amount])
+		formatString: "$"#,0
+		lineageTag: 99999999-9999-9999-9999-999999999912
+
+	/// Broken: names a column the table dropped. V3's card binds it, so the
+	/// visual inherits the breakage (issue #60) while the binding itself
+	/// still resolves.
+	measure 'Broken Total' = SUM('Sales'[Nope])
+		lineageTag: 99999999-9999-9999-9999-999999999913
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: 99999999-9999-9999-9999-999999999914
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Amount"}, {})
+				in
+				    Source

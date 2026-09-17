@@ -9,6 +9,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Calculated tables vouch for the names their expression makes visible** —
+  a calculated table's columns exist only in its partition expression's
+  output (a `DATATABLE`'s headers, an `ADDCOLUMNS`'s string-named columns,
+  the columns of a wrapped `FILTER`/`VALUES` table), so a visual or measure
+  reading one of them resolved to nothing and flagged as broken. A qualified
+  miss on a calculated table now resolves when the name is lexically visible
+  in that expression, and still flags when it is visible nowhere — so
+  renaming a `DATATABLE` header out from under its bindings is real breakage
+  again, the case a blanket "calculated ⇒ resolved" rule would have gone
+  silent on. On a second production workspace the broken-visual findings
+  fell from 24 to the 7 genuinely stale ones.
+- **The artifact-breakage pass resolves query-time references** — three real
+  models turned every rule into a false `broken` claim, so the pass now
+  resolves them: a report measure referencing a sibling report measure (the
+  graph's ordinary report-measure edge — the pass simply wasn't mirroring
+  it), `@`-prefixed extension columns (the SQLBI `ADDCOLUMNS(…, "@Krav", …)`
+  pattern read back as `[@Krav]`), and the column names query time
+  introduces in the same expression — string-literal extension names
+  (`SELECTCOLUMNS`/`GROUPBY`/`ROW`) and the table constructor's fixed
+  `Value`/`Value1…N` defaults (new `dax::quoted_names` beside
+  `dax::references`). Verification needs DAX scope analysis the lexer
+  deliberately does not do, so each rule is under-claim; on a 26-report
+  production workspace the broken-visual findings went from 30 to the one
+  genuinely stale filter.
+- **The pairing announce reads one line per fact in every mode; `--verbose`
+  expands it** — the by-name pairing notes and the ignored-reports line of
+  model-centric scans (and the report-name list in the scanning line) were
+  the last uncollapsed walls on a workspace whose reports all bind
+  `byConnection`: 26 thin reports printed 26 near-identical `Note:` lines
+  before the actual findings. Issue #65's collapse — one line per
+  `initial catalog`, count, up to three names, `… and N more` — is now every
+  mode's shape, the ignored list is capped the same way, and a new
+  `-v/--verbose` flag restores the full per-report audit trail (every name
+  in the scanning line, one note per report, the complete ignored list).
+  The pairing *facts* never disappear: a wrong pairing means wrong
+  findings, so the counts and the weak-pairing warning always show.
+- **Standard Fabric export properties parse without drift notices** —
+  `database.tmdl`'s `id`, `compatibilityMode`, and `language`,
+  `report.json`'s `publicCustomVisuals`, and `page.json`'s
+  `pageBinding.referenceScope` join the known-key tables as ignored
+  metadata: real exports carry them on every item and they name no model
+  object. The trigger was `scan`'s clean-ingest bar for breakage findings
+  (`#60`): on models whose only skips were these, every broken-visual
+  finding was suppressed as if the parser had drifted past the objects the
+  bindings name.
+- **Broken visual bindings are findings; `--broken` gates them** (`#60`) —
+  `scan` no longer stays silent when a report is broken. Every report
+  binding's resolution is now classified as it becomes a root, and the misses
+  surface as `broken_visual` findings naming the written field, the page,
+  the visual, and the reason: `table_not_found`, `field_not_found`,
+  `measure_not_found`, `hierarchy_not_found`, or `level_not_found` — the
+  static form of the error state the service would render. A binding that
+  resolves onto an artifact whose own DAX binds a reference to nothing
+  inherits the breakage with the artifact named
+  (`bound_artifact_broken`) while staying a root; the artifact's own
+  bound-or-unbound finding kind remains issue #84's scope. The precision bar
+  mirrors the unused findings' conservatism rule inverted — a false "broken"
+  is itself a breakage claim, so KPI-suffixed variants (`… Goal`,
+  `… Status`, `… Trend`, `… Value`) resolve when the base measure exists,
+  field parameters and auto date/time hierarchies resolve through their
+  machinery (#52, #47), variation-flavored hierarchies the machinery cannot
+  resolve stay silent, stale qualifiers resolve to their model-global
+  measures, `Written` references never flag, and — the clean-ingest gate —
+  unknown-*object* skips from the model ingest suppress the findings entirely
+  with the count explained on the summary line (`--strict` surfaces the
+  skips behind it); property-level drift cannot hide a name — the object was
+  parsed with it — so it never suppresses. Liveness is untouched: the
+  qualifying-table fallback still roots what
+  it always rooted, and the unused set is byte-identical. Breakage is
+  advisory by default — reported in every output mode (a dedicated human
+  section, `broken_visual:<reason>` records in `--plain`, a top-level
+  `broken` array plus `summary.broken`/`broken_total` in `--json`) but never
+  changing the exit code — and `--broken` joins the type-flag family to
+  scope the run to breakage and gate on it, so an unused-only gate never
+  fails on a broken visual and vice versa (#84's constraint). The
+  broken-visual PBIP fixture (a healthy card, a card on a dropped column, a
+  card on a broken measure, a KPI-style card that must resolve) pins the
+  contract end to end.
 - **Field-parameter role bindings parse and bind; fixture locks for field
   parameters and auto date/time** (`#52`) — a visual's `query.queryFieldParametersByRole`
   — the role-keyed map some exports hang off the query instead of the per-role

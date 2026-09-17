@@ -29,6 +29,7 @@ use crate::model::{
 use crate::report::{BindingKind, FieldTarget, ReportModel};
 
 use super::DependencyGraph;
+use super::broken::{self, BrokenBinding, BrokenReason};
 use super::provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
 
 /// Assembles the graph for one model and every report sharing it. Never fails:
@@ -43,6 +44,8 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
         roots: Vec::new(),
         root_set: HashSet::new(),
         m_named: HashMap::new(),
+        broken: Vec::new(),
+        broken_artifacts: broken::broken_artifacts(db, reports, &index),
     };
 
     builder.add_model_objects(db, reports);
@@ -67,6 +70,12 @@ struct Builder {
     /// Columns named by M expressions — the supply chain, deliberately not
     /// edges. Key: the column. Value: the expressions that name it.
     m_named: HashMap<ObjectId, Vec<ObjectId>>,
+    /// Report bindings whose written reference resolves to nothing, or lands
+    /// on a broken artifact — the `broken_visual` findings (issue #60).
+    broken: Vec<BrokenBinding>,
+    /// The artifacts whose own DAX binds a field reference to nothing. Key:
+    /// the artifact. Value: its unresolved references, as written.
+    broken_artifacts: HashMap<ObjectId, Vec<String>>,
 }
 
 impl Builder {
@@ -107,7 +116,10 @@ impl Builder {
     }
 
     fn finish(self) -> DependencyGraph {
-        DependencyGraph::assemble(self.graph, self.nodes, self.roots, self.m_named)
+        let mut broken = self.broken;
+        broken.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+        broken.dedup_by(|a, b| a == b);
+        DependencyGraph::assemble(self.graph, self.nodes, self.roots, self.m_named, broken)
     }
 
     /// Pre-creates a node for every model and report object, so isolated
@@ -589,21 +601,50 @@ impl Builder {
     }
 
     /// The root edges of one report: every binding target, with the binding's
-    /// provenance.
+    /// provenance. Bindings that resolve to nothing — or land on a broken
+    /// artifact — are recorded as [`BrokenBinding`]s on the way past; their
+    /// liveness effect is exactly what it was before (issue #60).
     fn add_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
         let report_name = report.name.as_ref().map(NameKey::new);
         for binding in report.bindings() {
-            let provenance = Provenance::Binding(Box::new(BindingEdge {
+            let edge = BindingEdge {
                 kind: binding_site(binding.kind),
                 report: report_name.clone(),
                 page: binding.page.cloned(),
                 visual: binding.visual.cloned(),
                 bookmark: binding.bookmark.cloned(),
                 mobile: binding.mobile,
-            }));
-            for target in self.field_target_targets(db, index, report, binding.target) {
+            };
+            let provenance = Provenance::Binding(Box::new(edge.clone()));
+            let outcome = self.field_target_outcome(db, index, report, binding.target);
+            for target in &outcome.targets {
                 self.root(target.clone(), provenance.clone());
-                self.add_selection_edges(db, &target, provenance.clone());
+                self.add_selection_edges(db, target, provenance.clone());
+            }
+            match &outcome.broken {
+                Some(reason) => self.broken.push(BrokenBinding {
+                    edge,
+                    target: binding.target.clone(),
+                    reason: reason.clone(),
+                }),
+                // Direction 2: the binding resolves, but an artifact it lands
+                // on has unresolvable references of its own — the visual
+                // inherits the artifact's error state. The binding stays a
+                // root: resolving is what it does; *resolving to something
+                // broken* is what it says.
+                None => {
+                    for target in &outcome.targets {
+                        if self.broken_artifacts.contains_key(target) {
+                            self.broken.push(BrokenBinding {
+                                edge: edge.clone(),
+                                target: binding.target.clone(),
+                                reason: BrokenReason::BoundArtifactBroken {
+                                    artifact: target.clone(),
+                                },
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -643,25 +684,44 @@ impl Builder {
         }
     }
 
-    /// Every resolved target of one written report binding.
-    fn field_target_targets(
+    /// Every resolved target of one written report binding, plus — when the
+    /// written reference names something the model lacks — why the binding is
+    /// broken (issue #60). The `targets` half is exactly what
+    /// resolution always kept alive, broken or not: liveness never narrows
+    /// because a binding is broken.
+    fn field_target_outcome(
         &self,
         db: &TabularDatabase,
         index: &ModelIndex,
         report: &ReportModel,
         target: &FieldTarget,
-    ) -> Vec<ObjectId> {
+    ) -> TargetOutcome {
         match target {
             FieldTarget::Column { table, column } => {
-                self.qualified_targets(db, index, table, column)
+                self.qualified_outcome(db, index, table, column)
             }
             FieldTarget::Measure { measure, .. } => {
                 // Within its report, a report measure shadows a model measure of
                 // the same name.
-                match report_measure(report, measure) {
-                    Some(id) => vec![id],
-                    None => model_measure(db, index, measure),
+                if let Some(id) = report_measure(report, measure) {
+                    return TargetOutcome::resolved(vec![id]);
                 }
+                let targets = model_measure(db, index, measure);
+                if !targets.is_empty() {
+                    return TargetOutcome::resolved(targets);
+                }
+                // A KPI visual binds its measure's synthesized variants
+                // (`… Goal`, `… Status`, `… Trend`, `… Value`): names the model
+                // does not carry and the engine materializes. When the base
+                // measure resolves, the binding resolves — it stays unrooted
+                // (as before) but never flags.
+                if let Some(base) = broken::kpi_variant_base(measure.as_str())
+                    && (report_measure(report, &NameKey::new(base)).is_some()
+                        || !model_measure(db, index, &NameKey::new(base)).is_empty())
+                {
+                    return TargetOutcome::resolved(Vec::new());
+                }
+                TargetOutcome::unresolved(Vec::new(), BrokenReason::MeasureNotFound)
             }
             FieldTarget::HierarchyLevel {
                 table,
@@ -669,70 +729,122 @@ impl Builder {
                 level,
                 via_column,
                 via_variation,
-            } => {
-                let mut out = Vec::new();
-                if let Some(t) = table_struct(db, index, table.as_str()) {
-                    if let Some(h) = t
-                        .hierarchies
-                        .iter()
-                        .find(|h| NameKey::new(&h.name) == *hierarchy)
-                    {
-                        return hierarchy_targets(t, h, level);
-                    }
-                    // A hierarchy reached over a column variation names the
-                    // *varied* table, but the hierarchy lives on the
-                    // variation's target — resolve the declaration before
-                    // giving up on the binding.
-                    if let Some(via_column) = via_column
-                        && let Some(targets) = variation_hierarchy_targets(
-                            db,
-                            index,
-                            t,
-                            via_column,
-                            via_variation.as_ref(),
-                            hierarchy,
-                            level,
-                        )
-                    {
-                        return targets;
-                    }
-                    // A hierarchy binding naming a table with no such hierarchy
-                    // still keeps the table alive.
-                    out.push(ObjectId::Table {
-                        table: NameKey::new(&t.name),
-                    });
-                }
-                out
-            }
+            } => self.hierarchy_level_outcome(
+                db,
+                index,
+                table,
+                hierarchy,
+                level,
+                via_column.as_ref(),
+                via_variation.as_ref(),
+            ),
             FieldTarget::Aggregation { inner, .. } => {
-                self.field_target_targets(db, index, report, inner)
+                self.field_target_outcome(db, index, report, inner)
             }
-            FieldTarget::Written(reference) => match &reference.table {
-                Some(table) => self.qualified_targets(db, index, table, &reference.name),
-                None => match report_measure(report, &reference.name) {
-                    Some(id) => vec![id],
-                    None => model_measure(db, index, &reference.name),
-                },
-            },
+            // A written name the parser could not structure: legacy layouts and
+            // unresolved query aliases. Resolution runs exactly as before, but a
+            // miss is never flagged — the written form is too loose for the
+            // precision bar a breakage claim carries.
+            FieldTarget::Written(reference) => {
+                let targets = match &reference.table {
+                    Some(table) => {
+                        self.qualified_outcome(db, index, table, &reference.name)
+                            .targets
+                    }
+                    None => match report_measure(report, &reference.name) {
+                        Some(id) => vec![id],
+                        None => model_measure(db, index, &reference.name),
+                    },
+                };
+                TargetOutcome::resolved(targets)
+            }
         }
     }
 
-    /// Every candidate of a written qualified reference against the model: the
+    /// The hierarchy-level outcome: which hierarchy (if any) resolves through
+    /// the table or the variation machinery, and whether the written level is
+    /// really there. A variation-flavored reference (`via_column`) that the
+    /// machinery cannot resolve is deliberately never broken — flagging it
+    /// would risk calling an auto date/time serialization drift a breakage
+    /// (issue #47).
+    #[allow(clippy::too_many_arguments)]
+    fn hierarchy_level_outcome(
+        &self,
+        db: &TabularDatabase,
+        index: &ModelIndex,
+        table: &NameKey,
+        hierarchy: &NameKey,
+        level: &NameKey,
+        via_column: Option<&NameKey>,
+        via_variation: Option<&NameKey>,
+    ) -> TargetOutcome {
+        let Some(t) = table_struct(db, index, table.as_str()) else {
+            return TargetOutcome::unresolved(Vec::new(), BrokenReason::TableNotFound);
+        };
+        if let Some(h) = t
+            .hierarchies
+            .iter()
+            .find(|h| NameKey::new(&h.name) == *hierarchy)
+        {
+            let targets = hierarchy_targets(t, h, level);
+            // The level resolves when the hierarchy drills through it and its
+            // column still exists; either half missing is a breakage the
+            // surviving hierarchy node alone does not excuse.
+            let broken = h
+                .levels
+                .iter()
+                .find(|l| NameKey::new(&l.name) == *level)
+                .and_then(|l| same_table_column(t, &l.column))
+                .is_none()
+                .then_some(BrokenReason::LevelNotFound);
+            return TargetOutcome { targets, broken };
+        }
+        // A hierarchy reached over a column variation names the *varied* table,
+        // but the hierarchy lives on the variation's target — resolve the
+        // declaration before giving up on the binding.
+        if let Some(via_column) = via_column
+            && let Some(targets) = variation_hierarchy_targets(
+                db,
+                index,
+                t,
+                via_column,
+                via_variation,
+                hierarchy,
+                level,
+            )
+        {
+            return TargetOutcome::resolved(targets);
+        }
+        // A hierarchy binding naming a table with no such hierarchy still
+        // keeps the table alive.
+        let fallback = vec![ObjectId::Table {
+            table: NameKey::new(&t.name),
+        }];
+        if via_column.is_none() {
+            TargetOutcome::unresolved(fallback, BrokenReason::HierarchyNotFound)
+        } else {
+            TargetOutcome::resolved(fallback)
+        }
+    }
+
+    /// The outcome of a qualified `'Table'[Name]` binding: the
     /// column-or-measure binder rule, plus same-named hierarchies and
-    /// calculation items, plus the table fallback when nothing matched.
-    fn qualified_targets(
+    /// calculation items, plus the table fallback when nothing matched. Any
+    /// candidate at all resolves the binding — a same-named hierarchy behind a
+    /// stale column name is under-claiming, the safe direction for a breakage.
+    fn qualified_outcome(
         &self,
         db: &TabularDatabase,
         index: &ModelIndex,
         table: &NameKey,
         field: &NameKey,
-    ) -> Vec<ObjectId> {
-        let mut out = Vec::new();
+    ) -> TargetOutcome {
+        let mut targets = Vec::new();
         if let Some(id) = index
             .resolve_qualified(table.as_str(), field.as_str())
             .and_then(|resolved| db.object_id(resolved))
         {
-            out.push(id);
+            targets.push(id);
         }
         if let Some(t) = table_struct(db, index, table.as_str()) {
             if let Some(hierarchy) = t
@@ -740,7 +852,7 @@ impl Builder {
                 .iter()
                 .find(|h| NameKey::new(&h.name) == *field)
             {
-                out.push(ObjectId::Hierarchy {
+                targets.push(ObjectId::Hierarchy {
                     table: NameKey::new(&t.name),
                     hierarchy: NameKey::new(&hierarchy.name),
                 });
@@ -751,19 +863,60 @@ impl Builder {
                     .iter()
                     .filter(|item| NameKey::new(&item.name) == *field)
                 {
-                    out.push(ObjectId::CalculationItem {
+                    targets.push(ObjectId::CalculationItem {
                         table: NameKey::new(&t.name),
                         item: NameKey::new(&item.name),
                     });
                 }
             }
         }
-        if out.is_empty()
-            && let Some(table_id) = table_node(db, index, table.as_str())
-        {
-            out.push(table_id);
+        if !targets.is_empty() {
+            return TargetOutcome::resolved(targets);
         }
-        out
+        if let Some(table_id) = table_node(db, index, table.as_str()) {
+            // The field is missing on a table that exists — unless the table
+            // is calculated, whose columns exist only in its partition
+            // expression's output; a name that expression makes lexically
+            // visible is engine-materialized, not a miss (the ColAxis
+            // DATATABLE shape, issue #60).
+            if broken::calculated_table_field_resolves(
+                db,
+                index,
+                table.as_str(),
+                &fold_name(field.as_str()),
+            ) {
+                return TargetOutcome::resolved(vec![table_id]);
+            }
+            // The written form asserts a field the model no longer has.
+            return TargetOutcome::unresolved(vec![table_id], BrokenReason::FieldNotFound);
+        }
+        TargetOutcome::unresolved(Vec::new(), BrokenReason::TableNotFound)
+    }
+}
+
+/// The outcome of resolving one written report binding: the targets it keeps
+/// alive exactly as before, plus — when the written reference names something
+/// the model lacks — why the binding is broken. `broken` is `Some` only for
+/// the structured targets a breakage claim can be precise about; liveness is
+/// identical either way.
+struct TargetOutcome {
+    targets: Vec<ObjectId>,
+    broken: Option<BrokenReason>,
+}
+
+impl TargetOutcome {
+    fn resolved(targets: Vec<ObjectId>) -> Self {
+        Self {
+            targets,
+            broken: None,
+        }
+    }
+
+    fn unresolved(targets: Vec<ObjectId>, broken: BrokenReason) -> Self {
+        Self {
+            targets,
+            broken: Some(broken),
+        }
     }
 }
 
@@ -937,7 +1090,11 @@ fn table_node(db: &TabularDatabase, index: &ModelIndex, name: &str) -> Option<Ob
 }
 
 /// The table struct for a table name, if the table exists.
-fn table_struct<'a>(db: &'a TabularDatabase, index: &ModelIndex, name: &str) -> Option<&'a Table> {
+pub(super) fn table_struct<'a>(
+    db: &'a TabularDatabase,
+    index: &ModelIndex,
+    name: &str,
+) -> Option<&'a Table> {
     index
         .resolve_table(name)
         .and_then(|handle| db.table(handle))

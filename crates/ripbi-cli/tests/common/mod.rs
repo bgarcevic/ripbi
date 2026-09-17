@@ -91,6 +91,16 @@ pub fn auto_datetime_pbip() -> PathBuf {
         .join("auto-datetime-pbip")
 }
 
+/// The broken-visual PBIP fixture: a healthy card, a card on a dropped
+/// column, a card on a measure whose DAX is broken, and a KPI-style card
+/// whose synthesized variant must resolve (issue #60).
+pub fn broken_visual_pbip() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("broken-visual-pbip")
+}
+
 /// Copies the mini fixture into `dir` under `stem` (renaming its items), so
 /// tests can build dedicated or multi-project layouts.
 pub fn project_into(dir: &Path, stem: &str) {

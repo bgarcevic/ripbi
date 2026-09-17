@@ -145,11 +145,13 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 
+pub mod broken;
 pub mod provenance;
 
 mod builder;
 mod reachability;
 
+pub use broken::{BrokenBinding, BrokenReason};
 pub use provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
 pub use reachability::{UnusedObject, UsedBy};
 
@@ -177,6 +179,11 @@ pub struct DependencyGraph {
     /// expressions, sorted. Engine-computed columns are excluded — an M step
     /// can only name a column it produces.
     m_named: HashMap<ObjectId, Vec<ObjectId>>,
+    /// Report bindings whose written reference resolves to nothing, or lands
+    /// on a broken artifact, sorted by where the binding lives (issue #60).
+    /// Computed with the same resolution the roots come from; liveness is
+    /// untouched by them.
+    broken: Vec<BrokenBinding>,
 }
 
 impl DependencyGraph {
@@ -195,12 +202,14 @@ impl DependencyGraph {
         nodes: HashMap<ObjectId, NodeIndex>,
         roots: Vec<(ObjectId, Provenance)>,
         m_named: HashMap<ObjectId, Vec<ObjectId>>,
+        broken: Vec<BrokenBinding>,
     ) -> Self {
         Self {
             graph,
             nodes,
             roots,
             m_named,
+            broken,
         }
     }
 
@@ -236,6 +245,21 @@ impl DependencyGraph {
             .filter(|(target, _)| target == id)
             .map(|(_, provenance)| provenance)
             .collect()
+    }
+
+    /// Every report binding whose written field reference resolves to nothing
+    /// in the model — the table is gone, or the column/measure/hierarchy is
+    /// gone — plus the bindings that land on an artifact whose own DAX no
+    /// longer resolves. Sorted by where the binding lives; deterministic for
+    /// a given set of reports.
+    ///
+    /// This is the liveness graph's inverted question. The conservatism rule
+    /// mirrors: a liveness claim may over-keep, a breakage claim must
+    /// under-claim, so anything the resolution machinery might resolve —
+    /// KPI-suffixed variants, auto date/time hierarchies, same-named
+    /// hierarchies behind a stale qualifier — never appears here.
+    pub fn broken_bindings(&self) -> &[BrokenBinding] {
+        &self.broken
     }
 
     /// The M expressions that name `id` — its Power Query supply chain. A
@@ -2580,6 +2604,518 @@ mod tests {
             let verdicts = graph.auto_date_time_tables(&db);
             assert_eq!(verdicts[0].verdict, AutoDateTimeStatus::Dead);
             assert_eq!(verdicts[0].source_column, Some(column_id("Sales", "Date")));
+        }
+    }
+
+    /// The broken-visual records (issue #60): written bindings that resolve
+    /// to nothing, plus bindings onto broken artifacts. Liveness is asserted
+    /// to be untouched throughout — the records ride along, they never change
+    /// the verdicts.
+    mod broken {
+        use super::*;
+        use crate::graph::{BrokenBinding, BrokenReason};
+
+        fn hierarchy_level_target(
+            table: &str,
+            hierarchy: &str,
+            level: &str,
+            via_column: Option<&str>,
+        ) -> FieldTarget {
+            FieldTarget::HierarchyLevel {
+                table: NameKey::new(table),
+                hierarchy: NameKey::new(hierarchy),
+                level: NameKey::new(level),
+                via_column: via_column.map(NameKey::new),
+                via_variation: None,
+            }
+        }
+
+        fn written_target(table: Option<&str>, name: &str) -> FieldTarget {
+            FieldTarget::Written(crate::identity::FieldRef {
+                table: table.map(NameKey::new),
+                name: NameKey::new(name),
+            })
+        }
+
+        fn broken_of<'a>(graph: &'a DependencyGraph, target: &FieldTarget) -> &'a BrokenBinding {
+            graph
+                .broken_bindings()
+                .iter()
+                .find(|binding| &binding.target == target)
+                .unwrap_or_else(|| panic!("{target} expected among the broken bindings"))
+        }
+
+        fn not_broken(graph: &DependencyGraph, target: &FieldTarget) {
+            assert!(
+                !graph
+                    .broken_bindings()
+                    .iter()
+                    .any(|binding| &binding.target == target),
+                "{target} must not be broken"
+            );
+        }
+
+        /// The headline case: a visual projects `'Sales'[Color]`, the column
+        /// was dropped. One broken record with the full binding provenance —
+        /// and the qualifying table stays rooted exactly as before.
+        #[test]
+        fn a_missing_column_on_a_live_table_is_broken() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Amount")],
+                    measures: vec![measure("Total", "SUM('Sales'[Amount])")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    measure_target("Sales", "Total"),
+                    column_target("Sales", "Color"),
+                ],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            let broken = broken_of(&graph, &column_target("Sales", "Color"));
+            assert_eq!(broken.reason, BrokenReason::FieldNotFound);
+            assert_eq!(
+                broken.target.to_string(),
+                "'Sales'[Color]",
+                "the written form is the display id"
+            );
+            assert_eq!(broken.edge.visual.as_ref().map(NameKey::as_str), Some("V1"));
+            assert_eq!(broken.edge.page.as_ref().map(NameKey::as_str), Some("P1"));
+            assert_eq!(
+                broken.edge.report.as_ref().map(NameKey::as_str),
+                Some("Mini")
+            );
+            // Liveness untouched: the fallback still roots the table.
+            not_unused(&graph.unused_objects(), &table_id("Sales"));
+        }
+
+        #[test]
+        fn a_binding_whose_table_is_gone_is_broken() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    measures: vec![measure("Total", "0")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Ghost", "X")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(&graph, &column_target("Ghost", "X")).reason,
+                BrokenReason::TableNotFound
+            );
+        }
+
+        #[test]
+        fn a_binding_naming_a_missing_measure_is_broken() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Gone")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(&graph, &measure_target("Sales", "Gone")).reason,
+                BrokenReason::MeasureNotFound
+            );
+        }
+
+        /// A KPI visual binds its measure's synthesized `… Goal` variant: the
+        /// name resolves to nothing in the model, but the engine materializes
+        /// it — resolved, never flagged.
+        #[test]
+        fn a_kpi_variant_binding_resolves_instead_of_flagging() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    measures: vec![measure("Total", "0")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Total Goal")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.broken_bindings().is_empty());
+        }
+
+        /// A KPI suffix over a base measure that is itself gone is still a
+        /// breakage — the variant is only believed when the base resolves.
+        #[test]
+        fn a_kpi_variant_over_a_missing_base_measure_still_flags() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Gone Status")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(&graph, &measure_target("Sales", "Gone Status")).reason,
+                BrokenReason::MeasureNotFound
+            );
+        }
+
+        /// A plain hierarchy binding naming a hierarchy the table does not
+        /// carry is broken; a variation-flavored one that the machinery
+        /// cannot resolve is deliberately not — that way lies false
+        /// auto-date/time breakage claims (issue #47).
+        #[test]
+        fn a_plain_missing_hierarchy_flags_but_a_variation_one_does_not() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Date")],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    hierarchy_level_target("Sales", "Calendar", "Year", None),
+                    hierarchy_level_target("Sales", "Fiscal", "Year", Some("Date")),
+                ],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(
+                    &graph,
+                    &hierarchy_level_target("Sales", "Calendar", "Year", None)
+                )
+                .reason,
+                BrokenReason::HierarchyNotFound
+            );
+            not_broken(
+                &graph,
+                &hierarchy_level_target("Sales", "Fiscal", "Year", Some("Date")),
+            );
+        }
+
+        /// The hierarchy exists but the drilled level is gone — a breakage on
+        /// top of the surviving hierarchy node, which stays rooted as before.
+        #[test]
+        fn a_missing_level_in_a_live_hierarchy_is_broken() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Date".to_string(),
+                    columns: vec![column("Year")],
+                    hierarchies: vec![Hierarchy {
+                        name: "Calendar".to_string(),
+                        levels: vec![HierarchyLevel {
+                            name: "Year".to_string(),
+                            column: "Year".to_string(),
+                        }],
+                        is_hidden: false,
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[hierarchy_level_target("Date", "Calendar", "Quarter", None)],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(
+                    &graph,
+                    &hierarchy_level_target("Date", "Calendar", "Quarter", None)
+                )
+                .reason,
+                BrokenReason::LevelNotFound
+            );
+            not_unused(
+                &graph.unused_objects(),
+                &ObjectId::Hierarchy {
+                    table: NameKey::new("Date"),
+                    hierarchy: NameKey::new("Calendar"),
+                },
+            );
+        }
+
+        /// Written names the parser could not structure are too loose for a
+        /// breakage claim: they resolve (or not) as before and never flag.
+        #[test]
+        fn a_written_miss_is_never_broken() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[written_target(Some("Ghost"), "X")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.broken_bindings().is_empty());
+        }
+
+        /// Direction 2: the visual binds a measure whose own DAX names a
+        /// column the model dropped. The binding still roots the measure —
+        /// resolving is what it does — and the record names the artifact.
+        #[test]
+        fn a_binding_on_a_broken_measure_inherits_the_breakage() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Amount")],
+                    measures: vec![
+                        measure("Total", "SUM('Sales'[Amount])"),
+                        measure("Broken", "SUM('Sales'[Nope])"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Broken")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            let broken = broken_of(&graph, &measure_target("Sales", "Broken"));
+            assert_eq!(
+                broken.reason,
+                BrokenReason::BoundArtifactBroken {
+                    artifact: measure_id("Sales", "Broken"),
+                }
+            );
+            not_unused(&graph.unused_objects(), &measure_id("Sales", "Broken"));
+        }
+
+        /// An artifact whose DAX is broken but that no visual binds produces
+        /// no broken-binding record — the artifact's own finding kind is
+        /// issue #84's scope, not the visual's.
+        #[test]
+        fn an_unbound_broken_measure_produces_no_binding_record() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Amount")],
+                    measures: vec![
+                        measure("Total", "SUM('Sales'[Amount])"),
+                        measure("Dead Broken", "SUM('Sales'[Nope])"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[measure_target("Sales", "Total")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(graph.broken_bindings().is_empty());
+            let unused = graph.unused_objects();
+            find(&unused, &measure_id("Sales", "Dead Broken"));
+        }
+
+        /// The records are ordered by where the binding lives: report, page,
+        /// visual, then the written target.
+        #[test]
+        fn the_records_sort_by_binding_site_then_target() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                ..Default::default()
+            };
+            let mut report = visual_page(
+                "P2",
+                "V2",
+                &[column_target("Sales", "B"), column_target("Sales", "A")],
+            );
+            report.pages.insert(
+                0,
+                Page {
+                    name: NameKey::new("P1"),
+                    display_name: None,
+                    is_hidden: false,
+                    filters: Vec::new(),
+                    binding: None,
+                    visuals: vec![Visual {
+                        name: NameKey::new("V1"),
+                        visual_type: "card".to_string(),
+                        wells: vec![FieldWell {
+                            role: "Values".to_string(),
+                            projections: vec![Projection {
+                                target: column_target("Sales", "C"),
+                                query_ref: None,
+                                active: true,
+                            }],
+                        }],
+                        filters: Vec::new(),
+                        sorts: Vec::new(),
+                        conditional_formatting: Vec::new(),
+                        alt_text: Vec::new(),
+                        tooltip_page: None,
+                    }],
+                },
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            let targets: Vec<String> = graph
+                .broken_bindings()
+                .iter()
+                .map(|binding| binding.target.to_string())
+                .collect();
+            assert_eq!(
+                targets,
+                ["'Sales'[C]", "'Sales'[A]", "'Sales'[B]"],
+                "page P1 before P2, then the written targets in order"
+            );
+        }
+
+        /// The ColAxis shape: a calculated table whose `DATATABLE` headers
+        /// are its only schema — TMDL declares no columns. Bindings on the
+        /// header names resolve (the engine materializes them), and the
+        /// qualifying table stays rooted exactly as before.
+        #[test]
+        fn a_binding_on_a_calculated_tables_datatable_header_resolves() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "ColAxis (Outlook Bosteder)".to_string(),
+                    partitions: vec![Partition {
+                        name: "ColAxisOutlook".to_string(),
+                        source: PartitionSource::Calculated {
+                            expression: "DATATABLE(\"Ordinal\", INTEGER, \"Group\", STRING, \"MonthNum\", INTEGER, \"StaticLabel\", STRING, {\"Outlook\", \"Jan\", 1, \"Jan\"})"
+                                .to_string(),
+                        },
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    column_target("ColAxis (Outlook Bosteder)", "Group"),
+                    column_target("ColAxis (Outlook Bosteder)", "StaticLabel"),
+                ],
+            );
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert!(
+                graph.broken_bindings().is_empty(),
+                "the DATATABLE headers resolve: {:?}",
+                graph.broken_bindings()
+            );
+            not_unused(
+                &graph.unused_objects(),
+                &table_id("ColAxis (Outlook Bosteder)"),
+            );
+        }
+
+        /// A calculated table only vouches for names its expression still
+        /// makes visible: rename a header and the binding on the old name is
+        /// real breakage — the case the blanket "calculated ⇒ resolved" rule
+        /// would have gone silent on.
+        #[test]
+        fn a_binding_off_the_calculated_tables_visible_names_still_flags() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "ColAxis".to_string(),
+                    partitions: vec![Partition {
+                        name: "ColAxis".to_string(),
+                        source: PartitionSource::Calculated {
+                            expression: "DATATABLE(\"Gruppe\", STRING, {\"Outlook\"})".to_string(),
+                        },
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("ColAxis", "Group")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            let broken = broken_of(&graph, &column_target("ColAxis", "Group"));
+            assert_eq!(broken.reason, BrokenReason::FieldNotFound);
+            not_unused(&graph.unused_objects(), &table_id("ColAxis"));
+        }
+
+        /// A calculated table wrapping another table (`FILTER`/`VALUES`/
+        /// `CALCULATETABLE`) passes the wrapped table's columns through: a
+        /// binding on one of them resolves without the expression naming it.
+        #[test]
+        fn a_binding_on_a_calculated_tables_wrapped_table_columns_resolves() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Color"), column("Amount")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "Top Sales".to_string(),
+                        partitions: vec![Partition {
+                            name: "Top Sales".to_string(),
+                            source: PartitionSource::Calculated {
+                                expression: "CALCULATETABLE(VALUES('Sales'))".to_string(),
+                            },
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Top Sales", "Color")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            not_broken(&graph, &column_target("Top Sales", "Color"));
+            // A name neither written in nor passed through still flags.
+            not_unused(&graph.unused_objects(), &table_id("Top Sales"));
+        }
+
+        #[test]
+        fn a_foreign_column_of_a_calculated_table_still_flags() {
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Color"), column("Amount")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "Top Sales".to_string(),
+                        partitions: vec![Partition {
+                            name: "Top Sales".to_string(),
+                            source: PartitionSource::Calculated {
+                                expression: "CALCULATETABLE(VALUES('Sales'))".to_string(),
+                            },
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            };
+            let report = visual_page("P1", "V1", &[column_target("Top Sales", "Region")]);
+
+            let graph = DependencyGraph::build(&db, &[&report]);
+
+            assert_eq!(
+                broken_of(&graph, &column_target("Top Sales", "Region")).reason,
+                BrokenReason::FieldNotFound
+            );
         }
     }
 }

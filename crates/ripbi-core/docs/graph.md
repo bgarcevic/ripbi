@@ -194,9 +194,40 @@ a different question — does a *report binding* land on the machinery?
 The flags identifying the machinery (`is_local_date_table`, `is_template_date_table`,
 `is_private`) are display-only metadata and never touch either verdict's inputs.
 
+## The inverted question: broken bindings (issue #60)
+
+Where the liveness question is "does anything keep this alive?", the broken-bindings
+records (`broken_bindings`, built in `graph/broken.rs`) ask the opposite: did a
+written report binding name anything at all? During root construction every binding's
+resolution is classified — resolved, resolved only to its qualifying table (the field
+is gone), or resolved to nothing — and the misses become `BrokenBinding`s carrying the
+binding's full provenance (`BindingEdge`), the written `FieldTarget`, and a
+`BrokenReason`. A second, standalone pass walks every DAX expression the model and the
+reports own and records the artifacts whose own field references bind to nothing; a
+binding that *resolves* onto such an artifact stays a root but reports the inherited
+breakage (`bound_artifact_broken`, the seam issue #84 will promote to its own finding
+kind).
+
+The conservatism rule inverts: a liveness claim may over-keep, a breakage claim must
+under-claim — a false "broken" is itself a breakage claim. So the classification never
+flags what the machinery might resolve: KPI-suffixed measure variants (`… Goal`,
+`… Status`, `… Trend`, `… Value`) resolve when the base measure exists; a
+variation-flavored hierarchy the variation machinery cannot resolve stays silent
+(rather than risk calling auto date/time serialization drift a breakage); a
+same-named hierarchy or calculation item behind a stale column qualifier resolves;
+a qualified field miss on a *calculated* table resolves when the name is lexically
+visible in that table's partition expression — its string literals, the constructor
+defaults, the columns it writes, and every column of the tables it references, the
+over-approximation of an output schema the TMDL never declares; and a `Written`
+reference the parser could not structure never flags. The
+qualifying-table fallback keeps its liveness role unchanged — the records ride along,
+they never move a node in or out of the unused set.
+
 ## Determinism
 
 Node and edge construction follows model and report source order; identical
 `(from, to, provenance)` triples dedupe; `unused_objects` sorts by `ObjectId` (folded
-names, so case never changes the order). Two runs over the same input produce the same
+names, so case never changes the order), and `broken_bindings` sorts by where the
+binding lives (report, page, visual, bookmark, layout), then the written target, then
+the reason. Two runs over the same input produce the same
 output, byte for byte.

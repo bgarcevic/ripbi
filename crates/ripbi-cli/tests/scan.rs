@@ -354,7 +354,7 @@ mod type_filters {
 
         assert_eq!(code, 1, "the measure survives the suppression");
         assert!(
-            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            stdout.contains("(1 findings suppressed by [scan].ignore)"),
             "suppression note:\n{stdout}"
         );
         assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
@@ -387,7 +387,7 @@ mod type_filters {
             "ignored measure + filtered column = nothing reported"
         );
         assert!(
-            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            stdout.contains("(1 findings suppressed by [scan].ignore)"),
             "suppression note:\n{stdout}"
         );
         assert!(
@@ -406,7 +406,7 @@ mod type_filters {
             "the ignored measure must not drag the column away:\n{stdout}"
         );
         assert!(
-            stdout.contains("(1 objects suppressed by [scan].ignore)"),
+            stdout.contains("(1 findings suppressed by [scan].ignore)"),
             "suppression note:\n{stdout}"
         );
         assert!(
@@ -730,7 +730,7 @@ mod config {
 
         assert_eq!(code, 0, "both findings are ignored");
         assert!(
-            stdout.contains("2 objects suppressed by [scan].ignore"),
+            stdout.contains("2 findings suppressed by [scan].ignore"),
             "suppressed note:\n{stdout}"
         );
         assert!(stdout.contains("No unused objects."));
@@ -784,6 +784,7 @@ mod search_folders {
         );
 
         let args = ScanArgs {
+            verbose: true,
             reports: vec![temp.0.join("refs")],
             ..fixture_args(temp.0.join("X.SemanticModel"))
         };
@@ -792,7 +793,7 @@ mod search_folders {
         assert_eq!(code, 1, "the mini model keeps its dead chain");
         assert!(
             stderr.contains("with 2 report(s): X.Report, A.Report"),
-            "the convention sibling and the walked report both scan:\n{stderr}"
+            "--verbose names the convention sibling and the walked report:\n{stderr}"
         );
         assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
     }
@@ -822,8 +823,9 @@ mod search_folders {
         assert_eq!(code, 1);
         assert!(
             stderr.contains("Note:")
-                && stderr.contains("Thin.Report matched by dataset name only")
-                && stderr.contains("'initial catalog' = 'Sales Model'"),
+                && stderr.contains(
+                    "1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales Model'): Thin.Report"
+                ),
             "the walked name-only match is flagged like in model mode:\n{stderr}"
         );
     }
@@ -975,7 +977,14 @@ mod search_folders {
             "target = \"X.SemanticModel\"\nreports = [\"refs\"]\n",
         );
 
-        let (code, _, stderr) = run_scan(&ScanArgs::default(), &temp.0, "");
+        let (code, _, stderr) = run_scan(
+            &ScanArgs {
+                verbose: true,
+                ..ScanArgs::default()
+            },
+            &temp.0,
+            "",
+        );
 
         assert_eq!(code, 1);
         assert!(

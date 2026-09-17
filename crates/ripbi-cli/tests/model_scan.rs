@@ -44,13 +44,16 @@ mod happy_path {
             Some(&by_path("../../../X.SemanticModel")),
         );
 
-        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 1, "the mini model keeps its dead chain");
         assert!(
             stderr.contains("with 2 report(s): A.Report, B.Report"),
-            "the announce names every bound report:\n{stderr}"
+            "--verbose names every bound report:\n{stderr}"
         );
         assert!(
             !stderr.contains("Ignored"),
@@ -136,6 +139,51 @@ mod exclusions_and_unresolved {
         assert!(
             stderr.contains("Dangling.Report"),
             "the notice names the report:\n{stderr}"
+        );
+    }
+
+    /// A long ignored list reads as one capped line in the default output —
+    /// three names, then the tail as a count and the pointer at `--verbose` —
+    /// and as the full list under the flag.
+    #[test]
+    fn a_long_ignored_list_is_capped_and_verbose_lists_it() {
+        let temp = TempDir::new("model-ignored-cap");
+        model_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "reports/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        model_into(&temp.0, "Y");
+        for name in ["HR", "Finans", "Salg", "Drift", "Support"] {
+            report_into(
+                &temp.0,
+                &format!("reports/{name}.Report"),
+                Some(&by_path("../../Y.SemanticModel")),
+            );
+        }
+
+        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let (_, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert!(
+            stderr.contains(
+                "Ignored 5 report(s) bound to other models: \
+                 Drift.Report, Finans.Report, HR.Report, … and 2 more \
+                 — rerun with --verbose to list them"
+            ),
+            "the ignored list is capped with the pointer:\n{stderr}"
+        );
+
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (_, _, stderr) = run_scan(&args, &temp.0, "");
+        assert!(
+            stderr.contains("Ignored 5 report(s) bound to other models: ")
+                && stderr.contains("Support.Report"),
+            "--verbose lists every ignored report:\n{stderr}"
         );
     }
 
@@ -278,13 +326,16 @@ mod default_search_folder {
         model_into(&temp.0, "X");
         report_into(&temp.0, "X.Report", Some(&by_path("../X.SemanticModel")));
 
-        let args = model_args(temp.0.join("X.SemanticModel"), Vec::new());
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), Vec::new())
+        };
         let (code, _, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 1);
         assert!(
             stderr.contains("with 1 report(s): X.Report"),
-            "the sibling report is found:\n{stderr}"
+            "--verbose names the sibling report:\n{stderr}"
         );
     }
 }
@@ -420,7 +471,10 @@ mod discovery_is_disabled {
             "target = \"Other.SemanticModel\"\nreports = [\"reports\"]\n",
         );
 
-        let args = model_args(temp.0.join("X.SemanticModel"), Vec::new());
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), Vec::new())
+        };
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 1, "the explicit model wins over the config target");
@@ -466,9 +520,10 @@ mod name_based_binding {
         );
         assert!(
             stderr.contains("Note:")
-                && stderr.contains("Thin.Report matched by dataset name only")
-                && stderr.contains("'initial catalog' = 'Sales Model'"),
-            "name-only matches are flagged:\n{stderr}"
+                && stderr.contains(
+                    "1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales Model'): Thin.Report"
+                ),
+            "name-only matches are flagged, capped to one line:\n{stderr}"
         );
     }
 
@@ -494,8 +549,10 @@ mod name_based_binding {
         reports
     }
 
+    /// The #65 collapse is every mode's shape now: the human default reads
+    /// one line per catalog, not one line per report.
     #[test]
-    fn the_default_mode_keeps_one_note_per_report() {
+    fn the_default_mode_collapses_to_one_line_per_catalog() {
         let temp = TempDir::new("model-notes-human");
         thin_reports(&temp.0, 2);
 
@@ -508,8 +565,32 @@ mod name_based_binding {
                 .filter(|line| line.starts_with("Note: ")
                     && line.contains("matched by dataset name only"))
                 .count(),
+            1,
+            "the human mode reads the collapsed line:\n{stderr}"
+        );
+    }
+
+    /// `--verbose` restores the per-report audit trail: one note per report,
+    /// with its full path.
+    #[test]
+    fn verbose_keeps_one_note_per_report() {
+        let temp = TempDir::new("model-notes-verbose");
+        thin_reports(&temp.0, 2);
+
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (_, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(
+            stderr
+                .lines()
+                .filter(|line| line.starts_with("Note: ")
+                    && line.contains("matched by dataset name only"))
+                .count(),
             2,
-            "the human mode lists every report:\n{stderr}"
+            "--verbose lists every report:\n{stderr}"
         );
     }
 
@@ -580,13 +661,16 @@ mod binding_spellings {
             Some(&by_path(r"..\\..\\X.SemanticModel")),
         );
 
-        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let args = ScanArgs {
+            verbose: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
         let (code, _, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 1);
         assert!(
             stderr.contains("with 1 report(s): A.Report"),
-            "the backslash spelling connects:\n{stderr}"
+            "--verbose names the report the backslash spelling connects:\n{stderr}"
         );
     }
 }

@@ -37,6 +37,24 @@ pub struct ScanOutput {
     /// verdict covers them, and removing the table removes its members (issue
     /// #47). Counted here so the summary line's arithmetic stays explicable.
     pub machinery_members: usize,
+    /// Every broken visual binding (issue #60) that survives `[scan].ignore`
+    /// and the type flags, sorted by where the binding lives. Suppressed
+    /// entirely — moved into [`ScanOutput::broken_suppressed`] — when the
+    /// model ingest recorded skips: a false "broken" claim is itself a
+    /// breakage claim, so drift-parsed models don't get one.
+    pub broken: Vec<BrokenOut>,
+    /// Broken bindings detected but hidden by the type flags (`--measures`
+    /// without `--broken`). Counted so the summary's arithmetic stays
+    /// explicable.
+    pub broken_hidden: usize,
+    /// Broken bindings suppressed because the model ingest recorded
+    /// `unknown_object` skips — the one drift kind that can hide the name a
+    /// binding wrote, and so the precision bar of issue #60. `--strict`
+    /// surfaces the skips behind this.
+    pub broken_suppressed: usize,
+    /// Broken bindings detected before any suppression, filtering, or
+    /// `[scan].ignore` — the JSON summary's `broken_total`.
+    pub broken_raw: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
     /// A dead auto date/time table's own finding lives in
     /// [`ScanOutput::auto_date_time`] instead, under its verdict, and the
@@ -99,6 +117,23 @@ pub struct UsedByOut {
     pub also_unused: bool,
 }
 
+/// One broken visual binding (issue #60): a written field reference that no
+/// longer resolves in the model, or that lands on an artifact whose own
+/// expression no longer resolves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenOut {
+    /// The written field reference, e.g. `'Sales'[Color]`.
+    pub target: String,
+    /// Why it does not resolve — a snake_case code, the `--plain`/JSON form.
+    pub reason: &'static str,
+    /// The broken artifact the binding lands on, for the
+    /// `bound_artifact_broken` reason; `None` otherwise.
+    pub bound_artifact: Option<String>,
+    /// Where the binding lives, as a phrase — the same provenance rendering
+    /// the unused findings' `used_by` lines carry.
+    pub provenance: String,
+}
+
 /// One parser skip notice, shaped for output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkipNoticeOut {
@@ -126,6 +161,7 @@ pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("expression", "Expressions"),
     ("function", "Functions"),
     ("report_measure", "Report measures"),
+    ("broken_visual", "Broken visual bindings"),
 ];
 
 /// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
@@ -230,7 +266,54 @@ pub fn human(
             writeln!(out)?;
         }
     }
+    write_broken(out, palette, report)?;
     write_auto_date_time(out, palette, report, show_power_query)
+}
+
+/// The broken-visual section (issue #60), rendered in both human modes after
+/// the reachability findings: like the auto date/time section, a different
+/// verdict (written references, not reachability) — and advisory, so it
+/// survives even a clean "No unused objects." scan. The `--broken` flag is
+/// what turns it into a gate.
+fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
+    if report.broken.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{}",
+        palette.red(&format!("Broken visual bindings ({})", report.broken.len()))
+    )?;
+    for binding in &report.broken {
+        writeln!(out, "  {}", binding.target)?;
+        writeln!(
+            out,
+            "{}",
+            palette.dim(&format!(
+                "    ← {} — {}",
+                reason_phrase(binding),
+                binding.provenance
+            ))
+        )?;
+    }
+    writeln!(out)
+}
+
+/// The human phrase for one broken binding's reason: what the engine would
+/// render as an error state, said statically.
+fn reason_phrase(binding: &BrokenOut) -> String {
+    match (binding.reason, binding.bound_artifact.as_deref()) {
+        ("bound_artifact_broken", Some(artifact)) => {
+            format!("bound artifact {artifact} has unresolvable references")
+        }
+        (reason, _) => format!(
+            "{} not found in the model",
+            reason
+                .strip_suffix("_not_found")
+                .unwrap_or(reason)
+                .replace('_', " ")
+        ),
+    }
 }
 
 /// The auto date/time section, rendered in both human modes after the
@@ -377,6 +460,14 @@ pub fn human_summary(
         }
         write_worst_tables(out, palette, &report.findings)?;
     }
+    if !report.broken.is_empty() {
+        writeln!(
+            out,
+            "{}: {}",
+            palette.red("Broken visual bindings"),
+            report.broken.len()
+        )?;
+    }
     if report.auto_date_time.is_empty() {
         return Ok(());
     }
@@ -447,7 +538,7 @@ fn write_summary(
     if report.ignored > 0 {
         writeln!(
             out,
-            "({} objects suppressed by [scan].ignore)",
+            "({} findings suppressed by [scan].ignore)",
             report.ignored
         )?;
     }
@@ -456,6 +547,21 @@ fn write_summary(
             out,
             "({} unused hidden by type filters)",
             report.filtered_out
+        )?;
+    }
+    if report.broken_hidden > 0 {
+        writeln!(
+            out,
+            "({} broken-visual bindings hidden by type filters)",
+            report.broken_hidden
+        )?;
+    }
+    if report.broken_suppressed > 0 {
+        writeln!(
+            out,
+            "({} possible broken-visual bindings suppressed — the model ingest \
+             reported skips, listed on stderr; --strict fails on those skips)",
+            report.broken_suppressed
         )?;
     }
     if report.machinery_members > 0 {
@@ -516,14 +622,18 @@ fn write_annotations(
     Ok(())
 }
 
-/// Writes `--plain` output: one `<type>\t<id>` record per finding, then one
-/// `auto_date_time:<verdict>\t<id>` record per auto date/time table.
+/// Writes `--plain` output: one `<type>\t<id>` record per finding, one
+/// `broken_visual:<reason>\t<target>` record per reported broken binding, then
+/// one `auto_date_time:<verdict>\t<id>` record per auto date/time table.
 ///
 /// # Errors
 /// Propagates stream write failures.
 pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     for finding in &report.findings {
         writeln!(out, "{}\t{}", finding.kind, finding.id)?;
+    }
+    for binding in &report.broken {
+        writeln!(out, "broken_visual:{}\t{}", binding.reason, binding.target)?;
     }
     for row in &report.auto_date_time {
         writeln!(out, "auto_date_time:{}\t{}", row.verdict, row.id)?;
@@ -547,6 +657,8 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             unused: report.findings.len(),
             unused_total: report.unused_raw,
             ignored: report.ignored,
+            broken: report.broken.len(),
+            broken_total: report.broken_raw,
             auto_date_time: JsonAutoDateTimeCounts {
                 hidden_tables: report.auto_date_time.len(),
                 date_columns: date_column_count(&report.auto_date_time),
@@ -576,6 +688,16 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                     })
                     .collect(),
                 named_in_power_query: finding.named_in_power_query.clone(),
+            })
+            .collect(),
+        broken: report
+            .broken
+            .iter()
+            .map(|binding| JsonBroken {
+                target: binding.target.clone(),
+                reason: binding.reason,
+                bound_artifact: binding.bound_artifact.clone(),
+                provenance: binding.provenance.clone(),
             })
             .collect(),
         auto_date_time: report
@@ -631,8 +753,27 @@ struct JsonReport {
     reports: Vec<String>,
     summary: JsonSummary,
     unused: Vec<JsonFinding>,
+    /// Broken visual bindings (issue #60) that survived `[scan].ignore` and
+    /// the type flags. Empty — but present — when the scan found none.
+    broken: Vec<JsonBroken>,
     auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
+}
+
+#[derive(Serialize)]
+struct JsonBroken {
+    /// The written field reference, e.g. `'Sales'[Color]`.
+    target: String,
+    /// Why it does not resolve, snake_case: `table_not_found`,
+    /// `field_not_found`, `measure_not_found`, `hierarchy_not_found`,
+    /// `level_not_found`, or `bound_artifact_broken`.
+    reason: &'static str,
+    /// The broken artifact the binding lands on — present exactly when
+    /// `reason` is `bound_artifact_broken`.
+    bound_artifact: Option<String>,
+    /// Where the binding lives, as a phrase — the same provenance the unused
+    /// findings' `used_by` entries carry.
+    provenance: String,
 }
 
 #[derive(Serialize)]
@@ -648,6 +789,14 @@ struct JsonSummary {
     /// `objects − unused_total`.
     unused_total: usize,
     ignored: usize,
+    /// Broken visual bindings (issue #60) after `[scan].ignore` and the type
+    /// flags — the length of `broken`.
+    broken: usize,
+    /// Every broken binding detected, before any suppression, `[scan].ignore`,
+    /// or type flag. Larger than `broken` when the model ingest's skips
+    /// suppressed findings (the issue #60 precision bar) or a type filter hid
+    /// them.
+    broken_total: usize,
     auto_date_time: JsonAutoDateTimeCounts,
 }
 
@@ -820,6 +969,10 @@ mod tests {
             ignored: 0,
             filtered_out: 0,
             machinery_members: 0,
+            broken: Vec::new(),
+            broken_hidden: 0,
+            broken_suppressed: 0,
+            broken_raw: 0,
             findings,
             auto_date_time: Vec::new(),
             skips: Vec::new(),
@@ -1052,5 +1205,119 @@ mod tests {
         assert_eq!(counts["date_columns"], 1);
         assert_eq!(counts["member_findings"], 12);
         assert_eq!(counts["dead"], 3);
+    }
+
+    fn broken(target: &str, reason: &'static str, artifact: Option<&str>) -> BrokenOut {
+        BrokenOut {
+            target: target.to_string(),
+            reason,
+            bound_artifact: artifact.map(str::to_string),
+            provenance: "field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
+                .to_string(),
+        }
+    }
+
+    /// Issue #60: the section renders — with the reason phrase and the
+    /// binding site — even when the scan is otherwise clean, because it is a
+    /// different verdict than reachability's.
+    #[test]
+    fn the_broken_section_renders_on_an_otherwise_clean_scan() {
+        let mut output = scan_output(vec![]);
+        output.broken = vec![broken("'Sales'[Color]", "field_not_found", None)];
+
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("Broken visual bindings (1)\n  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'\n"),
+            "the section names the field, the reason, and the site:\n{text}"
+        );
+        assert!(text.contains("No unused objects."));
+    }
+
+    /// The propagated reason names the artifact: the visual is what a user
+    /// sees, but the measure is what they fix.
+    #[test]
+    fn a_broken_artifact_reason_names_the_artifact() {
+        let mut output = scan_output(vec![]);
+        output.broken = vec![broken(
+            "'Sales'[Broken]",
+            "bound_artifact_broken",
+            Some("'Sales'[Broken Total]"),
+        )];
+
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("← bound artifact 'Sales'[Broken Total] has unresolvable references"),
+            "the artifact is named:\n{text}"
+        );
+    }
+
+    #[test]
+    fn plain_carries_broken_visual_records_with_their_reason() {
+        let mut output = scan_output(vec![]);
+        output.broken = vec![
+            broken("'Sales'[Color]", "field_not_found", None),
+            broken(
+                "'Sales'[Broken]",
+                "bound_artifact_broken",
+                Some("'Sales'[T]"),
+            ),
+        ];
+
+        let mut out = Vec::new();
+        plain(&mut out, &output).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("broken_visual:field_not_found\t'Sales'[Color]\n"),
+            "one record per binding, reason in the kind prefix:\n{text}"
+        );
+        assert!(
+            text.contains("broken_visual:bound_artifact_broken\t'Sales'[Broken]\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn json_carries_broken_bindings_and_their_totals() {
+        let mut output = scan_output(vec![]);
+        output.broken = vec![broken("'Sales'[Color]", "field_not_found", None)];
+        output.broken_raw = 3;
+
+        let mut out = Vec::new();
+        json(&mut out, &output).unwrap();
+
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["summary"]["broken"], 1);
+        assert_eq!(value["summary"]["broken_total"], 3);
+        assert_eq!(value["broken"][0]["target"], "'Sales'[Color]");
+        assert_eq!(value["broken"][0]["reason"], "field_not_found");
+        assert!(value["broken"][0]["bound_artifact"].is_null());
+        assert_eq!(
+            value["broken"][0]["provenance"],
+            "field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
+        );
+    }
+
+    /// The suppression note explains findings the reader cannot see — the
+    /// issue #60 precision bar — and survives a clean scan.
+    #[test]
+    fn the_summary_explains_suppressed_broken_bindings() {
+        let mut output = scan_output(vec![]);
+        output.broken_suppressed = 2;
+
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &output).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("(2 possible broken-visual bindings suppressed — the model ingest reported skips, listed on stderr; --strict fails on those skips)\n"),
+            "the suppression is accounted for:\n{text}"
+        );
     }
 }
