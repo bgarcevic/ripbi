@@ -35,8 +35,8 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 | Content | Stream | Notes |
 |---|---|---|
 | Findings, summary, JSON, plain records | stdout | the machine-readable side |
-| Discovery/selection announce, scanning line | stderr | one line each; when reports are discovered by walking search folders, the scanning line names every bound report |
-| Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; by-name notes collapse to one line per catalog in `--summary`/`--plain`/`--json` |
+| Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
+| Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
 | Coverage caveat | stderr | once per run |
 | Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
 | Errors + hints | stderr | `error: …` / `hint: …` |
@@ -47,30 +47,35 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 
 Whenever reports are discovered by walking search folders — under `--model`, or under a
 PATH that names a semantic model with plain `--report` folders (issue #67) — the
-scanning line names every connected report — direct `--report` items included — and
-the pairings that would otherwise be invisible are spelled out on stderr (all suppressed
-by `-q`):
+pairings that would otherwise be invisible are summarized on stderr (all suppressed by
+`-q`). The default reads one line per pairing fact; `--verbose` expands each into the
+per-report audit trail:
 
 ```text
-Scanning models/Sales.SemanticModel with 3 report(s): Overview.Report, Sales.Report, Thin.Report
-Note: reports/Thin.Report matched by dataset name only (byConnection 'initial catalog' = 'Sales').
+Scanning models/Sales.SemanticModel with 3 report(s)
+Note: 1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin.Report
 Ignored 1 report(s) bound to other models: HR.Report
 ```
 
-- The scanning line's names are report folder names, in ingestion order: under `--model`,
+- The scanning line counts the connected reports — direct `--report` items included.
+  `--verbose` appends the report folder names, in ingestion order: under `--model`,
   walked reports by canonical path, then explicitly passed ones; under a model-naming
   PATH, the convention siblings and explicit items first, then the walked ones.
 - The `Note:` line flags reports connected by dataset *name* rather than by path or stem,
-  because that pairing is weaker than the written `definition.pbir` path. The default mode
-  lists one line per report; `--summary`, `--plain`, and `--json` collapse them to one
-  line per `initial catalog` with the count and up to three names (a longer tail becomes
-  `… and N more`), since those modes are read for counts and records, not audit trails:
+  because that pairing is weaker than the written `definition.pbir` path — a wrong
+  pairing means wrong findings, so the fact always shows. One line per `initial catalog`,
+  with the count and up to three names; when a tail is capped, the line points at
+  `--verbose`:
 
   ```text
-  Note: 2 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin1.Report, Thin2.Report
+  Note: 26 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin1.Report, Thin2.Report, Thin3.Report, … and 23 more — rerun with --verbose to list them
   ```
-- The `Ignored …` line lists report items under the search folders that resolve to a
-  different existing model. It is informational: those reports are not ingested, they
+
+  `--verbose` lists one line per report instead, with its full path.
+- The `Ignored …` line counts report items under the search folders that resolve to a
+  different existing model, with up to three names — capped the same way, with the same
+  `--verbose` pointer; the flag lists every one. It is informational: those reports are
+  not ingested, they
   appear in no output mode, and they never fail `--strict` — a healthy multi-model folder
   must stay scannable. Report items whose reference resolves to nothing become
   `unresolved_dataset_reference` skip notices instead, and a `*.Report` folder with no
@@ -83,13 +88,17 @@ Ignored 1 report(s) bound to other models: HR.Report
 
 | Code | Meaning |
 |---|---|
-| `0` | Clean: nothing unused, and no auto date/time table unused by reports or dead (objects suppressed by `[scan].ignore` count as handled; an *in use* auto date/time table is informational) |
-| `1` | Unused objects found, or auto date/time machinery no report binds |
+| `0` | Clean: nothing unused, no broken visual binding gates the run, and no auto date/time table unused by reports or dead (objects suppressed by `[scan].ignore` count as handled; an *in use* auto date/time table is informational) |
+| `1` | Unused objects found, auto date/time machinery no report binds — or, under `--broken`, broken visual bindings found |
 | `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports, unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
 The exit code describes what was *reported*: findings hidden by the type flags, and an
 Auto date/time section hidden because `--tables` was not among the passed flags, cannot
-fail the run. `--strict` and `-q/--quiet` are unaffected.
+fail the run. Broken visual bindings (issue #60) are the one advisory kind: they are
+*reported* by default, but they gate the exit code only when `--broken` selects them —
+an unused-only gate must not start failing because one visual is broken, and a
+`--broken` gate must not fail on unused findings. `--strict` and `-q/--quiet` are
+unaffected.
 
 ## Flags
 
@@ -99,9 +108,11 @@ fail the run. `--strict` and `-q/--quiet` are unaffected.
 | `--plain` | One `<type>\t<id>` record per finding, for grep/awk |
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json` and `--plain` |
 | `-q`, `--quiet` | No output; exit code only |
+| `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, or a folder holding `model.tmdl`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model |
 | `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Report only unused objects of the passed types; repeatable, and passed together they union (`--measures --columns`). Filters every output mode and the exit code. With none of them, everything is reported |
+| `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type flags (`--broken --measures` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
@@ -159,6 +170,74 @@ Columns (28)
   (calculated columns, auto date/time machinery) never carry it, because an M step can
   only name a column it produces. `--json` always carries the underlying
   `named_in_power_query` field regardless of the flag.
+- The **Broken visual bindings** section follows the findings (issue #60): one row per
+  report binding whose written field reference resolves to nothing in the model, or
+  that lands on an artifact whose own DAX no longer resolves — the static form of the
+  error state the service would render. Each row names the written reference, the
+  reason, and the binding's site:
+
+  ```text
+  Broken visual bindings (2)
+    'Sales'[Color]
+      ← field not found in the model — field well 'Values' — visual 'V2' on page 'P1'
+    'Sales'[Broken Total]
+      ← bound artifact 'Sales'[Broken Total] has unresolvable references — field well 'Values' — visual 'V3' on page 'P1'
+  ```
+
+  The section is a different verdict than reachability's — written references, not
+  graph liveness — so it prints even on an otherwise clean `No unused objects.` scan,
+  and it is *advisory*: it never changes the exit code unless `--broken` selects it.
+  Hidden bindings (a type flag without `--broken`) and suppressed ones are accounted
+  for in the summary's arithmetic lines: `(2 broken-visual bindings hidden by type
+  filters)` and `(N possible broken-visual bindings suppressed — the model ingest
+  reported skips, listed on stderr; --strict fails on those skips)`.
+
+  The **precision bar is the mirror image of the unused findings'**: a "broken" claim
+  is itself a breakage claim, so it fires only when nothing in the model ingest could
+  have hidden the name the binding wrote. That is exactly the `unknown_object` skip
+  kind — a table or column the parser skipped never became a node, so a "field not
+  found" verdict would be a guess — and only that kind: an `unknown_property` notice
+  means the object was parsed with its name regardless, so it does not suppress. The
+  suppressed count rides on the summary line, and `--strict` surfaces the skips behind
+  it. Report-side skips do not suppress either way: a half-parsed
+  report can only under-report breakage, never fabricate it. The remaining
+  under-claiming is deliberate:
+
+  - a KPI visual's synthesized variants (`… Goal`, `… Status`, `… Trend`, `… Value`)
+    resolve, not flag, whenever the base measure exists — the engine materializes them;
+  - an artifact's own DAX resolving through query-time constructs never flags: a
+    report measure referencing a sibling report measure (the graph's ordinary
+    report-measure edge), `@`-prefixed extension columns (`ADDCOLUMNS(…, "@Krav", …)`
+    read back as `[@Krav]`), and the column names query time introduces in the same
+    expression — string-literal extension names (`SELECTCOLUMNS(t, "Ordning", …)`,
+    `GROUPBY`) and the table constructor's fixed `Value`/`Value1…N` defaults.
+    Verifying these needs DAX scope analysis the lexer deliberately does not do, so
+    under-claim applies; the cost is that a typo coinciding with a string in the same
+    measure goes unflagged;
+  - a qualified field miss on a **calculated table** resolves when the partition
+    expression makes the name lexically visible: string literals (`DATATABLE` headers,
+    `ADDCOLUMNS`/`SELECTCOLUMNS` names), the constructor defaults, the columns written
+    in the expression, and every column of the tables it references (the wrapped-table
+    shape `FILTER`/`VALUES` passes through). A calculated table has no declared schema —
+    its columns are what the expression returns — so only names visible *nowhere* in
+    the expression flag; renaming a header out from under a binding still does;
+  - field parameters resolve like any other field (#52), and auto date/time hierarchy
+    references resolve through the variation machinery (#47); a variation-flavored
+    hierarchy the machinery cannot resolve stays silent rather than risk calling
+    serialization drift a breakage;
+  - a measure referenced through a stale or wrong table qualifier still resolves
+    (measure names are model-global), and a same-named hierarchy or calculation item
+    behind a stale column name resolves too;
+  - `Written` references the parser could not structure (legacy layouts, unresolved
+    query aliases) resolve as always but never flag — the written form is too loose
+    for a breakage claim.
+
+  Bookmarks on deleted pages never reach this check: their sections are skipped as
+  stale at ingestion. The phone layout binds identically to the desktop tree, so a
+  broken binding there reports with `mobile layout …` provenance. A binding onto a
+  broken artifact still counts as a root (it resolves — that is what it does), so the
+  artifact itself is not reported unused by it; the artifact's *own* finding kind,
+  bound or not, is issue #84's scope.
 - The **Auto date/time** section follows the findings: one verdict per
   `LocalDateTable_*`/`DateTableTemplate_*` table, naming the user's date column the
   machinery serves. It is a *provenance* verdict, not a reachability one — the engine's
@@ -198,7 +277,8 @@ Columns (28)
 ## `--summary`
 
 The human mode for big models: the summary line, one `label: count` line per non-empty
-group, a `Worst tables:` breakdown, and one `Auto date/time:` line when the model has
+group, a `Worst tables:` breakdown, one `Broken visual bindings:` line when any are
+reported (issue #60), and one `Auto date/time:` line when the model has
 such tables — the machinery and the distinct date columns its local tables serve, with
 the verdicts as the breakdown (`Auto date/time: 6 hidden tables over 5 date columns
 (1 in use, 5 dead)`; the shared `DateTableTemplate_*` serves no column, so the columns
@@ -236,14 +316,18 @@ Rules:
 
 ## `--plain`
 
-One record per finding on stdout, tab-separated, greppable — followed by one
+One record per finding on stdout, tab-separated, greppable — one
+`broken_visual:<reason>` record per reported broken binding (issue #60) — followed by one
 `auto_date_time:<verdict>` record per auto date/time table. Type flags filter the
-finding records; the `auto_date_time:` records print only when the section does (no
+finding records (`--broken` selects the broken ones the same way); the
+`auto_date_time:` records print only when the section does (no
 type flags, or `--tables` among them):
 
 ```
 measure	'Sales'[Legacy Total]
 column	'Sales'[Legacy]
+broken_visual:field_not_found	'Sales'[Color]
+broken_visual:bound_artifact_broken	'Sales'[Broken Total]
 auto_date_time:in_use	table 'LocalDateTable_9e0bbdfc-…'
 auto_date_time:dead	table 'DateTableTemplate_0039983e-…'
 ```
@@ -264,6 +348,8 @@ Pretty-printed JSON, stable field order, additive schema:
     "unused": 56,
     "unused_total": 56,
     "ignored": 0,
+    "broken": 2,
+    "broken_total": 2,
     "auto_date_time": {
       "hidden_tables": 6,
       "date_columns": 5,
@@ -288,6 +374,20 @@ Pretty-printed JSON, stable field order, additive schema:
       "named_in_power_query": []
     }
   ],
+  "broken": [
+    {
+      "target": "'Sales'[Color]",
+      "reason": "field_not_found",
+      "bound_artifact": null,
+      "provenance": "field well 'Values' — visual 'V2' on page 'P1'"
+    },
+    {
+      "target": "'Sales'[Broken Total]",
+      "reason": "bound_artifact_broken",
+      "bound_artifact": "'Sales'[Broken Total]",
+      "provenance": "field well 'Values' — visual 'V3' on page 'P1'"
+    }
+  ],
   "auto_date_time": [
     {
       "verdict": "in_use",
@@ -307,19 +407,36 @@ Pretty-printed JSON, stable field order, additive schema:
   flags. `summary.unused_total` counts every unused object in the model before any
   suppression, filter, or section move, so `reachable = objects − unused_total` always
   holds and a consumer can tell a filtered-away finding from an absent one.
-  `summary.ignored` counts objects suppressed by `[scan].ignore`. On a model with
+  `summary.ignored` counts findings suppressed by `[scan].ignore` — unused objects and
+  broken bindings alike. On a model with
   auto date/time machinery, the remaining gap between `unused` and `unused_total` is
   the machinery: `summary.auto_date_time.member_findings` counts its unused members
   and the `dead` verdict count its nested own findings.
+- `summary.broken` is the length of `broken` — after `[scan].ignore`, the
+  unknown-object suppression, and the type flags. `summary.broken_total` counts every
+  broken binding
+  detected, before any of those, so a consumer can tell a suppressed or filtered-away
+  binding from an absent one (issue #60).
 - `summary.auto_date_time` counts the section's rows by verdict, plus
   `hidden_tables` (every row, all verdicts together), `date_columns` (the distinct
   user date columns the machinery serves — the shared template serves none), and
   `member_findings` (the machinery's unused members covered by the rows, absent from
   `unused` individually).
 - Type flags filter the `unused` array and `summary.unused`; `summary.unused_total`
-  stays model-wide. The `auto_date_time` array and `summary.auto_date_time` counts
+  stays model-wide. The `broken` array and `summary.broken` follow the same rule:
+  every type flag without `--broken` empties them, `--broken` keeps only them. The
+  `auto_date_time` array and `summary.auto_date_time` counts
   follow the section rule: present in full when no type flags are passed or `--tables`
   is among them, empty and zero otherwise.
+- `broken` (issue #60) carries one row per reported broken visual binding:
+  `target` is the written field reference; `reason` is one of `table_not_found`,
+  `field_not_found`, `measure_not_found`, `hierarchy_not_found`, `level_not_found`,
+  or `bound_artifact_broken`; `bound_artifact` names the broken artifact the binding
+  lands on (present exactly when the reason is `bound_artifact_broken`); `provenance`
+  is the same binding-site phrase the unused findings' `used_by` entries carry,
+  `mobile layout …` prefixed for phone-layout bindings. Bindings suppressed by the
+  clean-ingest bar or by `[scan].ignore` are absent entirely; the totals above keep
+  the arithmetic.
 - `auto_date_time` carries one row per `LocalDateTable_*`/`DateTableTemplate_*` table:
   `verdict` is `in_use`, `unused_by_reports`, or `dead`; `source_column` names the
   varied user column the machinery serves (`null` when none resolves, e.g. the
@@ -366,7 +483,9 @@ ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, neve
 `ignore` patterns are case-insensitive globs where `*` matches any run of characters
 and `?` exactly one; everything else (quotes and brackets included — they appear in
 display ids) is literal. A pattern matches a finding when it matches the full display
-id (`'Sales'[Draft Amount]`) or the bare object name. Suppressed objects are excluded
+id (`'Sales'[Draft Amount]`) or the bare object name; for a broken binding it matches
+the written reference whole (`'Sales'[Color]` — a binding has no bare name of its own).
+Suppressed findings are excluded
 from the output and the exit code, and counted in `summary.ignored`. The suppression
 applies before the type flags: an object matched by both is simply gone. The auto
 date/time machinery can be silenced wholesale this way — see the recipe under the Auto
@@ -442,8 +561,10 @@ which static analysis deliberately ignores.
 
 ## Known boundaries
 
-- The type flags cover the ten rendered groups; a `role` finding has no flag and is
-  filtered out whenever any type flag is passed.
+- The type flags cover the ten object-type groups plus `--broken` (issue #60); a
+  `role` finding has no flag and is filtered out whenever any type flag is passed.
+  A broken binding's kind (`broken_visual`) also never appears in the `unused` array
+  or the generic groups — it has no `ObjectId` of its own.
 - Only TMDL semantic models and PBIR reports can be ingested; `.pbix`/`.pbit`/
   `model.bim` are recognized and refused with a clear error until their ingestors land.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel

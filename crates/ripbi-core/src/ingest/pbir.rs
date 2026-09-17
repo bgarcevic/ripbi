@@ -1653,6 +1653,7 @@ const REPORT_KEYS: Keys = Keys {
     known: &["$schema", "filterConfig"],
     ignored: &[
         "objects",
+        "publicCustomVisuals",
         "resourcePackages",
         "settings",
         "slowDataSourceSettings",
@@ -1736,7 +1737,10 @@ const SORT_KEYS: Keys = Keys {
 /// `page.json` under `pageBinding`.
 const PAGE_BINDING_KEYS: Keys = Keys {
     known: &["name", "type", "parameters"],
-    ignored: &["acceptsFilterContext"],
+    // `referenceScope` (`Default`/`Report`/`CrossReport`) scopes which
+    // report's state a bound page renders — canvas chrome, no model
+    // reference of its own.
+    ignored: &["acceptsFilterContext", "referenceScope"],
 };
 
 /// One `pageBinding.parameters[]` entry.
@@ -2820,5 +2824,52 @@ mod tests {
             assert_eq!(set.len(), 2);
             assert!(skips.is_empty(), "no notices: {skips:?}");
         }
+    }
+
+    /// The standard Fabric export metadata must ride the known-key tables
+    /// silently: real `report.json` files list `publicCustomVisuals` and real
+    /// drillthrough `pageBinding`s carry `referenceScope`, and under the
+    /// issue #60 clean-ingest bar a spurious notice is worse than noise —
+    /// report-side it is merely noise, but it still fails `--strict` runs.
+    #[test]
+    fn standard_export_metadata_keys_are_silent() {
+        let report = serde_json::json!({
+            "publicCustomVisuals": ["prosankey15EE2451103167596D2F59FE6BFCEDED"],
+            "themeCollection": {"baseTheme": {"name": "Fluent2"}},
+        });
+        let binding = serde_json::json!({
+            "name": "9e0f622095e77648bb39",
+            "type": "Drillthrough",
+            "referenceScope": "CrossReport",
+        });
+
+        let mut skips = Vec::new();
+        {
+            let mut ctx = Ctx {
+                path: Path::new("report.json"),
+                skips: &mut skips,
+            };
+            check_keys(&report, &REPORT_KEYS, &mut ctx, "");
+            check_keys(&binding, &PAGE_BINDING_KEYS, &mut ctx, "/pageBinding");
+        }
+
+        assert!(
+            skips.is_empty(),
+            "standard metadata is not drift: {skips:?}"
+        );
+
+        // An actual unknown key still reports, so the tables cannot rot into
+        // blanket acceptance.
+        let drifted = serde_json::json!({"publicCustomVisuals": [], "frobnicate": true});
+        let mut skips = Vec::new();
+        {
+            let mut ctx = Ctx {
+                path: Path::new("report.json"),
+                skips: &mut skips,
+            };
+            check_keys(&drifted, &REPORT_KEYS, &mut ctx, "");
+        }
+        assert_eq!(skips.len(), 1);
+        assert_eq!(skips[0].kind, SkipKind::UnknownProperty);
     }
 }

@@ -77,6 +77,12 @@ const IGNORED_KEYS: &[&str] = &[
     "dataAccessOptions",
     "valueFilterBehavior",
     "compatibilityLevel",
+    // Fabric exports carry these beside `compatibilityLevel` on `database`:
+    // the item's service id, the serialization mode (`powerBI`), and the
+    // user interface language LCID. Opaque metadata — no liveness meaning.
+    "compatibilityMode",
+    "id",
+    "language",
     "createOrReplace",
     "retainDataTillForceCalculate",
     // Power Query query groups: declared as blocks in model.tmdl (handled by
@@ -2615,6 +2621,19 @@ mod tests {
                     .map(|h| h.hierarchy.as_str()),
                 Some("H")
             );
+        }
+
+        /// The database metadata Fabric exports on every item (`id`,
+        /// `compatibilityMode`, `language`) must ride the ignore list
+        /// silently — they are metadata, not drift, and under the issue #60
+        /// clean-ingest bar a spurious skip notice would suppress every
+        /// broken-visual finding on an otherwise healthy model.
+        #[test]
+        fn database_metadata_keys_are_silent() {
+            for key in ["compatibilityLevel", "compatibilityMode", "id", "language"] {
+                let node = map_one(&format!("{key}: x"), key);
+                assert!(is_ignored(&node), "{key} must be on the ignore list");
+            }
         }
     }
 }

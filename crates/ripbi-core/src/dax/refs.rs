@@ -73,6 +73,27 @@ pub fn references(text: &str) -> Vec<RawRef<'_>> {
     extract(&tokenize(text))
 }
 
+/// The content of every string literal in a DAX expression, escapes resolved —
+/// the names query-time extension columns are introduced by
+/// (`ADDCOLUMNS(t, "@Krav", …)`, `SELECTCOLUMNS(t, "Ordning", …)`, `ROW("X", …)`).
+/// Comments never reach the token stream, so their contents are excluded, and
+/// date literals (`dt"…"`) are dates, not names, so they are excluded too.
+///
+/// ```
+/// use ripbi_core::dax;
+///
+/// let names = dax::quoted_names("ADDCOLUMNS(t, \"@Krav\", [X]) -- \"gone\"");
+/// assert_eq!(names, ["@Krav"]);
+/// ```
+#[must_use]
+pub fn quoted_names(text: &str) -> Vec<Cow<'_, str>> {
+    tokenize(text)
+        .into_iter()
+        .filter(|token| token.kind == TokenKind::String)
+        .map(|token| string_inner(token.text))
+        .collect()
+}
+
 /// Strips the doubled-quote escapes from a name as written inside single quotes:
 /// `"It''s"` → `"It's"`. Borrows when there is nothing to unescape.
 ///
@@ -201,12 +222,37 @@ fn quoted_inner(text: &str) -> &str {
     }
 }
 
+/// The content of a string-literal token: delimiters stripped and doubled-quote
+/// escapes resolved. Unterminated input has no closing delimiter; the opening
+/// one is still dropped.
+fn string_inner(text: &str) -> Cow<'_, str> {
+    let bytes = text.as_bytes();
+    let closed = text.len() >= 2 && bytes[0] == b'"' && bytes[text.len() - 1] == b'"';
+    let inner = if closed {
+        &text[1..text.len() - 1]
+    } else {
+        &text[1..]
+    };
+    if inner.contains("\"\"") {
+        Cow::Owned(inner.replace("\"\"", "\""))
+    } else {
+        Cow::Borrowed(inner)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn refs(text: &str) -> Vec<RawRef<'_>> {
         references(text)
+    }
+
+    fn names(text: &str) -> Vec<String> {
+        quoted_names(text)
+            .into_iter()
+            .map(|n| n.into_owned())
+            .collect()
     }
 
     /// The qualified/unqualified shape of every `Field` ref, as `(table, name)`.
@@ -457,6 +503,18 @@ mod tests {
     #[test]
     fn numbers_and_parameters_are_never_refs() {
         assert!(refs("1.5E+10 + @Risk + .5").is_empty());
+    }
+
+    /// The string-literal contents — the names extension columns are
+    /// introduced by — come back escapes resolved, with comment and date
+    /// literals excluded.
+    #[test]
+    fn quoted_names_returns_string_contents() {
+        assert_eq!(
+            names("ADDCOLUMNS(t, \"@Krav\", \"It\"\"s\") -- \"gone\" dt\"2024-01-01\""),
+            ["@Krav".to_string(), "It\"s".to_string()]
+        );
+        assert!(names("[No string here] + 1").is_empty());
     }
 
     #[test]

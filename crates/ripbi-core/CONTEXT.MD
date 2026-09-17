@@ -30,7 +30,10 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 - **Graph** (`src/graph/`): build a DAG with `petgraph`, BFS reachability from report
   roots (visuals, filters, slicers) to isolate dead objects, plus the provenance-based
   auto-date/time verdict (`DependencyGraph::auto_date_time_tables`) read off the same
-  graph.
+  graph, and the broken-binding records (`graph/broken.rs`,
+  `DependencyGraph::broken_bindings`) — written references that resolve to nothing, or
+  onto a broken artifact (issue #60). The precision bar inverts the conservatism rule:
+  liveness may over-keep, breakage must under-claim.
 
 ## Rules
 
@@ -51,3 +54,4 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 | DAX token grammar | [docs/dax-lexing.md](docs/dax-lexing.md) | Token grammar, extraction rules, the conservatism rule, and the SQLBI provenance. Read before changing the lexer |
 | M token grammar | [docs/m-lexing.md](docs/m-lexing.md) | The M lexer/extraction/binding rules, the column-string function whitelist, and what is deliberately not modeled. Read before changing the `m` module |
 | Graph, reachability & liveness policy | [docs/graph.md](docs/graph.md) | The edge catalog, the two-pass relationship rule, and what "unused" means. Read before changing the graph module |
+| Broken bindings | [docs/graph.md](docs/graph.md), [docs/name-resolution.md](docs/name-resolution.md) | The `broken_visual` records: what counts as broken, what under-claims (KPI variants, variation hierarchies, calculated-table expressions, `Written`), and the artifact-breakage pass #84 will promote. Read `graph/broken.rs` before touching resolution-miss handling |

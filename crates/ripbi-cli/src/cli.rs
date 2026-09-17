@@ -114,6 +114,13 @@ pub struct ScanArgs {
     #[arg(short = 'q', long)]
     pub quiet: bool,
 
+    /// Print the full pairing audit trail on stderr: every report's name in
+    /// the scanning line, one pairing note per by-name-matched report, and
+    /// the complete ignored-reports list. The default output caps each of
+    /// these to one line.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+
     /// Treat any parser skip notice as an error (exit 2).
     #[arg(long)]
     pub strict: bool,
@@ -176,6 +183,15 @@ pub struct ScanArgs {
     #[arg(long)]
     pub report_measures: bool,
 
+    /// Only report broken visual bindings — field references that no longer
+    /// resolve in the model (issue #60). Combine with the other type flags to
+    /// select several; with none of them, everything is reported. Alone, it
+    /// scopes the run to breakage so a pipeline can gate on it separately
+    /// from unused findings; without it, breakage is reported but never
+    /// changes the exit code.
+    #[arg(long)]
+    pub broken: bool,
+
     /// Also print the "Power Query also names it" annotation on unused Data
     /// columns (human output). `--json` always carries the field.
     #[arg(long)]
@@ -200,6 +216,7 @@ impl ScanArgs {
             (self.expressions, "expression"),
             (self.functions, "function"),
             (self.report_measures, "report_measure"),
+            (self.broken, "broken_visual"),
         ];
         let selected: HashSet<&'static str> = picks
             .into_iter()
@@ -305,6 +322,13 @@ mod tests {
                     ..Default::default()
                 },
                 "report-measures",
+            ),
+            (
+                ScanArgs {
+                    broken: true,
+                    ..Default::default()
+                },
+                "broken",
             ),
         ];
         assert_eq!(

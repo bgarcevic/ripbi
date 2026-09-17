@@ -129,7 +129,11 @@ Columns (28)
 
 The summary line counts the model's objects, how many the reports reach, and
 how many are unused. Each finding says why it is dead: nothing references it,
-or its only consumer is itself unused.
+or its only consumer is itself unused. Broken report bindings surface too
+(issue #60): a visual whose field no longer resolves in the model — the
+renamed column, the broken measure — is reported with its page, visual, and
+reason. `--broken` scopes a run to breakage alone so CI can gate on it
+separately from unused findings.
 
 `ripbi scan` discovers the project itself: pass a `.pbip` file, a project
 folder, a `.SemanticModel`, or a `.Report`, or nothing to scan the current

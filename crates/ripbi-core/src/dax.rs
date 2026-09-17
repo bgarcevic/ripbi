@@ -38,7 +38,7 @@ pub mod lexer;
 pub mod refs;
 
 pub use lexer::{Token, TokenKind, tokenize};
-pub use refs::{RawRef, references, unescape_name};
+pub use refs::{RawRef, quoted_names, references, unescape_name};
 
 use crate::identity::{NameKey, ObjectId};
 use crate::model::TabularDatabase;

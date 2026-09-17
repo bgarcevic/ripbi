@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 
-use ripbi_core::graph::DependencyGraph;
+use ripbi_core::graph::{BrokenReason, DependencyGraph};
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
 use ripbi_core::{NameKey, ObjectId, ReportModel};
 
@@ -16,7 +16,9 @@ use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
-use crate::render::{self, AutoDateTimeRow, Finding, ScanOutput, SkipNoticeOut, UsedByOut};
+use crate::render::{
+    self, AutoDateTimeRow, BrokenOut, Finding, ScanOutput, SkipNoticeOut, UsedByOut,
+};
 use crate::style::Palette;
 
 /// Exit code: no unused objects.
@@ -236,40 +238,64 @@ fn scan(
     if !args.quiet {
         match &model_scan {
             Some(scan) => {
-                let names: Vec<String> =
-                    report_paths.iter().map(|path| report_name(path)).collect();
-                announce.push(format!(
-                    "Scanning {} with {} report(s): {}",
-                    paired.model.display(),
-                    report_paths.len(),
-                    names.join(", ")
-                ));
-                // The per-report note list is auditability for a human; the
-                // count-oriented modes get one line per catalog instead, so a
-                // dozen thin reports do not print a dozen stderr lines
-                // before the useful output (issue #65).
-                if args.json || args.plain || args.summary {
-                    announce.extend(collapse_name_matched(&scan.bound.name_matched));
-                } else {
+                // The count is the signal; the names are auditability, on
+                // request. The pairing *facts* always show — the by-name
+                // match is the weakest pairing and a wrong pairing means
+                // wrong findings — but capped, so a hundred thin reports
+                // read as one line each instead of a wall (issue #65, and
+                // the same capping for the ignored list).
+                if args.verbose {
+                    let names: Vec<String> =
+                        report_paths.iter().map(|path| report_name(path)).collect();
+                    announce.push(format!(
+                        "Scanning {} with {} report(s): {}",
+                        paired.model.display(),
+                        report_paths.len(),
+                        names.join(", ")
+                    ));
                     for (path, catalog) in &scan.bound.name_matched {
                         announce.push(format!(
                             "Note: {} matched by dataset name only (byConnection 'initial catalog' = '{catalog}').",
                             path.display()
                         ));
                     }
+                } else {
+                    announce.push(format!(
+                        "Scanning {} with {} report(s)",
+                        paired.model.display(),
+                        report_paths.len()
+                    ));
+                    announce.extend(collapse_name_matched(&scan.bound.name_matched));
                 }
                 if !scan.bound.ignored_elsewhere.is_empty() {
-                    let names: Vec<String> = scan
-                        .bound
-                        .ignored_elsewhere
-                        .iter()
-                        .map(|path| report_name(path))
-                        .collect();
-                    announce.push(format!(
-                        "Ignored {} report(s) bound to other models: {}",
-                        scan.bound.ignored_elsewhere.len(),
-                        names.join(", ")
-                    ));
+                    let count = scan.bound.ignored_elsewhere.len();
+                    if args.verbose {
+                        let names: Vec<String> = scan
+                            .bound
+                            .ignored_elsewhere
+                            .iter()
+                            .map(|path| report_name(path))
+                            .collect();
+                        announce.push(format!(
+                            "Ignored {count} report(s) bound to other models: {}",
+                            names.join(", ")
+                        ));
+                    } else {
+                        let names: Vec<String> = scan
+                            .bound
+                            .ignored_elsewhere
+                            .iter()
+                            .map(|path| report_name(path))
+                            .collect();
+                        let mut line = format!(
+                            "Ignored {count} report(s) bound to other models: {}",
+                            capped_names(&names)
+                        );
+                        if count > 3 {
+                            line.push_str(VERBOSE_POINTER);
+                        }
+                        announce.push(line);
+                    }
                 }
             }
             None => announce.push(format!(
@@ -361,11 +387,34 @@ fn scan(
     // The type flags narrow what is reported (issue #31): findings they hide
     // are counted in `filtered_out`, and the auto date/time section — which
     // is table-shaped — prints and gates the exit code only when tables are
-    // among the reported kinds.
+    // among the reported kinds. `--broken` selects the breakage kind the same
+    // way, and is the only selection under which breakage gates the exit
+    // code (issue #60: advisory until asked).
     let selected = args.selected_kinds();
     let section_visible = selected
         .as_ref()
         .is_none_or(|kinds| kinds.contains("table"));
+    let broken_selected = selected
+        .as_ref()
+        .is_none_or(|kinds| kinds.contains("broken_visual"));
+    // Gating is not reporting: with no flags everything is *reported*, but
+    // breakage gates the exit code only when `--broken` explicitly selected
+    // it (issue #60: advisory until asked).
+    let broken_gating = selected
+        .as_ref()
+        .is_some_and(|kinds| kinds.contains("broken_visual"));
+    // Issue #60's precision bar: a "broken" claim is itself a breakage
+    // claim, so it fires only when nothing in the model ingest could have
+    // hidden the name the binding wrote. That is exactly the
+    // `unknown_object` kind — a skipped table or column never became a
+    // node, so a "field not found" verdict would be a guess. Property-level
+    // drift (`unknown_property`) cannot hide a name: the object was parsed
+    // with it regardless. Report-side skips never suppress either way — a
+    // half-parsed report can only under-report breakage, never fabricate it.
+    let hides_a_name = model
+        .skips
+        .iter()
+        .any(|skip| matches!(skip.kind, SkipKind::UnknownObject));
 
     // One verdict row per auto date/time table the ignore list does not
     // suppress; a dead table's own finding is filed under its row so the
@@ -434,6 +483,44 @@ fn scan(
         }
     }
 
+    // Broken visual bindings (issue #60), bucketed the same way the unused
+    // findings are: `[scan].ignore` counts as handled, type flags hide into
+    // their own count, and name-hiding model drift suppresses with its
+    // count kept for the summary note.
+    let mut broken = Vec::new();
+    let mut broken_hidden = 0;
+    let mut broken_suppressed = 0;
+    for binding in graph.broken_bindings() {
+        if is_ignored_display(&binding.target.to_string(), patterns) {
+            ignored += 1;
+            continue;
+        }
+        if hides_a_name {
+            broken_suppressed += 1;
+            continue;
+        }
+        if !broken_selected {
+            broken_hidden += 1;
+            continue;
+        }
+        let (reason, bound_artifact) = match &binding.reason {
+            BrokenReason::BoundArtifactBroken { artifact } => {
+                ("bound_artifact_broken", Some(artifact.to_string()))
+            }
+            BrokenReason::TableNotFound => ("table_not_found", None),
+            BrokenReason::FieldNotFound => ("field_not_found", None),
+            BrokenReason::MeasureNotFound => ("measure_not_found", None),
+            BrokenReason::HierarchyNotFound => ("hierarchy_not_found", None),
+            BrokenReason::LevelNotFound => ("level_not_found", None),
+        };
+        broken.push(BrokenOut {
+            target: binding.target.to_string(),
+            reason,
+            bound_artifact,
+            provenance: binding.edge.to_string(),
+        });
+    }
+
     let output = ScanOutput {
         target: paired.model.display().to_string(),
         reports: report_paths
@@ -447,6 +534,10 @@ fn scan(
         ignored,
         filtered_out,
         machinery_members,
+        broken,
+        broken_hidden,
+        broken_suppressed,
+        broken_raw: graph.broken_bindings().len(),
         findings,
         auto_date_time,
         skips,
@@ -493,6 +584,12 @@ fn scan(
     if args.strict && !output.skips.is_empty() {
         Ok(EXIT_ERROR)
     } else if output.findings.is_empty()
+        // Breakage gates the exit code only under `--broken` (issue #60):
+        // a pipeline gating on unused findings must not start failing
+        // because one visual is broken, and a `--broken` gate must not fail
+        // on unused findings — the same reported-only rule the type flags
+        // obey, applied to the new kind.
+        && (!broken_gating || output.broken.is_empty())
         && output
             .auto_date_time
             .iter()
@@ -615,20 +712,35 @@ fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
     grouped
         .into_iter()
         .map(|(catalog, names)| {
-            let count = names.len();
-            let listed: Vec<String> = names.iter().take(3).cloned().collect();
-            let more = count - listed.len();
-            let names = if more > 0 {
-                format!("{}, … and {more} more", listed.join(", "))
-            } else {
-                listed.join(", ")
-            };
-            format!(
-                "Note: {count} report(s) matched by dataset name only \
-                 (byConnection 'initial catalog' = '{catalog}'): {names}"
-            )
+            let mut line = format!(
+                "Note: {} report(s) matched by dataset name only \
+                 (byConnection 'initial catalog' = '{catalog}'): {}",
+                names.len(),
+                capped_names(&names)
+            );
+            if names.len() > 3 {
+                line.push_str(VERBOSE_POINTER);
+            }
+            line
         })
         .collect()
+}
+
+/// The suffix that points at `--verbose` when a capped list left names out —
+/// the one place the full trail lives.
+const VERBOSE_POINTER: &str = " — rerun with --verbose to list them";
+
+/// The display form of a name wall: the first three, then the tail as a
+/// count — the capping the by-name collapse prints (issue #65), shared with
+/// the ignored list so every name list reads the same way.
+fn capped_names(names: &[String]) -> String {
+    let listed: Vec<String> = names.iter().take(3).cloned().collect();
+    let more = names.len() - listed.len();
+    if more > 0 {
+        format!("{}, … and {more} more", listed.join(", "))
+    } else {
+        listed.join(", ")
+    }
 }
 
 /// True when an explicit PATH is classified as a semantic model — the same
@@ -811,13 +923,21 @@ fn is_ignored(id: &ObjectId, patterns: &[String]) -> bool {
     if patterns.is_empty() {
         return false;
     }
-    let display = id.to_string();
-    patterns.iter().any(|pattern| {
-        glob::matches(pattern, &display)
-            || bare_names(id)
-                .iter()
-                .any(|name| glob::matches(pattern, name))
-    })
+    is_ignored_display(&id.to_string(), patterns)
+        || bare_names(id)
+            .iter()
+            .any(|name| patterns.iter().any(|pattern| glob::matches(pattern, name)))
+}
+
+/// The `[scan].ignore` match for a written reference (a broken binding's
+/// display form): the pattern matches the display id — e.g. `'Sales'[Color]` —
+/// whole. There are no bare names to also try; a binding has no leaf object
+/// identity of its own (issue #60).
+fn is_ignored_display(display: &str, patterns: &[String]) -> bool {
+    !patterns.is_empty()
+        && patterns
+            .iter()
+            .any(|pattern| glob::matches(pattern, display))
 }
 
 /// The bare names an ignore pattern can match: the leaf name, and for
