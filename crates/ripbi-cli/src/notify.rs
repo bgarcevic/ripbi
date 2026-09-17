@@ -1,9 +1,10 @@
 //! The ambient daily update notification.
 //!
-//! Every foreground command calls [`after_command`]: at most once per day it
-//! spawns a detached `ripbi __update-check` child, which fetches
-//! `releases/latest` and caches the version in a state file; after the command,
-//! one dim stderr line announces a newer release. The check is a plain `GET`
+//! Every foreground command except `update` (which reports versions itself)
+//! calls [`after_command`]: at most once per day it spawns a detached
+//! `ripbi __update-check` child, which fetches `releases/latest` and caches
+//! the version in a state file; after the command, one dim stderr line
+//! announces a newer release. The check is a plain `GET`
 //! of public release metadata — no data is sent — and every failure is silent.
 //! The notifier never changes an exit code and is suppressed under
 //! `RIPBI_NO_UPDATE_CHECK`, `CI`, `-q`, or when stderr is not a TTY.
@@ -71,7 +72,10 @@ pub struct NotifyContext {
 }
 
 /// The post-command hook: decide, spawn the detached check when due, and print
-/// the notice when one is due. Called for every foreground command.
+/// the notice when one is due. Called for every foreground command except
+/// `update`, which reports versions itself; after a self-update the
+/// still-running process would answer the version comparison with the
+/// pre-update build.
 pub fn after_command(quiet: bool, streams: &mut Streams<'_>) {
     let Some(exe) = std::env::current_exe().ok() else {
         return;
