@@ -13,7 +13,9 @@ CI-friendly output, and exit codes.
   report binds, or — only under `--broken` — broken visual bindings (issue #60:
   breakage is reported by default but gates only when selected) (CI gating), `2`
   error (usage, discovery, ingestion, or `--strict`
-  skip notices). `update` reuses the same 0/1/2: `1` only from `--check` when a
+  skip notices). A model with no connected reports refuses with `2` unless
+  `--allow-no-reports` skips it: a `Skipped …` notice on stderr, exit `0`, no
+  stdout output. `update` reuses the same 0/1/2: `1` only from `--check` when a
   newer release exists; a completed self-update is `0`.
 - Results to stdout; messages, notices, and errors to stderr. `-q` suppresses both.
 - `#![forbid(unsafe_code)]`.
@@ -34,10 +36,10 @@ command name is pinned to `ripbi` (`cli.rs`), so help and `--version` always say
 | `config.rs` | `ripbi.toml` discovery (cwd upward), parsing, path resolution |
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery; model target resolution and bound-report folder walking (byPath → stem → `byConnection` name), shared by `--model` and PATHs naming a semantic model |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code → the update notifier hook |
-| `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → type filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict; the section prints only when no type filter runs without `--tables`). Broken bindings (`graph.broken_bindings`) are bucketed here too: `[scan].ignore` → hidden-by-type-flags → suppressed (model ingest reported `unknown_object` skips — the issue #60 clean-ingest bar: only drift that can hide a name) → reported; gating is `--broken`-only and deliberately distinct from reporting. The pairing announce is capped to one line per fact in every mode (`--verbose` expands it) |
+| `scan.rs` | orchestration: resolve → ingest (core) → graph (core) → ignore filter → type filter → render. Auto date/time verdict rows are assembled here (a dead table's own finding moves under its verdict; the section prints only when no type filter runs without `--tables`). Broken bindings (`graph.broken_bindings`) are bucketed here too: `[scan].ignore` → hidden-by-type-flags → suppressed (model ingest reported `unknown_object` skips — the issue #60 clean-ingest bar: only drift that can hide a name) → reported; gating is `--broken`-only and deliberately distinct from reporting. The zero-connected-report refusal (exit `2`) and the `--allow-no-reports` skip (`Skipped …`, exit `0`) share one detail helper, so both explain the empty walk identically. The pairing announce is capped to one line per fact in every mode (`--verbose` expands it) |
 | `update.rs` | `ripbi update`: GitHub release lookup (ureq), `sha256sums.txt` verification, tar.gz/zip extraction, channel detection, atomic replacement of `ripbi`/`rib` — the running binary last, and on Windows a locked target (the install scripts hard-link `rib` to `ripbi`) is moved aside to `<name>.old` instead of failing. `ReleaseClient` is the network seam; `run_in_with_home` injects the exe and cargo home |
 | `notify.rs` | the ambient daily check: XDG/LOCALAPPDATA state file, detached `__update-check` child, the `after_command` notice hook, and env/CI/TTY/`-q` suppression. `NotifyContext` is the test seam |
-| `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them. `GROUPS` is the fixed kind order the type flags select from. `Finding.table` (`ObjectId::owning_table`, set in `scan.rs` only for `--json`/`--summary`) feeds the JSON `table` field and `--summary`'s worst-tables breakdown |
+| `render.rs` | the three output modes: human, `--plain`, `--json` — plus the Auto date/time section rendered in all of them. `GROUPS` is the fixed kind order the type flags select from. The empty-findings placeholder is shared by both human modes: `No unused objects.`, except under a lone `--broken`, where the scope is the bindings (`No broken reports.`, and no line at all when the section has rows). `Finding.table` (`ObjectId::owning_table`, set in `scan.rs` only for `--json`/`--summary`) feeds the JSON `table` field and `--summary`'s worst-tables breakdown |
 | `style.rs` | ANSI palette gated on TTY / `NO_COLOR` / `TERM=dumb` / `--no-color` |
 | `glob.rs` | case-insensitive `*`/`?` matcher for `[scan].ignore` |
 

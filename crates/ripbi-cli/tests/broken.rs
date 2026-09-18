@@ -152,6 +152,45 @@ fn broken_scopes_the_run_and_gates_the_exit_code() {
     );
 }
 
+/// In human output a lone `--broken` speaks for its scope: the bindings are
+/// listed without a `No unused objects.` line stacked above them (the empty
+/// findings list is the filter's doing, not a result), and a run that flags
+/// nothing reads `No broken reports.` — the placeholder the flag's consumer
+/// actually asked about.
+#[test]
+fn the_broken_only_human_output_speaks_for_its_scope() {
+    let args = ScanArgs {
+        broken: true,
+        path: Some(broken_visual_pbip()),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &std::env::temp_dir(), "");
+
+    assert_eq!(code, 1, "the two broken bindings gate the run");
+    assert!(
+        stdout.contains("Broken visual bindings (2)"),
+        "the bindings are listed:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("No unused objects."),
+        "no reachability verdict in a breakage-scoped run:\n{stdout}"
+    );
+
+    let args = ScanArgs {
+        broken: true,
+        path: Some(field_parameters_pbip()),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &std::env::temp_dir(), "");
+
+    assert_eq!(code, 0, "nothing broken in the machinery fixture");
+    assert!(
+        stdout.contains("No broken reports."),
+        "the clean placeholder names the scope:\n{stdout}"
+    );
+    assert!(!stdout.contains("No unused objects."), ":\n{stdout}");
+}
+
 /// The advisory default: a `--broken`-less run over the same fixture exits
 /// clean because nothing is *unused* — a repo that was clean before the
 /// feature must not start failing (issue #84's constraint, this side).

@@ -28,7 +28,10 @@ its convention sibling pairing and does not gain a default search root. Reports 
 with the model
 by their `definition.pbir` path first, then by the PBIP stem convention (`X.Report`
 beside `X.SemanticModel`), then by the dataset name in a `byConnection` `initial
-catalog`. A scan with no connected reports refuses with exit `2` and per-category counts.
+catalog`. A scan with no connected reports refuses with exit `2` and per-category
+counts — unless `--allow-no-reports` turns the refusal into a skip: a
+`Skipped …: no connected reports (…)` notice on stderr and exit `0`, with no stdout
+output.
 
 ## Streams
 
@@ -90,7 +93,7 @@ Ignored 1 report(s) bound to other models: HR.Report
 |---|---|
 | `0` | Clean: nothing unused, no broken visual binding gates the run, and no auto date/time table unused by reports or dead (objects suppressed by `[scan].ignore` count as handled; an *in use* auto date/time table is informational) |
 | `1` | Unused objects found, auto date/time machinery no report binds — or, under `--broken`, broken visual bindings found |
-| `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports, unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
+| `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports (unless `--allow-no-reports` skips it), unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
 The exit code describes what was *reported*: findings hidden by the type flags, and an
 Auto date/time section hidden because `--tables` was not among the passed flags, cannot
@@ -115,6 +118,7 @@ unaffected.
 | `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type flags (`--broken --measures` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
+| `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
 | `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
 | `--no-input` | Never prompt; fail where a picker would appear |
 
@@ -187,7 +191,11 @@ Columns (28)
   The section is a different verdict than reachability's — written references, not
   graph liveness — so it prints even on an otherwise clean `No unused objects.` scan,
   and it is *advisory*: it never changes the exit code unless `--broken` selects it.
-  Hidden bindings (a type flag without `--broken`) and suppressed ones are accounted
+  Under a lone `--broken`, the findings list is empty by construction — the flag scopes
+  the run to breakage — so the findings placeholder names the scope instead:
+  `No broken reports.` when nothing flags, and no placeholder line when the section
+  has rows. Every other selection keeps `No unused objects.` Hidden bindings (a type
+  flag without `--broken`) and suppressed ones are accounted
   for in the summary's arithmetic lines: `(2 broken-visual bindings hidden by type
   filters)` and `(N possible broken-visual bindings suppressed — the model ingest
   reported skips, listed on stderr; --strict fails on those skips)`.

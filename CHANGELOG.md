@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ripbi scan --allow-no-reports`** — skip a model with no connected reports
+  instead of refusing with exit `2`: the run prints a `Skipped …: no connected
+  reports (…)` notice on stderr and exits `0`, with no scan output. A pipeline can
+  now point the scan at every model and let each run decide whether it has anything
+  to scan against — report-less models are re-checked on every run, and any that
+  gain reports are scanned automatically, so there is no exclusion list to keep
+  honest.
+
+### Changed
+
+- **A lone `--broken` no longer prints `No unused objects.`** — under that flag the
+  findings list is empty by construction (the flag scopes the run to breakage), so
+  the human modes' placeholder speaks for the scope instead: `No broken reports.`
+  when nothing flags, and no placeholder line when the Broken visual bindings
+  section has rows. Every other selection keeps `No unused objects.`
+
 ## [0.3.3] - 2026-09-18
 
 ### Fixed

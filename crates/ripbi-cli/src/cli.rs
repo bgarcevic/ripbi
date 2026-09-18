@@ -125,6 +125,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub strict: bool,
 
+    /// Skip a model with no connected reports instead of refusing (exit 2):
+    /// a notice on stderr, exit code 0, no scan output. Lets a pipeline point
+    /// the scan at every model and let each run decide whether it has
+    /// anything to scan against.
+    #[arg(long)]
+    pub allow_no_reports: bool,
+
     /// Never color output, even on a TTY (also honors NO_COLOR, TERM=dumb).
     #[arg(long)]
     pub no_color: bool,

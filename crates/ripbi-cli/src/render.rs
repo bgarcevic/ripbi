@@ -230,7 +230,8 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
 /// Writes the human-readable report: a summary line, then findings grouped by
 /// object type with `←` chain annotations. `show_power_query` adds the
 /// `⭘ Power Query also names it` annotations (hidden by default; `--json`
-/// always carries the underlying field).
+/// always carries the underlying field). `broken_only` — a lone `--broken` —
+/// swaps the empty-findings placeholder for `clean_line`'s broken phrasing.
 ///
 /// # Errors
 /// Propagates stream write failures.
@@ -239,12 +240,11 @@ pub fn human(
     palette: &Palette,
     report: &ScanOutput,
     show_power_query: bool,
+    broken_only: bool,
 ) -> io::Result<()> {
     write_summary(out, palette, report)?;
 
-    if report.findings.is_empty() {
-        writeln!(out, "No unused objects.")?;
-    } else {
+    if !report.findings.is_empty() {
         for (kind, label) in GROUPS {
             let group: Vec<&Finding> = report
                 .findings
@@ -265,9 +265,24 @@ pub fn human(
             }
             writeln!(out)?;
         }
+    } else if let Some(line) = clean_line(report, broken_only) {
+        writeln!(out, "{line}")?;
     }
     write_broken(out, palette, report)?;
     write_auto_date_time(out, palette, report, show_power_query)
+}
+
+/// The placeholder line for an empty findings list. Under a lone `--broken`
+/// the run's scope is the broken bindings — the empty reachability list is
+/// the filter's doing, not a result — so the placeholder speaks for them:
+/// `No broken reports.` when none were found, and no line at all when the
+/// section below has rows. Every other selection keeps the reachability
+/// phrasing.
+fn clean_line(report: &ScanOutput, broken_only: bool) -> Option<&'static str> {
+    if !broken_only {
+        return Some("No unused objects.");
+    }
+    report.broken.is_empty().then_some("No broken reports.")
 }
 
 /// The broken-visual section (issue #60), rendered in both human modes after
@@ -435,6 +450,7 @@ fn write_worst_tables(
 
 /// Writes `--summary` output: the summary line and per-type totals, without
 /// the findings list — the shape for models with thousands of findings.
+/// `broken_only` swaps the empty-findings placeholder the way `human` does.
 ///
 /// # Errors
 /// Propagates stream write failures.
@@ -442,12 +458,11 @@ pub fn human_summary(
     out: &mut dyn io::Write,
     palette: &Palette,
     report: &ScanOutput,
+    broken_only: bool,
 ) -> io::Result<()> {
     write_summary(out, palette, report)?;
 
-    if report.findings.is_empty() {
-        writeln!(out, "No unused objects.")?;
-    } else {
+    if !report.findings.is_empty() {
         for (kind, label) in GROUPS {
             let count = report
                 .findings
@@ -459,6 +474,8 @@ pub fn human_summary(
             }
         }
         write_worst_tables(out, palette, &report.findings)?;
+    } else if let Some(line) = clean_line(report, broken_only) {
+        writeln!(out, "{line}")?;
     }
     if !report.broken.is_empty() {
         writeln!(
@@ -991,7 +1008,7 @@ mod tests {
         ];
 
         let mut out = Vec::new();
-        human_summary(&mut out, &Palette::plain(), &scan_output(findings)).unwrap();
+        human_summary(&mut out, &Palette::plain(), &scan_output(findings), false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
@@ -1007,7 +1024,7 @@ mod tests {
             .collect();
 
         let mut out = Vec::new();
-        human_summary(&mut out, &Palette::plain(), &scan_output(findings)).unwrap();
+        human_summary(&mut out, &Palette::plain(), &scan_output(findings), false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
@@ -1023,6 +1040,7 @@ mod tests {
             &mut out,
             &Palette::plain(),
             &scan_output(vec![finding(None)]),
+            false,
         )
         .unwrap();
 
@@ -1117,6 +1135,7 @@ mod tests {
             &mut out,
             &Palette::plain(),
             &scan_output_with_auto_date_time(vec![], rows),
+            false,
         )
         .unwrap();
 
@@ -1143,6 +1162,7 @@ mod tests {
             &mut out,
             &Palette::plain(),
             &scan_output_with_auto_date_time(vec![], rows),
+            false,
         )
         .unwrap();
 
@@ -1169,7 +1189,7 @@ mod tests {
         output.machinery_members = 8;
 
         let mut out = Vec::new();
-        human_summary(&mut out, &Palette::plain(), &output).unwrap();
+        human_summary(&mut out, &Palette::plain(), &output, false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
@@ -1226,7 +1246,7 @@ mod tests {
         output.broken = vec![broken("'Sales'[Color]", "field_not_found", None)];
 
         let mut out = Vec::new();
-        human(&mut out, &Palette::plain(), &output, false).unwrap();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
@@ -1234,6 +1254,60 @@ mod tests {
             "the section names the field, the reason, and the site:\n{text}"
         );
         assert!(text.contains("No unused objects."));
+    }
+
+    /// Under a lone `--broken` the placeholder speaks for the scope the flag
+    /// asked about: nothing flags reads "No broken reports.", never the
+    /// reachability phrasing — the empty findings list is the filter's doing.
+    #[test]
+    fn a_broken_only_clean_scan_places_the_no_broken_reports_line() {
+        let mut out = Vec::new();
+        human(
+            &mut out,
+            &Palette::plain(),
+            &scan_output(vec![]),
+            false,
+            true,
+        )
+        .unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("No broken reports."),
+            "the placeholder names the scope:\n{text}"
+        );
+        assert!(
+            !text.contains("No unused objects."),
+            "the run never scoped reachability:\n{text}"
+        );
+    }
+
+    /// With rows in the section, the placeholder line is dropped entirely —
+    /// "No unused objects." stacked above the bindings read like a verdict
+    /// the flag never asked for.
+    #[test]
+    fn a_broken_only_scan_with_rows_prints_no_placeholder() {
+        let mut output = scan_output(vec![]);
+        output.broken = vec![broken("'Sales'[Color]", "field_not_found", None)];
+
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, true).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Broken visual bindings (1)"), ":\n{text}");
+        assert!(!text.contains("No unused objects."), ":\n{text}");
+        assert!(!text.contains("No broken reports."), ":\n{text}");
+    }
+
+    /// `--summary` shares the placeholder: one phrasing per scope, both human
+    /// modes.
+    #[test]
+    fn the_summary_shares_the_broken_only_placeholder() {
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &scan_output(vec![]), true).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("No broken reports."), ":\n{text}");
     }
 
     /// The propagated reason names the artifact: the visual is what a user
@@ -1248,7 +1322,7 @@ mod tests {
         )];
 
         let mut out = Vec::new();
-        human(&mut out, &Palette::plain(), &output, false).unwrap();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
@@ -1312,7 +1386,7 @@ mod tests {
         output.broken_suppressed = 2;
 
         let mut out = Vec::new();
-        human_summary(&mut out, &Palette::plain(), &output).unwrap();
+        human_summary(&mut out, &Palette::plain(), &output, false).unwrap();
 
         let text = String::from_utf8(out).unwrap();
         assert!(
