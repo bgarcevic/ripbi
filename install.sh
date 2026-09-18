@@ -102,6 +102,9 @@ case "$(uname -s):$(uname -m)" in
   Linux:x86_64 | Linux:amd64)
     target=x86_64-unknown-linux-gnu
     ;;
+  Linux:aarch64 | Linux:arm64)
+    target=aarch64-unknown-linux-gnu
+    ;;
   Darwin:arm64 | Darwin:aarch64)
     target=aarch64-apple-darwin
     ;;
