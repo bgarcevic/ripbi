@@ -54,6 +54,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-glibc22-v1
+          cache-targets: false
       - run: cargo build --workspace
       - run: cargo test --workspace
 

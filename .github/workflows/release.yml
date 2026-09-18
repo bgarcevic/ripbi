@@ -35,6 +35,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.target }}-glibc22-v1
+          cache-targets: false
       - run: cargo build --release --locked -p ripbi --target ${{ matrix.target }}
 
       - name: Package (tar.gz)
