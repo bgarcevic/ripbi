@@ -18,9 +18,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Linux builds pin the oldest supported LTS so the binaries keep the
+          # glibc 2.35 baseline: linked against 24.04's glibc 2.39 they fail on
+          # 22.04 machines, while 22.04-linked binaries run on 22.04 and newer.
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin

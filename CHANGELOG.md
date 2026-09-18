@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Linux release binaries run on Ubuntu 22.04** — both archives were linked
+  against Ubuntu 24.04's glibc 2.39, so running them on older distributions
+  died with `version 'GLIBC_2.39' not found`; the aarch64 archive introduced
+  in 0.3.2 never ran on 22.04 ARM CI machines at all. Linux release builds
+  now pin the Ubuntu 22.04 runners, restoring the glibc 2.35 baseline: the
+  binaries run on Ubuntu 22.04 and every newer distribution, and no longer
+  drift when `ubuntu-latest` moves on.
+
 ## [0.3.2] - 2026-09-18
 
 ### Added
