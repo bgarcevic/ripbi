@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Prebuilt binaries for Linux ARM64** — releases now carry an
+  `aarch64-unknown-linux-gnu` archive, built natively on GitHub's
+  `ubuntu-24.04-arm` runner (no cross-compilation, same packaging and
+  sha256 checksums as the other targets). `install.sh` picks it for both
+  `aarch64` and `arm64` `uname -m` output, and `ripbi update` self-replaces
+  on the platform where it previously stopped with "no prebuilt ripbi binary
+  for linux/aarch64" — ARM CI machines and Graviton boxes now install with
+  the same one-liner as everyone else.
+
 ## [0.3.1] - 2026-09-17
 
 ### Fixed
