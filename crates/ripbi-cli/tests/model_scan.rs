@@ -317,6 +317,180 @@ mod refusals {
     }
 }
 
+mod allow_no_reports {
+    use super::*;
+
+    /// The flag turns the model-mode refusal into a skip: exit 0, a notice
+    /// with the walk's per-category counts, no scan output. A pipeline can
+    /// point the scan at every model and let each run decide whether it has
+    /// anything to scan against — a model that gains a report is scanned,
+    /// with no exclusion list to keep honest.
+    #[test]
+    fn an_unbound_model_is_skipped_with_a_notice_instead_of_refused() {
+        let temp = TempDir::new("model-allow-empty");
+        model_into(&temp.0, "X");
+        temp.mkdir("reports");
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(stdout.is_empty(), "nothing was scanned:\n{stdout}");
+        assert!(
+            stderr.contains("Skipped") && stderr.contains("no connected reports"),
+            "the skip names the model:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("(no report items found under"),
+            "the skip carries the walk's detail:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn the_skip_notice_counts_the_categories_like_the_refusal() {
+        let temp = TempDir::new("model-allow-mixed");
+        model_into(&temp.0, "X");
+        model_into(&temp.0, "Y");
+        report_into(
+            &temp.0,
+            "reports/HR.Report",
+            Some(&by_path("../../Y.SemanticModel")),
+        );
+        report_into(
+            &temp.0,
+            "reports/Dangling.Report",
+            Some(&by_path("../../Gone.SemanticModel")),
+        );
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(
+            stderr.contains(
+                "no connected reports (1 bound to other models, \
+                 1 unresolved dataset references under"
+            ),
+            "the same per-category counts as the refusal:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_model_that_gains_a_report_is_scanned_normally() {
+        let temp = TempDir::new("model-allow-gained");
+        model_into(&temp.0, "X");
+        report_into(&temp.0, "X.Report", Some(&by_path("../X.SemanticModel")));
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            ..model_args(temp.0.join("X.SemanticModel"), Vec::new())
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the mini model keeps its dead chain");
+        assert!(
+            stderr.contains("with 1 report(s)"),
+            "the report is found and scanned:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("Skipped"),
+            "nothing is skipped once a report binds:\n{stderr}"
+        );
+        assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
+    }
+
+    /// A model-naming PATH without reports never had a walk, so the skip
+    /// carries no per-category detail — the fact and the model are enough.
+    #[test]
+    fn a_model_path_without_reports_is_skipped_without_a_walk_detail() {
+        let temp = TempDir::new("model-allow-path");
+        let model = model_into(&temp.0, "X");
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            path: Some(model),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(stdout.is_empty());
+        assert!(
+            stderr.contains("no connected reports"),
+            "the skip notice:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("bound to other models"),
+            "no walk ran, so no per-category counts:\n{stderr}"
+        );
+    }
+
+    /// A skip is an announcement, not a parse skip notice: `--strict` leaves
+    /// it at 0, so a strict pipeline can still sweep report-less models.
+    #[test]
+    fn strict_does_not_fail_a_skipped_model() {
+        let temp = TempDir::new("model-allow-strict");
+        model_into(&temp.0, "X");
+        temp.mkdir("reports");
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            strict: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, _, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+    }
+
+    /// The JSON schema is untouched: a skipped model prints nothing on
+    /// stdout — the notice rides on stderr, the exit code carries the rest.
+    #[test]
+    fn json_mode_skips_without_stdout_output() {
+        let temp = TempDir::new("model-allow-json");
+        model_into(&temp.0, "X");
+        temp.mkdir("reports");
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            json: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(stdout.is_empty(), "no partial JSON payload:\n{stdout}");
+        assert!(
+            stderr.contains("Skipped"),
+            "the notice stays on stderr:\n{stderr}"
+        );
+    }
+
+    /// `-q` keeps the exit code as the only output, as everywhere else.
+    #[test]
+    fn quiet_skips_silently() {
+        let temp = TempDir::new("model-allow-quiet");
+        model_into(&temp.0, "X");
+        temp.mkdir("reports");
+
+        let args = ScanArgs {
+            allow_no_reports: true,
+            quiet: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0);
+        assert!(stdout.is_empty() && stderr.is_empty());
+    }
+}
+
 mod default_search_folder {
     use super::*;
 

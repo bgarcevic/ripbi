@@ -222,6 +222,24 @@ fn scan(
     let report_paths = dedupe(paired.reports);
 
     if report_paths.is_empty() {
+        if args.allow_no_reports {
+            // The skip carries the walk's per-category counts, exactly like
+            // the refusal: "no reports" is a fact about the folder, and the
+            // notice must explain itself the same way the error would have.
+            if !args.quiet {
+                let detail = model_scan
+                    .as_ref()
+                    .map(|scan| format!(" ({})", no_bound_reports_detail(scan)))
+                    .unwrap_or_default();
+                writeln!(
+                    streams.err,
+                    "Skipped {}: no connected reports{detail}",
+                    paired.model.display()
+                )
+                .map_err(ScanError::from)?;
+            }
+            return Ok(EXIT_CLEAN);
+        }
         if let Some(scan) = &model_scan {
             return Err(no_bound_reports_error(&paired.model, scan));
         }
@@ -403,6 +421,12 @@ fn scan(
     let broken_gating = selected
         .as_ref()
         .is_some_and(|kinds| kinds.contains("broken_visual"));
+    // Under a lone `--broken` the findings list is empty by construction —
+    // the flag scopes the run to breakage — so the human modes' clean
+    // placeholder speaks for the bindings, not for the filtered-out list.
+    let broken_only = selected
+        .as_ref()
+        .is_some_and(|kinds| kinds.len() == 1 && kinds.contains("broken_visual"));
     // Issue #60's precision bar: a "broken" claim is itself a breakage
     // claim, so it fires only when nothing in the model ingest could have
     // hidden the name the binding wrote. That is exactly the
@@ -549,10 +573,17 @@ fn scan(
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else if args.summary {
-            render::human_summary(streams.out, &palette_out, &output).map_err(ScanError::from)?;
-        } else {
-            render::human(streams.out, &palette_out, &output, args.power_query)
+            render::human_summary(streams.out, &palette_out, &output, broken_only)
                 .map_err(ScanError::from)?;
+        } else {
+            render::human(
+                streams.out,
+                &palette_out,
+                &output,
+                args.power_query,
+                broken_only,
+            )
+            .map_err(ScanError::from)?;
         }
         // Notices are stderr's job in text modes; --json carries them itself.
         // Not all notices are drift — a stale_state notice reports understood
@@ -662,13 +693,28 @@ fn default_search_root(item_root: &Path) -> PathBuf {
 /// The zero-connected-report refusal in model mode, with per-category counts
 /// so a mixed search folder explains itself.
 fn no_bound_reports_error(model: &Path, scan: &ModelScan) -> ScanError {
+    ScanError::new(format!(
+        "nothing to scan against: {} has no reports ({})",
+        model.display(),
+        no_bound_reports_detail(scan)
+    ))
+    .with_hint(
+        "reachability starts from report bindings — pass one with --report <path>, \
+         or scan a .pbip project folder",
+    )
+}
+
+/// The per-category detail behind a zero-connected-report model, shared by
+/// the refusal and the `--allow-no-reports` skip notice: where the walk
+/// looked and what it found instead.
+fn no_bound_reports_detail(scan: &ModelScan) -> String {
     let roots: Vec<String> = scan
         .search_roots
         .iter()
         .map(|root| root.display().to_string())
         .collect();
     let roots = roots.join(", ");
-    let detail = if scan.bound.ignored_elsewhere.is_empty() && scan.bound.unresolved.is_empty() {
+    if scan.bound.ignored_elsewhere.is_empty() && scan.bound.unresolved.is_empty() {
         format!("no report items found under {roots}")
     } else {
         format!(
@@ -676,15 +722,7 @@ fn no_bound_reports_error(model: &Path, scan: &ModelScan) -> ScanError {
             scan.bound.ignored_elsewhere.len(),
             scan.bound.unresolved.len()
         )
-    };
-    ScanError::new(format!(
-        "nothing to scan against: {} has no reports ({detail})",
-        model.display()
-    ))
-    .with_hint(
-        "reachability starts from report bindings — pass one with --report <path>, \
-         or scan a .pbip project folder",
-    )
+    }
 }
 
 /// The display name of a report path: its final folder component.

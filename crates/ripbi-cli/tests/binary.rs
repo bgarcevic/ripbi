@@ -135,6 +135,15 @@ fn scan_help_lists_the_type_flags() {
 }
 
 #[test]
+fn scan_help_lists_the_allow_no_reports_flag() {
+    ripbi()
+        .args(["scan", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--allow-no-reports"));
+}
+
+#[test]
 fn a_type_flag_runs_end_to_end_and_exits_by_what_it_reported() {
     // The only unused measure → exit 1 with just its record.
     ripbi()
