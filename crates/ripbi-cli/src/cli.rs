@@ -1,6 +1,6 @@
 //! The clap argument definitions — the interface users type and scripts pin,
 //! per `docs/cli-ux-guidelines.md`. Parsing only; behavior lives in
-//! [`crate::scan`].
+//! [`crate::scan`] and [`crate::report`].
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -23,6 +23,10 @@ pub enum Command {
     #[command(after_help = EXAMPLES)]
     Scan(ScanArgs),
 
+    /// Print what ripbi sees in a report: pages → visuals → fields.
+    #[command(after_help = REPORT_EXAMPLES)]
+    Report(ReportArgs),
+
     /// Update ripbi to the latest GitHub release.
     #[command(after_help = UPDATE_EXAMPLES)]
     Update(UpdateArgs),
@@ -38,25 +42,39 @@ Examples:
   ripbi scan \"samples/AdventureWorks Sales.pbip\"
   ripbi scan models/Sales.SemanticModel --report reports/Sales.Report
   ripbi scan --model models/Sales.SemanticModel --report reports/
-  ripbi scan                       discover a project in the current directory
+  ripbi scan                       # discover a project in the current directory
   ripbi scan --json > findings.json
-  ripbi scan --summary             counts only, when the list would flood the terminal
-  ripbi scan --measures --columns  only these unused object types
-  ripbi scan -q                    exit code only: 0 clean, 1 unused found, 2 error";
+  ripbi scan --summary             # counts only, when the list would flood the terminal
+  ripbi scan --measures --columns  # only these unused object types
+  ripbi scan -q                    # exit code only: 0 clean, 1 unused found, 2 error
+
+Type flags union; with none of them, everything is reported.";
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const UPDATE_EXAMPLES: &str = "\
 Examples:
-  ripbi update                  update to the latest release in place
-  ripbi update --check          report only: exit 1 when a newer release exists
-  ripbi update --check -q       exit code only: 1 = update available, 0 = current
-  RIPBI_NO_UPDATE_CHECK=1 ripbi scan …   silence the daily update notice";
+  ripbi update             # update to the latest release in place
+  ripbi update --check     # report only: exit 1 when a newer release exists
+  ripbi update --check -q  # exit code only: 1 = update available, 0 = current
+  RIPBI_NO_UPDATE_CHECK=1 ripbi scan …  # silence the daily update notice";
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const REPORT_EXAMPLES: &str = "\
+Examples:
+  ripbi report \"samples/AdventureWorks Sales.pbip\"
+  ripbi report reports/Sales.Report  # any report item pairs with its model
+  ripbi report                       # discover a project here
+  ripbi report --json > inventory.json
+  ripbi report --plain | cut -f1     # record types: report page visual …
+  ripbi report --visuals             # one roll-up row per visual
+  ripbi report --used                # every model object the report keeps alive
+  ripbi report --fields --match \"'Sales'[Total]\"
+  ripbi report -q                    # exit code only: 0 read, 2 error";
 
 /// `ripbi update` arguments.
 #[derive(Args, Debug, Default)]
 pub struct UpdateArgs {
-    /// Report the latest release and whether it is newer; download and install
-    /// nothing. Exit code 1 means a newer release exists.
+    /// Report only: exit 1 when a newer release exists.
     #[arg(long)]
     pub check: bool,
 
@@ -64,7 +82,7 @@ pub struct UpdateArgs {
     #[arg(short = 'q', long)]
     pub quiet: bool,
 
-    /// Never color output, even on a TTY (also honors NO_COLOR, TERM=dumb).
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
     #[arg(long)]
     pub no_color: bool,
 }
@@ -74,39 +92,96 @@ pub struct UpdateArgs {
 #[derive(Args, Debug, Default)]
 pub struct UpdateCheckArgs {}
 
-/// `ripbi scan` arguments.
+/// `ripbi report` arguments.
 #[derive(Args, Debug, Default)]
-pub struct ScanArgs {
-    /// Project to scan: a .pbip file, a project folder, a .SemanticModel, or a
-    /// .Report. Defaults to `target` in ripbi.toml, then to discovery in the
-    /// current directory.
+pub struct ReportArgs {
+    /// A .pbip file, project folder, .SemanticModel, or .Report.
     pub path: Option<PathBuf>,
 
-    /// The semantic model to analyze: a .SemanticModel folder, its definition/,
-    /// or any folder containing model.tmdl. Disables cwd discovery and the
-    /// ripbi.toml `target`; --report values that are plain folders become search
-    /// folders for reports bound to this model (default: the model's parent).
-    #[arg(long, value_name = "PATH", conflicts_with = "path")]
-    pub model: Option<PathBuf>,
-
-    /// Extra report root to scan against; repeatable. Replaces `reports` from
-    /// ripbi.toml. A plain folder is searched recursively for report items
-    /// bound to the model when the target is --model or a PATH that names a
-    /// semantic model itself; otherwise it must be a report item.
-    #[arg(long = "report", value_name = "PATH")]
-    pub reports: Vec<PathBuf>,
-
-    /// Write machine-readable JSON to stdout (schema:
-    /// crates/ripbi-cli/docs/output.md).
+    /// Machine-readable JSON (schema: docs/report.md).
     #[arg(long, conflicts_with = "plain")]
     pub json: bool,
 
-    /// Write one record per line for grep/awk: `<type>\t<id>`.
+    /// One typed record per line, for grep/awk.
     #[arg(long)]
     pub plain: bool,
 
-    /// Print only the counts: the summary line and per-type totals, no
-    /// findings list — for models whose finding list would flood the terminal.
+    /// List pages (all pages, or those --page selects).
+    #[arg(long, conflicts_with_all = ["json", "plain"])]
+    pub pages: bool,
+
+    /// List visuals: page, type, field and unresolved counts.
+    #[arg(long, conflicts_with_all = ["json", "plain"])]
+    pub visuals: bool,
+
+    /// List every binding: one row per field reference.
+    #[arg(long, conflicts_with_all = ["json", "plain"])]
+    pub fields: bool,
+
+    /// List every model object the report keeps alive.
+    #[arg(long, conflicts_with_all = ["json", "plain"])]
+    pub used: bool,
+
+    /// Only pages matching a name or display-name glob.
+    #[arg(long, value_name = "GLOB")]
+    pub page: Vec<String>,
+
+    /// Only visuals matching a name or type glob.
+    #[arg(long, value_name = "GLOB")]
+    pub visual: Vec<String>,
+
+    /// Only rows matching a site glob, e.g. sort.
+    #[arg(long, value_name = "GLOB")]
+    pub site: Vec<String>,
+
+    /// Only rows matching a kind glob, e.g. measure.
+    #[arg(long, value_name = "GLOB")]
+    pub kind: Vec<String>,
+
+    /// Only references matching a target glob; repeatable.
+    #[arg(long = "match", value_name = "GLOB")]
+    pub matches: Vec<String>,
+
+    /// Only broken visual bindings (unresolved references).
+    #[arg(long)]
+    pub broken: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Never prompt; fail where a picker would appear.
+    #[arg(long)]
+    pub no_input: bool,
+}
+
+/// `ripbi scan` arguments.
+#[derive(Args, Debug, Default)]
+pub struct ScanArgs {
+    /// A .pbip file, project folder, .SemanticModel, or .Report.
+    pub path: Option<PathBuf>,
+
+    /// Analyze one named semantic model; disables discovery.
+    #[arg(long, value_name = "PATH", conflicts_with = "path")]
+    pub model: Option<PathBuf>,
+
+    /// Extra report root; repeatable; replaces ripbi.toml `reports`.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
+    /// Machine-readable JSON (schema: docs/output.md).
+    #[arg(long, conflicts_with = "plain")]
+    pub json: bool,
+
+    /// One `<type>\t<id>` record per line, for grep/awk.
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Counts only, when the list would flood the terminal.
     #[arg(short = 's', long, conflicts_with_all = ["json", "plain"])]
     pub summary: bool,
 
@@ -114,14 +189,11 @@ pub struct ScanArgs {
     #[arg(short = 'q', long)]
     pub quiet: bool,
 
-    /// Print the full pairing audit trail on stderr: every report's name in
-    /// the scanning line, one pairing note per by-name-matched report, and
-    /// the complete ignored-reports list. The default output caps each of
-    /// these to one line.
+    /// Full pairing audit trail on stderr (default: capped lines).
     #[arg(short = 'v', long)]
     pub verbose: bool,
 
-    /// Treat any parser skip notice as an error (exit 2).
+    /// Any parser skip notice becomes an error (exit 2).
     #[arg(long)]
     pub strict: bool,
 
@@ -132,75 +204,59 @@ pub struct ScanArgs {
     #[arg(long)]
     pub allow_no_reports: bool,
 
-    /// Never color output, even on a TTY (also honors NO_COLOR, TERM=dumb).
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
     #[arg(long)]
     pub no_color: bool,
 
-    /// Never prompt for a project; fail where a picker would appear.
+    /// Never prompt; fail where a picker would appear.
     #[arg(long)]
     pub no_input: bool,
 
-    /// Only report unused measures. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused measures.
     #[arg(long)]
     pub measures: bool,
 
-    /// Only report unused columns. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused columns.
     #[arg(long)]
     pub columns: bool,
 
-    /// Only report unused hierarchies. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused hierarchies.
     #[arg(long)]
     pub hierarchies: bool,
 
-    /// Only report unused tables. Also keeps the Auto date/time section,
-    /// which other type flags hide.
+    /// Only report unused tables; also keeps the Auto date/time section.
     #[arg(long)]
     pub tables: bool,
 
-    /// Only report unused partitions. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused partitions.
     #[arg(long)]
     pub partitions: bool,
 
-    /// Only report unused relationships. Combine with the other type flags
-    /// to select several; with none of them, everything is reported.
+    /// Only report unused relationships.
     #[arg(long)]
     pub relationships: bool,
 
-    /// Only report unused calculation items. Combine with the other type
-    /// flags to select several; with none of them, everything is reported.
+    /// Only report unused calculation items.
     #[arg(long)]
     pub calc_items: bool,
 
-    /// Only report unused expressions. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused expressions.
     #[arg(long)]
     pub expressions: bool,
 
-    /// Only report unused functions. Combine with the other type flags to
-    /// select several; with none of them, everything is reported.
+    /// Only report unused functions.
     #[arg(long)]
     pub functions: bool,
 
-    /// Only report unused report measures. Combine with the other type flags
-    /// to select several; with none of them, everything is reported.
+    /// Only report unused report measures.
     #[arg(long)]
     pub report_measures: bool,
 
-    /// Only report broken visual bindings — field references that no longer
-    /// resolve in the model (issue #60). Combine with the other type flags to
-    /// select several; with none of them, everything is reported. Alone, it
-    /// scopes the run to breakage so a pipeline can gate on it separately
-    /// from unused findings; without it, breakage is reported but never
-    /// changes the exit code.
+    /// Only broken visual bindings; the only mode where they gate.
     #[arg(long)]
     pub broken: bool,
 
-    /// Also print the "Power Query also names it" annotation on unused Data
-    /// columns (human output). `--json` always carries the field.
+    /// Also print the "Power Query also names it" annotations.
     #[arg(long)]
     pub power_query: bool,
 }

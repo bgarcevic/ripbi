@@ -162,6 +162,37 @@ Exit codes:
 ripbi scan -q   # no output; exit code only
 ```
 
+## Seeing what ripbi sees
+
+When a scan result looks wrong — "why is this measure live?" — `ripbi report`
+prints the ingested report as data: pages → visuals → fields, with each
+visual's type, the fields it binds (and through which well, sort, or
+formatting rule), its filters, and any bindings that resolve to nothing in the
+model:
+
+```sh
+ripbi report "samples/AdventureWorks Sales.pbip"
+```
+
+```text
+AdventureWorks Sales — 1 page, 17 visuals
+  Pages
+    └── Overview (ReportSection) — 17 visuals
+        ├── 11a03bbd46fd39147235 — donutChart
+        │     Category   column 'Product'[Category]
+        │     Y          measure 'Sales'[Cost] (inactive)
+        │     sort       column 'Product'[Category]
+        └── 3a1aeaede6fc79fe5066 — pivotTable
+              Rows       hierarchy 'Product'[Products] level 'Category'
+              …
+```
+
+`--json` (schema_version 1) and `--plain` (one tab-separated record per line)
+carry the same inventory for scripts. The command is informational: it always
+exits `0` on a produced inventory and `2` only on a real error, so it never
+disturbs `scan`'s exit-code contract. The full contract is documented in the
+user guide's [report chapter](https://bgarcevic.github.io/ripbi/report.html).
+
 ## Output
 
 The full output contract (human, `--summary`, `--plain`, `--json`, and

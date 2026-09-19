@@ -10,6 +10,7 @@ pub mod error;
 pub mod glob;
 pub mod notify;
 pub mod render;
+pub mod report;
 pub mod scan;
 pub mod style;
 pub mod update;

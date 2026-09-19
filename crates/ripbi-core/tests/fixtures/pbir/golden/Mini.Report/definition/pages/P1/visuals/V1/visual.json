@@ -75,6 +75,7 @@
     "filters": [
       {
         "name": "V1Filter",
+        "displayName": "Business Type is not Regular Superstore",
         "type": "Advanced",
         "field": {
           "Column": {
