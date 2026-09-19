@@ -6,7 +6,7 @@ use std::io::{self, IsTerminal, Write};
 use clap::Parser;
 
 use crate::scan::{self, Streams};
-use crate::{Cli, Command, notify, update};
+use crate::{Cli, Command, notify, report, update};
 
 /// Parse argv, run one command, produce the process exit code, and then give
 /// the ambient update notifier its post-command turn (every command except
@@ -16,6 +16,7 @@ pub fn run() -> std::process::ExitCode {
     let cli = Cli::parse();
     let quiet = match &cli.command {
         Command::Scan(args) => args.quiet,
+        Command::Report(args) => args.quiet,
         Command::Update(args) => args.quiet,
         Command::__UpdateCheck(_) => true,
     };
@@ -32,6 +33,7 @@ pub fn run() -> std::process::ExitCode {
     };
     let code = match &cli.command {
         Command::Scan(args) => scan::run(args, &mut streams),
+        Command::Report(args) => report::run(args, &mut streams),
         Command::Update(args) => update::run(args, &mut streams),
         Command::__UpdateCheck(_) => notify::run_check(),
     };

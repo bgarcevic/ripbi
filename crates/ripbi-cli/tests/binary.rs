@@ -29,6 +29,81 @@ fn help_lists_the_scan_subcommand() {
 }
 
 #[test]
+fn help_lists_the_report_subcommand() {
+    ripbi()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("report"));
+}
+
+#[test]
+fn report_help_leads_with_examples() {
+    ripbi()
+        .args(["report", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Examples:"))
+        .stdout(predicate::str::contains("--json"))
+        .stdout(predicate::str::contains("--plain"));
+}
+
+#[test]
+fn report_json_and_plain_flags_conflict() {
+    ripbi()
+        .args(["report", &mini_pbip(), "--json", "--plain"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn report_view_flags_conflict_with_the_machine_modes() {
+    for mode in ["--json", "--plain"] {
+        for view in ["--pages", "--visuals", "--fields", "--used"] {
+            ripbi()
+                .args(["report", &mini_pbip(), view, mode])
+                .assert()
+                .failure()
+                .stderr(predicate::str::contains("cannot be used with"));
+        }
+    }
+}
+
+#[test]
+fn report_help_lists_the_view_and_filter_flags() {
+    ripbi()
+        .args(["report", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--pages"))
+        .stdout(predicate::str::contains("--visuals"))
+        .stdout(predicate::str::contains("--fields"))
+        .stdout(predicate::str::contains("--used"))
+        .stdout(predicate::str::contains("--page"))
+        .stdout(predicate::str::contains("--visual"))
+        .stdout(predicate::str::contains("--match"))
+        .stdout(predicate::str::contains("--broken"));
+}
+
+#[test]
+fn report_sets_the_documented_exit_codes() {
+    // A successful read → 0.
+    ripbi()
+        .args(["report", &mini_pbip(), "--plain"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("field\t"));
+
+    // Usage error (no such path) → 2.
+    ripbi()
+        .args(["report", "definitely/not/here.pbip"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no such path"));
+}
+
+#[test]
 fn scan_help_leads_with_examples() {
     ripbi()
         .args(["scan", "--help"])

@@ -42,12 +42,15 @@ fn measure(table: &str, name: &str) -> FieldTarget {
     }
 }
 
-/// A filter whose only reference is its declared target field.
-fn filter_on(name: &str, target: FieldTarget) -> Filter {
+/// A filter whose only reference is its declared target field. The golden
+/// fixture writes a `type` on every `filterConfig` filter; bookmarks and the
+/// visual's persisted automatic filter repeat the shape.
+fn filter_on(name: &str, filter_type: &str, target: FieldTarget) -> Filter {
     Filter {
         name: Some(NameKey::new(name)),
+        filter_type: Some(filter_type.to_string()),
         target: Some(target),
-        references: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -61,7 +64,11 @@ fn golden_report() -> ReportModel {
             // Desktop-openable .pbip pair without duplicating the model.
             path: "../../../tmdl/golden/Mini.SemanticModel".to_string(),
         },
-        filters: vec![filter_on("Filter1", column("Product", "Category"))],
+        filters: vec![filter_on(
+            "Filter1",
+            "Categorical",
+            column("Product", "Category"),
+        )],
         pages: vec![
             Page {
                 name: NameKey::new("P1"),
@@ -69,7 +76,11 @@ fn golden_report() -> ReportModel {
                 is_hidden: false,
                 // The acceptance-critical root: `Date'[Calendar Year]` is
                 // referenced by this page filter and nothing else.
-                filters: vec![filter_on("PageFilter", column("Date", "Calendar Year"))],
+                filters: vec![filter_on(
+                    "PageFilter",
+                    "Categorical",
+                    column("Date", "Calendar Year"),
+                )],
                 binding: None,
                 visuals: vec![
                     Visual {
@@ -84,9 +95,14 @@ fn golden_report() -> ReportModel {
                             }],
                         }],
                         // The declared field and the condition tree's aliased
-                        // reference resolve to the same target.
+                        // reference resolve to the same target. This is the
+                        // one filter carrying a `displayName` in the fixture.
                         filters: vec![Filter {
                             name: Some(NameKey::new("V1Filter")),
+                            display_name: Some(
+                                "Business Type is not Regular Superstore".to_string(),
+                            ),
+                            filter_type: Some("Advanced".to_string()),
                             target: Some(column("Reseller", "Business Type")),
                             references: vec![column("Reseller", "Business Type")],
                         }],
@@ -121,6 +137,8 @@ fn golden_report() -> ReportModel {
                         // field; its condition tree is the reference.
                         filters: vec![Filter {
                             name: None,
+                            display_name: None,
+                            filter_type: None,
                             target: None,
                             references: vec![column("Date", "Date Role")],
                         }],
@@ -179,10 +197,18 @@ fn golden_report() -> ReportModel {
             Bookmark {
                 name: NameKey::new("B1"),
                 display_name: Some("Saved view".to_string()),
-                filters: vec![filter_on("BookmarkFilter", column("Geography", "Country"))],
+                filters: vec![filter_on(
+                    "BookmarkFilter",
+                    "Categorical",
+                    column("Geography", "Country"),
+                )],
                 sections: vec![BookmarkSection {
                     page: NameKey::new("P1"),
-                    filters: vec![filter_on("Filter4", column("Owners", "Sales owner"))],
+                    filters: vec![filter_on(
+                        "Filter4",
+                        "Categorical",
+                        column("Owners", "Sales owner"),
+                    )],
                     visuals: vec![BookmarkVisual {
                         visual: NameKey::new("V1"),
                         wells: vec![FieldWell {
@@ -193,7 +219,11 @@ fn golden_report() -> ReportModel {
                                 active: false,
                             }],
                         }],
-                        filters: vec![filter_on("BookmarkV1Filter", column("Product", "Color"))],
+                        filters: vec![filter_on(
+                            "BookmarkV1Filter",
+                            "Categorical",
+                            column("Product", "Color"),
+                        )],
                     }],
                 }],
             },
@@ -517,6 +547,46 @@ fn a_malformed_filter_field_is_dropped_and_noticed_but_the_visual_stays() {
         ingested.skips[0].detail.contains("Property"),
         "{}",
         ingested.skips[0].detail
+    );
+}
+
+/// Unreadable display metadata (`displayName`, `type`) degrades to `None` with
+/// a notice; the filter's binding — the part that keeps objects alive — parses
+/// regardless (issue #33's inventory reads the metadata, never relies on it).
+#[test]
+fn malformed_filter_metadata_degrades_to_none_but_the_filter_binds() {
+    let ingested = report(&fixture(&["resilience", "malformed-filter-metadata"]))
+        .expect("drift must not fail the parse");
+
+    let filter = &ingested.value.pages[0].visuals[0].filters[0];
+    assert_eq!(filter.name.as_ref().map(NameKey::as_str), Some("F1"));
+    assert_eq!(filter.display_name, None);
+    assert_eq!(filter.filter_type, None);
+    assert_eq!(
+        filter.target,
+        Some(column("Product", "Category")),
+        "the field reference is unaffected by the metadata drift"
+    );
+
+    let pointers: Vec<_> = ingested
+        .skips
+        .iter()
+        .map(|skip| (skip.kind, skip.location.as_deref()))
+        .collect();
+    assert_eq!(
+        pointers,
+        vec![
+            (
+                SkipKind::MalformedValue,
+                Some("/filterConfig/filters/0/displayName")
+            ),
+            (
+                SkipKind::MalformedValue,
+                Some("/filterConfig/filters/0/type")
+            ),
+        ],
+        "{:#?}",
+        ingested.skips
     );
 }
 
