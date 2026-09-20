@@ -185,6 +185,11 @@ pub struct Filter {
     /// Filter name within its scope, e.g. `Filter5`. Drillthrough parameters bind
     /// to filters by this name (PBIR `boundFilter`).
     pub name: Option<NameKey>,
+    /// Author-facing name (PBIR `displayName`). Display only.
+    pub display_name: Option<String>,
+    /// Filter kind as written (PBIR `type`), e.g. `"Categorical"` or `"advanced"`.
+    /// Display only — every filter binds through its fields regardless of kind.
+    pub filter_type: Option<String>,
     /// The filtered field itself (PBIR `filterConfig.filters[].field`).
     pub target: Option<FieldTarget>,
     /// Further fields referenced by the filter's condition tree, with query aliases
@@ -1180,6 +1185,7 @@ mod tests {
                             column_target("Product", "Subcategory"),
                             measure_target(None, "Units"),
                         ],
+                        ..Default::default()
                     }],
                     ..visual("visual1", "donutChart")
                 }],
@@ -1211,6 +1217,7 @@ mod tests {
                             column_target("Product", "Subcategory"),
                             measure_target(None, "Units"),
                         ],
+                        ..Default::default()
                     }],
                     ..visual("visual1", "donutChart")
                 }],

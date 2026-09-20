@@ -150,7 +150,8 @@ fn scan(
                 (resolve_explicit(&path)?, Vec::new(), model_named)
             }
             None => {
-                let (paired, announce) = discover_target(args, cwd, streams, palette_err)?;
+                let (paired, announce) =
+                    discover_target(args.no_input, args.quiet, cwd, streams, palette_err)?;
                 (paired, announce, false)
             }
         };
@@ -586,29 +587,8 @@ fn scan(
             .map_err(ScanError::from)?;
         }
         // Notices are stderr's job in text modes; --json carries them itself.
-        // Not all notices are drift — a stale_state notice reports understood
-        // saved state pointing at deleted objects — so the header stays kind-
-        // neutral; each line's `[kind]` says which it is.
-        if !args.json && !output.skips.is_empty() {
-            writeln!(
-                streams.err,
-                "{} skip notice(s) from parsing:",
-                output.skips.len()
-            )
-            .map_err(ScanError::from)?;
-            for skip in &output.skips {
-                let location = skip
-                    .location
-                    .as_ref()
-                    .map(|location| format!(":{location}"))
-                    .unwrap_or_default();
-                writeln!(
-                    streams.err,
-                    "  - {}{location} [{}] {}",
-                    skip.path, skip.kind, skip.detail
-                )
-                .map_err(ScanError::from)?;
-            }
+        if !args.json {
+            write_skip_notices(streams.err, &output.skips)?;
         }
     }
 
@@ -645,6 +625,34 @@ struct ModelScan {
     bound: discover::BoundReports,
     /// The folders actually walked, for the refusal message.
     search_roots: Vec<PathBuf>,
+}
+
+/// Prints the grouped skip-notice block on stderr — the one every text-mode
+/// command shares. Not all notices are drift — a `stale_state` notice reports
+/// understood saved state pointing at deleted objects — so the header stays
+/// kind-neutral; each line's `[kind]` says which it is.
+pub(crate) fn write_skip_notices(
+    err: &mut dyn io::Write,
+    skips: &[SkipNoticeOut],
+) -> Result<(), ScanError> {
+    if skips.is_empty() {
+        return Ok(());
+    }
+    writeln!(err, "{} skip notice(s) from parsing:", skips.len()).map_err(ScanError::from)?;
+    for skip in skips {
+        let location = skip
+            .location
+            .as_ref()
+            .map(|location| format!(":{location}"))
+            .unwrap_or_default();
+        writeln!(
+            err,
+            "  - {}{location} [{}] {}",
+            skip.path, skip.kind, skip.detail
+        )
+        .map_err(ScanError::from)?;
+    }
+    Ok(())
 }
 
 /// Sorts one `--report` value in model mode into a direct report item or a
@@ -792,8 +800,9 @@ fn names_semantic_model(path: &Path) -> bool {
         && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())
 }
 
-/// Resolves an explicit PATH (argument or config `target`).
-fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
+/// Resolves an explicit PATH (argument or config `target`). Shared with the
+/// `report` command, which resolves projects exactly the way `scan` does.
+pub(crate) fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
     if !path.exists() {
         return Err(ScanError::new(format!("no such path: {}", path.display()))
             .with_hint("pass a .pbip file, a project folder, a .SemanticModel, or a .Report"));
@@ -811,8 +820,10 @@ fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
 }
 
 /// Finds the scan target in `cwd` when no PATH or config target names one.
-fn discover_target(
-    args: &ScanArgs,
+/// Shared by every command that resolves a project the way `scan` does.
+pub(crate) fn discover_target(
+    no_input: bool,
+    quiet: bool,
     cwd: &Path,
     streams: &mut Streams<'_>,
     palette_err: &Palette,
@@ -828,7 +839,7 @@ fn discover_target(
             Ok((paired, vec![format!("Discovered '{}'.", only.label)]))
         }
         many => {
-            if args.no_input || args.quiet || !streams.stdin_is_tty {
+            if no_input || quiet || !streams.stdin_is_tty {
                 return Err(ambiguous_error(cwd, many));
             }
             let candidate = pick(many.to_vec(), cwd, streams, palette_err)?;
@@ -935,7 +946,8 @@ fn is_report_item(path: &Path) -> bool {
             || path.join("definition").join("report.json").is_file())
 }
 
-fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+/// Drops paths already seen (compared canonically), keeping first occurrence.
+pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     let mut kept = Vec::new();
     for path in paths {
@@ -1000,7 +1012,9 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
     }
 }
 
-fn skip_notice_out(notice: &SkipNotice) -> SkipNoticeOut {
+/// Maps a core skip notice to its output DTO — the shared shape of every
+/// command's `skips` array and stderr block.
+pub(crate) fn skip_notice_out(notice: &SkipNotice) -> SkipNoticeOut {
     SkipNoticeOut {
         path: notice.path.display().to_string(),
         location: notice.location.clone(),
@@ -1009,7 +1023,7 @@ fn skip_notice_out(notice: &SkipNotice) -> SkipNoticeOut {
     }
 }
 
-fn skip_kind_out(kind: SkipKind) -> &'static str {
+pub(crate) fn skip_kind_out(kind: SkipKind) -> &'static str {
     match kind {
         SkipKind::UnknownObject => "unknown_object",
         SkipKind::UnknownProperty => "unknown_property",

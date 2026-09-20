@@ -820,6 +820,8 @@ fn filter_entry(entry: &Value, ctx: &mut Ctx, location: &str) -> Filter {
 
     Filter {
         name: entry.get("name").and_then(Value::as_str).map(NameKey::new),
+        display_name: optional_string(entry, "displayName", ctx, location),
+        filter_type: optional_string(entry, "type", ctx, location),
         target,
         references,
     }
@@ -1178,6 +1180,24 @@ fn resolve_source(
                 location,
                 SkipKind::MalformedValue,
                 "SourceRef names neither a query alias nor an entity",
+            );
+            None
+        }
+    }
+}
+
+/// Reads an optional display string (a filter's `displayName`, its `type`). A
+/// present-but-unreadable value is drift in a known key: noticed, and the slot
+/// stays empty — display metadata degrades, the binding does not.
+fn optional_string(entry: &Value, key: &str, ctx: &mut Ctx, location: &str) -> Option<String> {
+    let value = entry.get(key)?;
+    match value.as_str() {
+        Some(text) => Some(text.to_string()),
+        None => {
+            ctx.notice(
+                format!("{location}/{key}"),
+                SkipKind::MalformedValue,
+                "value is not a string",
             );
             None
         }
@@ -1757,10 +1777,16 @@ const FILTER_CONFIG_KEYS: Keys = Keys {
 
 /// One filter entry, at any scope and in bookmarks.
 const FILTER_ENTRY_KEYS: Keys = Keys {
-    known: &["name", "field", "expression", "filter"],
+    known: &[
+        "name",
+        "displayName",
+        "type",
+        "field",
+        "expression",
+        "filter",
+    ],
     ignored: &[
         "cachedDisplayNames",
-        "displayName",
         "filterExpressionMetadata",
         "filterSortOrder",
         "howCreated",
@@ -1771,7 +1797,6 @@ const FILTER_ENTRY_KEYS: Keys = Keys {
         "ordinal",
         "precedence",
         "restatement",
-        "type",
     ],
 };
 

@@ -7,6 +7,7 @@
 ---
 
 - [The scan command](output.md)
+- [The report command](report.md)
 - [What counts as unused](graph.md)
 - [Source formats and drift policy](formats.md)
 

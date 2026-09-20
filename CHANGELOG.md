@@ -5,6 +5,62 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ripbi report` — print the ingested report as data (issue #33)** — a new
+  subcommand that inventories what ripbi sees in a report: report → pages →
+  visuals → fields, each visual with its `visualType`, every field it binds
+  and through which site (field well role, sort, conditional formatting, alt
+  text), its filters with their type and display name, per-page visual counts,
+  bookmark and report-measure lines, and the phone layout's pages tagged
+  `mobile`. Bindings that resolve to nothing in the model are attributed to
+  their visual with scan's broken-binding vocabulary and counted per report.
+  Three output modes: the human tree, `--plain` typed tab-separated records
+  for grep/awk, and `--json` (`schema_version: 1`). Informational by design:
+  exit `0` for any produced inventory, `2` only on error — `scan`'s
+  exit-code contract is untouched. Filters now keep their `displayName` and
+  `type` (PBIR) in the report AST, so the inventory can show
+  `filter Filter5 (Categorical) — 'Product'[Category]`.
+
+- **Exploratory views and glob filters for `ripbi report`** — four list
+  views rendered as aligned tables: `--pages` (every page), `--visuals` (one
+  roll-up row per visual: type, field and unresolved counts), `--fields`
+  (one row per binding, at report, page, and visual level), and `--used`
+  (every model object the report keeps alive — the complement of scan's
+  unused findings). Every `--fields` column is searchable, and the filters
+  narrow every output mode: `--page` (name or display name), `--visual`
+  (name or type — `--visual donut*` finds the donut chart, since PBIR's
+  folder hashes are a visual's only "name"), `--site`, `--kind`, and
+  `--match` (case-insensitive globs, so `--match "'Sales'[*]"` finds every
+  site of a table's fields), plus `--broken` (only the unresolved bindings).
+  Repeats of one flag union, different flags intersect. `--kind` and
+  `--match` also filter the `--used` table's kind and id columns. Counts
+  recompute from what survives; broken bindings are now itemized at page
+  and report level too; an empty result prints a stderr note instead of
+  silence.
+
+### Changed
+
+- **A readable `ripbi report` tree** — pages and visuals now connect with
+  box drawing (`├──`/`└──`, `│` carrying the stalk), visual hashes render
+  dim under a bold `visualType`, and every reference prints as a property
+  row aligned on a per-block label column. Page-level filters and unresolved
+  bindings collect under connected `filters (n)`/`unresolved (n)` group
+  nodes ahead of the page's visuals. Field rows keep a kind word only
+  where it is the one disambiguation (`column`/`measure`); `conditional
+  formatting` shortens to `formatting` in the tree. Targets and hashes stay
+  verbatim — what a row shows is what `--match` and `--visual` match. The
+  machine modes (`--fields`, `--plain`, `--json`) are unchanged.
+
+- **Concise `--help`** — flag help is now one line each, so nothing wraps
+  mid-sentence in the terminal: the ten scan type flags drop their repeated
+  "combine with the other type flags" boilerplate (stated once in the examples
+  block instead), and the long paragraphs behind `--model`, `--report`,
+  `--verbose`, `--broken`, and friends moved to where they already lived — the
+  output contract docs (`docs/output.md`, `docs/report.md`).
+
 ## [0.3.4] - 2026-09-18
 
 ### Added
