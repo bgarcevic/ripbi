@@ -6,8 +6,9 @@ ingestion format.
 
 ## What is modeled, and what is not
 
-Modeled: tables, columns, measures, partitions, relationships, hierarchies, RLS roles,
-calculation groups, KPIs, and model-level shared M expressions. Columns also carry their
+Modeled: tables, columns, measures, partitions, relationships, hierarchies, RLS/OLS
+roles (table and column permissions), calculation groups, KPIs, and model-level shared M
+expressions. Columns also carry their
 variations (TOM `variation`) — the declaration a report's date-hierarchy binding resolves
 through — and tables carry the engine's auto date/time identity flags (`is_private`,
 `is_local_date_table`, `is_template_date_table`).

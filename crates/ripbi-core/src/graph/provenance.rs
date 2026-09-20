@@ -224,7 +224,9 @@ pub enum StructuralEdge {
     /// values into the parameter, so a consumed parameter keeps its bound
     /// column alive (issue #50).
     MParameterBinding,
-    /// The role grants access to this table.
+    /// The role grants access to this table, or holds an object-level
+    /// permission on this column — granting or revoking (`none`) both count,
+    /// since dropping either object would break the role.
     RolePermission,
 }
 

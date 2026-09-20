@@ -346,13 +346,15 @@ pub struct HierarchyLevel {
     pub column: String,
 }
 
-/// A row-level-security role.
+/// A security role holding row-level and object-level permissions.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Role {
     /// Role name.
     pub name: String,
     /// Per-table permissions granted by this role.
     pub table_permissions: Vec<TablePermission>,
+    /// Per-column object-level permissions granted by this role.
+    pub column_permissions: Vec<ColumnPermission>,
 }
 
 /// A role's permission on one table.
@@ -362,6 +364,26 @@ pub struct TablePermission {
     pub table: String,
     /// DAX row filter; None = metadata-only permission.
     pub filter_expression: Option<String>,
+}
+
+/// A role's object-level-security permission on one column.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ColumnPermission {
+    /// Owning table name.
+    pub table: String,
+    /// Target column name.
+    pub column: String,
+    /// Explicit metadata permission; None = engine default.
+    pub metadata_permission: Option<MetadataPermission>,
+}
+
+/// The metadata visibility a role holds on a secured object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetadataPermission {
+    /// The object is hidden from the role (TOM `none`).
+    Denied,
+    /// The object is visible to the role (TOM `read`).
+    Granted,
 }
 
 /// The calculation group defined on a table.
@@ -1155,6 +1177,11 @@ mod tests {
                         filter_expression: None,
                     },
                 ],
+                column_permissions: vec![ColumnPermission {
+                    table: "Sales".to_string(),
+                    column: "Margin".to_string(),
+                    metadata_permission: Some(MetadataPermission::Denied),
+                }],
             }],
             ..Default::default()
         }

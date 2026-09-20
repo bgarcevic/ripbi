@@ -41,6 +41,7 @@ Object headers, mapped into the AST:
 | `relationship <guid>` | `Relationship` (`isActive` defaults true, like TOM) |
 | `hierarchy N` + `level N`/`column:` | `Hierarchy` / `HierarchyLevel` |
 | `role N` + `tablePermission T = filter` | `Role` / `TablePermission` |
+| `columnPermission` (under `tablePermission`, or a sibling `'T'[C]`) | `ColumnPermission` |
 | `calculationGroup` + `calculationItem N = dax` | `CalculationGroup` / `CalculationItem` |
 | `expression N = m` | `SharedExpression` |
 | `function N = dax` | `Function` |
@@ -276,6 +277,15 @@ golden fixture is held to the same standard — it loads clean in the engine:
 - **`tablePermission`**: the filter is the `=` expression (inline or block);
   a `filterExpression` child property also loads. A permission with no filter
   is just `tablePermission <table>`. All three shapes verified.
+- **`columnPermission`** (object-level security): a `columnPermission <column>`
+  child of the table permission it rides on — Desktop's serialization, value
+  inline (`= none`) or in a `metadataPermission: none|read` child property. A
+  role-level sibling with a qualified `'Table'[Column]` name also loads; one
+  without a table qualifier is a `MalformedValue` notice. Every permission
+  loads even when its value does not parse (a `MalformedValue` notice) — the
+  column stays referenced either way. Whole-table OLS is a `metadataPermission`
+  child on the `tablePermission` itself; it is unmodeled because the permission
+  edge keeps the table alive regardless.
 - **`relatedColumnDetails`**: a nameless object under a column with one
   `groupByColumn: <column>` per grouped column (the shape in
   `samples/…/Toggle for breakdown.tmdl`); it feeds `Column::group_by_columns`.

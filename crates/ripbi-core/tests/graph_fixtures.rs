@@ -102,7 +102,9 @@ fn not_unused(unused: &[ripbi_core::UnusedObject], id: &ObjectId) {
 /// the report resolves the `Sales` measure (the card), falls back to the
 /// `Sales` table (the nonexistent `Units` column's qualifier), and the
 /// administrator role keeps `Sales Order` alive via its metadata-only
-/// permission and `Sales` via its filter. Everything else is dead.
+/// permission, `Sales` via its filter, and `Supplier Phone` via its column
+/// permission — the column is referenced nowhere else. Everything else is
+/// dead.
 #[test]
 fn golden_unused_set_is_exact() {
     let (db, report) = golden_pair();

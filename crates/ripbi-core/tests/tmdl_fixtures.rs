@@ -12,9 +12,9 @@ use std::path::PathBuf;
 
 use ripbi_core::ingest::{SkipKind, semantic_model};
 use ripbi_core::model::{
-    CalculationGroup, CalculationItem, Column, ColumnKind, DaxExpressionKind, Hierarchy,
-    HierarchyLevel, Kpi, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
-    Table, TablePermission, TabularDatabase,
+    CalculationGroup, CalculationItem, Column, ColumnKind, ColumnPermission, DaxExpressionKind,
+    Hierarchy, HierarchyLevel, Kpi, Measure, MetadataPermission, Partition, PartitionSource,
+    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
 };
 use ripbi_core::{NameKey, ObjectId};
 
@@ -56,6 +56,11 @@ fn golden_database() -> TabularDatabase {
                             expression: "DIVIDE([Sales Amount], 10)".to_string(),
                         },
                         sort_by_column: Some("Sales Amount".to_string()),
+                        ..Default::default()
+                    },
+                    Column {
+                        name: "Supplier Phone".to_string(),
+                        kind: ColumnKind::Data,
                         ..Default::default()
                     },
                     Column {
@@ -237,6 +242,11 @@ fn golden_database() -> TabularDatabase {
                     filter_expression: None,
                 },
             ],
+            column_permissions: vec![ColumnPermission {
+                table: "Sales".to_string(),
+                column: "Supplier Phone".to_string(),
+                metadata_permission: Some(MetadataPermission::Denied),
+            }],
         }],
         expressions: vec![
             SharedExpression {

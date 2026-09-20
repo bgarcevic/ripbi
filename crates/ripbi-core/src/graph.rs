@@ -19,10 +19,10 @@
 //!
 //! Reachability starts from the roots: every
 //! [`ReportModel::bindings`](crate::ReportModel::bindings) target and every
-//! role (roles are security configuration, never dead weight; their filter
-//! edges keep the referenced columns alive). From there, two passes over the
-//! edge catalog decide liveness — the full catalog with the reasoning behind
-//! every rule lives in `docs/graph.md` beside this module:
+//! role (roles are security configuration, never dead weight; their permission
+//! edges keep the referenced tables and columns alive). From there, two passes
+//! over the edge catalog decide liveness — the full catalog with the reasoning
+//! behind every rule lives in `docs/graph.md` beside this module:
 //!
 //! - **DAX references** (`dax::bind`, every candidate — an unqualified
 //!   `[Name]` keeps the measure *and* the home-table column alive) and their
@@ -507,9 +507,10 @@ mod tests {
     use super::*;
     use crate::identity::NameKey;
     use crate::model::{
-        Column, ColumnKind, DaxExpressionKind, Function, Hierarchy, HierarchyLevel, HierarchyRef,
-        Measure, ParameterValuesColumn, Partition, PartitionSource, RefreshPolicy, Relationship,
-        Role, SharedExpression, Table, TablePermission, Variation,
+        Column, ColumnKind, ColumnPermission, DaxExpressionKind, Function, Hierarchy,
+        HierarchyLevel, HierarchyRef, Measure, MetadataPermission, ParameterValuesColumn,
+        Partition, PartitionSource, RefreshPolicy, Relationship, Role, SharedExpression, Table,
+        TablePermission, Variation,
     };
     use crate::report::{
         Bookmark, BookmarkSection, BookmarkVisual, FieldTarget, FieldWell, Filter, Page,
@@ -1031,6 +1032,7 @@ mod tests {
                         table: "Sales".to_string(),
                         filter_expression: Some("'Sales'[Region] = \"West\"".to_string()),
                     }],
+                    column_permissions: Vec::new(),
                 }],
                 ..Default::default()
             };
@@ -1069,6 +1071,7 @@ mod tests {
                         table: "Sales".to_string(),
                         filter_expression: None,
                     }],
+                    column_permissions: Vec::new(),
                 }],
                 ..Default::default()
             };
@@ -1076,6 +1079,76 @@ mod tests {
             let graph = DependencyGraph::build(&db, &[]);
 
             assert!(graph.unused_objects().is_empty());
+        }
+
+        /// An object-level permission keeps its column alive whether it grants
+        /// or revokes (`none`) access, with the same provenance as the table
+        /// rule; the kept-alive column carries its table along through
+        /// containment, since dropping the table would break the role too.
+        #[test]
+        fn a_column_permission_keeps_its_column_alive() {
+            let db = TabularDatabase {
+                tables: vec![Table {
+                    name: "Sales".to_string(),
+                    columns: vec![column("Customer Email")],
+                    ..Default::default()
+                }],
+                roles: vec![Role {
+                    name: "Reader".to_string(),
+                    table_permissions: Vec::new(),
+                    column_permissions: vec![ColumnPermission {
+                        table: "Sales".to_string(),
+                        column: "Customer Email".to_string(),
+                        metadata_permission: Some(MetadataPermission::Denied),
+                    }],
+                }],
+                ..Default::default()
+            };
+
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            assert!(unused.is_empty(), "the role references the column");
+            let consumers = graph.consumers_of(&column_id("Sales", "Customer Email"));
+            assert_eq!(consumers.len(), 1);
+            assert_eq!(
+                consumers[0].0,
+                ObjectId::Role {
+                    role: NameKey::new("Reader")
+                }
+            );
+            assert!(matches!(
+                consumers[0].1,
+                Provenance::Structural {
+                    role: StructuralEdge::RolePermission
+                }
+            ));
+            // Containment: the secured column keeps its table alive.
+            not_unused(&unused, &table_id("Sales"));
+        }
+
+        /// A permission naming a column the model no longer has keeps nothing
+        /// alive — the miss is data, never a fabricated node.
+        #[test]
+        fn a_column_permission_on_a_missing_column_keeps_nothing_alive() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                roles: vec![Role {
+                    name: "Reader".to_string(),
+                    table_permissions: Vec::new(),
+                    column_permissions: vec![ColumnPermission {
+                        table: "Sales".to_string(),
+                        column: "Dropped".to_string(),
+                        metadata_permission: Some(MetadataPermission::Granted),
+                    }],
+                }],
+                ..Default::default()
+            };
+
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            find(&unused, &table_id("Sales"));
         }
 
         /// With no reports and no roles, nothing is reachable: everything is
