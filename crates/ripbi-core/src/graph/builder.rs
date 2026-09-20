@@ -338,6 +338,20 @@ impl Builder {
                     self.edge(&role_id, &table_id, role_permission());
                 }
             }
+            for permission in &role.column_permissions {
+                // Object-level security works one level down: whether the
+                // permission grants or revokes (`none`) access, dropping the
+                // column would break the role, so the column is referenced.
+                // In the strong pass the kept-alive column keeps its table
+                // alive through containment — dropping that table would break
+                // the permission too. A permission naming a column the model
+                // no longer has keeps nothing alive (misses are data).
+                if let Some((_, column_id)) =
+                    endpoint_column(db, index, &permission.table, &permission.column)
+                {
+                    self.edge(&role_id, &column_id, role_permission());
+                }
+            }
         }
 
         // Dynamic M query parameters: a parameter names the column its

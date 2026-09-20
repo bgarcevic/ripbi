@@ -138,9 +138,13 @@ annotated.
 keeps **both** key columns alive; an **inactive** one is live only when a live DAX
 reference (`USERELATIONSHIP`) activates it — switching one on at query time is DAX's
 job, and nothing else can. Unactivated, the relationship is itself a finding, and its
-key columns are findings chained under it (`only used by … (also unused)`). Roles keep
-their granted tables and filtered columns alive; roles themselves are seeds, never
-findings, because security configuration is not bloat.
+key columns are findings chained under it (`only used by … (also unused)`).
+
+**Role permissions.** Roles keep their granted tables and their object-level (OLS)
+columns alive — a grant and a `none` revocation both count, since dropping either object
+breaks the role on deploy. A kept-alive column carries its table along through
+containment for the same reason. Roles themselves are seeds, never findings, because
+security configuration is not bloat.
 
 ## The relationship rule and the two-pass traversal
 

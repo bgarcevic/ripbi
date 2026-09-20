@@ -18,10 +18,10 @@ use std::path::{Path, PathBuf};
 use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::model::{
-    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, Function, Hierarchy,
-    HierarchyLevel, HierarchyRef, Kpi, Measure, ParameterValuesColumn, Partition, PartitionSource,
-    RefreshPolicy, Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase,
-    Variation,
+    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission, Function,
+    Hierarchy, HierarchyLevel, HierarchyRef, Kpi, Measure, MetadataPermission,
+    ParameterValuesColumn, Partition, PartitionSource, RefreshPolicy, Relationship, Role,
+    SharedExpression, Table, TablePermission, TabularDatabase, Variation,
 };
 use crate::{Error, Result};
 
@@ -137,6 +137,7 @@ const NAMED_DESCRIPTORS: &[&str] = &[
     "calculationItem",
     "calendar",
     "column",
+    "columnPermission",
     "dataSource",
     "expression",
     "extendedProperty",
@@ -1610,10 +1611,79 @@ fn map_role(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Role {
                         .and_then(Node::text)
                         .map(str::to_string)
                 });
+                for sub in &child.children {
+                    if is_ignored(sub) {
+                        continue;
+                    }
+                    match sub.key.as_str() {
+                        // Object-level security rides on the table
+                        // permission: Desktop serializes
+                        // `columnPermission <Column> = none` nested under
+                        // its table's permission (verified against the
+                        // Analysis Services engine).
+                        "columnPermission" => role.column_permissions.push(map_column_permission(
+                            &table,
+                            sub.name.as_deref().unwrap_or_default(),
+                            sub.text(),
+                            sub,
+                            path,
+                            skips,
+                        )),
+                        // Whole-table OLS spells `metadataPermission: none`
+                        // here; the value is unmodeled because the permission
+                        // edge keeps the table alive either way.
+                        "filterExpression" | "metadataPermission" => {}
+                        other => notice(
+                            skips,
+                            path,
+                            Some(sub.line),
+                            SkipKind::UnknownProperty,
+                            format!("unknown property '{other}' on tablePermission '{table}'"),
+                        ),
+                    }
+                }
                 role.table_permissions.push(TablePermission {
                     table,
                     filter_expression,
                 });
+            }
+            // A role-level sibling spells out its own target as a qualified
+            // `'Table'[Column]` name. A quoted table ends `read_name` at the
+            // closing quote, so a following bracket — and any `= value` —
+            // lands in the line's tail; stitch the target back together and
+            // lift the value out.
+            "columnPermission" => {
+                let mut target = child.name.clone().unwrap_or_default();
+                let mut inline = child.text().map(str::to_string);
+                if let Some(tail) = &child.tail {
+                    match tail.split_once('=') {
+                        Some((bracketed, value)) => {
+                            target.push_str(bracketed.trim_end());
+                            inline = Some(value.trim().to_string());
+                        }
+                        None => target.push_str(tail.trim_end()),
+                    }
+                }
+                match split_qualified_column(&target) {
+                    Some((table, column)) => role.column_permissions.push(map_column_permission(
+                        &table,
+                        &column,
+                        inline.as_deref(),
+                        child,
+                        path,
+                        skips,
+                    )),
+                    None => notice(
+                        skips,
+                        path,
+                        Some(child.line),
+                        SkipKind::MalformedValue,
+                        format!(
+                            "column permission '{target}' on role '{}' names no table",
+                            role.name
+                        ),
+                    ),
+                }
             }
             other => notice(
                 skips,
@@ -1625,6 +1695,133 @@ fn map_role(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Role {
         }
     }
     role
+}
+
+/// Maps one `columnPermission` entry. The permission keeps its column alive
+/// whether it grants or revokes access, so an unparsable value is drift worth
+/// a notice — not a reason to drop the permission. `inline` is the permission
+/// value after `=` when the line carries one.
+fn map_column_permission(
+    table: &str,
+    column: &str,
+    inline: Option<&str>,
+    node: &Node,
+    path: &Path,
+    skips: &mut Vec<SkipNotice>,
+) -> ColumnPermission {
+    let mut permission = ColumnPermission {
+        table: table.to_string(),
+        column: unquote(column),
+        metadata_permission: None,
+    };
+    // The TOM metadata permission rides inline (`= none`) or in a
+    // `metadataPermission` child (verified against the Analysis Services
+    // engine); both spellings load.
+    match inline {
+        Some(value) => match metadata_permission(value) {
+            Some(parsed) => permission.metadata_permission = Some(parsed),
+            None => notice(
+                skips,
+                path,
+                Some(node.line),
+                SkipKind::MalformedValue,
+                format!(
+                    "unknown metadata permission value '{value}' on columnPermission '{}' of table '{table}'",
+                    permission.column
+                ),
+            ),
+        },
+        None => {
+            for sub in &node.children {
+                if is_ignored(sub) {
+                    continue;
+                }
+                match sub.key.as_str() {
+                    "metadataPermission" => match sub.text() {
+                        Some(value) => match metadata_permission(value) {
+                            Some(parsed) => {
+                                permission.metadata_permission = Some(parsed);
+                            }
+                            None => notice(
+                                skips,
+                                path,
+                                Some(sub.line),
+                                SkipKind::MalformedValue,
+                                format!(
+                                    "unknown metadata permission value '{value}' on columnPermission '{}' of table '{table}'",
+                                    permission.column
+                                ),
+                            ),
+                        },
+                        None => notice(
+                            skips,
+                            path,
+                            Some(sub.line),
+                            SkipKind::MalformedValue,
+                            format!(
+                                "metadataPermission on columnPermission '{}' of table '{table}' has no value",
+                                permission.column
+                            ),
+                        ),
+                    },
+                    other => notice(
+                        skips,
+                        path,
+                        Some(sub.line),
+                        SkipKind::UnknownProperty,
+                        format!(
+                            "unknown property '{other}' on columnPermission '{}' of table '{table}'",
+                            permission.column
+                        ),
+                    ),
+                }
+            }
+        }
+    }
+    permission
+}
+
+/// Parses a TOM metadata permission value (`none`/`read`, case-insensitive).
+fn metadata_permission(value: &str) -> Option<MetadataPermission> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(MetadataPermission::Denied),
+        "read" => Some(MetadataPermission::Granted),
+        _ => None,
+    }
+}
+
+/// Splits a qualified `'Table'[Column]` permission name into its parts,
+/// honoring `''` escapes inside the quoted table. Unquoted tables
+/// (`Table[Column]`) load too; anything else is not a column permission name.
+fn split_qualified_column(name: &str) -> Option<(String, String)> {
+    if let Some(rest) = name.strip_prefix('\'') {
+        let mut table = String::new();
+        let mut chars = rest.chars();
+        loop {
+            match chars.next()? {
+                '\'' => {
+                    if chars.as_str().starts_with('\'') {
+                        table.push('\'');
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                c => table.push(c),
+            }
+        }
+        let column = chars.as_str().trim();
+        let column = column.strip_prefix('[')?;
+        let column = column.strip_suffix(']')?;
+        Some((table, column.to_string()))
+    } else {
+        let (table, column) = name.split_once('[')?;
+        let column = column.strip_suffix(']')?;
+        if table.is_empty() {
+            return None;
+        }
+        Some((table.trim().to_string(), column.to_string()))
+    }
 }
 
 fn map_expression(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> SharedExpression {
@@ -2532,6 +2729,158 @@ mod tests {
                         filter_expression: None,
                     },
                 ]
+            );
+        }
+
+        /// Desktop serializes object-level security as a `columnPermission`
+        /// child of the table permission it rides on (verified against the
+        /// Analysis Services engine).
+        #[test]
+        fn maps_a_nested_column_permission() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\ttablePermission Sales = [Amount] > 0\n\t\tcolumnPermission 'Supplier Phone' = none\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty());
+            assert_eq!(
+                role.column_permissions,
+                [ColumnPermission {
+                    table: "Sales".to_string(),
+                    column: "Supplier Phone".to_string(),
+                    metadata_permission: Some(MetadataPermission::Denied),
+                }]
+            );
+            assert_eq!(
+                role.table_permissions[0].filter_expression.as_deref(),
+                Some("[Amount] > 0")
+            );
+        }
+
+        /// The TMDL-view spelling carries the value in a
+        /// `metadataPermission` child property instead.
+        #[test]
+        fn maps_column_permissions_with_metadata_permission_properties() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\ttablePermission Sales\n\t\tcolumnPermission Amount\n\t\t\tmetadataPermission: none\n\t\tcolumnPermission Phone\n\t\t\tmetadataPermission: read\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty());
+            assert_eq!(
+                role.column_permissions,
+                [
+                    ColumnPermission {
+                        table: "Sales".to_string(),
+                        column: "Amount".to_string(),
+                        metadata_permission: Some(MetadataPermission::Denied),
+                    },
+                    ColumnPermission {
+                        table: "Sales".to_string(),
+                        column: "Phone".to_string(),
+                        metadata_permission: Some(MetadataPermission::Granted),
+                    },
+                ]
+            );
+        }
+
+        /// A role-level sibling spells out its own target; quoted tables with
+        /// `''` escapes and unquoted tables both load.
+        #[test]
+        fn maps_role_level_qualified_column_permissions() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\tcolumnPermission 'Sales''s Data'[Amount] = read\n\tcolumnPermission Sales[Phone] = none\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty());
+            assert_eq!(
+                role.column_permissions,
+                [
+                    ColumnPermission {
+                        table: "Sales's Data".to_string(),
+                        column: "Amount".to_string(),
+                        metadata_permission: Some(MetadataPermission::Granted),
+                    },
+                    ColumnPermission {
+                        table: "Sales".to_string(),
+                        column: "Phone".to_string(),
+                        metadata_permission: Some(MetadataPermission::Denied),
+                    },
+                ]
+            );
+        }
+
+        /// The permission still loads — it keeps the column alive — but the
+        /// value it could not parse is drift worth noticing.
+        #[test]
+        fn notices_an_unknown_column_permission_value() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\ttablePermission Sales\n\t\tcolumnPermission Amount = sometimes\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert_eq!(role.column_permissions.len(), 1);
+            assert_eq!(role.column_permissions[0].metadata_permission, None);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+            assert!(skips[0].detail.contains("'sometimes'"));
+        }
+
+        #[test]
+        fn notices_unknown_properties_on_a_column_permission() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\ttablePermission Sales\n\t\tcolumnPermission Amount\n\t\t\tsomeFuturePermission: write\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert_eq!(role.column_permissions.len(), 1);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::UnknownProperty);
+            assert!(skips[0].detail.contains("someFuturePermission"));
+        }
+
+        /// A sibling naming no table cannot be resolved to a column at all.
+        #[test]
+        fn notices_a_role_level_column_permission_without_a_table() {
+            let mut skips = Vec::new();
+            let node = map_one("role Admin\n\tcolumnPermission Amount = none\n", "role");
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert!(role.column_permissions.is_empty());
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+        }
+
+        /// Whole-table OLS rides on the table permission as a
+        /// `metadataPermission` child; the value is unmodeled — the permission
+        /// edge keeps the table alive either way — so it stays silent.
+        #[test]
+        fn maps_whole_table_ols_as_a_metadata_only_permission() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "role Admin\n\ttablePermission Customers\n\t\tmetadataPermission: none\n",
+                "role",
+            );
+            let role = map_role(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty());
+            assert_eq!(
+                role.table_permissions,
+                [TablePermission {
+                    table: "Customers".to_string(),
+                    filter_expression: None,
+                }]
             );
         }
 

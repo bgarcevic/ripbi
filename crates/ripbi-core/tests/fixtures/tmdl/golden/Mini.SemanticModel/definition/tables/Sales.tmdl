@@ -47,6 +47,13 @@ table Sales
 		sortByColumn: 'Sales Amount'
 		lineageTag: 55555555-5555-5555-5555-555555555555
 
+	/// Hidden from viewers by the Administrators role's column permission.
+	column 'Supplier Phone'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: Supplier Phone
+		lineageTag: eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee
+
 	column DueDateKey
 		dataType: int64
 		isHidden

@@ -69,10 +69,10 @@ pub use model::index::{
     Resolved, TableHandle, UnqualifiedMatches,
 };
 pub use model::{
-    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, DaxExpressionKind,
-    DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel, HierarchyRef, Kpi,
-    MExpressionRef, Measure, Partition, PartitionSource, Relationship, Role, SharedExpression,
-    Table, TablePermission, TabularDatabase, Variation,
+    CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission,
+    DaxExpressionKind, DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel,
+    HierarchyRef, Kpi, MExpressionRef, Measure, MetadataPermission, Partition, PartitionSource,
+    Relationship, Role, SharedExpression, Table, TablePermission, TabularDatabase, Variation,
 };
 pub use report::{
     BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, DatasetReference,
