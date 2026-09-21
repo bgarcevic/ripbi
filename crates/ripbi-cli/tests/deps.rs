@@ -5,7 +5,7 @@
 #[expect(dead_code)]
 mod common;
 
-use common::{TempDir, model_into, project_into, run_deps};
+use common::{TempDir, json_payload, model_into, project_into, run_deps};
 use ripbi_cli::cli::DepsArgs;
 
 /// A scratch directory holding the mini fixture's project under its own
@@ -271,6 +271,130 @@ mod inputs {
         assert_eq!(code, 0);
         assert!(out.is_empty());
         assert!(err.is_empty());
+    }
+}
+
+mod machine_modes {
+    use super::*;
+
+    #[test]
+    fn plain_records_are_stable_one_per_line() {
+        let (code, out, _err) = object_in("'Sales'[Total]", |args| args.plain = true);
+
+        assert_eq!(code, 0);
+        let expected = [
+            "dependency\ttable 'Sales'\tpartition 'Sales'[Sales]\ttable_partition",
+            "dependency\t'Sales'[Amount]\ttable 'Sales'\ttable_member",
+            "dependency\t'Sales'[Total]\ttable 'Sales'\ttable_member",
+            "dependency\t'Sales'[Total]\t'Sales'[Amount]\tmeasure_expression",
+            "binding\t'Sales'[Total]\tMini\tP1\tV1\tValues",
+        ];
+        assert_eq!(out, expected.join("\n") + "\n");
+    }
+
+    #[test]
+    fn plain_impact_records_flip_the_orientation() {
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            plain: true,
+            ..DepsArgs::default()
+        };
+        let dir = mini_project();
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        // The queried object comes first: it is the used side.
+        assert!(
+            out.contains("impact\t'Sales'[Legacy]\t'Sales'[Legacy Total]\tmeasure_expression\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn plain_overview_is_count_records() {
+        let dir = mini_project();
+
+        let (code, out, _err) = run_deps(
+            &DepsArgs {
+                plain: true,
+                ..DepsArgs::default()
+            },
+            &dir.0,
+            "",
+        );
+
+        assert_eq!(code, 0);
+        let expected = [
+            "objects\t6",
+            "edges\t7",
+            "bindings\t1",
+            "measures\t2",
+            "columns\t2",
+            "hierarchies\t0",
+            "relationships\t0",
+            "other\t2",
+        ];
+        assert_eq!(out, expected.join("\n") + "\n");
+    }
+
+    #[test]
+    fn json_exposes_the_typed_graph() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            json: true,
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        let payload = json_payload(&out);
+        assert_eq!(payload["schema_version"], 1);
+        assert_eq!(payload["root"]["id"], "'Sales'[Total]");
+        assert_eq!(payload["root"]["type"], "measure");
+        assert_eq!(payload["nodes"].as_array().expect("nodes").len(), 4);
+        let edges = payload["edges"].as_array().expect("edges");
+        assert!(edges.iter().all(|edge| edge["kind"] == "dependency"));
+        assert!(
+            edges
+                .iter()
+                .any(|edge| edge["provenance"] == "measure_expression"),
+            "edges keep typed provenance keys"
+        );
+        let bindings = payload["bindings"].as_array().expect("bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0]["report"], "Mini");
+        assert_eq!(bindings[0]["page"], "P1");
+        assert_eq!(bindings[0]["visual"], "V1");
+        assert_eq!(bindings[0]["binding"], "Values");
+        assert_eq!(bindings[0]["kind"], "visual_binding");
+        assert_eq!(bindings[0]["bookmark"], serde_json::Value::Null);
+        assert_eq!(bindings[0]["mobile"], false);
+    }
+
+    #[test]
+    fn json_overview_carries_the_counts() {
+        let dir = mini_project();
+
+        let (code, out, _err) = run_deps(
+            &DepsArgs {
+                json: true,
+                ..DepsArgs::default()
+            },
+            &dir.0,
+            "",
+        );
+
+        assert_eq!(code, 0);
+        let payload = json_payload(&out);
+        assert_eq!(payload["schema_version"], 1);
+        assert_eq!(payload["objects"], 6);
+        assert_eq!(payload["edges"], 7);
+        assert_eq!(payload["bindings"], 1);
+        assert_eq!(payload["by_type"]["measures"], 2);
+        assert_eq!(payload["by_type"]["other"], 2);
     }
 }
 

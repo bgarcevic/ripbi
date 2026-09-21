@@ -6,15 +6,14 @@
 
 use std::path::Path;
 
-use ripbi_core::graph::{BindingEdge, DependencyGraph};
+use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest;
 use ripbi_core::lookup::ReferenceError;
-use ripbi_core::{DepSlice, ObjectId, Provenance, ReportModel};
+use ripbi_core::{Provenance, ReportModel};
 
 use crate::cli::DepsArgs;
 use crate::config;
-use crate::deps::render::{DepsOutput, FocusedOut, ImpactOut, OverviewOut, Section};
-use crate::deps::tree::{Node, Orientation, TreeBuilder};
+use crate::deps::render::{ByType, DepsOutput, FocusedOut, OverviewOut};
 use crate::error::ScanError;
 use crate::render::kind_of;
 use crate::scan;
@@ -221,7 +220,15 @@ fn explore(
     };
 
     if !args.quiet {
-        render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
+        if args.json {
+            render::json(streams.out, &output)?;
+        } else if args.plain {
+            render::plain(streams.out, &output).map_err(ScanError::from)?;
+        } else {
+            render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
+        }
+        // The deps JSON documents the graph, not the run, so skip notices are
+        // stderr's job in every mode.
         scan::write_skip_notices(streams.err, &skips)?;
     }
     Ok(EXIT_OK)
@@ -254,77 +261,57 @@ fn focused_view(
     depth: Option<usize>,
 ) -> Result<DepsOutput, ScanError> {
     let root = graph.resolve_reference(object).map_err(reference_error)?;
-    let label = |id: &ObjectId| format!("{}  {}", id, kind_of(id));
 
     // Neither flag means both; either one alone narrows the view.
     let show_dependencies = args.dependencies || !args.impact;
     let show_impact = args.impact || !args.dependencies;
 
     let dependencies = if show_dependencies {
-        let slice = graph.dependencies_of(&root, depth);
-        let mut builder = TreeBuilder::new(Orientation::Dependencies);
-        let tree = builder.build(&slice, &root, label);
-        Some(Section {
-            empty: tree.children.is_empty(),
-            tree,
-            suppressed: builder.suppressed(),
-            reachable: slice.nodes.len(),
-        })
+        Some(graph.dependencies_of(&root, depth))
     } else {
         None
     };
 
-    let impact = if show_impact {
+    let (impact, bindings) = if show_impact {
         let slice = graph.impact_of(&root, depth);
-        let mut builder = TreeBuilder::new(Orientation::Impact);
-        let tree = builder.build(&slice, &root, label);
-        let model = Some(Section {
-            empty: tree.children.is_empty(),
-            tree,
-            suppressed: builder.suppressed(),
-            reachable: slice.nodes.len(),
-        });
-        let reports = report_forest(graph, &slice, &root);
-        Some(ImpactOut { model, reports })
+        let mut bindings = Vec::new();
+        for id in &slice.nodes {
+            for provenance in graph.roots_of(id) {
+                if let Provenance::Binding(edge) = provenance {
+                    bindings.push((id.clone(), (**edge).clone()));
+                }
+            }
+        }
+        (Some(slice), bindings)
     } else {
-        None
+        (None, Vec::new())
     };
 
-    Ok(DepsOutput::Focused(FocusedOut {
-        root: root.to_string(),
-        kind: kind_of(&root),
+    Ok(DepsOutput::Focused(Box::new(FocusedOut {
+        root,
         dependencies,
         impact,
-    }))
+        bindings,
+    })))
 }
 
 /// The overview the bare command prints: counts, never the whole graph.
 fn overview_view(graph: &DependencyGraph) -> DepsOutput {
-    let mut measures = 0;
-    let mut columns = 0;
-    let mut hierarchies = 0;
-    let mut relationships = 0;
-    let mut other = 0;
+    let mut by_type = ByType::default();
     for id in graph.object_ids() {
         match kind_of(id) {
-            "measure" => measures += 1,
-            "column" => columns += 1,
-            "hierarchy" => hierarchies += 1,
-            "relationship" => relationships += 1,
-            _ => other += 1,
+            "measure" => by_type.measures += 1,
+            "column" => by_type.columns += 1,
+            "hierarchy" => by_type.hierarchies += 1,
+            "relationship" => by_type.relationships += 1,
+            _ => by_type.other += 1,
         }
     }
     DepsOutput::Overview(OverviewOut {
         objects: graph.object_ids().count(),
         edges: graph.edge_count(),
         bindings: graph.roots().len(),
-        by_type: vec![
-            ("Measures", measures),
-            ("Columns", columns),
-            ("Hierarchies", hierarchies),
-            ("Relationships", relationships),
-            ("Other", other),
-        ],
+        by_type,
     })
 }
 
@@ -342,120 +329,6 @@ fn item_name(path: &Path) -> String {
         }
     }
     name
-}
-
-/// The report bindings of every object in the impact slice, as deterministic
-/// tries: `report → page → visual → binding site`, bookmarks as their own
-/// level, mobile layouts marked. When every binding lands on the selected
-/// object the object level is left out — the header already names it; when
-/// several objects carry bindings, each gets its own labeled subtree.
-fn report_forest(graph: &DependencyGraph, slice: &DepSlice, root: &ObjectId) -> Vec<Node> {
-    let mut bindings: Vec<(&ObjectId, &BindingEdge)> = Vec::new();
-    for id in &slice.nodes {
-        for provenance in graph.roots_of(id) {
-            if let Provenance::Binding(edge) = provenance {
-                bindings.push((id, edge));
-            }
-        }
-    }
-    if bindings.is_empty() {
-        return Vec::new();
-    }
-    if bindings.iter().all(|(id, _)| *id == root) {
-        let edges: Vec<&BindingEdge> = bindings.into_iter().map(|(_, edge)| edge).collect();
-        return binding_trie(&edges);
-    }
-    // Grouped by the object each binding lands on, in slice (identity) order.
-    let mut by_target: Vec<(ObjectId, Vec<&BindingEdge>)> = Vec::new();
-    for (id, edge) in bindings {
-        match by_target.last_mut() {
-            Some((last, edges)) if *last == *id => edges.push(edge),
-            _ => by_target.push((id.clone(), vec![edge])),
-        }
-    }
-    by_target
-        .into_iter()
-        .map(|(id, edges)| Node {
-            label: format!("{}  {}", id, kind_of(&id)),
-            note: None,
-            children: binding_trie(&edges),
-            hidden: 0,
-        })
-        .collect()
-}
-
-/// The `report → page → visual → site` tries of one binding set, one root
-/// node per report. Absent levels are transparent: a report-level filter
-/// hangs straight off the report (or off the trie root when nothing else is
-/// known).
-fn binding_trie(edges: &[&BindingEdge]) -> Vec<Node> {
-    let mut trie = Trie::default();
-    for edge in edges {
-        let mut keys: Vec<String> = Vec::new();
-        if let Some(report) = &edge.report {
-            keys.push(report.as_str().to_string());
-        }
-        if let Some(bookmark) = &edge.bookmark {
-            keys.push(bookmark.as_str().to_string());
-        }
-        if let Some(page) = &edge.page {
-            keys.push(page.as_str().to_string());
-        }
-        if let Some(visual) = &edge.visual {
-            keys.push(format!("{}  visual", visual.as_str()));
-        }
-        insert(&mut trie, &keys, site_label(edge));
-    }
-    let root = trie_to_node(trie);
-    root.children
-}
-
-/// The leaf label of one binding: a field well renders its role (`Values`),
-/// every other kind its site phrase, and a phone-layout binding says so.
-fn site_label(edge: &BindingEdge) -> String {
-    let mut label = match &edge.kind {
-        ripbi_core::BindingSite::FieldWell { role } => role.clone(),
-        other => other.to_string(),
-    };
-    if edge.mobile {
-        label.push_str("  (mobile layout)");
-    }
-    label
-}
-
-#[derive(Default)]
-struct Trie {
-    children: std::collections::BTreeMap<String, Trie>,
-    leaves: Vec<String>,
-}
-
-fn insert(trie: &mut Trie, keys: &[String], leaf: String) {
-    match keys.split_first() {
-        None => trie.leaves.push(leaf),
-        Some((key, rest)) => insert(trie.children.entry(key.clone()).or_default(), rest, leaf),
-    }
-}
-
-fn trie_to_node(trie: Trie) -> Node {
-    let mut children: Vec<Node> = trie
-        .children
-        .into_iter()
-        .map(|(key, child)| {
-            let mut node = trie_to_node(child);
-            node.label = key;
-            node
-        })
-        .collect();
-    let mut leaves = trie.leaves;
-    leaves.sort();
-    leaves.dedup();
-    children.extend(leaves.iter().map(|leaf| Node::leaf(leaf.clone())));
-    Node {
-        label: String::new(),
-        note: None,
-        children,
-        hidden: 0,
-    }
 }
 
 /// Rewrites a lookup miss for a human: candidates listed with their kinds,
