@@ -323,7 +323,7 @@ fn scan(
     // among the reported kinds. `--broken` selects the breakage kind the same
     // way, and is the only selection under which breakage gates the exit
     // code (issue #60: advisory until asked).
-    let selected = args.selected_kinds();
+    let selected = selected_kinds(args)?;
     let section_visible = selected
         .as_ref()
         .is_none_or(|kinds| kinds.contains("table"));
@@ -1036,6 +1036,31 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
         ObjectId::Function { name } => vec![name.as_str()],
         ObjectId::ReportMeasure { measure } => vec![measure.as_str()],
     }
+}
+
+/// The selected finding kinds: the per-type flags' picks unioned with every
+/// `--type` value, in the same machine vocabulary `deps --type` speaks. An
+/// unknown kind is a usage error, never silence — and `broken_visual` is
+/// deliberately outside the vocabulary, because selecting it is what makes
+/// breakage gate the exit code, and that is `--broken`'s job alone (issue
+/// #60: advisory until asked).
+fn selected_kinds(args: &ScanArgs) -> Result<Option<HashSet<&'static str>>, ScanError> {
+    let mut picks = args.selected_kinds().unwrap_or_default();
+    if picks.is_empty() && args.types.is_empty() {
+        return Ok(None);
+    }
+    for kind in &args.types {
+        let Some(static_kind) = render::KINDS.iter().find(|known| known == &kind) else {
+            return Err(
+                ScanError::new(format!("--type {kind} is not an object type")).with_hint(format!(
+                    "one of: {}; broken bindings are selected by --broken",
+                    render::KINDS.join(", ")
+                )),
+            );
+        };
+        picks.insert(static_kind);
+    }
+    Ok(Some(picks))
 }
 
 /// Maps a core skip notice to its output DTO — the shared shape of every

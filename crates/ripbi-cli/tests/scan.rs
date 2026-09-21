@@ -183,6 +183,93 @@ mod type_filters {
 
     /// The fixture has exactly one unused measure and one unused column, so
     /// every flag's effect is directly visible.
+    /// `--type` is the documented selection surface — the same machine
+    /// vocabulary `deps --type` speaks — and unions with the legacy
+    /// per-type flags.
+    #[test]
+    fn the_type_flag_selects_in_the_shared_vocabulary() {
+        let temp = TempDir::new("filter-type-flag");
+        let args = ScanArgs {
+            types: vec!["measure".to_string()],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(
+            stdout.contains("Measures (1)"),
+            "group header:
+{stdout}"
+        );
+        assert!(
+            !stdout.contains("Columns"),
+            "other groups vanish:
+{stdout}"
+        );
+    }
+
+    #[test]
+    fn repeated_type_values_union() {
+        let temp = TempDir::new("filter-type-repeat");
+        let args = ScanArgs {
+            types: vec!["measure".to_string(), "column".to_string()],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Measures (1)"));
+        assert!(
+            stdout.contains("Columns (1)"),
+            "both groups reported:
+{stdout}"
+        );
+    }
+
+    #[test]
+    fn the_type_flag_unions_with_the_legacy_flags() {
+        let temp = TempDir::new("filter-type-union");
+        let args = ScanArgs {
+            measures: true,
+            types: vec!["column".to_string()],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1);
+        assert!(stdout.contains("Measures (1)"));
+        assert!(stdout.contains("Columns (1)"));
+    }
+
+    #[test]
+    fn an_unknown_type_is_a_usage_error_naming_the_vocabulary() {
+        let temp = TempDir::new("filter-type-unknown");
+        let args = ScanArgs {
+            types: vec!["measures".to_string()],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(stderr.contains("--type measures is not an object type"));
+        assert!(stderr.contains("calculation_item"), "vocabulary listed");
+    }
+
+    #[test]
+    fn broken_visual_is_outside_the_type_vocabulary() {
+        // Selecting breakage is what makes it gate the exit code — that is
+        // --broken's job alone (issue #60).
+        let temp = TempDir::new("filter-type-broken");
+        let args = ScanArgs {
+            types: vec!["broken_visual".to_string()],
+            ..fixture_args(mini_pbip().join("Mini.pbip"))
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(stderr.contains("--broken"));
+    }
+
     #[test]
     fn a_type_flag_selects_only_its_group() {
         let temp = TempDir::new("filter-measures");

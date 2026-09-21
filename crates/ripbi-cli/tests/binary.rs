@@ -260,7 +260,49 @@ fn scan_sets_the_documented_exit_codes() {
 }
 
 #[test]
-fn scan_help_lists_the_type_flags() {
+fn scan_type_flag_splits_comma_separated_values() {
+    // The comma form is clap parsing, so only the binary sees it: two kinds
+    // in one flag, both groups reported.
+    let pbip = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.pbip")
+        .display()
+        .to_string();
+    ripbi()
+        .args(["scan", &pbip, "--type", "measure,column"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Measures (1)"))
+        .stdout(predicate::str::contains("Columns (1)"));
+}
+
+#[test]
+fn deps_type_flag_splits_comma_separated_values() {
+    // Two kinds in one flag, comma-separated — both explored. Uses the mini
+    // fixture via --model.
+    let model = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.SemanticModel")
+        .display()
+        .to_string();
+    ripbi()
+        .args([
+            "deps",
+            "--type",
+            "measure,column",
+            "--dependencies",
+            "--model",
+            &model,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("'Sales'[Total]  measure"))
+        .stdout(predicate::str::contains("'Sales'[Amount]  column"));
+}
+
+#[test]
+fn scan_help_lists_the_type_flag_and_hides_the_legacy_booleans() {
+    // The per-type booleans still work for shipped scripts, but `--type` is
+    // the documented selection surface, and the help shows one flag, not
+    // eleven.
     let help = ripbi()
         .args(["scan", "--help"])
         .assert()
@@ -269,20 +311,9 @@ fn scan_help_lists_the_type_flags() {
         .stdout
         .clone();
     let help = String::from_utf8(help).expect("help is utf-8");
-    for flag in [
-        "--measures",
-        "--columns",
-        "--hierarchies",
-        "--tables",
-        "--partitions",
-        "--relationships",
-        "--calc-items",
-        "--expressions",
-        "--functions",
-        "--report-measures",
-    ] {
-        assert!(help.contains(flag), "help must list {flag}:\n{help}");
-    }
+    assert!(help.contains("--type <TYPE>"), "help lists --type:\n{help}");
+    assert!(!help.contains("--measures"), "legacy booleans are hidden");
+    assert!(!help.contains("--report-measures"));
 }
 
 #[test]

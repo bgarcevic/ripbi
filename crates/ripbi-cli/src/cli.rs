@@ -49,10 +49,10 @@ Examples:
   ripbi scan                       # discover a project in the current directory
   ripbi scan --json > findings.json
   ripbi scan --summary             # counts only, when the list would flood the terminal
-  ripbi scan --measures --columns  # only these unused object types
-  ripbi scan -q                    # exit code only: 0 clean, 1 unused found, 2 error
+  ripbi scan --type measure --type column  # only these unused object types
+  ripbi scan -q                            # exit code only: 0 clean, 1 unused found, 2 error
 
-Type flags union; with none of them, everything is reported.";
+Selection flags union; with none of them, everything is reported.";
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const UPDATE_EXAMPLES: &str = "\
@@ -140,8 +140,14 @@ pub struct DepsArgs {
     #[arg(long, value_name = "NAME", conflicts_with = "object")]
     pub table: Option<String>,
 
-    /// Explore every object of one type, instead of a single object.
-    #[arg(long = "type", value_name = "TYPE", conflicts_with = "object")]
+    /// Explore every object of one type, instead of a single object;
+    /// repeatable or comma-separated.
+    #[arg(
+        long = "type",
+        value_name = "TYPE",
+        value_delimiter = ',',
+        conflicts_with = "object"
+    )]
     pub types: Vec<String>,
 
     /// Only show downstream usages by this kind of consumer; 'visual' means
@@ -324,44 +330,49 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_input: bool,
 
+    /// Only report these object types; repeatable or comma-separated;
+    /// vocabulary of `deps --type`.
+    #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
+    pub types: Vec<String>,
+
     /// Only report unused measures.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub measures: bool,
 
     /// Only report unused columns.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub columns: bool,
 
     /// Only report unused hierarchies.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub hierarchies: bool,
 
     /// Only report unused tables; also keeps the Auto date/time section.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub tables: bool,
 
     /// Only report unused partitions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub partitions: bool,
 
     /// Only report unused relationships.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub relationships: bool,
 
     /// Only report unused calculation items.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub calc_items: bool,
 
     /// Only report unused expressions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub expressions: bool,
 
     /// Only report unused functions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub functions: bool,
 
     /// Only report unused report measures.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub report_measures: bool,
 
     /// Only broken visual bindings; the only mode where they gate.

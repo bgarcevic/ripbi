@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ripbi scan --type <TYPE>`** — object-type selection in the same machine
+  vocabulary as `deps --type` (`table`, `column`, `measure`, `hierarchy`,
+  `partition`, `relationship`, `role`, `calculation_item`, `expression`,
+  `function`, `report_measure`); repeatable and comma-separated
+  (`--type measure,column`), unioning with the older per-type flags. The ten
+  `--measures`-style booleans keep working for shipped scripts but are hidden
+  from `--help` — prefer `--type` in new ones. `broken_visual` is deliberately
+  outside the vocabulary: selecting breakage is what makes it gate the exit
+  code, and that stays `--broken`'s job alone. Also aligns the help surface
+  across commands: `scan` and `deps` both lead their options with the shared
+  `--model`/`--report` inputs, `--allow-no-reports` is back to one line (the
+  full contract lives in docs), and two new gates pin help length and input-flag
+  order so the surface stays consistent.
+
 - **`ripbi deps` — dependency and impact exploration (issue #20)** — a new
   subcommand that explores one object from both sides: `--dependencies` shows
   what it relies on, `--impact` shows what relies on it (model objects and

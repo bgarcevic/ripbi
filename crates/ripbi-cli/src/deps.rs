@@ -285,12 +285,12 @@ fn selection_view(
     }
     if let Some(kind) = args.consumer.as_deref()
         && kind != "visual"
-        && !VALID_KINDS.contains(&kind)
+        && !crate::render::KINDS.contains(&kind)
     {
         let mut message = format!("--consumer {kind} is not a consumer kind");
         message.push_str(&format!(
             "\n\nConsumer kinds:\n  visual\n  {}",
-            VALID_KINDS.join("\n  ")
+            crate::render::KINDS.join("\n  ")
         ));
         return Err(ScanError::new(message)
             .with_hint("'visual' selects report bindings; the rest select model objects"));
@@ -434,11 +434,11 @@ fn empty_slice(slice: &DepSlice) -> DepSlice {
 /// type.
 fn select_roots(graph: &DependencyGraph, args: &DepsArgs) -> Result<Vec<ObjectId>, ScanError> {
     for kind in &args.types {
-        if !VALID_KINDS.contains(&kind.as_str()) {
+        if !crate::render::KINDS.contains(&kind.as_str()) {
             let mut message = format!("--type {kind} is not an object type");
             message.push_str(&format!(
                 "\n\nObject types:\n  {}",
-                VALID_KINDS.join("\n  ")
+                crate::render::KINDS.join("\n  ")
             ));
             return Err(ScanError::new(message)
                 .with_hint("run ripbi deps --help for what the selectors explore"));
@@ -477,22 +477,6 @@ fn select_roots(graph: &DependencyGraph, args: &DepsArgs) -> Result<Vec<ObjectId
     roots.sort();
     Ok(roots)
 }
-
-/// The machine kind vocabulary of `--type` — the same keys `--plain`, JSON,
-/// and scan's type flags use.
-const VALID_KINDS: &[&str] = &[
-    "table",
-    "column",
-    "measure",
-    "hierarchy",
-    "partition",
-    "relationship",
-    "role",
-    "calculation_item",
-    "expression",
-    "function",
-    "report_measure",
-];
 
 /// The overview the bare command prints: counts, never the whole graph.
 fn overview_view(graph: &DependencyGraph) -> DepsOutput {
