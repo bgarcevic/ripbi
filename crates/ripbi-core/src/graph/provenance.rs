@@ -274,6 +274,15 @@ fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
     }
 }
 
+impl fmt::Display for BindingSite {
+    /// The site phrase on its own — what a view renders when the binding's
+    /// location is shown structurally (report → page → visual levels of its
+    /// own) and only the kind of use remains for the leaf.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_site(f, self)
+    }
+}
+
 /// The structural rule an edge came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructuralEdge {

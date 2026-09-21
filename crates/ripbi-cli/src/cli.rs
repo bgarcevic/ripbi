@@ -1,6 +1,6 @@
 //! The clap argument definitions — the interface users type and scripts pin,
 //! per `docs/cli-ux-guidelines.md`. Parsing only; behavior lives in
-//! [`crate::scan`] and [`crate::report`].
+//! [`crate::scan`], [`crate::deps`], and [`crate::report`].
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -26,6 +26,10 @@ pub enum Command {
     /// Print what ripbi sees in a report: pages → visuals → fields.
     #[command(after_help = REPORT_EXAMPLES)]
     Report(ReportArgs),
+
+    /// Show what an object depends on, and what would be affected if it changed.
+    #[command(after_help = DEPS_EXAMPLES)]
+    Deps(DepsArgs),
 
     /// Update ripbi to the latest GitHub release.
     #[command(after_help = UPDATE_EXAMPLES)]
@@ -70,6 +74,83 @@ Examples:
   ripbi report --used                # every model object the report keeps alive
   ripbi report --fields --match \"'Sales'[Total]\"
   ripbi report -q                    # exit code only: 0 read, 2 error";
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const DEPS_EXAMPLES: &str = "\
+Examples:
+  # Explore both dependencies and impact
+  ripbi deps \"'Sales'[Total Sales]\"
+
+  # What does this measure rely on?
+  ripbi deps \"'Sales'[Total Sales]\" --dependencies
+
+  # What could be affected if this measure changes?
+  ripbi deps \"'Sales'[Total Sales]\" --impact
+
+  # Direct impact only
+  ripbi deps \"'Sales'[Total Sales]\" --impact --depth 1
+
+  # Explore a table
+  ripbi deps --table Sales
+
+  # Impact within one report
+  ripbi deps \"'Sales'[Total Sales]\" --impact --in-report Executive
+
+  # Machine-readable output
+  ripbi deps \"'Sales'[Total Sales]\" --plain
+  ripbi deps \"'Sales'[Total Sales]\" --json";
+
+/// `ripbi deps` arguments.
+#[derive(Args, Debug, Default)]
+pub struct DepsArgs {
+    /// The model object to explore: 'Table'[Name], [Name], or a bare table name.
+    pub object: Option<String>,
+
+    /// Show what the object relies on, upstream.
+    #[arg(long)]
+    pub dependencies: bool,
+
+    /// Show what relies on the object, downstream.
+    #[arg(long)]
+    pub impact: bool,
+
+    /// Traverse at most N edges from the object; unset or 'all' traverses to
+    /// the leaves.
+    #[arg(long, value_name = "N|all")]
+    pub depth: Option<String>,
+
+    /// A .SemanticModel folder to explore (or its definition/, or a project).
+    #[arg(long, value_name = "PATH")]
+    pub model: Option<PathBuf>,
+
+    /// A report to include as input; repeatable.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
+    /// Machine-readable JSON (schema: docs/deps.md).
+    #[arg(long, conflicts_with = "plain")]
+    pub json: bool,
+
+    /// One typed record per line, for grep/awk.
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// List every pairing note and skipped item on stderr.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Never prompt; fail where a picker would appear.
+    #[arg(long)]
+    pub no_input: bool,
+}
 
 /// `ripbi update` arguments.
 #[derive(Args, Debug, Default)]

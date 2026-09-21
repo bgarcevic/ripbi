@@ -38,6 +38,26 @@ fn help_lists_the_report_subcommand() {
 }
 
 #[test]
+fn help_lists_the_deps_subcommand() {
+    ripbi()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("deps"));
+}
+
+#[test]
+fn deps_help_leads_with_examples() {
+    ripbi()
+        .args(["deps", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Examples:"))
+        .stdout(predicate::str::contains("--dependencies"))
+        .stdout(predicate::str::contains("--impact"));
+}
+
+#[test]
 fn report_help_leads_with_examples() {
     ripbi()
         .args(["report", "--help"])
@@ -55,6 +75,37 @@ fn report_json_and_plain_flags_conflict() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn deps_json_and_plain_flags_conflict() {
+    ripbi()
+        .args(["deps", "--json", "--plain"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn deps_sets_the_documented_exit_codes() {
+    // A produced view → 0, even when the object has no impact. The object is
+    // the only positional operand, so the model arrives via --model.
+    let model = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.SemanticModel")
+        .display()
+        .to_string();
+    ripbi()
+        .args(["deps", "'Sales'[Legacy Total]", "--model", &model])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("└─ nothing"));
+
+    // A lookup miss → 2.
+    ripbi()
+        .args(["deps", "'Sales'[Nope]", "--model", &model])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("was not found"));
 }
 
 #[test]
