@@ -114,6 +114,15 @@ pub struct DepsArgs {
     /// a filesystem path.
     pub object: Option<String>,
 
+    /// Explore one named semantic model; disables discovery.
+    #[arg(long, value_name = "PATH")]
+    pub model: Option<PathBuf>,
+
+    /// Extra report binding source; repeatable; replaces ripbi.toml
+    /// `reports`.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
     /// Show what the object relies on, upstream.
     #[arg(long)]
     pub dependencies: bool,
@@ -151,15 +160,6 @@ pub struct DepsArgs {
     /// Draw the slice as a topology diagram instead of a tree.
     #[arg(long, conflicts_with_all = ["plain", "json"])]
     pub graph: bool,
-
-    /// Explore one named semantic model; disables discovery.
-    #[arg(long, value_name = "PATH")]
-    pub model: Option<PathBuf>,
-
-    /// Extra report to include as a binding source; repeatable; replaces
-    /// ripbi.toml `reports`.
-    #[arg(long = "report", value_name = "PATH")]
-    pub reports: Vec<PathBuf>,
 
     /// Machine-readable JSON (schema: docs/deps.md).
     #[arg(long, conflicts_with = "plain")]
@@ -450,6 +450,40 @@ mod tests {
             "help text over {MAX_HELP} chars or multi-line — move the detail to docs/:\n{}",
             offenders.join("\n")
         );
+    }
+
+    /// Commands that share scan's input ladder (`--model`, `--report`) lead
+    /// their help with those flags: declaration order is help order, and the
+    /// inputs are the first thing a new user needs to find. `report`
+    /// deliberately has neither flag — it inventories every report paired
+    /// with its PATH — so it is skipped here.
+    #[test]
+    fn shared_input_flags_lead_the_help() {
+        let cli = Cli::command();
+        for command in cli.get_subcommands() {
+            let takes_model = command.get_arguments().any(|arg| arg.get_id() == "model");
+            if !takes_model {
+                continue;
+            }
+            let name = command.get_name();
+            let options: Vec<String> = command
+                .get_arguments()
+                .filter(|arg| !arg.is_positional() && arg.get_id() != "help")
+                .map(|arg| arg.get_id().to_string())
+                .collect();
+            // The ids are the struct field names; `--report`'s field is
+            // `reports` because the flag is repeatable.
+            assert_eq!(
+                options.first().map(String::as_str),
+                Some("model"),
+                "{name} must declare --model first — the inputs lead the help"
+            );
+            assert_eq!(
+                options.get(1).map(String::as_str),
+                Some("reports"),
+                "{name} must declare --report second"
+            );
+        }
     }
 
     /// The update flags parse, and the hidden notifier child parses too.
