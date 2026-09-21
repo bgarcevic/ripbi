@@ -140,7 +140,7 @@ pub struct DepsArgs {
     #[arg(long, value_name = "NAME", conflicts_with = "object")]
     pub table: Option<String>,
 
-    /// Explore every object of one type, instead of a single object;
+    /// Explore a whole type (e.g. measure, column) instead of one object;
     /// repeatable or comma-separated.
     #[arg(
         long = "type",
@@ -330,8 +330,8 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_input: bool,
 
-    /// Only report these object types; repeatable or comma-separated;
-    /// vocabulary of `deps --type`.
+    /// Only report these object types, e.g. measure, column; repeatable or
+    /// comma-separated.
     #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
     pub types: Vec<String>,
 
