@@ -38,6 +38,31 @@ fn help_lists_the_report_subcommand() {
 }
 
 #[test]
+fn help_lists_the_deps_subcommand() {
+    ripbi()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("deps"));
+}
+
+#[test]
+fn deps_help_leads_with_examples() {
+    ripbi()
+        .args(["deps", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Examples:"))
+        .stdout(predicate::str::contains("--dependencies"))
+        .stdout(predicate::str::contains("--impact"))
+        // The input ladder is part of the contract a new user learns from
+        // the help: discovery, and the explicit --model/--report form.
+        .stdout(predicate::str::contains("current directory"))
+        .stdout(predicate::str::contains("--model"))
+        .stdout(predicate::str::contains("--report"));
+}
+
+#[test]
 fn report_help_leads_with_examples() {
     ripbi()
         .args(["report", "--help"])
@@ -55,6 +80,57 @@ fn report_json_and_plain_flags_conflict() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn deps_selectors_conflict_with_the_object_operand() {
+    ripbi()
+        .args(["deps", "'Sales'[Total]", "--table", "Sales"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn deps_graph_conflicts_with_the_machine_modes() {
+    for mode in ["--json", "--plain"] {
+        ripbi()
+            .args(["deps", "'Sales'[Total]", mode, "--graph"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
+}
+
+#[test]
+fn deps_json_and_plain_flags_conflict() {
+    ripbi()
+        .args(["deps", "--json", "--plain"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn deps_sets_the_documented_exit_codes() {
+    // A produced view → 0, even when the object has no impact. The object is
+    // the only positional operand, so the model arrives via --model.
+    let model = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.SemanticModel")
+        .display()
+        .to_string();
+    ripbi()
+        .args(["deps", "'Sales'[Legacy Total]", "--model", &model])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("└─ nothing"));
+
+    // A lookup miss → 2.
+    ripbi()
+        .args(["deps", "'Sales'[Nope]", "--model", &model])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("was not found"));
 }
 
 #[test]
@@ -184,7 +260,49 @@ fn scan_sets_the_documented_exit_codes() {
 }
 
 #[test]
-fn scan_help_lists_the_type_flags() {
+fn scan_type_flag_splits_comma_separated_values() {
+    // The comma form is clap parsing, so only the binary sees it: two kinds
+    // in one flag, both groups reported.
+    let pbip = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.pbip")
+        .display()
+        .to_string();
+    ripbi()
+        .args(["scan", &pbip, "--type", "measure,column"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Measures (1)"))
+        .stdout(predicate::str::contains("Columns (1)"));
+}
+
+#[test]
+fn deps_type_flag_splits_comma_separated_values() {
+    // Two kinds in one flag, comma-separated — both explored. Uses the mini
+    // fixture via --model.
+    let model = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mini-pbip/Mini.SemanticModel")
+        .display()
+        .to_string();
+    ripbi()
+        .args([
+            "deps",
+            "--type",
+            "measure,column",
+            "--dependencies",
+            "--model",
+            &model,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("'Sales'[Total]  measure"))
+        .stdout(predicate::str::contains("'Sales'[Amount]  column"));
+}
+
+#[test]
+fn scan_help_lists_the_type_flag_and_hides_the_legacy_booleans() {
+    // The per-type booleans still work for shipped scripts, but `--type` is
+    // the documented selection surface, and the help shows one flag, not
+    // eleven.
     let help = ripbi()
         .args(["scan", "--help"])
         .assert()
@@ -193,20 +311,9 @@ fn scan_help_lists_the_type_flags() {
         .stdout
         .clone();
     let help = String::from_utf8(help).expect("help is utf-8");
-    for flag in [
-        "--measures",
-        "--columns",
-        "--hierarchies",
-        "--tables",
-        "--partitions",
-        "--relationships",
-        "--calc-items",
-        "--expressions",
-        "--functions",
-        "--report-measures",
-    ] {
-        assert!(help.contains(flag), "help must list {flag}:\n{help}");
-    }
+    assert!(help.contains("--type <TYPE>"), "help lists --type:\n{help}");
+    assert!(!help.contains("--measures"), "legacy booleans are hidden");
+    assert!(!help.contains("--report-measures"));
 }
 
 #[test]

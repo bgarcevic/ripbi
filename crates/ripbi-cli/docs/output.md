@@ -95,8 +95,9 @@ Ignored 1 report(s) bound to other models: HR.Report
 | `1` | Unused objects found, auto date/time machinery no report binds — or, under `--broken`, broken visual bindings found |
 | `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports (unless `--allow-no-reports` skips it), unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
-The exit code describes what was *reported*: findings hidden by the type flags, and an
-Auto date/time section hidden because `--tables` was not among the passed flags, cannot
+The exit code describes what was *reported*: findings hidden by the type selection, and an
+Auto date/time section hidden because `--type table` (or legacy `--tables`) was not among
+the passed selection, cannot
 fail the run. Broken visual bindings (issue #60) are the one advisory kind: they are
 *reported* by default, but they gate the exit code only when `--broken` selects them —
 an unused-only gate must not start failing because one visual is broken, and a
@@ -114,8 +115,9 @@ unaffected.
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, or a folder holding `model.tmdl`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model |
-| `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Report only unused objects of the passed types; repeatable, and passed together they union (`--measures --columns`). Filters every output mode and the exit code. With none of them, everything is reported |
-| `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type flags (`--broken --measures` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
+| `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type column`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`. Filters every output mode and the exit code. With none of them, everything is reported |
+| `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Legacy per-type aliases of `--type`, one boolean each; still working (hidden from `--help` since v0.3.5's interface cleanup) and unioned with `--type` values. Prefer `--type` in new scripts |
+| `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -141,7 +143,7 @@ Columns (28)
   report binding roots, and the unused count. Roots are report bindings — the desktop
   tree and the phone layout (`definition.mobile/`, issue #49) alike; RLS roles also
   seed reachability without counting here. When `[scan].ignore` suppressed objects, a
-  second line says how many; when the type flags hid findings, a third line counts them
+  second line says how many; when the type selection hid findings, a third line counts them
   (`(2 unused hidden by type filters)`); and when auto date/time machinery members are
   covered by the section's table verdicts, a fourth counts them, so `0 unused` from a
   filtered or machinery-heavy model never reads as a clean one by accident.
@@ -250,8 +252,8 @@ Columns (28)
   `LocalDateTable_*`/`DateTableTemplate_*` table, naming the user's date column the
   machinery serves. It is a *provenance* verdict, not a reachability one — the engine's
   own relationship keeps the machinery alive, so "alive" says nothing. The section is
-  table-shaped: it prints (and carries its exit-code weight) only when no type flags are
-  passed or `--tables` is among them; hidden, it is absent from every output mode.
+  table-shaped: it prints (and carries its exit-code weight) only when no type selection is
+  passed or `--type table` is among it; hidden, it is absent from every output mode.
   - `in use — replace with a real date table` — a report binding lands on the
     machinery (usually a visual's date hierarchy over the varied column). Informational;
     it never fails the exit code.
@@ -329,7 +331,7 @@ One record per finding on stdout, tab-separated, greppable — one
 `auto_date_time:<verdict>` record per auto date/time table. Type flags filter the
 finding records (`--broken` selects the broken ones the same way); the
 `auto_date_time:` records print only when the section does (no
-type flags, or `--tables` among them):
+type selection, or `--type table` among it):
 
 ```
 measure	'Sales'[Legacy Total]
@@ -421,7 +423,7 @@ Pretty-printed JSON, stable field order, additive schema:
   the machinery: `summary.auto_date_time.member_findings` counts its unused members
   and the `dead` verdict count its nested own findings.
 - `summary.broken` is the length of `broken` — after `[scan].ignore`, the
-  unknown-object suppression, and the type flags. `summary.broken_total` counts every
+  unknown-object suppression, and the type selection. `summary.broken_total` counts every
   broken binding
   detected, before any of those, so a consumer can tell a suppressed or filtered-away
   binding from an absent one (issue #60).

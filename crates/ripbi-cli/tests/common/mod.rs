@@ -12,7 +12,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ripbi_cli::cli::{ReportArgs, ScanArgs};
+use ripbi_cli::cli::{DepsArgs, ReportArgs, ScanArgs};
+use ripbi_cli::deps;
 use ripbi_cli::report;
 use ripbi_cli::scan::{self, Streams};
 
@@ -242,4 +243,35 @@ pub fn report_path(path: &Path, cwd: &Path) -> (i32, String, String) {
         ..ReportArgs::default()
     };
     run_report(&args, cwd, "")
+}
+
+/// Runs `deps` with in-memory streams and returns (exit code, stdout,
+/// stderr). Stdin is non-interactive.
+pub fn run_deps(args: &DepsArgs, cwd: &Path, stdin: &str) -> (i32, String, String) {
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let mut input = stdin.as_bytes();
+    let mut streams = Streams {
+        out: &mut out,
+        err: &mut err,
+        input: &mut input,
+        stdin_is_tty: false,
+        stdout_is_tty: false,
+        stderr_is_tty: false,
+    };
+    let code = deps::run_in(args, cwd, &mut streams);
+    (
+        code,
+        String::from_utf8(out).expect("stdout is utf-8"),
+        String::from_utf8(err).expect("stderr is utf-8"),
+    )
+}
+
+/// `deps` exploring one object, discovered from `cwd`.
+pub fn deps_object(object: &str, cwd: &Path) -> (i32, String, String) {
+    let args = DepsArgs {
+        object: Some(object.to_string()),
+        ..DepsArgs::default()
+    };
+    run_deps(&args, cwd, "")
 }

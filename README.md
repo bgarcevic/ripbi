@@ -193,6 +193,28 @@ exits `0` on a produced inventory and `2` only on a real error, so it never
 disturbs `scan`'s exit-code contract. The full contract is documented in the
 user guide's [report chapter](https://bgarcevic.github.io/ripbi/report.html).
 
+## Why is something alive? What goes with it?
+
+`ripbi deps` explores one object from both sides: what it relies on
+(Dependencies) and what relies on it (Impact) — model objects and report
+bindings, each with its provenance. It is the deletion-planning view of the
+same graph `scan` uses for findings: the `used_by` annotation shows one hop,
+`deps --impact` shows the whole chain at once.
+
+```sh
+ripbi deps "'Sales'[Total Sales]"                 # both directions
+ripbi deps "'Sales'[Total Sales]" --impact --depth 1
+ripbi deps "'Sales'[Total Sales]" --in-report "Executive"   # filter the bindings
+ripbi deps --table Sales                          # explore a whole table
+ripbi deps                                        # graph overview: counts only
+```
+
+The command is read-only and informational: it exits `0` on any produced view
+(empty impact included) and `2` only on errors. `--graph` draws the slice as a
+topology diagram; `--plain` and `--json` never truncate. The full contract is
+documented in the user guide's
+[deps chapter](https://bgarcevic.github.io/ripbi/deps.html).
+
 ## Output
 
 The full output contract (human, `--summary`, `--plain`, `--json`, and

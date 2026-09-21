@@ -4,6 +4,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod deps;
 pub mod discover;
 pub mod entry;
 pub mod error;

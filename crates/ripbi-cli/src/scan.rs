@@ -112,33 +112,9 @@ fn scan(
 
     // Target: --model (explicit, picker-free), else PATH argument, else config
     // `target`, else folder discovery.
-    let mut model_scan: Option<ModelScan> = None;
-    let (paired, mut announce) = if let Some(model_path) = &args.model {
-        let target = discover::resolve_model(model_path)?;
-        let mut direct = Vec::new();
-        let mut search_roots = Vec::new();
-        for extra in &extras {
-            partition_report_value(extra, &mut direct, &mut search_roots)?;
-        }
-        if direct.is_empty() && search_roots.is_empty() {
-            search_roots.push(default_search_root(&target.item_root));
-        }
-        let excluded: HashSet<PathBuf> = direct
-            .iter()
-            .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
-            .collect();
-        let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
-        let mut reports = bound.reports.clone();
-        reports.extend(direct.iter().cloned());
-        let paired = discover::Paired {
-            model: target.item_root,
-            reports,
-        };
-        model_scan = Some(ModelScan {
-            bound,
-            search_roots,
-        });
-        (paired, Vec::new())
+    let (paired, model_scan, mut announce) = if let Some(model_path) = &args.model {
+        let (paired, walk) = resolve_model_mode(model_path, &extras)?;
+        (paired, Some(walk), Vec::new())
     } else {
         let explicit = args
             .path
@@ -155,70 +131,8 @@ fn scan(
                 (paired, announce, false)
             }
         };
-        let mut report_paths = paired.reports.clone();
-        let mut direct = Vec::new();
-        let mut search_roots = Vec::new();
-        for extra in &extras {
-            if is_report_item(extra) {
-                direct.push(extra.clone());
-                continue;
-            }
-            if extra.is_dir() {
-                if is_report_suffixed(extra) {
-                    return Err(malformed_report_folder_error(extra));
-                }
-                // An explicit PATH that names a semantic model makes a plain
-                // folder a search root, as in model mode (issue #67); every
-                // other target keeps report-items-only `--report`.
-                if model_named {
-                    search_roots.push(extra.clone());
-                    continue;
-                }
-                return Err(plain_report_folder_error(extra, &paired.model));
-            }
-            if !extra.exists() {
-                return Err(ScanError::new(format!("no such path: {}", extra.display())).with_hint(
-                    "point --report at an existing .Report folder (or a folder holding report.json)",
-                ));
-            }
-            return Err(
-                ScanError::new(format!("--report {} is not a folder", extra.display())).with_hint(
-                    "point --report at a .Report folder (or a folder holding report.json)",
-                ),
-            );
-        }
-        if search_roots.is_empty() {
-            report_paths.extend(direct);
-        } else {
-            // The walk never revisits face-value reports: convention siblings
-            // and explicit items are excluded from it, so the union stays
-            // duplicate-free and none of them produces a walk notice.
-            let target = discover::resolve_model(&paired.model)?;
-            let mut excluded: HashSet<PathBuf> = direct
-                .iter()
-                .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
-                .collect();
-            excluded.extend(
-                paired
-                    .reports
-                    .iter()
-                    .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone())),
-            );
-            let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
-            report_paths.extend(direct);
-            report_paths.extend(bound.reports.iter().cloned());
-            model_scan = Some(ModelScan {
-                bound,
-                search_roots,
-            });
-        }
-        (
-            discover::Paired {
-                model: paired.model,
-                reports: report_paths,
-            },
-            announce,
-        )
+        let (paired, walk) = attach_extras(paired, &extras, model_named)?;
+        (paired, walk, announce)
     };
     let report_paths = dedupe(paired.reports);
 
@@ -409,7 +323,7 @@ fn scan(
     // among the reported kinds. `--broken` selects the breakage kind the same
     // way, and is the only selection under which breakage gates the exit
     // code (issue #60: advisory until asked).
-    let selected = args.selected_kinds();
+    let selected = selected_kinds(args)?;
     let section_visible = selected
         .as_ref()
         .is_none_or(|kinds| kinds.contains("table"));
@@ -620,11 +534,123 @@ fn scan(
 /// zero-connected-report diagnostics. Always present in model mode; present
 /// in PATH mode when a model-naming PATH turns a plain `--report` folder
 /// into a search root (issue #67).
-struct ModelScan {
+pub(crate) struct ModelScan {
     /// How every discovered report item binds to the model.
-    bound: discover::BoundReports,
+    pub(crate) bound: discover::BoundReports,
     /// The folders actually walked, for the refusal message.
-    search_roots: Vec<PathBuf>,
+    pub(crate) search_roots: Vec<PathBuf>,
+}
+
+/// Resolves `--model MODE` with its `--report` values: the model, plus every
+/// report item the extras name and every one a search-folder walk finds.
+/// Shared with the `deps` command, which takes the same inputs.
+pub(crate) fn resolve_model_mode(
+    model_path: &Path,
+    extras: &[PathBuf],
+) -> Result<(discover::Paired, ModelScan), ScanError> {
+    let target = discover::resolve_model(model_path)?;
+    let mut direct = Vec::new();
+    let mut search_roots = Vec::new();
+    for extra in extras {
+        partition_report_value(extra, &mut direct, &mut search_roots)?;
+    }
+    if direct.is_empty() && search_roots.is_empty() {
+        search_roots.push(default_search_root(&target.item_root));
+    }
+    let excluded: HashSet<PathBuf> = direct
+        .iter()
+        .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+        .collect();
+    let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    let mut reports = bound.reports.clone();
+    reports.extend(direct.iter().cloned());
+    Ok((
+        discover::Paired {
+            model: target.item_root,
+            reports,
+        },
+        ModelScan {
+            bound,
+            search_roots,
+        },
+    ))
+}
+
+/// Attaches `--report` values to an already-resolved target (PATH argument,
+/// config `target`, or discovery): direct report items pair as-is, and a
+/// plain folder becomes a search root only when the target itself is a
+/// semantic model (issue #67). Shared with the `deps` command, which takes
+/// the same inputs the same way.
+pub(crate) fn attach_extras(
+    paired: discover::Paired,
+    extras: &[PathBuf],
+    model_named: bool,
+) -> Result<(discover::Paired, Option<ModelScan>), ScanError> {
+    let mut report_paths = paired.reports.clone();
+    let mut direct = Vec::new();
+    let mut search_roots = Vec::new();
+    for extra in extras {
+        if is_report_item(extra) {
+            direct.push(extra.clone());
+            continue;
+        }
+        if extra.is_dir() {
+            if is_report_suffixed(extra) {
+                return Err(malformed_report_folder_error(extra));
+            }
+            if model_named {
+                search_roots.push(extra.clone());
+                continue;
+            }
+            return Err(plain_report_folder_error(extra, &paired.model));
+        }
+        if !extra.exists() {
+            return Err(ScanError::new(format!("no such path: {}", extra.display())).with_hint(
+                "point --report at an existing .Report folder (or a folder holding report.json)",
+            ));
+        }
+        return Err(
+            ScanError::new(format!("--report {} is not a folder", extra.display()))
+                .with_hint("point --report at a .Report folder (or a folder holding report.json)"),
+        );
+    }
+    if search_roots.is_empty() {
+        report_paths.extend(direct);
+        return Ok((
+            discover::Paired {
+                model: paired.model,
+                reports: report_paths,
+            },
+            None,
+        ));
+    }
+    // The walk never revisits face-value reports: convention siblings
+    // and explicit items are excluded from it, so the union stays
+    // duplicate-free and none of them produces a walk notice.
+    let target = discover::resolve_model(&paired.model)?;
+    let mut excluded: HashSet<PathBuf> = direct
+        .iter()
+        .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+        .collect();
+    excluded.extend(
+        paired
+            .reports
+            .iter()
+            .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone())),
+    );
+    let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    report_paths.extend(direct);
+    report_paths.extend(bound.reports.iter().cloned());
+    Ok((
+        discover::Paired {
+            model: paired.model,
+            reports: report_paths,
+        },
+        Some(ModelScan {
+            bound,
+            search_roots,
+        }),
+    ))
 }
 
 /// Prints the grouped skip-notice block on stderr — the one every text-mode
@@ -658,7 +684,7 @@ pub(crate) fn write_skip_notices(
 /// Sorts one `--report` value in model mode into a direct report item or a
 /// search folder. A `.Report`-named folder without a report anchor is
 /// malformed — fail before any walk rather than at ingestion.
-fn partition_report_value(
+pub(crate) fn partition_report_value(
     path: &Path,
     direct: &mut Vec<PathBuf>,
     search_roots: &mut Vec<PathBuf>,
@@ -687,7 +713,7 @@ fn partition_report_value(
 
 /// The default search root when `--model` is given with no reports at all:
 /// the model's parent folder.
-fn default_search_root(item_root: &Path) -> PathBuf {
+pub(crate) fn default_search_root(item_root: &Path) -> PathBuf {
     match item_root.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         // `--model X.SemanticModel` in the working directory: search here.
@@ -734,7 +760,7 @@ fn no_bound_reports_detail(scan: &ModelScan) -> String {
 }
 
 /// The display name of a report path: its final folder component.
-fn report_name(path: &Path) -> String {
+pub(crate) fn report_name(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
@@ -743,7 +769,7 @@ fn report_name(path: &Path) -> String {
 /// The by-name pairing notes collapsed to one line per `initial catalog`,
 /// in first-appearance order. Names are listed up to three per catalog; a
 /// longer tail becomes `… and N more` so the line stays one line (issue #65).
-fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
+pub(crate) fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
     let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
     let mut positions: HashMap<&str, usize> = HashMap::new();
     for (path, catalog) in name_matched {
@@ -774,12 +800,12 @@ fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
 
 /// The suffix that points at `--verbose` when a capped list left names out —
 /// the one place the full trail lives.
-const VERBOSE_POINTER: &str = " — rerun with --verbose to list them";
+pub(crate) const VERBOSE_POINTER: &str = " — rerun with --verbose to list them";
 
 /// The display form of a name wall: the first three, then the tail as a
 /// count — the capping the by-name collapse prints (issue #65), shared with
 /// the ignored list so every name list reads the same way.
-fn capped_names(names: &[String]) -> String {
+pub(crate) fn capped_names(names: &[String]) -> String {
     let listed: Vec<String> = names.iter().take(3).cloned().collect();
     let more = names.len() - listed.len();
     if more > 0 {
@@ -795,7 +821,7 @@ fn capped_names(names: &[String]) -> String {
 /// rather than an error (issue #67). A `resolve_model` probe would be too
 /// loose: core's locator accepts any folder with a `definition/` subfolder,
 /// `.Report` folders included.
-fn names_semantic_model(path: &Path) -> bool {
+pub(crate) fn names_semantic_model(path: &Path) -> bool {
     path.is_dir()
         && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())
 }
@@ -1010,6 +1036,31 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
         ObjectId::Function { name } => vec![name.as_str()],
         ObjectId::ReportMeasure { measure } => vec![measure.as_str()],
     }
+}
+
+/// The selected finding kinds: the per-type flags' picks unioned with every
+/// `--type` value, in the same machine vocabulary `deps --type` speaks. An
+/// unknown kind is a usage error, never silence — and `broken_visual` is
+/// deliberately outside the vocabulary, because selecting it is what makes
+/// breakage gate the exit code, and that is `--broken`'s job alone (issue
+/// #60: advisory until asked).
+fn selected_kinds(args: &ScanArgs) -> Result<Option<HashSet<&'static str>>, ScanError> {
+    let mut picks = args.selected_kinds().unwrap_or_default();
+    if picks.is_empty() && args.types.is_empty() {
+        return Ok(None);
+    }
+    for kind in &args.types {
+        let Some(static_kind) = render::KINDS.iter().find(|known| known == &kind) else {
+            return Err(
+                ScanError::new(format!("--type {kind} is not an object type")).with_hint(format!(
+                    "one of: {}; broken bindings are selected by --broken",
+                    render::KINDS.join(", ")
+                )),
+            );
+        };
+        picks.insert(static_kind);
+    }
+    Ok(Some(picks))
 }
 
 /// Maps a core skip notice to its output DTO — the shared shape of every

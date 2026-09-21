@@ -1,6 +1,6 @@
 //! The clap argument definitions — the interface users type and scripts pin,
 //! per `docs/cli-ux-guidelines.md`. Parsing only; behavior lives in
-//! [`crate::scan`] and [`crate::report`].
+//! [`crate::scan`], [`crate::deps`], and [`crate::report`].
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -27,6 +27,10 @@ pub enum Command {
     #[command(after_help = REPORT_EXAMPLES)]
     Report(ReportArgs),
 
+    /// Show what an object depends on, and what would be affected if it changed.
+    #[command(after_help = DEPS_EXAMPLES)]
+    Deps(DepsArgs),
+
     /// Update ripbi to the latest GitHub release.
     #[command(after_help = UPDATE_EXAMPLES)]
     Update(UpdateArgs),
@@ -45,10 +49,10 @@ Examples:
   ripbi scan                       # discover a project in the current directory
   ripbi scan --json > findings.json
   ripbi scan --summary             # counts only, when the list would flood the terminal
-  ripbi scan --measures --columns  # only these unused object types
-  ripbi scan -q                    # exit code only: 0 clean, 1 unused found, 2 error
+  ripbi scan --type measure --type column  # only these unused object types
+  ripbi scan -q                            # exit code only: 0 clean, 1 unused found, 2 error
 
-Type flags union; with none of them, everything is reported.";
+Selection flags union; with none of them, everything is reported.";
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const UPDATE_EXAMPLES: &str = "\
@@ -70,6 +74,105 @@ Examples:
   ripbi report --used                # every model object the report keeps alive
   ripbi report --fields --match \"'Sales'[Total]\"
   ripbi report -q                    # exit code only: 0 read, 2 error";
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const DEPS_EXAMPLES: &str = "\
+Examples:
+  ripbi deps \"'Sales'[Total Sales]\"  # both directions; discovers a project in the current directory
+  ripbi deps --model models/Sales.SemanticModel  # explicit inputs; --report adds bindings
+  ripbi deps                         # no object: compact overview — counts, never the whole graph
+  ripbi deps \"'Sales'[Total Sales]\" --dependencies  # what the measure relies on
+  ripbi deps \"'Sales'[Total Sales]\" --impact  # what could be affected by a change
+  ripbi deps \"'Sales'[Total Sales]\" --impact --depth 1  # direct impact only
+  ripbi deps --table Sales           # explore a whole table
+  ripbi deps \"'Sales'[Total Sales]\" --impact --in-report Executive  # impact in one report
+  ripbi deps \"'Sales'[Total Sales]\" --plain
+  ripbi deps \"'Sales'[Total Sales]\" --json";
+
+/// `ripbi deps` arguments.
+#[derive(Args, Debug, Default)]
+pub struct DepsArgs {
+    /// The model object to explore — a reference like `'Table'[Name]`, never
+    /// a filesystem path.
+    pub object: Option<String>,
+
+    /// Explore one named semantic model; disables discovery.
+    #[arg(long, value_name = "PATH")]
+    pub model: Option<PathBuf>,
+
+    /// Extra report binding source; repeatable; replaces ripbi.toml
+    /// `reports`.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
+    /// Show what the object relies on, upstream.
+    #[arg(long)]
+    pub dependencies: bool,
+
+    /// Show what relies on the object, downstream.
+    #[arg(long)]
+    pub impact: bool,
+
+    /// Traverse at most N edges from the object; unset or 'all' traverses to
+    /// the leaves.
+    #[arg(long, value_name = "N|all")]
+    pub depth: Option<String>,
+
+    /// Explore every member of one table, instead of a single object.
+    #[arg(long, value_name = "NAME", conflicts_with = "object")]
+    pub table: Option<String>,
+
+    /// Explore a whole type (e.g. measure, column) instead of one object;
+    /// repeatable or comma-separated.
+    #[arg(
+        long = "type",
+        value_name = "TYPE",
+        value_delimiter = ',',
+        conflicts_with = "object"
+    )]
+    pub types: Vec<String>,
+
+    /// Only show downstream usages by this kind of consumer; 'visual' means
+    /// report bindings.
+    #[arg(long, value_name = "TYPE")]
+    pub consumer: Option<String>,
+
+    /// Only show report bindings belonging to this report.
+    #[arg(long, value_name = "NAME")]
+    pub in_report: Option<String>,
+
+    /// Only show report bindings on this page.
+    #[arg(long, value_name = "NAME")]
+    pub on_page: Option<String>,
+
+    /// Draw the slice as a topology diagram instead of a tree.
+    #[arg(long, conflicts_with_all = ["plain", "json"])]
+    pub graph: bool,
+
+    /// Machine-readable JSON (schema: docs/deps.md).
+    #[arg(long, conflicts_with = "plain")]
+    pub json: bool,
+
+    /// One typed record per line, for grep/awk.
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// List every pairing note and skipped item on stderr.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Never prompt; fail where a picker would appear.
+    #[arg(long)]
+    pub no_input: bool,
+}
 
 /// `ripbi update` arguments.
 #[derive(Args, Debug, Default)]
@@ -197,10 +300,7 @@ pub struct ScanArgs {
     #[arg(long)]
     pub strict: bool,
 
-    /// Skip a model with no connected reports instead of refusing (exit 2):
-    /// a notice on stderr, exit code 0, no scan output. Lets a pipeline point
-    /// the scan at every model and let each run decide whether it has
-    /// anything to scan against.
+    /// Skip a model with no connected reports instead of refusing (exit 2).
     #[arg(long)]
     pub allow_no_reports: bool,
 
@@ -212,44 +312,49 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_input: bool,
 
+    /// Only report these object types, e.g. measure, column; repeatable or
+    /// comma-separated.
+    #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
+    pub types: Vec<String>,
+
     /// Only report unused measures.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub measures: bool,
 
     /// Only report unused columns.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub columns: bool,
 
     /// Only report unused hierarchies.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub hierarchies: bool,
 
     /// Only report unused tables; also keeps the Auto date/time section.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub tables: bool,
 
     /// Only report unused partitions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub partitions: bool,
 
     /// Only report unused relationships.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub relationships: bool,
 
     /// Only report unused calculation items.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub calc_items: bool,
 
     /// Only report unused expressions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub expressions: bool,
 
     /// Only report unused functions.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub functions: bool,
 
     /// Only report unused report measures.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub report_measures: bool,
 
     /// Only broken visual bindings; the only mode where they gate.
@@ -295,6 +400,84 @@ mod tests {
     use super::*;
     use crate::render::GROUPS;
     use clap::{CommandFactory, Parser};
+
+    /// Help is an interface, not an essay: every flag's help and every
+    /// subcommand's about is one short line, scannable in a terminal column.
+    /// The full contract lives in `docs/*.md` — this gate keeps an
+    /// over-eager doc comment (human or LLM) from shipping a paragraph into
+    /// `--help`. Raise the offender's detail in the docs instead.
+    #[test]
+    fn help_text_stays_one_scannable_line() {
+        const MAX_HELP: usize = 100;
+
+        fn check_line(
+            offenders: &mut Vec<String>,
+            label: &str,
+            text: Option<&clap::builder::StyledStr>,
+        ) {
+            if let Some(text) = text {
+                let text = text.to_string();
+                if text.contains('\n') || text.chars().count() > MAX_HELP {
+                    offenders.push(format!("{label}: {text:?}"));
+                }
+            }
+        }
+
+        let mut offenders: Vec<String> = Vec::new();
+        let cli = Cli::command();
+        for command in std::iter::once(cli.clone()).chain(cli.get_subcommands().cloned()) {
+            let name = command.get_name().to_string();
+            check_line(&mut offenders, &name, command.get_about());
+            for arg in command.get_arguments() {
+                let id = arg.get_id().to_string();
+                for help in [arg.get_help(), arg.get_long_help()].into_iter().flatten() {
+                    let help = help.to_string();
+                    if help.contains('\n') || help.chars().count() > MAX_HELP {
+                        offenders.push(format!("{name} --{id}: {help:?}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "help text over {MAX_HELP} chars or multi-line — move the detail to docs/:\n{}",
+            offenders.join("\n")
+        );
+    }
+
+    /// Commands that share scan's input ladder (`--model`, `--report`) lead
+    /// their help with those flags: declaration order is help order, and the
+    /// inputs are the first thing a new user needs to find. `report`
+    /// deliberately has neither flag — it inventories every report paired
+    /// with its PATH — so it is skipped here.
+    #[test]
+    fn shared_input_flags_lead_the_help() {
+        let cli = Cli::command();
+        for command in cli.get_subcommands() {
+            let takes_model = command.get_arguments().any(|arg| arg.get_id() == "model");
+            if !takes_model {
+                continue;
+            }
+            let name = command.get_name();
+            let options: Vec<String> = command
+                .get_arguments()
+                .filter(|arg| !arg.is_positional() && arg.get_id() != "help")
+                .map(|arg| arg.get_id().to_string())
+                .collect();
+            // The ids are the struct field names; `--report`'s field is
+            // `reports` because the flag is repeatable.
+            assert_eq!(
+                options.first().map(String::as_str),
+                Some("model"),
+                "{name} must declare --model first — the inputs lead the help"
+            );
+            assert_eq!(
+                options.get(1).map(String::as_str),
+                Some("reports"),
+                "{name} must declare --report second"
+            );
+        }
+    }
 
     /// The update flags parse, and the hidden notifier child parses too.
     #[test]

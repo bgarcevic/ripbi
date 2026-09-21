@@ -23,6 +23,7 @@ for f in \
   "$MANUAL/installation.md" \
   CHANGELOG.md \
   crates/ripbi-cli/docs/output.md \
+  crates/ripbi-cli/docs/deps.md \
   crates/ripbi-cli/docs/report.md \
   crates/ripbi-core/docs/graph.md \
   crates/ripbi-core/docs/formats.md \
@@ -46,6 +47,9 @@ cp CHANGELOG.md "$SRC"/changelog.md
 # The book ships without the repo, so repoint those links at GitHub.
 sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
   crates/ripbi-cli/docs/output.md > "$SRC"/output.md
+
+sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+  crates/ripbi-cli/docs/deps.md > "$SRC"/deps.md
 
 sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
   crates/ripbi-cli/docs/report.md > "$SRC"/report.md

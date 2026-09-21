@@ -164,6 +164,25 @@ pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("broken_visual", "Broken visual bindings"),
 ];
 
+/// The machine kind vocabulary every type-selecting flag speaks: the keys
+/// [`kind_of`] returns and `--plain`/`--json` emit, and what `scan --type`
+/// and `deps --type`/`--consumer` validate against. Deliberately not the
+/// [`GROUPS`] keys: `broken_visual` is a finding kind selected by scan's
+/// `--broken`, not an object type.
+pub(crate) const KINDS: &[&str] = &[
+    "table",
+    "column",
+    "measure",
+    "hierarchy",
+    "partition",
+    "relationship",
+    "role",
+    "calculation_item",
+    "expression",
+    "function",
+    "report_measure",
+];
+
 /// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
 /// on purpose — the section answers "where do I start", which a top-10 list does
 /// without another flag.
@@ -889,6 +908,64 @@ struct JsonSkip {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The vocabulary is exactly what `kind_of` can return: one entry per
+    /// `ObjectId` variant, no gaps, no extras. A type-selecting flag that
+    /// accepted a key outside this set would silently select nothing.
+    #[test]
+    fn the_kind_vocabulary_covers_every_object_kind() {
+        let every_kind = [
+            ObjectId::Table {
+                table: NameKey::new("Sales"),
+            },
+            ObjectId::Column {
+                table: NameKey::new("Sales"),
+                column: NameKey::new("Amount"),
+            },
+            ObjectId::Measure {
+                table: NameKey::new("Sales"),
+                measure: NameKey::new("Total"),
+            },
+            ObjectId::Hierarchy {
+                table: NameKey::new("Date"),
+                hierarchy: NameKey::new("Calendar"),
+            },
+            ObjectId::Partition {
+                table: NameKey::new("Sales"),
+                partition: NameKey::new("P"),
+            },
+            ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new("Dim"),
+                to_column: NameKey::new("Key"),
+            },
+            ObjectId::Role {
+                role: NameKey::new("Reader"),
+            },
+            ObjectId::CalculationItem {
+                table: NameKey::new("TI"),
+                item: NameKey::new("YTD"),
+            },
+            ObjectId::Expression {
+                name: NameKey::new("Param"),
+            },
+            ObjectId::Function {
+                name: NameKey::new("F"),
+            },
+            ObjectId::ReportMeasure {
+                measure: NameKey::new("Local"),
+            },
+        ]
+        .each_ref()
+        .map(kind_of);
+
+        let mut sorted = KINDS.to_vec();
+        sorted.sort_unstable();
+        let mut expected = every_kind.to_vec();
+        expected.sort_unstable();
+        assert_eq!(sorted, expected, "KINDS and kind_of must stay in lockstep");
+    }
 
     fn finding(table: Option<&str>) -> Finding {
         Finding {

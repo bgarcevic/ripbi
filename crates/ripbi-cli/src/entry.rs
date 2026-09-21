@@ -5,6 +5,7 @@ use std::io::{self, IsTerminal, Write};
 
 use clap::Parser;
 
+use crate::deps;
 use crate::scan::{self, Streams};
 use crate::{Cli, Command, notify, report, update};
 
@@ -16,6 +17,7 @@ pub fn run() -> std::process::ExitCode {
     let cli = Cli::parse();
     let quiet = match &cli.command {
         Command::Scan(args) => args.quiet,
+        Command::Deps(args) => args.quiet,
         Command::Report(args) => args.quiet,
         Command::Update(args) => args.quiet,
         Command::__UpdateCheck(_) => true,
@@ -33,6 +35,7 @@ pub fn run() -> std::process::ExitCode {
     };
     let code = match &cli.command {
         Command::Scan(args) => scan::run(args, &mut streams),
+        Command::Deps(args) => deps::run(args, &mut streams),
         Command::Report(args) => report::run(args, &mut streams),
         Command::Update(args) => update::run(args, &mut streams),
         Command::__UpdateCheck(_) => notify::run_check(),
