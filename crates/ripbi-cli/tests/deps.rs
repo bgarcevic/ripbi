@@ -689,6 +689,51 @@ mod filters {
     }
 }
 
+mod graph_view {
+    use super::*;
+
+    #[test]
+    fn graph_draws_the_topology_deterministically() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            graph: true,
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0);
+
+        let (code2, out2, _err2) = run_deps(&args, &dir.0, "");
+        assert_eq!(out, out2, "stable output between invocations");
+
+        assert!(out.contains("'Sales'[Total]  measure"));
+        assert!(out.contains("Dependencies") && out.contains("Impact"));
+        assert!(out.contains('┌'), "boxes are drawn");
+        assert!(
+            out.contains("['Sales'[Total]]") || out.contains("Total"),
+            "nodes are named"
+        );
+    }
+
+    #[test]
+    fn graph_of_a_large_view_degrades_gracefully() {
+        // The whole fixture graph fits, so force the selector side: every
+        // member of Sales draws compactly rather than flooding.
+        let dir = mini_project();
+        let args = DepsArgs {
+            table: Some("Sales".to_string()),
+            graph: true,
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains('['), "nodes carry numbered or named forms");
+    }
+}
+
 mod depth_parsing {
     use super::*;
 

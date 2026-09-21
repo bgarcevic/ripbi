@@ -19,6 +19,7 @@ use crate::render::kind_of;
 use crate::scan;
 use crate::style::Palette;
 
+mod graph_view;
 mod render;
 mod tree;
 
@@ -223,6 +224,8 @@ fn explore(
     if !args.quiet {
         if args.json {
             render::json(streams.out, &output)?;
+        } else if args.graph {
+            render::graph(streams.out, &palette_out, &output).map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else {

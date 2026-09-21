@@ -102,6 +102,43 @@ pub fn human(out: &mut dyn io::Write, palette: &Palette, output: &DepsOutput) ->
     }
 }
 
+/// Writes the `--graph` view: the overview unchanged, or each root's slices
+/// as layered diagrams.
+///
+/// # Errors
+/// Propagates stream write failures.
+pub fn graph(out: &mut dyn io::Write, palette: &Palette, output: &DepsOutput) -> io::Result<()> {
+    let focused = match output {
+        DepsOutput::Overview(overview) => return write_overview(out, palette, overview),
+        DepsOutput::Focused(focused) => focused,
+    };
+    for (index, root) in focused.roots.iter().enumerate() {
+        if index > 0 {
+            writeln!(out)?;
+        }
+        writeln!(out, "{}  {}", root, palette.dim(kind_of(root)))?;
+        if let Some(slice) = focused.dependencies.as_ref().and_then(|s| s.get(index)) {
+            writeln!(out)?;
+            writeln!(out, "{}", palette.bold("Dependencies"))?;
+            write!(
+                out,
+                "{}",
+                super::graph_view::diagram(slice, super::graph_view::Arrow::Right)
+            )?;
+        }
+        if let Some(slice) = focused.impact.as_ref().and_then(|s| s.get(index)) {
+            writeln!(out)?;
+            writeln!(out, "{}", palette.bold("Impact"))?;
+            write!(
+                out,
+                "{}",
+                super::graph_view::diagram(slice, super::graph_view::Arrow::Left)
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn write_overview(
     out: &mut dyn io::Write,
     palette: &Palette,

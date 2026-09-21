@@ -87,6 +87,17 @@ fn deps_selectors_conflict_with_the_object_operand() {
 }
 
 #[test]
+fn deps_graph_conflicts_with_the_machine_modes() {
+    for mode in ["--json", "--plain"] {
+        ripbi()
+            .args(["deps", "'Sales'[Total]", mode, "--graph"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
+}
+
+#[test]
 fn deps_json_and_plain_flags_conflict() {
     ripbi()
         .args(["deps", "--json", "--plain"])

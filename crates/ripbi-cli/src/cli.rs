@@ -144,6 +144,10 @@ pub struct DepsArgs {
     #[arg(long, value_name = "NAME")]
     pub on_page: Option<String>,
 
+    /// Draw the slice as a topology diagram instead of a tree.
+    #[arg(long, conflicts_with_all = ["plain", "json"])]
+    pub graph: bool,
+
     /// A report to include as input; repeatable.
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
