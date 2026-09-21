@@ -51,6 +51,7 @@ pub mod dax;
 pub mod graph;
 pub mod identity;
 pub mod ingest;
+pub mod lookup;
 pub mod m;
 pub mod model;
 pub mod report;
@@ -60,10 +61,11 @@ pub use dax::{
 };
 pub use graph::{
     AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, BrokenBinding, BrokenReason,
-    DependencyGraph, Provenance, StructuralEdge, UnusedObject, UsedBy,
+    DepEdge, DepSlice, DependencyGraph, Provenance, StructuralEdge, UnusedObject, UsedBy,
 };
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};
+pub use lookup::ReferenceError;
 pub use model::index::{
     ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, ModelIndex,
     Resolved, TableHandle, UnqualifiedMatches,

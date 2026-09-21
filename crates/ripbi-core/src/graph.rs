@@ -147,6 +147,7 @@ use petgraph::visit::EdgeRef;
 
 pub mod broken;
 pub mod provenance;
+pub mod slice;
 
 mod builder;
 mod reachability;
@@ -154,6 +155,7 @@ mod reachability;
 pub use broken::{BrokenBinding, BrokenReason};
 pub use provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
 pub use reachability::{UnusedObject, UsedBy};
+pub use slice::{DepEdge, DepSlice};
 
 use crate::identity::{NameKey, ObjectId, fold_name};
 use crate::model::TabularDatabase;

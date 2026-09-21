@@ -151,6 +151,94 @@ impl fmt::Display for Provenance {
     }
 }
 
+impl Provenance {
+    /// The stable snake_case machine key for this relationship — the same
+    /// relationship [`Display`](fmt::Display) renders as a phrase. Structured
+    /// output (`ripbi deps --plain`/`--json`) emits this so scripts can match on
+    /// it; the phrase is for humans and carries punctuation that never belongs
+    /// in a pipeline field.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Provenance::Dax { kind } => kind.key(),
+            Provenance::Binding(_) => "binding",
+            Provenance::M => "power_query",
+            Provenance::Structural { role } => role.key(),
+        }
+    }
+}
+
+impl BindingSite {
+    /// The stable machine key of this binding kind. A field well is
+    /// `visual_binding` — the role (`Values`, `Y`, …) is separate data, not part
+    /// of the kind.
+    pub fn key(&self) -> &'static str {
+        match self {
+            BindingSite::FieldWell { .. } => "visual_binding",
+            BindingSite::Filter => "filter",
+            BindingSite::Sort => "sort",
+            BindingSite::Drillthrough => "drillthrough",
+            BindingSite::ConditionalFormatting => "conditional_formatting",
+            BindingSite::AltText => "alt_text",
+        }
+    }
+}
+
+impl StructuralEdge {
+    /// The stable machine key of this structural rule, in lockstep with
+    /// [`Display`](fmt::Display).
+    pub fn key(&self) -> &'static str {
+        match self {
+            StructuralEdge::TableMember => "table_member",
+            StructuralEdge::TablePartition => "table_partition",
+            StructuralEdge::Relationship => "relationship",
+            StructuralEdge::InactiveRelationship => "inactive_relationship",
+            StructuralEdge::RelationshipEndpoint => "relationship_endpoint",
+            StructuralEdge::InactiveRelationshipEndpoint => "inactive_relationship_endpoint",
+            StructuralEdge::SortByColumn => "sort_by_column",
+            StructuralEdge::GroupByColumn => "group_by_column",
+            StructuralEdge::HierarchyLevel => "hierarchy_level",
+            StructuralEdge::EngineManaged => "engine_managed",
+            StructuralEdge::MParameterBinding => "m_parameter_binding",
+            StructuralEdge::RolePermission => "role_permission",
+        }
+    }
+}
+
+impl DaxExpressionKind {
+    /// The stable machine key of this expression site, in lockstep with
+    /// [`dax_site`].
+    pub fn key(&self) -> &'static str {
+        match self {
+            DaxExpressionKind::Measure => "measure_expression",
+            DaxExpressionKind::MeasureFormatString => "measure_format_string",
+            DaxExpressionKind::MeasureDetailRows => "measure_detail_rows",
+            DaxExpressionKind::KpiTarget => "kpi_target",
+            DaxExpressionKind::KpiStatus => "kpi_status",
+            DaxExpressionKind::KpiTrend => "kpi_trend",
+            DaxExpressionKind::CalculatedColumn => "calculated_column_expression",
+            DaxExpressionKind::CalculatedTable => "calculated_table_expression",
+            DaxExpressionKind::ChangeDetection => "change_detection_expression",
+            DaxExpressionKind::TableDetailRows => "table_detail_rows",
+            DaxExpressionKind::RlsFilter => "rls_filter",
+            DaxExpressionKind::CalculationItem => "calculation_item_expression",
+            DaxExpressionKind::CalculationItemFormatString => "calculation_item_format_string",
+            DaxExpressionKind::CalculationGroupNoSelection => "calculation_group_no_selection",
+            DaxExpressionKind::CalculationGroupNoSelectionFormatString => {
+                "calculation_group_no_selection_format_string"
+            }
+            DaxExpressionKind::CalculationGroupMultipleOrEmptySelection => {
+                "calculation_group_multiple_or_empty_selection"
+            }
+            DaxExpressionKind::CalculationGroupMultipleOrEmptySelectionFormatString => {
+                "calculation_group_multiple_or_empty_selection_format_string"
+            }
+            DaxExpressionKind::Function => "function_body",
+            DaxExpressionKind::ReportMeasure => "report_measure_expression",
+            DaxExpressionKind::ReportMeasureFormatString => "report_measure_format_string",
+        }
+    }
+}
+
 /// What kind of report-side usage a binding represents — the owned form of
 /// [`BindingKind`](crate::BindingKind), whose field-well role is borrowed from
 /// the report AST.
@@ -395,6 +483,130 @@ mod tests {
                 }
                 .to_string(),
                 "measure expression"
+            );
+        }
+    }
+
+    mod keys {
+        use std::collections::HashSet;
+
+        use super::*;
+
+        /// Every variant has a distinct snake_case key: structured output keys
+        /// records by these, so a collision would silently merge two
+        /// relationships.
+        #[test]
+        fn keys_within_each_family_are_distinct() {
+            let dax = [
+                DaxExpressionKind::Measure,
+                DaxExpressionKind::MeasureFormatString,
+                DaxExpressionKind::MeasureDetailRows,
+                DaxExpressionKind::KpiTarget,
+                DaxExpressionKind::KpiStatus,
+                DaxExpressionKind::KpiTrend,
+                DaxExpressionKind::CalculatedColumn,
+                DaxExpressionKind::CalculatedTable,
+                DaxExpressionKind::ChangeDetection,
+                DaxExpressionKind::TableDetailRows,
+                DaxExpressionKind::RlsFilter,
+                DaxExpressionKind::CalculationItem,
+                DaxExpressionKind::CalculationItemFormatString,
+                DaxExpressionKind::CalculationGroupNoSelection,
+                DaxExpressionKind::CalculationGroupNoSelectionFormatString,
+                DaxExpressionKind::CalculationGroupMultipleOrEmptySelection,
+                DaxExpressionKind::CalculationGroupMultipleOrEmptySelectionFormatString,
+                DaxExpressionKind::Function,
+                DaxExpressionKind::ReportMeasure,
+                DaxExpressionKind::ReportMeasureFormatString,
+            ];
+            let structural = [
+                StructuralEdge::TableMember,
+                StructuralEdge::TablePartition,
+                StructuralEdge::Relationship,
+                StructuralEdge::InactiveRelationship,
+                StructuralEdge::RelationshipEndpoint,
+                StructuralEdge::InactiveRelationshipEndpoint,
+                StructuralEdge::SortByColumn,
+                StructuralEdge::GroupByColumn,
+                StructuralEdge::HierarchyLevel,
+                StructuralEdge::EngineManaged,
+                StructuralEdge::MParameterBinding,
+                StructuralEdge::RolePermission,
+            ];
+            let sites = [
+                BindingSite::FieldWell {
+                    role: String::new(),
+                },
+                BindingSite::Filter,
+                BindingSite::Sort,
+                BindingSite::Drillthrough,
+                BindingSite::ConditionalFormatting,
+                BindingSite::AltText,
+            ];
+
+            for (family, keys) in [
+                ("dax", dax.iter().map(|kind| kind.key()).collect::<Vec<_>>()),
+                (
+                    "structural",
+                    structural.iter().map(|role| role.key()).collect::<Vec<_>>(),
+                ),
+                (
+                    "sites",
+                    sites.iter().map(|site| site.key()).collect::<Vec<_>>(),
+                ),
+            ] {
+                let mut sorted = keys.clone();
+                sorted.sort_unstable();
+                assert_eq!(
+                    keys.len(),
+                    sorted.iter().collect::<HashSet<_>>().len(),
+                    "{family} keys must be distinct"
+                );
+                assert!(
+                    keys.iter().all(|key| {
+                        !key.is_empty() && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                    }),
+                    "{family} keys must be snake_case"
+                );
+            }
+        }
+
+        #[test]
+        fn provenance_keys_delegate_to_their_family() {
+            assert_eq!(
+                Provenance::Dax {
+                    kind: DaxExpressionKind::RlsFilter
+                }
+                .key(),
+                "rls_filter"
+            );
+            assert_eq!(
+                Provenance::Structural {
+                    role: StructuralEdge::HierarchyLevel
+                }
+                .key(),
+                "hierarchy_level"
+            );
+            assert_eq!(Provenance::M.key(), "power_query");
+            assert_eq!(
+                binding(BindingSite::FieldWell {
+                    role: "Values".to_string(),
+                })
+                .key(),
+                "binding"
+            );
+        }
+
+        /// A field well's role never leaks into the machine kind: the role is
+        /// separate data (`Values`, `Y`, …), the kind is always `visual_binding`.
+        #[test]
+        fn a_field_well_keys_as_visual_binding() {
+            assert_eq!(
+                BindingSite::FieldWell {
+                    role: "Values".to_string(),
+                }
+                .key(),
+                "visual_binding"
             );
         }
     }
