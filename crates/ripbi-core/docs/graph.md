@@ -227,6 +227,19 @@ reference the parser could not structure never flags. The
 qualifying-table fallback keeps its liveness role unchanged — the records ride along,
 they never move a node in or out of the unused set.
 
+## The deps view
+
+The per-object exploration view is pure CLI rendering over the queries this
+graph already answers: `producers_of` (upstream), `consumers_of` (downstream),
+`roots_of` (the report bindings beside the graph), and — since the `deps`
+command landed — the multi-hop slices `dependencies_of`/`impact_of`
+(`graph/slice.rs`: BFS with a depth cutoff, cycle-safe, the *induced* edge
+set, every edge followed — exploration wants the truth, not the liveness
+policy, so the strong/weak-pass rules stay private to reachability).
+`graph/provenance.rs` carries the stable snake_case machine keys beside the
+`Display` phrases, and `lookup.rs` resolves user-written references to
+`ObjectId`s (shared, never `deps`-specific).
+
 ## Determinism
 
 Node and edge construction follows model and report source order; identical

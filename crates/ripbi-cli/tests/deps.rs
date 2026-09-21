@@ -704,7 +704,7 @@ mod graph_view {
         let (code, out, _err) = run_deps(&args, &dir.0, "");
         assert_eq!(code, 0);
 
-        let (code2, out2, _err2) = run_deps(&args, &dir.0, "");
+        let (_code2, out2, _err2) = run_deps(&args, &dir.0, "");
         assert_eq!(out, out2, "stable output between invocations");
 
         assert!(out.contains("'Sales'[Total]  measure"));

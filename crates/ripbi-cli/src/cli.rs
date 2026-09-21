@@ -103,7 +103,8 @@ Examples:
 /// `ripbi deps` arguments.
 #[derive(Args, Debug, Default)]
 pub struct DepsArgs {
-    /// The model object to explore: 'Table'[Name], [Name], or a bare table name.
+    /// The model object to explore: `'Table'[Name]`, `[Name]`, or a bare
+    /// table name.
     pub object: Option<String>,
 
     /// Show what the object relies on, upstream.

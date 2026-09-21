@@ -205,8 +205,8 @@ impl StructuralEdge {
 }
 
 impl DaxExpressionKind {
-    /// The stable machine key of this expression site, in lockstep with
-    /// [`dax_site`].
+    /// The stable machine key of this expression site, in lockstep with the
+    /// `dax_site` phrase table.
     pub fn key(&self) -> &'static str {
         match self {
             DaxExpressionKind::Measure => "measure_expression",

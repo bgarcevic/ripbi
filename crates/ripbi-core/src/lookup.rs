@@ -304,7 +304,8 @@ impl crate::graph::DependencyGraph {
     /// Resolves a user-written reference against this graph's objects — the
     /// entry commands take, so ambiguity and suggestions always reflect the
     /// graph a command is about to traverse. See
-    /// [`resolve_reference`](resolve_reference) for the accepted forms.
+    /// [`resolve_reference`](self) is the free-function form over any object
+    /// listing; see its docs for the accepted forms.
     pub fn resolve_reference(&self, input: &str) -> Result<ObjectId, ReferenceError> {
         resolve_reference(self.object_ids(), input)
     }

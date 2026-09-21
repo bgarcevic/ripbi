@@ -1,7 +1,7 @@
 //! Multi-hop traversal over the dependency graph: the per-object slices the
 //! `ripbi deps` view renders.
 //!
-//! Liveness ([`super::reachability`]) asks a global question — what does
+//! Liveness (`reachability`) asks a global question — what does
 //! *nothing* reach? — and filters edges by what confers liveness. A slice asks
 //! a local one: starting from one object, what lies within `depth` edges
 //! upstream (what it uses) or downstream (what uses it)? Exploration wants the

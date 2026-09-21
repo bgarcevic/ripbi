@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ripbi deps` — dependency and impact exploration (issue #20)** — a new
+  subcommand that explores one object from both sides: `--dependencies` shows
+  what it relies on, `--impact` shows what relies on it (model objects and
+  report bindings with full site provenance), and the default view shows both
+  as deterministic trees. `--depth N|all` bounds the traversal; `--table` and
+  `--type` select whole groups of roots (traversal itself is never pruned);
+  `--consumer`, `--in-report`, and `--on-page` filter the results after full
+  traversal; `--graph` draws the slice as a layered topology diagram that
+  degrades gracefully past 24 nodes. Object references resolve through a new
+  shared lookup in `ripbi-core` (`'Table'[Name]`, `[Name]`, bare names, and
+  full display forms) — ambiguity lists every candidate with its kind, typos
+  offer the nearest match. The bare command prints a compact graph overview.
+  Three output modes: the human trees, `--plain` typed tab-separated records
+  for grep/awk, and `--json` (`schema_version: 1`, typed nodes/edges/
+  bindings) — machine modes never truncate. Read-only and informational:
+  exit `0` for any produced view (empty impact included), `2` only on errors.
+  Model-only exploration is valid — unlike `scan` there is no
+  zero-connected-report refusal. Core gains the multi-hop slice API
+  (`dependencies_of`/`impact_of`), stable snake_case provenance keys, and
+  `edge_count`.
+
 - **`ripbi report` — print the ingested report as data (issue #33)** — a new
   subcommand that inventories what ripbi sees in a report: report → pages →
   visuals → fields, each visual with its `visualType`, every field it binds
