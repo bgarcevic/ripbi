@@ -78,6 +78,15 @@ fn report_json_and_plain_flags_conflict() {
 }
 
 #[test]
+fn deps_selectors_conflict_with_the_object_operand() {
+    ripbi()
+        .args(["deps", "'Sales'[Total]", "--table", "Sales"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
 fn deps_json_and_plain_flags_conflict() {
     ripbi()
         .args(["deps", "--json", "--plain"])

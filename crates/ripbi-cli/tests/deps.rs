@@ -200,6 +200,8 @@ By type
 
 Try:
   ripbi deps \"'Table'[Name]\"
+  ripbi deps --table Sales
+  ripbi deps --type measure
 "
         );
     }
@@ -395,6 +397,140 @@ mod machine_modes {
         assert_eq!(payload["bindings"], 1);
         assert_eq!(payload["by_type"]["measures"], 2);
         assert_eq!(payload["by_type"]["other"], 2);
+    }
+}
+
+mod selectors {
+    use super::*;
+
+    #[test]
+    fn a_type_selector_explores_every_match() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            types: vec!["measure".to_string()],
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("'Sales'[Total]  measure"));
+        assert!(out.contains("'Sales'[Legacy Total]  measure"));
+        // A root header sits on its own line after a blank line; tree nodes
+        // carry a connector, so this only matches headers.
+        assert!(
+            !out.contains("\n\n'Sales'[Amount]  column\n"),
+            "columns are not roots:\n{out}"
+        );
+    }
+
+    #[test]
+    fn a_table_selector_roots_every_member() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            table: Some("Sales".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        for root in [
+            "table 'Sales'  table",
+            "'Sales'[Amount]  column",
+            "'Sales'[Legacy]  column",
+            "'Sales'[Total]  measure",
+        ] {
+            assert!(out.contains(root), "{root} must be a root:\n{out}");
+        }
+        // Traversal is not pruned: the partition is reached from its table.
+        assert!(out.contains("partition 'Sales'[Sales]"));
+    }
+
+    #[test]
+    fn table_and_type_selectors_intersect() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            table: Some("Sales".to_string()),
+            types: vec!["measure".to_string()],
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("'Sales'[Total]  measure"));
+        assert!(
+            !out.contains("\n\n'Sales'[Amount]  column\n"),
+            "columns are not roots:\n{out}"
+        );
+    }
+
+    #[test]
+    fn selector_runs_resolve_cross_table_reach_in_principle() {
+        // One table only here — the assertion is that a selector root's tree
+        // still shows everything it reaches (nothing is hidden for being a
+        // different kind than the selector named).
+        let dir = mini_project();
+        let args = DepsArgs {
+            table: Some("Sales".to_string()),
+            types: vec!["measure".to_string()],
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(
+            out.contains("table 'Sales'  table"),
+            "the measure's tree still reaches its table:\n{out}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_type_lists_the_vocabulary() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            types: vec!["measures".to_string()],
+            ..DepsArgs::default()
+        };
+
+        let (code, _out, err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 2);
+        assert!(err.contains("--type measures is not an object type"));
+        assert!(err.contains("calculation_item"), "the vocabulary is listed");
+    }
+
+    #[test]
+    fn a_selector_matching_nothing_is_an_error() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            table: Some("Nope".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, _out, err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 2);
+        assert!(err.contains("no objects match"));
+    }
+
+    #[test]
+    fn json_of_a_selector_run_has_a_null_root() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            types: vec!["measure".to_string()],
+            json: true,
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        let payload = json_payload(&out);
+        assert_eq!(payload["root"], serde_json::Value::Null);
+        assert_eq!(payload["nodes"].as_array().expect("nodes").len(), 6);
     }
 }
 

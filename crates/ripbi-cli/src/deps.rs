@@ -9,7 +9,7 @@ use std::path::Path;
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest;
 use ripbi_core::lookup::ReferenceError;
-use ripbi_core::{Provenance, ReportModel};
+use ripbi_core::{ObjectId, Provenance, ReportModel};
 
 use crate::cli::DepsArgs;
 use crate::config;
@@ -214,9 +214,10 @@ fn explore(
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
     let graph = DependencyGraph::build(&model.value, &report_refs);
 
-    let output = match &args.object {
-        Some(object) => focused_view(&graph, object, args, depth)?,
-        None => overview_view(&graph),
+    let output = if args.object.is_some() || args.table.is_some() || !args.types.is_empty() {
+        selection_view(&graph, args, depth)?
+    } else {
+        overview_view(&graph)
     };
 
     if !args.quiet {
@@ -252,48 +253,122 @@ fn parse_depth(value: Option<&str>) -> Result<Option<usize>, ScanError> {
     }
 }
 
-/// The selected object's view: an upstream slice, a downstream slice, and the
+/// The selected objects' view: one root (an object operand) or many
+/// (selectors), each with an upstream slice, a downstream slice, and the
 /// report bindings riding on the downstream one.
-fn focused_view(
+fn selection_view(
     graph: &DependencyGraph,
-    object: &str,
     args: &DepsArgs,
     depth: Option<usize>,
 ) -> Result<DepsOutput, ScanError> {
-    let root = graph.resolve_reference(object).map_err(reference_error)?;
+    let roots = match &args.object {
+        Some(object) => vec![graph.resolve_reference(object).map_err(reference_error)?],
+        None => select_roots(graph, args)?,
+    };
 
     // Neither flag means both; either one alone narrows the view.
     let show_dependencies = args.dependencies || !args.impact;
     let show_impact = args.impact || !args.dependencies;
 
-    let dependencies = if show_dependencies {
-        Some(graph.dependencies_of(&root, depth))
-    } else {
-        None
-    };
-
-    let (impact, bindings) = if show_impact {
-        let slice = graph.impact_of(&root, depth);
-        let mut bindings = Vec::new();
-        for id in &slice.nodes {
-            for provenance in graph.roots_of(id) {
-                if let Provenance::Binding(edge) = provenance {
-                    bindings.push((id.clone(), (**edge).clone()));
+    let dependencies = show_dependencies.then(|| {
+        roots
+            .iter()
+            .map(|root| graph.dependencies_of(root, depth))
+            .collect::<Vec<_>>()
+    });
+    let mut impact = None;
+    let mut bindings = Vec::new();
+    if show_impact {
+        let mut slices = Vec::new();
+        for root in &roots {
+            let slice = graph.impact_of(root, depth);
+            let mut per_root = Vec::new();
+            for id in &slice.nodes {
+                for provenance in graph.roots_of(id) {
+                    if let Provenance::Binding(edge) = provenance {
+                        per_root.push((id.clone(), (**edge).clone()));
+                    }
                 }
             }
+            bindings.push(per_root);
+            slices.push(slice);
         }
-        (Some(slice), bindings)
-    } else {
-        (None, Vec::new())
-    };
+        impact = Some(slices);
+    }
 
     Ok(DepsOutput::Focused(Box::new(FocusedOut {
-        root,
+        roots,
         dependencies,
         impact,
         bindings,
     })))
 }
+
+/// The roots the `--table`/`--type` selectors choose. Selectors decide where
+/// exploration starts — they never restrict what traversal may reach. Both
+/// selectors together intersect: the members of the table that also have the
+/// type.
+fn select_roots(graph: &DependencyGraph, args: &DepsArgs) -> Result<Vec<ObjectId>, ScanError> {
+    for kind in &args.types {
+        if !VALID_KINDS.contains(&kind.as_str()) {
+            let mut message = format!("--type {kind} is not an object type");
+            message.push_str(&format!(
+                "\n\nObject types:\n  {}",
+                VALID_KINDS.join("\n  ")
+            ));
+            return Err(ScanError::new(message)
+                .with_hint("run ripbi deps --help for what the selectors explore"));
+        }
+    }
+    let tables: Vec<String> = args.table.iter().map(|name| name.to_lowercase()).collect();
+    let roots: Vec<ObjectId> = graph
+        .object_ids()
+        .filter(|id| {
+            let table_match = tables.is_empty()
+                || id
+                    .owning_table()
+                    .is_some_and(|table| tables.iter().any(|t| t == table.folded()));
+            let kind_match =
+                args.types.is_empty() || args.types.iter().any(|kind| kind_of(id) == kind.as_str());
+            table_match && kind_match
+        })
+        .cloned()
+        .collect();
+    if roots.is_empty() {
+        let selected = args
+            .table
+            .as_ref()
+            .map(|table| format!("table {table}"))
+            .into_iter()
+            .chain(args.types.iter().map(|kind| format!("type {kind}")))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        return Err(
+            ScanError::new(format!("no objects match the {selected}")).with_hint(
+                "selectors choose where exploration starts — the names come from the model",
+            ),
+        );
+    }
+    let mut roots = roots;
+    roots.sort();
+    Ok(roots)
+}
+
+/// The machine kind vocabulary of `--type` — the same keys `--plain`, JSON,
+/// and scan's type flags use.
+const VALID_KINDS: &[&str] = &[
+    "table",
+    "column",
+    "measure",
+    "hierarchy",
+    "partition",
+    "relationship",
+    "role",
+    "calculation_item",
+    "expression",
+    "function",
+    "report_measure",
+];
 
 /// The overview the bare command prints: counts, never the whole graph.
 fn overview_view(graph: &DependencyGraph) -> DepsOutput {

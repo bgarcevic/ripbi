@@ -119,6 +119,14 @@ pub struct DepsArgs {
     #[arg(long, value_name = "N|all")]
     pub depth: Option<String>,
 
+    /// Explore every member of one table, instead of a single object.
+    #[arg(long, value_name = "NAME", conflicts_with = "object")]
+    pub table: Option<String>,
+
+    /// Explore every object of one type, instead of a single object.
+    #[arg(long = "type", value_name = "TYPE", conflicts_with = "object")]
+    pub types: Vec<String>,
+
     /// A .SemanticModel folder to explore (or its definition/, or a project).
     #[arg(long, value_name = "PATH")]
     pub model: Option<PathBuf>,

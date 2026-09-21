@@ -68,20 +68,23 @@ impl ByType {
     }
 }
 
-/// One object's focused view: the traversed slices, not yet rendered. The
+/// The selected objects' view: the traversed slices, not yet rendered. The
 /// human trees are projections built at render time; `--plain` and `--json`
-/// read the slices directly and never truncate.
+/// read the slices directly and never truncate. One root for an object
+/// operand; one per selector match for `--table`/`--type`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FocusedOut {
-    /// The selected object.
-    pub root: ObjectId,
-    /// The upstream slice; `None` when only `--impact` was asked for.
-    pub dependencies: Option<DepSlice>,
-    /// The downstream slice; `None` when only `--dependencies` was asked for.
-    pub impact: Option<DepSlice>,
-    /// The report bindings riding on the impact slice, as
-    /// `(target object, binding)` pairs in slice order.
-    pub bindings: Vec<(ObjectId, BindingEdge)>,
+    /// The selected objects, sorted by identity.
+    pub roots: Vec<ObjectId>,
+    /// One upstream slice per root; `None` when only `--impact` was asked
+    /// for.
+    pub dependencies: Option<Vec<DepSlice>>,
+    /// One downstream slice per root; `None` when only `--dependencies` was
+    /// asked for.
+    pub impact: Option<Vec<DepSlice>>,
+    /// The report bindings riding on each root's impact slice, as
+    /// `(target object, binding)` pairs in slice order, one entry per root.
+    pub bindings: Vec<Vec<(ObjectId, BindingEdge)>>,
 }
 
 /// Writes the human-readable output: the object header, then one tree
@@ -114,6 +117,8 @@ fn write_overview(
     writeln!(out)?;
     writeln!(out, "Try:")?;
     writeln!(out, "  ripbi deps \"'Table'[Name]\"")?;
+    writeln!(out, "  ripbi deps --table Sales")?;
+    writeln!(out, "  ripbi deps --type measure")?;
     Ok(())
 }
 
@@ -122,38 +127,45 @@ fn write_focused(
     palette: &Palette,
     focused: &FocusedOut,
 ) -> io::Result<()> {
-    let root = &focused.root;
-    writeln!(out, "{}  {}", root, palette.dim(kind_of(root)))?;
     let label = |id: &ObjectId| format!("{}  {}", id, kind_of(id));
+    for (index, root) in focused.roots.iter().enumerate() {
+        if index > 0 {
+            writeln!(out)?;
+        }
+        writeln!(out, "{}  {}", root, palette.dim(kind_of(root)))?;
 
-    if let Some(slice) = &focused.dependencies {
-        let mut builder = TreeBuilder::new(Orientation::Dependencies);
-        let tree = builder.build(slice, root, label);
-        write_section(
-            out,
-            palette,
-            "Dependencies",
-            &tree,
-            builder.suppressed(),
-            slice,
-        )?;
-    }
-    if let Some(slice) = &focused.impact {
-        writeln!(out)?;
-        writeln!(out, "{}", palette.bold("Impact"))?;
-        let mut builder = TreeBuilder::new(Orientation::Impact);
-        let tree = builder.build(slice, root, label);
-        if tree.children.is_empty() && focused.bindings.is_empty() {
-            writeln!(out, "└─ nothing")?;
-        } else {
-            // The Model section says so even when empty — "no model object
-            // uses this, but reports do" is exactly the distinction the two
-            // sections exist to draw.
-            write_section(out, palette, "Model", &tree, builder.suppressed(), slice)?;
-            if !focused.bindings.is_empty() {
-                writeln!(out)?;
-                writeln!(out, "{}", palette.bold("Reports"))?;
-                write_children(out, &report_forest(focused), "")?;
+        if let Some(slices) = &focused.dependencies {
+            let slice = &slices[index];
+            let mut builder = TreeBuilder::new(Orientation::Dependencies);
+            let tree = builder.build(slice, root, label);
+            write_section(
+                out,
+                palette,
+                "Dependencies",
+                &tree,
+                builder.suppressed(),
+                slice,
+            )?;
+        }
+        if let Some(slices) = &focused.impact {
+            let slice = &slices[index];
+            let bindings = &focused.bindings[index];
+            writeln!(out)?;
+            writeln!(out, "{}", palette.bold("Impact"))?;
+            let mut builder = TreeBuilder::new(Orientation::Impact);
+            let tree = builder.build(slice, root, label);
+            if tree.children.is_empty() && bindings.is_empty() {
+                writeln!(out, "└─ nothing")?;
+            } else {
+                // The Model section says so even when empty — "no model
+                // object uses this, but reports do" is exactly the
+                // distinction the two sections exist to draw.
+                write_section(out, palette, "Model", &tree, builder.suppressed(), slice)?;
+                if !bindings.is_empty() {
+                    writeln!(out)?;
+                    writeln!(out, "{}", palette.bold("Reports"))?;
+                    write_children(out, &report_forest(root, bindings), "")?;
+                }
             }
         }
     }
@@ -211,20 +223,22 @@ fn write_children(out: &mut dyn io::Write, children: &[Node], prefix: &str) -> i
     Ok(())
 }
 
-/// The report bindings of the impact slice as deterministic tries:
+/// The report bindings of one root's impact slice as deterministic tries:
 /// `report → page → visual → binding site`, bookmarks as their own level,
 /// mobile layouts marked. When every binding lands on the selected object
 /// the object level is left out — the header already names it; when several
 /// objects carry bindings, each gets its own labeled subtree.
-fn report_forest(focused: &FocusedOut) -> Vec<Node> {
-    let root = &focused.root;
-    if focused.bindings.iter().all(|(id, _)| id == root) {
-        let edges: Vec<&BindingEdge> = focused.bindings.iter().map(|(_, edge)| edge).collect();
+fn report_forest(root: &ObjectId, bindings: &[(ObjectId, BindingEdge)]) -> Vec<Node> {
+    if bindings.is_empty() {
+        return Vec::new();
+    }
+    if bindings.iter().all(|(id, _)| id == root) {
+        let edges: Vec<&BindingEdge> = bindings.iter().map(|(_, edge)| edge).collect();
         return binding_trie(&edges);
     }
     // Grouped by the object each binding lands on, in slice (identity) order.
     let mut by_target: Vec<(ObjectId, Vec<&BindingEdge>)> = Vec::new();
-    for (id, edge) in &focused.bindings {
+    for (id, edge) in bindings {
         match by_target.last_mut() {
             Some((last, edges)) if *last == *id => edges.push(edge),
             _ => by_target.push((id.clone(), vec![edge])),
@@ -337,39 +351,54 @@ pub fn plain(out: &mut dyn io::Write, output: &DepsOutput) -> io::Result<()> {
             Ok(())
         }
         DepsOutput::Focused(focused) => {
-            if let Some(slice) = &focused.dependencies {
+            if let Some(slices) = &focused.dependencies {
                 // Graph orientation: the consumer, what it uses, and why.
-                for edge in &slice.edges {
-                    writeln!(
-                        out,
-                        "dependency\t{}\t{}\t{}",
-                        edge.from,
-                        edge.to,
-                        edge.provenance.key()
-                    )?;
+                // Roots can share reached edges; one record per edge.
+                let mut seen: HashSet<(&ObjectId, &ObjectId, &'static str)> = HashSet::new();
+                for slice in slices {
+                    for edge in &slice.edges {
+                        let key = (&edge.from, &edge.to, edge.provenance.key());
+                        if seen.insert(key) {
+                            writeln!(
+                                out,
+                                "dependency\t{}\t{}\t{}",
+                                edge.from,
+                                edge.to,
+                                edge.provenance.key()
+                            )?;
+                        }
+                    }
                 }
             }
-            if let Some(slice) = &focused.impact {
+            if let Some(slices) = &focused.impact {
                 // Flipped: the queried-object side first, then what uses it.
-                for edge in &slice.edges {
-                    writeln!(
-                        out,
-                        "impact\t{}\t{}\t{}",
-                        edge.to,
-                        edge.from,
-                        edge.provenance.key()
-                    )?;
+                let mut seen: HashSet<(&ObjectId, &ObjectId, &'static str)> = HashSet::new();
+                for slice in slices {
+                    for edge in &slice.edges {
+                        let key = (&edge.from, &edge.to, edge.provenance.key());
+                        if seen.insert(key) {
+                            writeln!(
+                                out,
+                                "impact\t{}\t{}\t{}",
+                                edge.to,
+                                edge.from,
+                                edge.provenance.key()
+                            )?;
+                        }
+                    }
                 }
-                for (id, edge) in &focused.bindings {
-                    writeln!(
-                        out,
-                        "binding\t{}\t{}\t{}\t{}\t{}",
-                        id,
-                        edge.report.as_ref().map_or("-", |r| r.as_str()),
-                        edge.page.as_ref().map_or("-", |p| p.as_str()),
-                        edge.visual.as_ref().map_or("-", |v| v.as_str()),
-                        site_field(edge)
-                    )?;
+                for bindings in &focused.bindings {
+                    for (id, edge) in bindings {
+                        writeln!(
+                            out,
+                            "binding\t{}\t{}\t{}\t{}\t{}",
+                            id,
+                            edge.report.as_ref().map_or("-", |r| r.as_str()),
+                            edge.page.as_ref().map_or("-", |p| p.as_str()),
+                            edge.visual.as_ref().map_or("-", |v| v.as_str()),
+                            site_field(edge)
+                        )?;
+                    }
                 }
             }
             Ok(())
@@ -403,13 +432,12 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
             },
         ),
         DepsOutput::Focused(focused) => {
-            let root = &focused.root;
-
+            let single_root = focused.roots.len() == 1;
             let mut node_ids: Vec<&ObjectId> = Vec::new();
-            if let Some(slice) = &focused.dependencies {
+            for slice in focused.dependencies.iter().flatten() {
                 node_ids.extend(slice.nodes.iter());
             }
-            if let Some(slice) = &focused.impact {
+            for slice in focused.impact.iter().flatten() {
                 node_ids.extend(slice.nodes.iter());
             }
             node_ids.sort();
@@ -423,28 +451,30 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                 .collect();
 
             // Dependency edges keep the graph orientation (consumer →
-            // producer); edges only the impact slice reached are flipped so
+            // producer); edges only the impact slices reached are flipped so
             // `from` is always the queried-object side, and `kind` says
-            // which. An edge both slices share is emitted once, as a
+            // which. An edge several roots share is emitted once, as a
             // dependency.
             let mut edges: Vec<JsonEdge> = Vec::new();
             let mut seen: HashSet<(String, String, &'static str)> = HashSet::new();
-            if let Some(slice) = &focused.dependencies {
+            for slice in focused.dependencies.iter().flatten() {
                 for edge in &slice.edges {
-                    seen.insert((
+                    let key = (
                         edge.from.to_string(),
                         edge.to.to_string(),
                         edge.provenance.key(),
-                    ));
-                    edges.push(JsonEdge {
-                        from: edge.from.to_string(),
-                        to: edge.to.to_string(),
-                        kind: "dependency",
-                        provenance: edge.provenance.key(),
-                    });
+                    );
+                    if seen.insert(key.clone()) {
+                        edges.push(JsonEdge {
+                            from: edge.from.to_string(),
+                            to: edge.to.to_string(),
+                            kind: "dependency",
+                            provenance: edge.provenance.key(),
+                        });
+                    }
                 }
             }
-            if let Some(slice) = &focused.impact {
+            for slice in focused.impact.iter().flatten() {
                 for edge in &slice.edges {
                     let forward = (
                         edge.from.to_string(),
@@ -454,6 +484,7 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                     if seen.contains(&forward) {
                         continue;
                     }
+                    seen.insert(forward);
                     edges.push(JsonEdge {
                         from: edge.to.to_string(),
                         to: edge.from.to_string(),
@@ -469,6 +500,7 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
             let bindings: Vec<JsonBinding> = focused
                 .bindings
                 .iter()
+                .flatten()
                 .map(|(id, edge)| JsonBinding {
                     object: id.to_string(),
                     report: edge.report.as_ref().map(|r| r.as_str().to_string()),
@@ -484,14 +516,18 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                 })
                 .collect();
 
+            let root = single_root.then(|| {
+                let id = &focused.roots[0];
+                JsonRoot {
+                    id: id.to_string(),
+                    kind: kind_of(id),
+                }
+            });
             write_json(
                 out,
                 &JsonFocused {
                     schema_version: 1,
-                    root: JsonRoot {
-                        id: root.to_string(),
-                        kind: kind_of(root),
-                    },
+                    root,
                     nodes,
                     edges,
                     bindings,
@@ -509,10 +545,11 @@ fn write_json<T: Serialize>(out: &mut dyn io::Write, payload: &T) -> Result<(), 
 }
 
 /// The JSON document of one focused view: the graph itself, versioned.
+/// `root` is `null` when selectors chose several roots.
 #[derive(Serialize)]
 struct JsonFocused {
     schema_version: u8,
-    root: JsonRoot,
+    root: Option<JsonRoot>,
     nodes: Vec<JsonNode>,
     edges: Vec<JsonEdge>,
     bindings: Vec<JsonBinding>,
