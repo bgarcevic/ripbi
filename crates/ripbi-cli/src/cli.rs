@@ -131,6 +131,19 @@ pub struct DepsArgs {
     #[arg(long, value_name = "PATH")]
     pub model: Option<PathBuf>,
 
+    /// Only show downstream usages by this kind of consumer; 'visual' means
+    /// report bindings.
+    #[arg(long, value_name = "TYPE")]
+    pub consumer: Option<String>,
+
+    /// Only show report bindings belonging to this report.
+    #[arg(long, value_name = "NAME")]
+    pub in_report: Option<String>,
+
+    /// Only show report bindings on this page.
+    #[arg(long, value_name = "NAME")]
+    pub on_page: Option<String>,
+
     /// A report to include as input; repeatable.
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,

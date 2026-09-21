@@ -85,6 +85,9 @@ pub(crate) struct FocusedOut {
     /// The report bindings riding on each root's impact slice, as
     /// `(target object, binding)` pairs in slice order, one entry per root.
     pub bindings: Vec<Vec<(ObjectId, BindingEdge)>>,
+    /// True for a `--consumer visual` run: the Impact view belongs to the
+    /// report bindings, so the Model section stays out entirely.
+    pub model_hidden: bool,
 }
 
 /// Writes the human-readable output: the object header, then one tree
@@ -154,13 +157,16 @@ fn write_focused(
             writeln!(out, "{}", palette.bold("Impact"))?;
             let mut builder = TreeBuilder::new(Orientation::Impact);
             let tree = builder.build(slice, root, label);
-            if tree.children.is_empty() && bindings.is_empty() {
+            let model_hidden = focused.model_hidden || tree.children.is_empty();
+            if model_hidden && bindings.is_empty() {
                 writeln!(out, "└─ nothing")?;
             } else {
-                // The Model section says so even when empty — "no model
-                // object uses this, but reports do" is exactly the
-                // distinction the two sections exist to draw.
-                write_section(out, palette, "Model", &tree, builder.suppressed(), slice)?;
+                if !focused.model_hidden {
+                    // The Model section says so even when empty — "no model
+                    // object uses this, but reports do" is exactly the
+                    // distinction the two sections exist to draw.
+                    write_section(out, palette, "Model", &tree, builder.suppressed(), slice)?;
+                }
                 if !bindings.is_empty() {
                     writeln!(out)?;
                     writeln!(out, "{}", palette.bold("Reports"))?;

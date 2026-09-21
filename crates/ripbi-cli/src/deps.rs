@@ -9,7 +9,7 @@ use std::path::Path;
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest;
 use ripbi_core::lookup::ReferenceError;
-use ripbi_core::{ObjectId, Provenance, ReportModel};
+use ripbi_core::{DepSlice, ObjectId, Provenance, ReportModel};
 
 use crate::cli::DepsArgs;
 use crate::config;
@@ -255,7 +255,8 @@ fn parse_depth(value: Option<&str>) -> Result<Option<usize>, ScanError> {
 
 /// The selected objects' view: one root (an object operand) or many
 /// (selectors), each with an upstream slice, a downstream slice, and the
-/// report bindings riding on the downstream one.
+/// report bindings riding on the downstream one. Traversal is always full;
+/// the filters restrict which results are included.
 fn selection_view(
     graph: &DependencyGraph,
     args: &DepsArgs,
@@ -270,6 +271,31 @@ fn selection_view(
     let show_dependencies = args.dependencies || !args.impact;
     let show_impact = args.impact || !args.dependencies;
 
+    // Filters restrict the Impact result, so asking for one while impact is
+    // switched off is a contradiction, not a silent no-op.
+    let filtering = args.consumer.is_some() || args.in_report.is_some() || args.on_page.is_some();
+    if filtering && !show_impact {
+        return Err(ScanError::new(
+            "--consumer, --in-report, and --on-page filter the Impact view",
+        )
+        .with_hint("drop --dependencies, or add --impact so there is something to filter"));
+    }
+    if let Some(kind) = args.consumer.as_deref()
+        && kind != "visual"
+        && !VALID_KINDS.contains(&kind)
+    {
+        let mut message = format!("--consumer {kind} is not a consumer kind");
+        message.push_str(&format!(
+            "\n\nConsumer kinds:\n  visual\n  {}",
+            VALID_KINDS.join("\n  ")
+        ));
+        return Err(ScanError::new(message)
+            .with_hint("'visual' selects report bindings; the rest select model objects"));
+    }
+    let consumer = args.consumer.as_deref();
+    let in_report = args.in_report.as_deref().map(str::to_lowercase);
+    let on_page = args.on_page.as_deref().map(str::to_lowercase);
+
     let dependencies = show_dependencies.then(|| {
         roots
             .iter()
@@ -278,18 +304,49 @@ fn selection_view(
     });
     let mut impact = None;
     let mut bindings = Vec::new();
+    let mut model_hidden = false;
     if show_impact {
         let mut slices = Vec::new();
         for root in &roots {
             let slice = graph.impact_of(root, depth);
+            // --consumer keeps the branches that lead to a consumer of the
+            // named kind; 'visual' hands the whole view to report bindings.
+            let slice = match consumer {
+                None => slice,
+                Some("visual") => {
+                    model_hidden = true;
+                    empty_slice(&slice)
+                }
+                Some(kind) => {
+                    let kept = consumer_keep_set(&slice, kind);
+                    prune_slice(&slice, &kept)
+                }
+            };
             let mut per_root = Vec::new();
-            for id in &slice.nodes {
-                for provenance in graph.roots_of(id) {
-                    if let Provenance::Binding(edge) = provenance {
-                        per_root.push((id.clone(), (**edge).clone()));
+            // Bindings are usages by visuals: they answer a `--consumer
+            // visual` filter (where the model section steps aside) and are
+            // otherwise shown unfiltered — but a model-kind consumer filter
+            // asks for consumers of that kind, which a binding is not.
+            if consumer.is_none_or(|kind| kind == "visual") {
+                for id in &slice.nodes {
+                    for provenance in graph.roots_of(id) {
+                        if let Provenance::Binding(edge) = provenance {
+                            per_root.push((id.clone(), (**edge).clone()));
+                        }
                     }
                 }
             }
+            // --in-report / --on-page keep only bindings that belong to the
+            // named report and page. An unnamed site can never match: a
+            // filter that cannot check its claim must not pass it.
+            per_root.retain(|(_, edge)| {
+                in_report
+                    .as_ref()
+                    .is_none_or(|name| edge.report.as_ref().is_some_and(|r| r.folded() == name))
+                    && on_page
+                        .as_ref()
+                        .is_none_or(|name| edge.page.as_ref().is_some_and(|p| p.folded() == name))
+            });
             bindings.push(per_root);
             slices.push(slice);
         }
@@ -301,7 +358,71 @@ fn selection_view(
         dependencies,
         impact,
         bindings,
+        model_hidden,
     })))
+}
+
+/// The consumers of the asked kind plus every node on a path leading to
+/// one — pruning keeps a branch exactly when it ends at a match.
+fn consumer_keep_set(slice: &DepSlice, kind: &str) -> std::collections::HashSet<ObjectId> {
+    let mut kept: std::collections::HashSet<ObjectId> = slice
+        .nodes
+        .iter()
+        .filter(|id| crate::render::kind_of(id) == kind)
+        .cloned()
+        .collect();
+    loop {
+        let mut grew = false;
+        for id in &slice.nodes {
+            if kept.contains(id) {
+                continue;
+            }
+            if slice
+                .consumers_of(id)
+                .iter()
+                .any(|(neighbor, _)| kept.contains(neighbor))
+            {
+                kept.insert(id.clone());
+                grew = true;
+            }
+        }
+        if !grew {
+            return kept;
+        }
+    }
+}
+
+/// The slice restricted to the kept nodes: the root always stays, edges
+/// survive when both endpoints do.
+fn prune_slice(slice: &DepSlice, kept: &std::collections::HashSet<ObjectId>) -> DepSlice {
+    let nodes: Vec<ObjectId> = slice
+        .nodes
+        .iter()
+        .filter(|id| kept.contains(id))
+        .cloned()
+        .collect();
+    let edges = slice
+        .edges
+        .iter()
+        .filter(|edge| kept.contains(&edge.from) && kept.contains(&edge.to))
+        .cloned()
+        .collect();
+    DepSlice {
+        root: slice.root.clone(),
+        depth: slice.depth,
+        nodes,
+        edges,
+    }
+}
+
+/// A slice with nothing but its root — the shape of "no model usage".
+fn empty_slice(slice: &DepSlice) -> DepSlice {
+    DepSlice {
+        root: slice.root.clone(),
+        depth: slice.depth,
+        nodes: vec![slice.root.clone()],
+        edges: Vec::new(),
+    }
 }
 
 /// The roots the `--table`/`--type` selectors choose. Selectors decide where

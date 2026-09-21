@@ -534,6 +534,161 @@ mod selectors {
     }
 }
 
+mod filters {
+    use super::*;
+
+    #[test]
+    fn consumer_visual_shows_report_usage_only() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            consumer: Some("visual".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("Reports"));
+        assert!(
+            !out.contains("\nModel\n"),
+            "the model section steps aside:\n{out}"
+        );
+    }
+
+    #[test]
+    fn consumer_of_a_model_kind_hides_report_usage() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            consumer: Some("measure".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("'Sales'[Legacy Total]  measure"));
+        assert!(
+            !out.contains("Reports"),
+            "a binding is not a measure consumer"
+        );
+    }
+
+    #[test]
+    fn an_unmatched_consumer_is_nothing_still_exit_zero() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            consumer: Some("measure".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("Impact\n└─ nothing"));
+    }
+
+    #[test]
+    fn in_report_keeps_matching_bindings_only() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            in_report: Some("Mini".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("Reports"));
+    }
+
+    #[test]
+    fn in_report_filtered_to_nothing_is_still_success() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            in_report: Some("Executive".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("Impact\n└─ nothing"));
+    }
+
+    #[test]
+    fn on_page_matches_the_binding_page() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            on_page: Some("P1".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("Reports"));
+    }
+
+    #[test]
+    fn filters_with_dependencies_only_are_a_contradiction() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            dependencies: true,
+            in_report: Some("Mini".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, _out, err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 2);
+        assert!(err.contains("filter the Impact view"));
+        assert!(err.contains("hint: drop --dependencies"));
+    }
+
+    #[test]
+    fn an_unknown_consumer_kind_lists_the_vocabulary() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            consumer: Some("visuals".to_string()),
+            ..DepsArgs::default()
+        };
+
+        let (code, _out, err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 2);
+        assert!(err.contains("--consumer visuals is not a consumer kind"));
+        assert!(err.contains("visual"));
+    }
+
+    #[test]
+    fn plain_impact_records_obey_the_filters() {
+        let dir = mini_project();
+        let args = DepsArgs {
+            object: Some("'Sales'[Total]".to_string()),
+            consumer: Some("visual".to_string()),
+            plain: true,
+            ..DepsArgs::default()
+        };
+
+        let (code, out, _err) = run_deps(&args, &dir.0, "");
+
+        assert_eq!(code, 0);
+        assert!(out.contains("binding\t"), "bindings remain:\n{out}");
+        assert!(
+            !out.starts_with("impact\t"),
+            "model usage records are filtered out"
+        );
+    }
+}
+
 mod depth_parsing {
     use super::*;
 
