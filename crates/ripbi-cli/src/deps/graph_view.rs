@@ -60,12 +60,15 @@ pub(crate) fn diagram(slice: &DepSlice, arrow: Arrow) -> String {
     let layers = group_by_level(&ids, &levels);
     let rows = assign_rows(&layers, slice);
 
+    // The number prefix widens as the slice does ("[0] " vs "[10] "); budget
+    // the widest one the numbering will use, or box labels overflow the box.
+    let prefix_width = format!("[{}] ", ids.len() - 1).chars().count();
     let box_width = ids
         .iter()
         .map(|id| abbreviated(id).chars().count())
         .max()
         .unwrap_or(0)
-        + "[0] ".len();
+        + prefix_width;
     let label_of = |id: &ObjectId| format!("[{}] {}", number[id], abbreviated(id));
 
     let mut canvas = Canvas::new(layers.len(), box_width, &rows);
@@ -460,6 +463,36 @@ mod tests {
             out,
             "[0] 'Sales'[A]
 "
+        );
+    }
+
+    /// The box width budgets the label prefix; node numbers past nine need a
+    /// wider prefix ("[10] " vs "[0] "), and when such a node also carries
+    /// the widest label the padding arithmetic used to underflow.
+    #[test]
+    fn double_digit_node_numbers_draw_without_underflowing_the_box_width() {
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        let root = id("A");
+        nodes.push(root.clone());
+        for name in ["B", "C", "D", "E", "F", "G", "H", "I", "J", "Widest label"] {
+            let node = id(name);
+            edges.push(edge(root.clone(), node.clone()));
+            nodes.push(node);
+        }
+        let slice = DepSlice {
+            root,
+            depth: None,
+            nodes,
+            edges,
+        };
+
+        let out = diagram(&slice, Arrow::Right);
+
+        assert!(
+            out.contains("[10] 'Sales'[Widest la…"),
+            "the two-digit, widest-label node renders:
+{out}"
         );
     }
 }
