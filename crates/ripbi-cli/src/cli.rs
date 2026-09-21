@@ -78,32 +78,14 @@ Examples:
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const DEPS_EXAMPLES: &str = "\
 Examples:
-  # Explore both dependencies and impact; discovers a project in the
-  # current directory, like scan and report
-  ripbi deps \"'Sales'[Total Sales]\"
-
-  # Or name the inputs explicitly; each --report adds bindings
-  ripbi deps \"'Sales'[Total Sales]\" --model models/Sales.SemanticModel --report reports/Sales.Report
-
-  # No object? A compact graph overview — counts, never the whole graph
-  ripbi deps
-
-  # What does this measure rely on?
-  ripbi deps \"'Sales'[Total Sales]\" --dependencies
-
-  # What could be affected if this measure changes?
-  ripbi deps \"'Sales'[Total Sales]\" --impact
-
-  # Direct impact only
-  ripbi deps \"'Sales'[Total Sales]\" --impact --depth 1
-
-  # Explore a table
-  ripbi deps --table Sales
-
-  # Impact within one report
-  ripbi deps \"'Sales'[Total Sales]\" --impact --in-report Executive
-
-  # Machine-readable output
+  ripbi deps \"'Sales'[Total Sales]\"  # both directions; discovers a project in the current directory
+  ripbi deps --model models/Sales.SemanticModel  # explicit inputs; --report adds bindings
+  ripbi deps                         # no object: compact overview — counts, never the whole graph
+  ripbi deps \"'Sales'[Total Sales]\" --dependencies  # what the measure relies on
+  ripbi deps \"'Sales'[Total Sales]\" --impact  # what could be affected by a change
+  ripbi deps \"'Sales'[Total Sales]\" --impact --depth 1  # direct impact only
+  ripbi deps --table Sales           # explore a whole table
+  ripbi deps \"'Sales'[Total Sales]\" --impact --in-report Executive  # impact in one report
   ripbi deps \"'Sales'[Total Sales]\" --plain
   ripbi deps \"'Sales'[Total Sales]\" --json";
 
