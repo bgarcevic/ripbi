@@ -110,9 +110,8 @@ Examples:
 /// `ripbi deps` arguments.
 #[derive(Args, Debug, Default)]
 pub struct DepsArgs {
-    /// The model object to explore: `'Table'[Name]`, `[Name]`, or a bare
-    /// table name. Never a filesystem path — inputs arrive through --model
-    /// and --report, or discovery in the current directory.
+    /// The model object to explore — a reference like `'Table'[Name]`, never
+    /// a filesystem path.
     pub object: Option<String>,
 
     /// Show what the object relies on, upstream.
@@ -153,9 +152,7 @@ pub struct DepsArgs {
     #[arg(long, conflicts_with_all = ["plain", "json"])]
     pub graph: bool,
 
-    /// Explore one named semantic model; disables current-directory
-    /// discovery. A .SemanticModel folder, its definition/, or any folder
-    /// holding model.tmdl.
+    /// Explore one named semantic model; disables discovery.
     #[arg(long, value_name = "PATH")]
     pub model: Option<PathBuf>,
 
@@ -315,10 +312,7 @@ pub struct ScanArgs {
     #[arg(long)]
     pub strict: bool,
 
-    /// Skip a model with no connected reports instead of refusing (exit 2):
-    /// a notice on stderr, exit code 0, no scan output. Lets a pipeline point
-    /// the scan at every model and let each run decide whether it has
-    /// anything to scan against.
+    /// Skip a model with no connected reports instead of refusing (exit 2).
     #[arg(long)]
     pub allow_no_reports: bool,
 
@@ -413,6 +407,50 @@ mod tests {
     use super::*;
     use crate::render::GROUPS;
     use clap::{CommandFactory, Parser};
+
+    /// Help is an interface, not an essay: every flag's help and every
+    /// subcommand's about is one short line, scannable in a terminal column.
+    /// The full contract lives in `docs/*.md` — this gate keeps an
+    /// over-eager doc comment (human or LLM) from shipping a paragraph into
+    /// `--help`. Raise the offender's detail in the docs instead.
+    #[test]
+    fn help_text_stays_one_scannable_line() {
+        const MAX_HELP: usize = 100;
+
+        fn check_line(
+            offenders: &mut Vec<String>,
+            label: &str,
+            text: Option<&clap::builder::StyledStr>,
+        ) {
+            if let Some(text) = text {
+                let text = text.to_string();
+                if text.contains('\n') || text.chars().count() > MAX_HELP {
+                    offenders.push(format!("{label}: {text:?}"));
+                }
+            }
+        }
+
+        let mut offenders: Vec<String> = Vec::new();
+        let cli = Cli::command();
+        for command in std::iter::once(cli.clone()).chain(cli.get_subcommands().cloned()) {
+            let name = command.get_name().to_string();
+            check_line(&mut offenders, &name, command.get_about());
+            for arg in command.get_arguments() {
+                let id = arg.get_id().to_string();
+                for help in [arg.get_help(), arg.get_long_help()].into_iter().flatten() {
+                    let help = help.to_string();
+                    if help.contains('\n') || help.chars().count() > MAX_HELP {
+                        offenders.push(format!("{name} --{id}: {help:?}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "help text over {MAX_HELP} chars or multi-line — move the detail to docs/:\n{}",
+            offenders.join("\n")
+        );
+    }
 
     /// The update flags parse, and the hidden notifier child parses too.
     #[test]
