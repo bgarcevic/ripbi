@@ -54,7 +54,12 @@ fn deps_help_leads_with_examples() {
         .success()
         .stdout(predicate::str::contains("Examples:"))
         .stdout(predicate::str::contains("--dependencies"))
-        .stdout(predicate::str::contains("--impact"));
+        .stdout(predicate::str::contains("--impact"))
+        // The input ladder is part of the contract a new user learns from
+        // the help: discovery, and the explicit --model/--report form.
+        .stdout(predicate::str::contains("current directory"))
+        .stdout(predicate::str::contains("--model"))
+        .stdout(predicate::str::contains("--report"));
 }
 
 #[test]

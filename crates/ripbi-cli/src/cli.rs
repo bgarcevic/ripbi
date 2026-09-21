@@ -78,8 +78,15 @@ Examples:
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const DEPS_EXAMPLES: &str = "\
 Examples:
-  # Explore both dependencies and impact
+  # Explore both dependencies and impact; discovers a project in the
+  # current directory, like scan and report
   ripbi deps \"'Sales'[Total Sales]\"
+
+  # Or name the inputs explicitly; each --report adds bindings
+  ripbi deps \"'Sales'[Total Sales]\" --model models/Sales.SemanticModel --report reports/Sales.Report
+
+  # No object? A compact graph overview — counts, never the whole graph
+  ripbi deps
 
   # What does this measure rely on?
   ripbi deps \"'Sales'[Total Sales]\" --dependencies
@@ -104,7 +111,8 @@ Examples:
 #[derive(Args, Debug, Default)]
 pub struct DepsArgs {
     /// The model object to explore: `'Table'[Name]`, `[Name]`, or a bare
-    /// table name.
+    /// table name. Never a filesystem path — inputs arrive through --model
+    /// and --report, or discovery in the current directory.
     pub object: Option<String>,
 
     /// Show what the object relies on, upstream.
@@ -128,10 +136,6 @@ pub struct DepsArgs {
     #[arg(long = "type", value_name = "TYPE", conflicts_with = "object")]
     pub types: Vec<String>,
 
-    /// A .SemanticModel folder to explore (or its definition/, or a project).
-    #[arg(long, value_name = "PATH")]
-    pub model: Option<PathBuf>,
-
     /// Only show downstream usages by this kind of consumer; 'visual' means
     /// report bindings.
     #[arg(long, value_name = "TYPE")]
@@ -149,7 +153,14 @@ pub struct DepsArgs {
     #[arg(long, conflicts_with_all = ["plain", "json"])]
     pub graph: bool,
 
-    /// A report to include as input; repeatable.
+    /// Explore one named semantic model; disables current-directory
+    /// discovery. A .SemanticModel folder, its definition/, or any folder
+    /// holding model.tmdl.
+    #[arg(long, value_name = "PATH")]
+    pub model: Option<PathBuf>,
+
+    /// Extra report to include as a binding source; repeatable; replaces
+    /// ripbi.toml `reports`.
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
 
