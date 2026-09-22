@@ -110,30 +110,21 @@ fn scan(
         args.reports.clone()
     };
 
-    // Target: --model (explicit, picker-free), else PATH argument, else config
-    // `target`, else folder discovery.
-    let (paired, model_scan, mut announce) = if let Some(model_path) = &args.model {
-        let (paired, walk) = resolve_model_mode(model_path, &extras)?;
-        (paired, Some(walk), Vec::new())
-    } else {
-        let explicit = args
-            .path
-            .clone()
-            .or_else(|| config.as_ref().and_then(|target| target.target.clone()));
-        let (paired, announce, model_named) = match explicit {
-            Some(path) => {
-                let model_named = names_semantic_model(&path);
-                (resolve_explicit(&path)?, Vec::new(), model_named)
-            }
-            None => {
-                let (paired, announce) =
-                    discover_target(args.no_input, args.quiet, cwd, streams, palette_err)?;
-                (paired, announce, false)
-            }
-        };
-        let (paired, walk) = attach_extras(paired, &extras, model_named)?;
-        (paired, walk, announce)
-    };
+    // Target: the shared ladder — `--model`, else PATH/config `target`, else
+    // derivation from the `--report` anchors, else folder discovery.
+    let (paired, model_scan, mut announce) = resolve_target(
+        TargetInput {
+            model: args.model.as_deref(),
+            path: args.path.as_deref(),
+            config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            extras: &extras,
+            no_input: args.no_input,
+            quiet: args.quiet,
+            cwd,
+        },
+        streams,
+        palette_err,
+    )?;
     let report_paths = dedupe(paired.reports);
 
     if report_paths.is_empty() {
@@ -541,10 +532,130 @@ pub(crate) struct ModelScan {
     pub(crate) search_roots: Vec<PathBuf>,
 }
 
+/// What a command names as its scan inputs, for [`resolve_target`]: the
+/// struct a new command fills in to inherit the whole pairing ladder.
+pub(crate) struct TargetInput<'a> {
+    /// `--model`: model mode; disables the PATH ladder and discovery.
+    pub model: Option<&'a Path>,
+    /// The positional PATH argument, when the command has one.
+    pub path: Option<&'a Path>,
+    /// The `ripbi.toml` `target`, already resolved against the config dir.
+    pub config_target: Option<&'a Path>,
+    /// The `--report` values (or the config `reports`).
+    pub extras: &'a [PathBuf],
+    /// Never prompt; fail where a picker would appear.
+    pub no_input: bool,
+    /// Suppress the picker along with the output.
+    pub quiet: bool,
+    /// The working directory discovery searches.
+    pub cwd: &'a Path,
+}
+
+/// The single entry point for any command that pairs a semantic model with
+/// reports — `scan`, `report`, `deps`, and future ones. Resolves every input
+/// shape into one [`discover::Paired`] plus, when a bound-report walk ran,
+/// its [`ModelScan`]. The ladder, first match wins:
+///
+/// 1. `model` (`--model`): model mode — every `--report` anchor attaches,
+///    plain folders become search roots, and with no anchors the model's
+///    parent folder is walked.
+/// 2. `path` or the config `target`: the paired project, plus `--report`
+///    anchors; plain folders are search roots only when the path names a
+///    semantic model.
+/// 3. `--report` anchors alone: the model is derived from the anchors by the
+///    same pairing tiers a report PATH gets, and the reports are exactly the
+///    anchors — no walk.
+/// 4. Folder discovery in `cwd`, with a picker on a TTY.
+///
+/// Post-pairing policy stays with each command: the zero-report refusal,
+/// rendering, and exit codes.
+pub(crate) fn resolve_target(
+    input: TargetInput<'_>,
+    streams: &mut Streams<'_>,
+    palette_err: &Palette,
+) -> Result<(discover::Paired, Option<ModelScan>, Vec<String>), ScanError> {
+    if let Some(model_path) = input.model {
+        let (paired, walk) = resolve_model_mode(model_path, input.extras)?;
+        return Ok((paired, Some(walk), Vec::new()));
+    }
+    if let Some(explicit) = input.path.or(input.config_target) {
+        let model_named = names_semantic_model(explicit);
+        let paired = resolve_explicit(explicit)?;
+        let (paired, walk) = attach_extras(paired, input.extras, model_named)?;
+        return Ok((paired, walk, Vec::new()));
+    }
+    if !input.extras.is_empty() {
+        let paired = derive_model_from_reports(input.extras)?;
+        return Ok((paired, None, Vec::new()));
+    }
+    let (paired, announce) =
+        discover_target(input.no_input, input.quiet, input.cwd, streams, palette_err)?;
+    let (paired, walk) = attach_extras(paired, input.extras, false)?;
+    Ok((paired, walk, announce))
+}
+
+/// Derives the model from `--report` anchors alone — no PATH, no `--model`,
+/// no config `target`. Each anchor pairs by the same tiers a report PATH
+/// gets (stem sibling, sole sibling, `byPath`, `byConnection` dataset name),
+/// every anchor must land on the same model, and the reports are exactly the
+/// anchors: naming the reports is the whole point, so nothing else is pulled
+/// in by a walk.
+fn derive_model_from_reports(extras: &[PathBuf]) -> Result<discover::Paired, ScanError> {
+    let mut model: Option<PathBuf> = None;
+    let mut reports = Vec::new();
+    for extra in extras {
+        let paired = match discover::resolve_path(extra)? {
+            Resolution::Paired(paired) => paired,
+            Resolution::Ambiguous { dir, candidates } => {
+                return Err(ambiguous_error(&dir, &candidates));
+            }
+            Resolution::Archive(archive) => return Err(discover::archive_error(&archive)),
+            Resolution::Unrecognized(unrecognized) => {
+                return Err(ScanError::new(format!(
+                    "--report {} does not name a report or a project",
+                    unrecognized.display()
+                ))
+                .with_hint(
+                    "point --report at a .Report folder or a .pbip, or pass --model \
+                     with the folder to search",
+                ));
+            }
+        };
+        unify_derived_model(extra, &mut model, &paired.model)?;
+        reports.extend(paired.reports);
+    }
+    Ok(discover::Paired {
+        model: model.expect("at least one anchor resolved to a model"),
+        reports,
+    })
+}
+
+/// Records an anchor's model, refusing anchors that pair with different
+/// models — one scan runs against one semantic model.
+fn unify_derived_model(
+    anchor: &Path,
+    model: &mut Option<PathBuf>,
+    derived: &Path,
+) -> Result<(), ScanError> {
+    if let Some(model) = model {
+        if discover::canonical_key(model) != discover::canonical_key(derived) {
+            return Err(ScanError::new(format!(
+                "--report {} pairs with {}, but the other reports pair with {}",
+                anchor.display(),
+                derived.display(),
+                model.display()
+            ))
+            .with_hint("one scan runs against one semantic model — pass --model to choose it"));
+        }
+        return Ok(());
+    }
+    *model = Some(derived.to_path_buf());
+    Ok(())
+}
+
 /// Resolves `--model MODE` with its `--report` values: the model, plus every
 /// report item the extras name and every one a search-folder walk finds.
-/// Shared with the `deps` command, which takes the same inputs.
-pub(crate) fn resolve_model_mode(
+fn resolve_model_mode(
     model_path: &Path,
     extras: &[PathBuf],
 ) -> Result<(discover::Paired, ModelScan), ScanError> {
@@ -577,11 +688,10 @@ pub(crate) fn resolve_model_mode(
 }
 
 /// Attaches `--report` values to an already-resolved target (PATH argument,
-/// config `target`, or discovery): direct report items pair as-is, and a
-/// plain folder becomes a search root only when the target itself is a
-/// semantic model (issue #67). Shared with the `deps` command, which takes
-/// the same inputs the same way.
-pub(crate) fn attach_extras(
+/// config `target`, or discovery): direct report items pair as-is, a `.pbip`
+/// expands to its project's reports, and a plain folder becomes a search
+/// root only when the target itself is a semantic model (issue #67).
+fn attach_extras(
     paired: discover::Paired,
     extras: &[PathBuf],
     model_named: bool,
@@ -592,6 +702,10 @@ pub(crate) fn attach_extras(
     for extra in extras {
         if is_report_item(extra) {
             direct.push(extra.clone());
+            continue;
+        }
+        if let Some(paired_reports) = pbip_reports(extra)? {
+            direct.extend(paired_reports);
             continue;
         }
         if extra.is_dir() {
@@ -682,8 +796,9 @@ pub(crate) fn write_skip_notices(
 }
 
 /// Sorts one `--report` value in model mode into a direct report item or a
-/// search folder. A `.Report`-named folder without a report anchor is
-/// malformed — fail before any walk rather than at ingestion.
+/// search folder; a `.pbip` expands to its project's reports as direct items.
+/// A `.Report`-named folder without a report anchor is malformed — fail
+/// before any walk rather than at ingestion.
 pub(crate) fn partition_report_value(
     path: &Path,
     direct: &mut Vec<PathBuf>,
@@ -691,6 +806,10 @@ pub(crate) fn partition_report_value(
 ) -> Result<(), ScanError> {
     if is_report_item(path) {
         direct.push(path.to_path_buf());
+        return Ok(());
+    }
+    if let Some(reports) = pbip_reports(path)? {
+        direct.extend(reports);
         return Ok(());
     }
     if path.is_dir() {
@@ -711,9 +830,30 @@ pub(crate) fn partition_report_value(
     .with_hint("point --report at a .Report folder or an existing folder to search"))
 }
 
+/// The reports of a `.pbip` passed to `--report`, or `None` when `path` is
+/// not a `.pbip` file — the project's reports become direct anchors, its
+/// model is discarded (the model names itself, via `--model` or the anchors).
+fn pbip_reports(path: &Path) -> Result<Option<Vec<PathBuf>>, ScanError> {
+    if !path.is_file() || !file_name_lower(path).ends_with(".pbip") {
+        return Ok(None);
+    }
+    match discover::resolve_path(path)? {
+        Resolution::Paired(paired) => Ok(Some(paired.reports)),
+        Resolution::Ambiguous { dir, candidates } => Err(ambiguous_error(&dir, &candidates)),
+        Resolution::Archive(archive) => Err(discover::archive_error(&archive)),
+        Resolution::Unrecognized(unrecognized) => Err(ScanError::new(format!(
+            "not a Power BI project: {}",
+            unrecognized.display()
+        ))
+        .with_hint(
+            "point --report at a .pbip file, a .Report folder, or an existing folder to search",
+        )),
+    }
+}
+
 /// The default search root when `--model` is given with no reports at all:
 /// the model's parent folder.
-pub(crate) fn default_search_root(item_root: &Path) -> PathBuf {
+fn default_search_root(item_root: &Path) -> PathBuf {
     match item_root.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         // `--model X.SemanticModel` in the working directory: search here.
@@ -821,14 +961,13 @@ pub(crate) fn capped_names(names: &[String]) -> String {
 /// rather than an error (issue #67). A `resolve_model` probe would be too
 /// loose: core's locator accepts any folder with a `definition/` subfolder,
 /// `.Report` folders included.
-pub(crate) fn names_semantic_model(path: &Path) -> bool {
+fn names_semantic_model(path: &Path) -> bool {
     path.is_dir()
         && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())
 }
 
-/// Resolves an explicit PATH (argument or config `target`). Shared with the
-/// `report` command, which resolves projects exactly the way `scan` does.
-pub(crate) fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
+/// Resolves an explicit PATH (argument or config `target`).
+fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanError> {
     if !path.exists() {
         return Err(ScanError::new(format!("no such path: {}", path.display()))
             .with_hint("pass a .pbip file, a project folder, a .SemanticModel, or a .Report"));
@@ -846,8 +985,7 @@ pub(crate) fn resolve_explicit(path: &Path) -> Result<discover::Paired, ScanErro
 }
 
 /// Finds the scan target in `cwd` when no PATH or config target names one.
-/// Shared by every command that resolves a project the way `scan` does.
-pub(crate) fn discover_target(
+fn discover_target(
     no_input: bool,
     quiet: bool,
     cwd: &Path,

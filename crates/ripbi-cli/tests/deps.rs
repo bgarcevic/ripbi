@@ -5,7 +5,9 @@
 #[expect(dead_code)]
 mod common;
 
-use common::{TempDir, json_payload, model_into, project_into, run_deps};
+use common::{
+    TempDir, by_connection, json_payload, model_into, project_into, report_into, run_deps,
+};
 use ripbi_cli::cli::DepsArgs;
 
 /// A scratch directory holding the mini fixture's project under its own
@@ -755,5 +757,36 @@ mod depth_parsing {
 
         assert_eq!(code, 2);
         assert!(err.contains("--depth deep is not a number or 'all'"));
+    }
+}
+
+mod derived_inputs {
+    use super::*;
+
+    #[test]
+    fn a_report_flag_alone_derives_the_model() {
+        let temp = TempDir::new("deps-derive");
+        model_into(&temp.0, "Sales");
+        model_into(&temp.0, "Decoy");
+        let report = report_into(
+            &temp.0,
+            "Standalone.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://x;Initial Catalog=Sales",
+            )),
+        );
+
+        let args = DepsArgs {
+            reports: vec![report],
+            ..DepsArgs::default()
+        };
+        let (code, _out, err) = run_deps(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            err.contains("Exploring") && err.contains("Sales.SemanticModel"),
+            "the derived model is announced:
+{err}"
+        );
     }
 }

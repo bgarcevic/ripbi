@@ -24,9 +24,11 @@ and `--report`.
 ## Inputs
 
 The target ladder is scan's: `--model PATH` first, else the `ripbi.toml` `target`, else
-current-directory discovery (one candidate announced, several prompt with the numbered
-picker on a TTY stdin, none is an error). `--report PATH` (repeatable) adds reports as
-binding sources the same way scan takes them, search folders included.
+derivation from the `--report` anchors alone (every anchor must pair with the same
+model), else current-directory discovery (one candidate announced, several prompt with
+the numbered picker on a TTY stdin, none is an error). `--report PATH` (repeatable) adds
+reports as binding sources the same way scan takes them, search folders included; a
+`.pbip` value expands to its project's reports.
 
 One deliberate difference from scan: **a model with no reports is valid**. There is no
 zero-connected-report refusal and no `--allow-no-reports` — liveness is not the

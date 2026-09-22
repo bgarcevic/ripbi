@@ -137,10 +137,15 @@ separately from unused findings.
 
 `ripbi scan` discovers the project itself: pass a `.pbip` file, a project
 folder, a `.SemanticModel`, or a `.Report`, or nothing to scan the current
-directory.
+directory. A `.Report` pairs with its model by stem sibling (`X.Report` beside
+`X.SemanticModel`), sole model sibling, its `definition.pbir` path — or, for a
+thin report bound by connection, the dataset name, when exactly one sibling
+model's stem or display name carries it. A model-less `.pbip` project pairs
+with the model its report names, the same way.
 
-To scan one named model against every report bound to it, pass `--model`; each
-`--report` folder is searched recursively for reports bound to that model:
+To scan one named model against every report bound to it, pass `--model`
+(a `.SemanticModel` folder or the project's `.pbip`); each `--report` folder is
+searched recursively for reports bound to that model:
 
 ```sh
 ripbi scan --model "samples/AdventureWorks Sales.SemanticModel" --report samples/
@@ -148,7 +153,13 @@ ripbi scan --model "samples/AdventureWorks Sales.SemanticModel" --report samples
 
 The same search works without the flag when the path already names a semantic
 model — `ripbi scan "samples/AdventureWorks Sales.SemanticModel" --report samples/`
-walks plain `--report` folders exactly like `--model` mode.
+walks plain `--report` folders exactly like `--model` mode. With `--report`
+alone, the model is derived from the named reports' pairing and exactly those
+reports are scanned:
+
+```sh
+ripbi scan --report "samples/Sales.Report"
+```
 
 Exit codes:
 

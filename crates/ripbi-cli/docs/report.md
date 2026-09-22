@@ -16,11 +16,24 @@ ripbi report [PATH] [flags]
 
 `PATH` resolves exactly as `scan` resolves it: a `.pbip` file, a project folder, a
 `.SemanticModel` item folder, or a `.Report` item folder (which pairs with its model by
-stem sibling, sole model sibling, or its `definition.pbir` reference). Without PATH (and
-without `target` in `ripbi.toml`), the command discovers projects in the current
-directory with the same picker rules. All paired reports are inventoried; there is no
-`--model`/`--report` split — pass a `.Report` folder or a project to scope to one
-report.
+stem sibling, sole model sibling, its `definition.pbir` path, or — for a `byConnection`
+reference — the dataset name, when exactly one sibling model's stem or display name
+carries it; a `.pbip` with no model of its own pairs through its report the same way). `--model` names the model directly (a `.SemanticModel` folder, its
+`definition/` folder, a folder holding `model.tmdl`, or the project's `.pbip`), with
+`--report` adding report roots and plain folders searched recursively as in `scan`.
+`--report` alone (no PATH, no `--model`) derives the model from the named reports'
+pairing and inventories exactly those reports. Without any of these — and without
+`target`/`reports` in `ripbi.toml` — the command discovers projects in the current
+directory with the same picker rules. The `ripbi.toml` `target` and `reports` keys work
+here exactly as in `scan`.
+
+When no model pairs at all — the shared-dataset case, a thin report whose dataset
+lives only in the workspace — the command refuses with exit `2` and a hint.
+`--allow-no-model` opts into inventorying the report alone: pages, visuals, filters,
+and written references, with no unresolved claims (nothing to resolve against) and no
+`--used`. `--broken` is refused the same way. A mistyped path stays an error even
+under the flag — it rescues a missing model, never a wrong path. The JSON `target`
+reads `(no semantic model)` in that mode.
 
 ## Streams
 
@@ -28,6 +41,8 @@ report.
 |---|---|---|
 | Inventory tree, view tables, plain records, JSON | stdout | the machine-readable side |
 | Reading line (`Reading … with N report(s)`) | stderr | one line |
+| Pairing notes from a walk (`Note:` by-name matches, `Ignored … bound to other models`) | stderr | same collapsed one-line forms as `scan` |
+| Model-less note (`No semantic model paired — listing … as written`) | stderr | under `--allow-no-model` |
 | Next-command pointer (`N unresolved — see: ripbi report --broken`) | stderr | after the `--visuals` view, when any visual is broken |
 | Empty-filter note (`no pages match …`) | stderr | when filters match nothing; the run still exits `0` |
 | Skip notices (parser drift, stale saved state) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
@@ -46,6 +61,8 @@ report.
 
 | Flag | Effect |
 |---|---|
+| `--model <PATH>` | Inventory one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders. Conflicts with `PATH` |
+| `--report <PATH>` | Report root; repeatable. Replaces `reports` from `ripbi.toml`. With no PATH and no `--model`, the reports' pairing derives the model and exactly these reports are inventoried |
 | `--json` | JSON on stdout (schema below). Mutually exclusive with `--plain` and the views |
 | `--plain` | One tab-separated record per line, each starting with its record type, for grep/awk. Mutually exclusive with `--json` and the views |
 | `--pages` | List pages as a table (all pages, or those `--page` selects) |
@@ -56,6 +73,7 @@ report.
 | `--visual <GLOB>` | Only visuals matching a visual-name glob; repeatable |
 | `--match <GLOB>` | Only references matching a target glob; repeatable |
 | `--broken` | Only broken visual bindings (unresolved references) |
+| `--allow-no-model` | Inventory the reports even when no semantic model pairs with them, instead of refusing (exit 2). Bindings are listed as written; `--used` and `--broken` are refused |
 | `-q`, `--quiet` | No output; exit code only |
 | `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
 | `--no-input` | Never prompt; fail where a picker would appear |
@@ -234,7 +252,8 @@ record types; `grep '^unresolved'` yields the broken bindings alone.
 
 Pretty-printed, `schema_version: 1`, one document per run. Additive evolution only —
 existing fields keep their names and types, scripts may pin the version (real output
-from the golden test report, trimmed):
+from the golden test report, trimmed; `target` reads `(no semantic model)` under
+`--allow-no-model`):
 
 ```json
 {

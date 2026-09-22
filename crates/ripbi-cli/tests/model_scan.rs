@@ -994,3 +994,49 @@ mod argument_validation {
         );
     }
 }
+
+/// `--model` accepts a `.pbip` naming the project, and a `.pbip` passed to
+/// `--report` expands to its project's reports.
+mod pbip_anchors {
+    use super::*;
+
+    #[test]
+    fn the_model_flag_accepts_a_pbip() {
+        let temp = TempDir::new("model-pbip");
+        project_into(&temp.0, "Mini");
+
+        let args = ScanArgs {
+            model: Some(temp.0.join("Mini.pbip")),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(
+            code, 1,
+            "the mini fixture's dead chain:\n{stdout}\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Mini.SemanticModel"),
+            "the pbip resolved to its model:\n{stderr}"
+        );
+        assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn a_pbip_report_anchor_expands_to_its_project_reports() {
+        let temp = TempDir::new("pbip-anchor");
+        project_into(&temp.0, "Mini");
+
+        let args = model_args(
+            temp.0.join("Mini.SemanticModel"),
+            vec![temp.0.join("Mini.pbip")],
+        );
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "{stdout}\n{stderr}");
+        assert!(
+            stdout.contains("2 unused"),
+            "the project's report is a root:\n{stdout}"
+        );
+    }
+}
