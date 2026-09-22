@@ -11,6 +11,10 @@ pub struct ScanError {
     pub message: String,
     /// The fix, when the error has a conventional one.
     pub hint: Option<String>,
+    /// True when the failure exists solely because no semantic model could be
+    /// paired — the one failure `report --allow-no-model` may rescue. A
+    /// mistyped path, a bad flag, or an unreadable model stays an error.
+    no_model: bool,
 }
 
 impl ScanError {
@@ -19,7 +23,23 @@ impl ScanError {
         Self {
             message: message.into(),
             hint: None,
+            no_model: false,
         }
+    }
+
+    /// Builds a pairing failure: the report or project names no model on disk.
+    pub fn no_model(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            hint: None,
+            no_model: true,
+        }
+    }
+
+    /// Whether this is purely a missing-model pairing failure.
+    #[must_use]
+    pub fn is_no_model(&self) -> bool {
+        self.no_model
     }
 
     /// Attaches the fix to suggest under the message.

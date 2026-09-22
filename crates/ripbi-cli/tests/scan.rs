@@ -1390,3 +1390,145 @@ mod mobile_layout {
         assert_eq!(payload["summary"]["roots"], 1, "desktop root only");
     }
 }
+
+/// `--report` anchors alone derive the model; a report PATH pairs through its
+/// dataset name when nothing else ties it to a sibling model.
+mod derivation {
+    use super::*;
+
+    /// The standalone-report layout: two models in one folder, so only the
+    /// report's `definition.pbir` dataset name can tie it to its model.
+    fn standalone_report(temp: &TempDir, catalog: &str) -> PathBuf {
+        model_into(&temp.0, "Sales");
+        model_into(&temp.0, "Decoy");
+        report_into(
+            &temp.0,
+            "Standalone.Report",
+            Some(&by_connection(&format!(
+                "Data Source=powerbi://x;Initial Catalog={catalog}"
+            ))),
+        )
+    }
+
+    #[test]
+    fn a_report_path_pairs_through_its_dataset_name() {
+        let temp = TempDir::new("derive-path");
+        let report = standalone_report(&temp, "Sales");
+
+        let (code, stdout, stderr) = scan_path(&report, &temp.0);
+
+        assert_eq!(
+            code, 1,
+            "the mini fixture's dead chain:\n{stdout}\n{stderr}"
+        );
+        assert!(
+            stderr.contains("Sales.SemanticModel"),
+            "the dataset name picked the model:\n{stderr}"
+        );
+        assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn a_report_flag_alone_derives_its_model_and_scans_only_it() {
+        let temp = TempDir::new("derive-flag");
+        let report = standalone_report(&temp, "Sales");
+        let args = ScanArgs {
+            reports: vec![report],
+            ..ScanArgs::default()
+        };
+
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "{stdout}\n{stderr}");
+        assert!(
+            stderr.contains("Sales.SemanticModel") && stderr.contains("with 1 report(s)"),
+            "the derived model is announced with only the passed report:\n{stderr}"
+        );
+        assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn anchors_pairing_different_models_refuse() {
+        let temp = TempDir::new("derive-conflict");
+        model_into(&temp.0, "Sales");
+        model_into(&temp.0, "Other");
+        let first = report_into(
+            &temp.0,
+            "One.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://x;Initial Catalog=Sales",
+            )),
+        );
+        let second = report_into(
+            &temp.0,
+            "Two.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://x;Initial Catalog=Other",
+            )),
+        );
+        let args = ScanArgs {
+            reports: vec![first, second],
+            ..ScanArgs::default()
+        };
+
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(stderr.contains("pairs with"), "conflict error:\n{stderr}");
+        assert!(
+            stderr.contains("--model"),
+            "the hint names the way out:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_model_less_report_pbip_derives_through_its_report() {
+        let temp = TempDir::new("derive-pbip-thin");
+        model_into(&temp.0, "Sales");
+        model_into(&temp.0, "Decoy");
+        report_into(
+            &temp.0,
+            "Standalone.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://x;Initial Catalog=Sales",
+            )),
+        );
+        temp.write("Standalone.pbip", "{}");
+
+        let args = ScanArgs {
+            path: Some(temp.0.join("Standalone.pbip")),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(
+            code, 1,
+            "{stdout}
+{stderr}"
+        );
+        assert!(
+            stderr.contains("Sales.SemanticModel") && stderr.contains("with 1 report(s)"),
+            "the report's dataset name picked the model:
+{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_plain_folder_anchor_cannot_derive_a_model() {
+        let temp = TempDir::new("derive-plain");
+        temp.mkdir("just-a-folder");
+        let args = ScanArgs {
+            reports: vec![temp.0.join("just-a-folder")],
+            ..ScanArgs::default()
+        };
+
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("does not name a report or a project"),
+            "error:\n{stderr}"
+        );
+        assert!(stderr.contains("--model"), "the hint:\n{stderr}");
+    }
+}

@@ -10,15 +10,22 @@ ripbi scan --model PATH [--report PATH]... [flags]
 ```
 
 `PATH` is a `.pbip` file, a project folder, a `.SemanticModel` item folder, or a
-`.Report` item folder. Without PATH (and without `target` in `ripbi.toml`), scan
-discovers projects in the current directory: one candidate is announced and scanned,
+`.Report` item folder. A `.Report` pairs with its model by stem sibling
+(`X.Report` beside `X.SemanticModel`), sole model sibling, its `definition.pbir`
+path — or, when the reference is a `byConnection`, by dataset name, pairing only
+when exactly one sibling model's stem or display name carries it. The same tiers
+rescue a model-less project: `X.pbip` (or its project folder) with only `X.Report`
+beside it pairs with the model that report's reference names. Without PATH
+(and without `target` in `ripbi.toml`), scan discovers projects in the current
+directory: one candidate is announced and scanned,
 several prompt with a numbered picker (on a TTY stdin only — otherwise the scan fails
 listing them), none is an error. When PATH (or the `ripbi.toml` `target`) names a
 semantic model itself, plain `--report` folders are search folders exactly as with
 `--model`; any other target accepts report items only.
 
 `--model PATH` names the semantic model explicitly: a `.SemanticModel` folder, its
-`definition/` folder, or any folder directly containing `model.tmdl`. It disables
+`definition/` folder, any folder directly containing `model.tmdl`, or the project's
+`.pbip`. It disables
 current-directory discovery and the `ripbi.toml` `target`, and reinterprets every
 `--report` (or config `reports`) value that is not itself a report item as a **search
 folder**: the folder is walked recursively for report items bound to the model. With no
@@ -32,6 +39,13 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 counts — unless `--allow-no-reports` turns the refusal into a skip: a
 `Skipped …: no connected reports (…)` notice on stderr and exit `0`, with no stdout
 output.
+
+With `--report` alone — no PATH, no `--model`, no config `target` — the model is
+derived from the named reports' pairing (the same tiers as a `.Report` PATH, so a
+`byConnection` report binds to the one sibling model its dataset name matches). Every
+anchor must land on the same model, and the scan covers exactly the named reports — no
+search-folder walk. A `--report` value that is a `.pbip` expands to its project's
+reports.
 
 ## Streams
 
@@ -113,8 +127,8 @@ unaffected.
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json` and `--plain` |
 | `-q`, `--quiet` | No output; exit code only |
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
-| `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, or a folder holding `model.tmdl`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
-| `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model |
+| `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
+| `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. A `.pbip` expands to its project's reports. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model; with no other target, the reports' pairing derives the model and exactly these reports are scanned |
 | `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type column`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`. Filters every output mode and the exit code. With none of them, everything is reported |
 | `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Legacy per-type aliases of `--type`, one boolean each; still working (hidden from `--help` since v0.3.5's interface cleanup) and unioned with `--type` values. Prefer `--type` in new scripts |
 | `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |

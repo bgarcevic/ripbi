@@ -90,28 +90,24 @@ fn explore(
     };
     let depth = parse_depth(args.depth.as_deref())?;
 
-    // Target ladder: --model, else config `target`, else cwd discovery.
-    // Unlike scan there is no zero-connected-report refusal: model-only
-    // exploration is valid, and the intra-model graph stays fully explorable.
-    let (paired, walk, mut announce) = if let Some(model_path) = &args.model {
-        let (paired, walk) = scan::resolve_model_mode(model_path, &extras)?;
-        (paired, Some(walk), Vec::new())
-    } else {
-        match config.as_ref().and_then(|config| config.target.clone()) {
-            Some(path) => {
-                let model_named = scan::names_semantic_model(&path);
-                let paired = scan::resolve_explicit(&path)?;
-                let (paired, walk) = scan::attach_extras(paired, &extras, model_named)?;
-                (paired, walk, Vec::new())
-            }
-            None => {
-                let (paired, announce) =
-                    scan::discover_target(args.no_input, args.quiet, cwd, streams, palette_err)?;
-                let (paired, walk) = scan::attach_extras(paired, &extras, false)?;
-                (paired, walk, announce)
-            }
-        }
-    };
+    // Target: the shared ladder — --model, else PATH (none here: the
+    // positional is an object operand, not a path), else config `target`,
+    // else derivation from the --report anchors, else cwd discovery. Unlike
+    // scan there is no zero-connected-report refusal: model-only exploration
+    // is valid, and the intra-model graph stays fully explorable.
+    let (paired, walk, mut announce) = scan::resolve_target(
+        scan::TargetInput {
+            model: args.model.as_deref(),
+            path: None,
+            config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            extras: &extras,
+            no_input: args.no_input,
+            quiet: args.quiet,
+            cwd,
+        },
+        streams,
+        palette_err,
+    )?;
     let report_paths = scan::dedupe(paired.reports);
 
     if !args.quiet {

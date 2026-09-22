@@ -67,6 +67,7 @@ const REPORT_EXAMPLES: &str = "\
 Examples:
   ripbi report \"samples/AdventureWorks Sales.pbip\"
   ripbi report reports/Sales.Report  # any report item pairs with its model
+  ripbi report --model models/Sales.SemanticModel  # explicit inputs; --report adds reports
   ripbi report                       # discover a project here
   ripbi report --json > inventory.json
   ripbi report --plain | cut -f1     # record types: report page visual …
@@ -201,6 +202,14 @@ pub struct ReportArgs {
     /// A .pbip file, project folder, .SemanticModel, or .Report.
     pub path: Option<PathBuf>,
 
+    /// Inventory one named semantic model; disables discovery.
+    #[arg(long, value_name = "PATH", conflicts_with = "path")]
+    pub model: Option<PathBuf>,
+
+    /// Extra report root; repeatable; replaces ripbi.toml `reports`.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
     /// Machine-readable JSON (schema: docs/report.md).
     #[arg(long, conflicts_with = "plain")]
     pub json: bool,
@@ -248,6 +257,10 @@ pub struct ReportArgs {
     /// Only broken visual bindings (unresolved references).
     #[arg(long)]
     pub broken: bool,
+
+    /// Inventory reports even when no semantic model pairs with them.
+    #[arg(long)]
+    pub allow_no_model: bool,
 
     /// Print nothing; the exit code is the only output.
     #[arg(short = 'q', long)]
@@ -447,9 +460,7 @@ mod tests {
 
     /// Commands that share scan's input ladder (`--model`, `--report`) lead
     /// their help with those flags: declaration order is help order, and the
-    /// inputs are the first thing a new user needs to find. `report`
-    /// deliberately has neither flag — it inventories every report paired
-    /// with its PATH — so it is skipped here.
+    /// inputs are the first thing a new user needs to find.
     #[test]
     fn shared_input_flags_lead_the_help() {
         let cli = Cli::command();

@@ -5,6 +5,42 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **One pairing ladder for every input shape.** `scan`, `report`, and `deps`
+  now resolve their target through a single shared entry point, and a new
+  command inherits the whole ladder by calling it. `ripbi report` gains the
+  `--model` and `--report` flags (and reads `ripbi.toml` `target`/`reports`,
+  exactly like `scan` and `deps`) instead of the PATH-only input it had.
+  `--model` accepts a `.pbip` file naming the project, and a `.pbip` passed to
+  `--report` expands to its project's reports.
+- **`ripbi report --allow-no-model`** — the explicit opt-in to inventory a
+  report when no semantic model pairs with it (the shared-dataset case: a
+  thin report whose dataset lives only in the workspace). Pages, visuals,
+  filters, and written references are listed with no unresolved claims —
+  there is nothing to resolve against — and `--used`/`--broken` are refused.
+  The pairing-failure errors name the flag in their hint, and a mistyped path
+  stays an error even under the flag.
+
+### Changed
+
+- **A thin report now pairs with its model.** A `.Report` item whose
+  `definition.pbir` carries only a `byConnection` reference — no local model
+  path — pairs by its `Initial Catalog` dataset name when exactly one sibling
+  `.SemanticModel`'s folder stem or `.platform` display name matches
+  (case-insensitively); two or zero candidates leave the pairing refused with
+  a hint to pass `--model`/`--report` explicitly. The tier runs after the
+  stem sibling, sole sibling, and written `byPath` pairings, in every command
+  and every input shape — and it now also rescues a model-less `.pbip`
+  project: one with only `X.Report` beside it pairs with the model that
+  report's reference names.
+- **`--report` alone derives the model.** With no PATH, no `--model`, and no
+  config `target`, the model is derived from the named reports' pairing; every
+  anchor must land on the same model, and the run covers exactly the named
+  reports — nothing is pulled in by a walk.
+
 ## [0.4.0] - 2026-09-21
 
 ### Added

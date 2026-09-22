@@ -9,15 +9,20 @@
 //! Pairing rules, mirroring the PBIP layout convention that a project's items
 //! share its stem (`X.pbip`, `X.SemanticModel`, `X.Report`):
 //!
-//! - A `.pbip` file pairs with its stem-named items in the same folder.
+//! - A `.pbip` file pairs with its stem-named items in the same folder; a
+//!   project with no model folder of its own pairs with the model its
+//!   stem-named `.Report`'s `definition.pbir` names.
 //! - A `.SemanticModel` folder pairs with stem-named `.Report` siblings, or
 //!   — in a folder dedicated to one project — with all `.Report` siblings.
 //! - A `.Report` folder pairs with its stem-named model, then the sole model
-//!   sibling, then the model its `definition.pbir` points at.
-//! - A `--model` target pairs with every report item found under its search
-//!   folders whose `definition.pbir` resolves to it, whose folder stem names
-//!   it (`X.Report` beside `X.SemanticModel`), or whose `byConnection` names
-//!   its dataset.
+//!   sibling, then the model its `definition.pbir` names — by written
+//!   `byPath`, else by the `byConnection` dataset name when it matches
+//!   exactly one sibling model's stem or `.platform` display name.
+//! - A `--model` target — a `.SemanticModel` folder, its `definition/`, a
+//!   bare `model.tmdl` folder, or a `.pbip` naming the project — pairs with
+//!   every report item found under its search folders whose `definition.pbir`
+//!   resolves to it, whose folder stem names it (`X.Report` beside
+//!   `X.SemanticModel`), or whose `byConnection` names its dataset.
 //! - `.pbix`/`.pbit`/`model.bim` are recognized but not yet ingestable.
 
 use std::collections::HashSet;
@@ -130,18 +135,39 @@ pub fn pair(candidate: &Candidate) -> Result<Paired, ScanError> {
 
 /// Pairs a project stem with its model and report items in `root`.
 pub fn pair_project(root: &Path, stem: &str) -> Result<Paired, ScanError> {
-    let model = stem_item(root, stem, "SemanticModel").or_else(|| {
-        sole_child_matching(root, |name| name.to_lowercase().ends_with(".semanticmodel"))
-    });
+    let model =
+        model_for_project_stem(root, stem).or_else(|| model_from_project_reports(root, stem));
     let Some(model) = model else {
-        return Err(ScanError::new(format!(
+        return Err(ScanError::no_model(format!(
             "no semantic model for project '{stem}' in {}",
             root.display()
         ))
-        .with_hint("a .pbip project pairs with a '<stem>.SemanticModel' folder beside it"));
+        .with_hint(
+            "a .pbip project pairs with a '<stem>.SemanticModel' folder beside it, \
+             or with the model its '<stem>.Report' pairs with — or list the report \
+             alone: ripbi report --allow-no-model <report>",
+        ));
     };
     let reports = project_reports(root, stem);
     Ok(Paired { model, reports })
+}
+
+/// The semantic-model item of project `stem` in `root`: the stem-named
+/// folder, else the sole `.SemanticModel` sibling.
+fn model_for_project_stem(root: &Path, stem: &str) -> Option<PathBuf> {
+    stem_item(root, stem, "SemanticModel").or_else(|| {
+        sole_child_matching(root, |name| name.to_lowercase().ends_with(".semanticmodel"))
+    })
+}
+
+/// The model a project's own report pairs with, for a project that carries
+/// no model folder of its own — a report-only `.pbip` names its dataset in
+/// the report's `definition.pbir`, by path or (unambiguously) by name.
+fn model_from_project_reports(root: &Path, stem: &str) -> Option<PathBuf> {
+    project_reports(root, stem).into_iter().find_map(|report| {
+        let parent = parent_of(&report);
+        model_from_dataset_reference(&report, &parent)
+    })
 }
 
 /// Pairs a semantic-model folder with its report siblings.
@@ -154,7 +180,8 @@ pub fn pair_model(model: &Path) -> Result<Paired, ScanError> {
 }
 
 /// Pairs a report folder with its model: stem-named sibling, sole model
-/// sibling, then the `definition.pbir` `byPath` reference.
+/// sibling, then the model its `definition.pbir` names — by written `byPath`,
+/// else by a `byConnection` dataset name matching exactly one sibling model.
 pub fn pair_report(report_dir: &Path) -> Result<Paired, ScanError> {
     let parent = parent_of(report_dir);
     let stem =
@@ -165,18 +192,78 @@ pub fn pair_report(report_dir: &Path) -> Result<Paired, ScanError> {
                 name.to_lowercase().ends_with(".semanticmodel")
             })
         })
-        .or_else(|| model_from_dataset_reference(report_dir));
+        .or_else(|| model_from_dataset_reference(report_dir, &parent));
     let Some(model) = model else {
-        return Err(ScanError::new(format!(
+        return Err(ScanError::no_model(format!(
             "cannot locate the semantic model for report {}",
             report_dir.display()
         ))
-        .with_hint("pass the model folder as PATH and the report with --report"));
+        .with_hint(
+            "point PATH or --model at the model and pass the report with --report; \
+             a byConnection report pairs by name only when exactly one sibling model's \
+             stem or display name matches its dataset — or list the report alone: \
+             ripbi report --allow-no-model <report>",
+        ));
     };
     Ok(Paired {
         model,
         reports: vec![report_dir.to_path_buf()],
     })
+}
+
+/// The report items a path names, without pairing a model — the listing the
+/// `report` command's `--allow-no-model` produces: a `.Report` item is
+/// itself, a `.pbip` file or single-project folder expands to its project's
+/// reports.
+///
+/// # Errors
+/// When the path names no report items. Archives, model folders, plain
+/// folders, and missing paths are usage errors even under `--allow-no-model`:
+/// the flag rescues a missing model, never a mistyped path.
+pub fn report_items_without_model(path: &Path) -> Result<Vec<PathBuf>, ScanError> {
+    if path.is_dir() {
+        let lower = file_name(path).to_lowercase();
+        if lower.ends_with(".report") || path.join("report.json").is_file() {
+            return Ok(vec![path.to_path_buf()]);
+        }
+        let stems = project_stems(path);
+        return match stems.len() {
+            1 => Ok(project_reports(
+                path,
+                stems.values().next().expect("exactly one stem"),
+            )),
+            0 => Err(ScanError::new(format!(
+                "{} does not name a report item or project",
+                path.display()
+            ))
+            .with_hint(
+                "--allow-no-model rescues a missing model, not a mistyped path — \
+                 pass a .Report folder or a .pbip project",
+            )),
+            _ => Err(ScanError::new(format!(
+                "several projects in {} — pass one report item or .pbip",
+                path.display()
+            ))
+            .with_hint("--allow-no-model lists one project's reports")),
+        };
+    }
+    if path.is_file()
+        && let Some(stem) = strip_suffix(&file_name(path), ".pbip")
+    {
+        return Ok(project_reports(&parent_of(path), &stem));
+    }
+    if !path.exists() {
+        return Err(ScanError::new(format!("no such path: {}", path.display()))
+            .with_hint("pass a .Report folder or a .pbip project"));
+    }
+    Err(ScanError::new(format!(
+        "{} does not name a report item or project",
+        path.display()
+    ))
+    .with_hint(
+        "--allow-no-model rescues a missing model, not a mistyped path — \
+         pass a .Report folder or a .pbip project",
+    ))
 }
 
 /// A resolved semantic-model item to scan named reports against.
@@ -217,20 +304,38 @@ pub struct BoundReports {
     pub parse_skips: Vec<SkipNotice>,
 }
 
+/// The shapes `--model` accepts, listed whenever resolution fails.
+const MODEL_SHAPES_HINT: &str = "pass a .pbip, a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl";
+
 /// Resolves a `--model` PATH into the model item it names.
 ///
-/// The three accepted shapes are core's: a `.SemanticModel` folder, its
-/// `definition/` subfolder, or any folder directly containing `model.tmdl`.
+/// The accepted shapes are core's — a `.SemanticModel` folder, its
+/// `definition/` subfolder, or any folder directly containing `model.tmdl` —
+/// plus a `.pbip` file naming the project whose model to use.
 ///
 /// # Errors
-/// When `path` is none of those. The message starts with core's
-/// "not a semantic model" and the hint lists the accepted shapes.
+/// When `path` is none of those, or the `.pbip` names no model. The message
+/// starts with core's "not a semantic model" (or the missing-project pairing
+/// error) and the hint lists the accepted shapes.
 pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
-    let definition = ingest::locate_definition(path).map_err(|error| {
-        ScanError::new(error.to_string()).with_hint(
-            "pass a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl",
-        )
-    })?;
+    if path.is_file() {
+        return match strip_suffix(&file_name(path), ".pbip") {
+            Some(stem) => {
+                let root = parent_of(path);
+                let paired = pair_project(&root, &stem)?;
+                model_target(&paired.model)
+            }
+            // Not a `.pbip`: let core's message say why a file is no model.
+            None => model_target(path),
+        };
+    }
+    model_target(path)
+}
+
+/// Resolves an already-located model item root into a [`ModelTarget`].
+fn model_target(item_root: &Path) -> Result<ModelTarget, ScanError> {
+    let definition = ingest::locate_definition(item_root)
+        .map_err(|error| ScanError::new(error.to_string()).with_hint(MODEL_SHAPES_HINT))?;
     let item_root = parent_of(&definition);
     let stem = strip_suffix(&file_name(&item_root), ".SemanticModel");
     let display_name = ingest::platform_display_name(&item_root);
@@ -475,7 +580,7 @@ fn initial_catalog(connection_string: &str) -> Option<String> {
 
 /// The canonical spelling of `path`, falling back to the path itself when it
 /// cannot be canonicalized (a missing path still gets a stable identity).
-fn canonical_key(path: &Path) -> PathBuf {
+pub(crate) fn canonical_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -616,20 +721,46 @@ fn children_matching(dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<PathBuf> {
     paths
 }
 
-/// Reads a report's model location from its `datasetReference.byPath` by
-/// letting core parse the report — the CLI never re-implements the PBIR
-/// schema. The parsed value is discarded; the report is ingested again for
-/// the scan. The path resolves against the report item root, as Power BI
-/// writes it (`Mini.Report/definition.pbir` says `../Mini.SemanticModel`).
-fn model_from_dataset_reference(report_dir: &Path) -> Option<PathBuf> {
-    let ingested = ripbi_core::ingest::report(report_dir).ok()?;
-    match ingested.value.dataset {
+/// Reads a report's model location from its `definition.pbir` by letting core
+/// parse it — the CLI never re-implements the PBIR schema. A written `byPath`
+/// resolves against the report item root, as Power BI writes it
+/// (`Mini.Report/definition.pbir` says `../Mini.SemanticModel`); a live
+/// `byConnection` pairs by its `Initial Catalog` dataset name when exactly one
+/// sibling model carries that stem or `.platform` display name. The reference
+/// is re-read during the scan, so parse notices are left to that ingest.
+fn model_from_dataset_reference(report_dir: &Path, parent: &Path) -> Option<PathBuf> {
+    let (dataset, _) = ingest::dataset_reference(report_dir);
+    match dataset {
         DatasetReference::ByPath { path } => {
             let resolved = resolve_by_path(report_dir, &path);
             resolved.is_dir().then_some(resolved)
         }
-        _ => None,
+        DatasetReference::ByConnection { connection_string } => {
+            sole_model_named(parent, &initial_catalog(&connection_string)?)
+        }
+        DatasetReference::Unresolved => None,
     }
+}
+
+/// The one model in `dir` whose stem or `.platform` display name equals
+/// `catalog`, or `None` when none or several match — a name is only a
+/// pairing when it is unambiguous.
+fn sole_model_named(dir: &Path, catalog: &str) -> Option<PathBuf> {
+    let mut matches: Vec<PathBuf> =
+        children_matching(dir, |name| name.to_lowercase().ends_with(".semanticmodel"))
+            .into_iter()
+            .filter(|model| model_names_dataset(model, catalog))
+            .collect();
+    (matches.len() == 1).then(|| matches.remove(0))
+}
+
+/// Whether the model item `model` is named `catalog`, by folder stem or
+/// `.platform` display name, case-insensitively.
+fn model_names_dataset(model: &Path, catalog: &str) -> bool {
+    strip_suffix(&file_name(model), ".SemanticModel")
+        .is_some_and(|stem| stem.eq_ignore_ascii_case(catalog))
+        || ingest::platform_display_name(model)
+            .is_some_and(|name| name.eq_ignore_ascii_case(catalog))
 }
 
 /// The error for an archive a caller tried to scan: recognized, not ingestable.
@@ -849,6 +980,136 @@ mod tests {
         assert!(paired.reports.is_empty());
     }
 
+    mod dataset_name_pairing {
+        use super::*;
+
+        /// The `definition.pbir` of a report bound by connection alone.
+        fn by_connection_pbir(catalog: &str) -> String {
+            format!(
+                "{{\"datasetReference\": {{\"byConnection\": {{\"connectionString\": \
+                 \"Data Source=powerbi://x;Initial Catalog={catalog}\"}}}}}}"
+            )
+        }
+
+        #[test]
+        fn a_by_connection_report_pairs_with_the_one_sibling_model_its_dataset_names() {
+            let temp = TempDir::new("by-name");
+            // Two model siblings rule out the sole-sibling fallback: only the
+            // dataset name can decide.
+            temp.mkdir("M.SemanticModel");
+            temp.mkdir("Decoy.SemanticModel");
+            temp.mkdir("R.Report");
+            temp.write("R.Report/definition.pbir", &by_connection_pbir("M"));
+
+            let paired = paired_of(resolve_path(&temp.0.join("R.Report")).expect("pair"));
+
+            assert_eq!(paired.model, temp.0.join("M.SemanticModel"));
+            assert_eq!(paired.reports, vec![temp.0.join("R.Report")]);
+        }
+
+        #[test]
+        fn a_by_connection_report_matches_a_platform_display_name() {
+            let temp = TempDir::new("by-name-display");
+            temp.write(
+                "N.SemanticModel/.platform",
+                "{\"metadata\": {\"displayName\": \"Sales Model\"}}",
+            );
+            temp.mkdir("Decoy.SemanticModel");
+            temp.mkdir("R.Report");
+            temp.write(
+                "R.Report/definition.pbir",
+                &by_connection_pbir("Sales Model"),
+            );
+
+            let paired = paired_of(resolve_path(&temp.0.join("R.Report")).expect("pair"));
+
+            assert_eq!(paired.model, temp.0.join("N.SemanticModel"));
+        }
+
+        #[test]
+        fn a_stem_sibling_wins_over_a_dataset_name() {
+            let temp = TempDir::new("by-name-stem-wins");
+            temp.mkdir("X.SemanticModel");
+            temp.mkdir("M.SemanticModel");
+            temp.mkdir("X.Report");
+            temp.write("X.Report/definition.pbir", &by_connection_pbir("M"));
+
+            let paired = paired_of(resolve_path(&temp.0.join("X.Report")).expect("pair"));
+
+            assert_eq!(paired.model, temp.0.join("X.SemanticModel"));
+        }
+
+        #[test]
+        fn a_dataset_name_matching_two_models_is_no_pairing() {
+            let temp = TempDir::new("by-name-ambiguous");
+            temp.write(
+                "A.SemanticModel/.platform",
+                "{\"metadata\": {\"displayName\": \"Sales\"}}",
+            );
+            temp.write(
+                "B.SemanticModel/.platform",
+                "{\"metadata\": {\"displayName\": \"Sales\"}}",
+            );
+            temp.mkdir("R.Report");
+            temp.write("R.Report/definition.pbir", &by_connection_pbir("Sales"));
+
+            let error = resolve_path(&temp.0.join("R.Report")).expect_err("ambiguous name");
+
+            assert!(
+                error
+                    .message
+                    .contains("cannot locate the semantic model for report"),
+                "message: {}",
+                error.message
+            );
+        }
+
+        #[test]
+        fn a_dataset_name_no_sibling_carries_is_no_pairing() {
+            let temp = TempDir::new("by-name-nomatch");
+            temp.mkdir("A.SemanticModel");
+            temp.mkdir("B.SemanticModel");
+            temp.mkdir("R.Report");
+            temp.write("R.Report/definition.pbir", &by_connection_pbir("Z"));
+
+            let error = resolve_path(&temp.0.join("R.Report")).expect_err("no name match");
+
+            assert!(
+                error
+                    .message
+                    .contains("cannot locate the semantic model for report"),
+                "message: {}",
+                error.message
+            );
+            assert!(
+                error
+                    .hint
+                    .as_deref()
+                    .is_some_and(|hint| hint.contains("--model")),
+                "the hint names the escape hatch: {:?}",
+                error.hint
+            );
+        }
+
+        #[test]
+        fn a_model_less_pbip_pairs_through_its_report_s_dataset_name() {
+            let temp = TempDir::new("by-name-pbip");
+            // Two model siblings rule out the sole-sibling fallback, and the
+            // project carries no model folder: only the report's dataset name
+            // can decide.
+            temp.mkdir("M.SemanticModel");
+            temp.mkdir("Decoy.SemanticModel");
+            temp.mkdir("P.Report");
+            temp.write("P.pbip", "{}");
+            temp.write("P.Report/definition.pbir", &by_connection_pbir("M"));
+
+            let paired = paired_of(resolve_path(&temp.0.join("P.pbip")).expect("pair"));
+
+            assert_eq!(paired.model, temp.0.join("M.SemanticModel"));
+            assert_eq!(paired.reports, vec![temp.0.join("P.Report")]);
+        }
+    }
+
     #[test]
     fn an_unrecognized_path_stays_unrecognized() {
         let temp = TempDir::new("unknown");
@@ -905,6 +1166,66 @@ mod tests {
                 error.message
             );
             assert!(error.hint.is_some(), "the accepted shapes are listed");
+        }
+
+        #[test]
+        fn resolve_model_accepts_a_pbip_naming_its_project_model() {
+            let temp = TempDir::new("resolve-model-pbip");
+            temp.write("X.SemanticModel/definition/model.tmdl", "model Model\n");
+            temp.write("X.pbip", "{}");
+
+            let item = resolve_model(&temp.0.join("X.pbip")).expect("pbip shape");
+
+            assert_eq!(item.item_root, temp.0.join("X.SemanticModel"));
+            assert_eq!(item.definition, temp.0.join("X.SemanticModel/definition"));
+            assert_eq!(item.stem.as_deref(), Some("X"));
+        }
+
+        #[test]
+        fn resolve_model_falls_through_a_pbip_to_the_sole_model_sibling() {
+            let temp = TempDir::new("resolve-model-pbip-sole");
+            temp.write("P.SemanticModel/definition/model.tmdl", "model Model\n");
+            temp.write("Project.pbip", "{}");
+
+            let item = resolve_model(&temp.0.join("Project.pbip")).expect("sole sibling");
+
+            assert_eq!(item.item_root, temp.0.join("P.SemanticModel"));
+        }
+
+        #[test]
+        fn resolve_model_rejects_a_pbip_without_a_model() {
+            let temp = TempDir::new("resolve-model-pbip-lonely");
+            temp.write("P.pbip", "{}");
+
+            let error = resolve_model(&temp.0.join("P.pbip")).expect_err("no model");
+
+            assert!(
+                error.message.contains("no semantic model for project 'P'"),
+                "message: {}",
+                error.message
+            );
+        }
+
+        #[test]
+        fn resolve_model_pairs_a_report_only_pbip_through_its_report() {
+            let temp = TempDir::new("resolve-model-pbip-thin");
+            temp.write(
+                "M.SemanticModel/definition/model.tmdl",
+                "model Model
+",
+            );
+            temp.mkdir("Decoy.SemanticModel");
+            temp.mkdir("P.Report");
+            temp.write("P.pbip", "{}");
+            temp.write(
+                "P.Report/definition.pbir",
+                "{\"datasetReference\": {\"byConnection\": {\"connectionString\":                  \"Data Source=powerbi://x;Initial Catalog=M\"}}}",
+            );
+
+            let item = resolve_model(&temp.0.join("P.pbip")).expect("thin pbip");
+
+            assert_eq!(item.item_root, temp.0.join("M.SemanticModel"));
+            assert_eq!(item.stem.as_deref(), Some("M"));
         }
     }
 

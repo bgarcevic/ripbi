@@ -7,7 +7,10 @@ mod common;
 
 use std::path::PathBuf;
 
-use common::{broken_visual_pbip, json_payload, mini_pbip, report_path, run_report};
+use common::{
+    TempDir, broken_visual_pbip, by_connection, json_payload, mini_pbip, model_into, project_into,
+    report_into, report_path, run_report,
+};
 use ripbi_cli::cli::ReportArgs;
 
 /// The AdventureWorks sample, pinned to its committed shape: one page,
@@ -698,4 +701,175 @@ fn the_used_view_ignores_binding_tree_filters() {
         "the used table survives:\n{stdout}"
     );
     assert!(stderr.contains("no visuals match zzz*"), "{stderr}");
+}
+
+/// The input ladder `report` shares with `scan`: `--model`/`--report` flags,
+/// `ripbi.toml`, and derivation from report anchors alone.
+mod shared_inputs {
+    use super::*;
+
+    #[test]
+    fn the_model_flag_inventories_a_model_via_its_pbip() {
+        let temp = TempDir::new("report-model-pbip");
+        project_into(&temp.0, "Mini");
+
+        let args = ReportArgs {
+            model: Some(temp.0.join("Mini.pbip")),
+            ..ReportArgs::default()
+        };
+        let (code, stdout, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "{stderr}");
+        assert!(
+            stdout.contains("Mini.Report — 1 page, 1 visual"),
+            "{stdout}"
+        );
+    }
+
+    #[test]
+    fn a_report_flag_alone_derives_the_model() {
+        let temp = TempDir::new("report-derive");
+        model_into(&temp.0, "Sales");
+        model_into(&temp.0, "Decoy");
+        let report = report_into(
+            &temp.0,
+            "Standalone.Report",
+            Some(&by_connection(
+                "Data Source=powerbi://x;Initial Catalog=Sales",
+            )),
+        );
+
+        let args = ReportArgs {
+            reports: vec![report],
+            ..ReportArgs::default()
+        };
+        let (code, stdout, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(
+            code, 0,
+            "{stdout}
+{stderr}"
+        );
+        assert!(
+            stderr.contains("Sales.SemanticModel"),
+            "the derived model is announced:
+{stderr}"
+        );
+        assert!(stdout.contains("Standalone.Report"), "{stdout}");
+    }
+
+    #[test]
+    fn config_reports_drive_the_inventory_like_the_flag() {
+        let temp = TempDir::new("report-config");
+        project_into(&temp.0, "Mini");
+        temp.write(
+            "ripbi.toml",
+            "target = \"Mini.SemanticModel\"
+reports = [\"Mini.Report\"]
+",
+        );
+
+        let args = ReportArgs::default();
+        let (code, stdout, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "{stderr}");
+        assert!(
+            stdout.contains("Mini.Report — 1 page, 1 visual"),
+            "{stdout}"
+        );
+    }
+}
+
+/// `--allow-no-model`: the explicit opt-in to inventory a report with no
+/// semantic model on disk — bindings listed as written, nothing resolved.
+/// A mistyped path stays an error even under the flag.
+mod allow_no_model {
+    use super::*;
+
+    /// A report with no model anywhere nearby: no `.SemanticModel` sibling,
+    /// and its `definition.pbir` removed with the fixture copy. The name is
+    /// unique per call: tests run in parallel in one process, and a shared
+    /// directory would be deleted out from under them.
+    fn model_less_report(name: &str) -> TempDir {
+        let temp = TempDir::new(name);
+        report_into(&temp.0, "Solo.Report", None);
+        temp
+    }
+
+    #[test]
+    fn a_model_less_report_refuses_without_the_flag() {
+        let temp = model_less_report("no-model-refuse");
+
+        let (code, _, stderr) = report_path(&temp.0.join("Solo.Report"), &temp.0);
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("cannot locate the semantic model"),
+            "error:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("--allow-no-model"),
+            "the hint names the escape hatch:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn the_flag_lists_the_report_as_written() {
+        let temp = model_less_report("no-model-list");
+
+        let args = ReportArgs {
+            path: Some(temp.0.join("Solo.Report")),
+            allow_no_model: true,
+            ..ReportArgs::default()
+        };
+        let (code, stdout, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "{stderr}");
+        assert!(
+            stderr.contains("No semantic model paired"),
+            "the model-less note is announced:\n{stderr}"
+        );
+        assert!(
+            stdout.contains("Solo.Report \u{2014} 1 page, 1 visual"),
+            "the inventory prints:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("unresolved"),
+            "nothing is claimed about resolution:\n{stdout}"
+        );
+    }
+
+    #[test]
+    fn the_used_view_needs_a_model_even_with_the_flag() {
+        let temp = model_less_report("no-model-used");
+
+        let args = ReportArgs {
+            path: Some(temp.0.join("Solo.Report")),
+            allow_no_model: true,
+            used: true,
+            ..ReportArgs::default()
+        };
+        let (code, _, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(
+            stderr.contains("--used needs a paired semantic model"),
+            "error:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_mistyped_path_stays_an_error_with_the_flag() {
+        let temp = model_less_report("no-model-typo");
+
+        let args = ReportArgs {
+            path: Some(temp.0.join("Typo.Report")),
+            allow_no_model: true,
+            ..ReportArgs::default()
+        };
+        let (code, _, stderr) = run_report(&args, &temp.0, "");
+
+        assert_eq!(code, 2);
+        assert!(stderr.contains("no such path"), "error:\n{stderr}");
+    }
 }

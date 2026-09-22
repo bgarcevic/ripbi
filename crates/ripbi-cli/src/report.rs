@@ -17,6 +17,7 @@ use ripbi_core::report::{FieldTarget, Filter, Page, ReportModel, Visual};
 
 use crate::cli::ReportArgs;
 use crate::config;
+use crate::discover;
 use crate::error::ScanError;
 use crate::glob;
 use crate::render::SkipNoticeOut;
@@ -24,7 +25,10 @@ use crate::report::render::{
     FieldNode, FilterNode, Inventory, PageNode, ReportNode, UnresolvedNode, UsedRow, VisualNode,
 };
 use crate::scan::Streams;
-use crate::scan::{dedupe, discover_target, resolve_explicit, skip_notice_out, write_skip_notices};
+use crate::scan::{
+    TargetInput, capped_names, collapse_name_matched, dedupe, report_name, resolve_target,
+    skip_notice_out, write_skip_notices,
+};
 use crate::style::Palette;
 
 /// Exit code: the inventory printed (or `--quiet` suppressed it). The command
@@ -82,43 +86,142 @@ fn inventory(
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 
-    // Target: PATH argument, else config `target`, else folder discovery —
-    // the same ladder `scan` climbs, sharing its helpers. The `reports` and
-    // `[scan].ignore` keys are scan-specific and deliberately unread here.
-    let explicit = args
-        .path
-        .clone()
-        .or_else(|| config.as_ref().and_then(|config| config.target.clone()));
-    let paired = match explicit {
-        Some(path) => resolve_explicit(&path)?,
-        None => discover_target(args.no_input, args.quiet, cwd, streams, palette_err)?.0,
+    // Report anchors: --report flags replace the config's `reports` — the
+    // same inputs-are-not-filters rule as scan and deps. `[scan].ignore`
+    // stays scan-specific and deliberately unread here.
+    let extras: Vec<std::path::PathBuf> = if args.reports.is_empty() {
+        config
+            .as_ref()
+            .map(|config| config.reports.clone())
+            .unwrap_or_default()
+    } else {
+        args.reports.clone()
     };
-    let report_paths = dedupe(paired.reports);
-    if report_paths.is_empty() {
+
+    // Target: the shared ladder — with one report-side escape hatch. When no
+    // model pairs and `--allow-no-model` says so, the named reports are
+    // listed as written, with nothing to resolve them against; every other
+    // failure (a mistyped path, an unreadable model) stays an error.
+    let resolved = resolve_target(
+        TargetInput {
+            model: args.model.as_deref(),
+            path: args.path.as_deref(),
+            config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            extras: &extras,
+            no_input: args.no_input,
+            quiet: args.quiet,
+            cwd,
+        },
+        streams,
+        palette_err,
+    );
+    let (model_item, report_paths, announce) = match resolved {
+        Ok((paired, walk, announce)) => {
+            let report_paths = dedupe(paired.reports);
+            if report_paths.is_empty() {
+                return Err(ScanError::new(format!(
+                    "nothing to inventory: {} has no reports",
+                    paired.model.display()
+                ))
+                .with_hint("pass a .pbip project, a .Report folder, or a project folder"));
+            }
+            let mut announce = announce;
+            announce.push(format!(
+                "Reading {} with {} report(s)",
+                paired.model.display(),
+                report_paths.len()
+            ));
+            // The pairing *facts* always show — a by-name match is the weakest
+            // pairing and a wrong pairing means a wrong inventory.
+            if let Some(walk) = &walk {
+                announce.extend(collapse_name_matched(&walk.bound.name_matched));
+                if !walk.bound.ignored_elsewhere.is_empty() {
+                    let names: Vec<String> = walk
+                        .bound
+                        .ignored_elsewhere
+                        .iter()
+                        .map(|path| report_name(path))
+                        .collect();
+                    announce.push(format!(
+                        "Ignored {} report(s) bound to other models: {}",
+                        walk.bound.ignored_elsewhere.len(),
+                        capped_names(&names)
+                    ));
+                }
+            }
+            (Some(paired.model), report_paths, announce)
+        }
+        Err(error) if args.allow_no_model && error.is_no_model() => {
+            let explicit = args
+                .path
+                .as_deref()
+                .or_else(|| config.as_ref().and_then(|config| config.target.as_deref()));
+            let mut items = Vec::new();
+            match explicit {
+                Some(path) => items.extend(discover::report_items_without_model(path)?),
+                None => {
+                    for extra in &extras {
+                        items.extend(discover::report_items_without_model(extra)?);
+                    }
+                }
+            }
+            let report_paths = dedupe(items);
+            if report_paths.is_empty() {
+                return Err(
+                    ScanError::new("nothing to inventory: no report items to list")
+                        .with_hint("pass a .Report folder or a .pbip project"),
+                );
+            }
+            let announce = vec![format!(
+                "No semantic model paired — listing {} report(s) as written, \
+                 not checked against a model",
+                report_paths.len()
+            )];
+            (None, report_paths, announce)
+        }
+        Err(error) => return Err(error),
+    };
+
+    // The resolution views need the model: without one, nothing can be
+    // resolved against anything, so nothing may claim to be used or broken.
+    // Refused before anything is announced.
+    if model_item.is_none() && (args.used || args.broken) {
+        let flags: Vec<&str> = [("--used", args.used), ("--broken", args.broken)]
+            .into_iter()
+            .filter(|(_, on)| *on)
+            .map(|(flag, _)| flag)
+            .collect();
+        let verb = if flags.len() == 1 { "needs" } else { "need" };
         return Err(ScanError::new(format!(
-            "nothing to inventory: {} has no reports",
-            paired.model.display()
+            "{} {verb} a paired semantic model",
+            flags.join(" and ")
         ))
-        .with_hint("pass a .pbip project, a .Report folder, or a project folder"));
+        .with_hint(
+            "pair a model (a .SemanticModel beside the report, PATH, or --model), \
+             or drop the flag",
+        ));
     }
 
     if !args.quiet {
-        writeln!(
-            streams.err,
-            "Reading {} with {} report(s)",
-            paired.model.display(),
-            report_paths.len()
-        )
-        .map_err(ScanError::from)?;
+        for line in &announce {
+            writeln!(streams.err, "{line}").map_err(ScanError::from)?;
+        }
     }
 
-    // Ingest the pair, then build the graph — the same pipeline `scan` runs,
-    // because "unresolved" here means exactly what `scan`'s broken bindings
-    // mean: a written reference that names nothing in the model.
-    let model = ingest::semantic_model(&paired.model).map_err(|error| {
-        ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
-    })?;
-    let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
+    // Ingest the reports; the model, when there is one, turns the written
+    // references into resolutions — the same pipeline `scan` runs, because
+    // "unresolved" here means exactly what `scan`'s broken bindings mean: a
+    // written reference that names nothing in the model.
+    let model = match &model_item {
+        Some(model_item) => Some(ingest::semantic_model(model_item).map_err(|error| {
+            ScanError::new(format!("cannot ingest {}: {error}", model_item.display()))
+        })?),
+        None => None,
+    };
+    let mut skips: Vec<SkipNoticeOut> = Vec::new();
+    if let Some(ingested) = &model {
+        skips.extend(ingested.skips.iter().map(skip_notice_out));
+    }
     let mut reports = Vec::new();
     for path in &report_paths {
         let ingested = ingest::report(path).map_err(|error| {
@@ -127,30 +230,57 @@ fn inventory(
         skips.extend(ingested.skips.iter().map(skip_notice_out));
         reports.push(ingested.value);
     }
-    let report_refs: Vec<&ReportModel> = reports.iter().collect();
-    let graph = DependencyGraph::build(&model.value, &report_refs);
 
-    // Issue #60's precision bar, shared with `scan`: model-side
-    // `unknown_object` skips can hide the very name a binding wrote, so no
-    // unresolved claim is made while any are present.
-    let hides_a_name = model
-        .skips
-        .iter()
-        .any(|skip| matches!(skip.kind, SkipKind::UnknownObject));
+    let (graph, hides_a_name) = match &model {
+        Some(ingested) => {
+            // Issue #60's precision bar, shared with `scan`: model-side
+            // `unknown_object` skips can hide the very name a binding wrote,
+            // so no unresolved claim is made while any are present.
+            let hides_a_name = ingested
+                .skips
+                .iter()
+                .any(|skip| matches!(skip.kind, SkipKind::UnknownObject));
+            let report_refs: Vec<&ReportModel> = reports.iter().collect();
+            (
+                Some(DependencyGraph::build(&ingested.value, &report_refs)),
+                hides_a_name,
+            )
+        }
+        None => (None, false),
+    };
 
     let mut nodes = Vec::new();
     for (path, report) in report_paths.iter().zip(&reports) {
-        nodes.push(report_node(path, report, &graph, hides_a_name));
+        // The report's broken *live* bindings. Attribution joins on the
+        // report name the edge recorded — name, not identity, so two
+        // same-named reports share attribution; benign for an informational
+        // listing. Bookmark-saved state is out of scope for v1 (bookmarks
+        // are a count line), so bindings a bookmark carries are skipped.
+        // Model-less there is nothing to resolve against: no claim is made.
+        let broken: Vec<&BrokenBinding> = match &graph {
+            Some(graph) if !hides_a_name => graph
+                .broken_bindings()
+                .iter()
+                .filter(|binding| binding.edge.bookmark.is_none())
+                .filter(|binding| names_match(&binding.edge.report, report.name.as_deref()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        nodes.push(report_node(path, report, &broken));
     }
     let mut output = Inventory {
-        target: paired.model.display().to_string(),
+        target: model_item
+            .as_deref()
+            .map(|model| model.display().to_string())
+            .unwrap_or_else(|| NO_MODEL_TARGET.to_string()),
         reports: nodes,
         skips,
         used: Vec::new(),
     };
     apply_filters(&mut output, args);
     if args.used {
-        output.used = used_rows(&graph, args);
+        let graph = graph.as_ref().expect("--used is refused without a model");
+        output.used = used_rows(graph, args);
     }
 
     if !args.quiet {
@@ -439,36 +569,20 @@ fn filter_matches(filter: &FilterNode, row_selected: &impl Fn(&str, &str, &str) 
 }
 
 /// The inventory of one ingested report.
-fn report_node(
-    path: &Path,
-    report: &ReportModel,
-    graph: &DependencyGraph,
-    hides_a_name: bool,
-) -> ReportNode {
-    let name = report.name.clone().unwrap_or_else(|| fallback_name(path));
+/// The JSON `target` value when no model paired: the inventory describes the
+/// reports alone.
+const NO_MODEL_TARGET: &str = "(no semantic model)";
 
-    // The report's broken *live* bindings. Attribution joins on the report
-    // name the edge recorded — name, not identity, so two same-named reports
-    // share attribution; benign for an informational listing. Bookmark-saved
-    // state is out of scope for v1 (bookmarks are a count line), so bindings
-    // a bookmark carries are skipped.
-    let broken: Vec<&BrokenBinding> = if hides_a_name {
-        Vec::new()
-    } else {
-        graph
-            .broken_bindings()
-            .iter()
-            .filter(|binding| binding.edge.bookmark.is_none())
-            .filter(|binding| names_match(&binding.edge.report, report.name.as_deref()))
-            .collect()
-    };
+/// The inventory of one ingested report.
+fn report_node(path: &Path, report: &ReportModel, broken: &[&BrokenBinding]) -> ReportNode {
+    let name = report.name.clone().unwrap_or_else(|| fallback_name(path));
 
     let mut pages = Vec::new();
     for page in &report.pages {
-        pages.push(page_node(page, false, &broken));
+        pages.push(page_node(page, false, broken));
     }
     for page in &report.mobile_pages {
-        pages.push(page_node(page, true, &broken));
+        pages.push(page_node(page, true, broken));
     }
     // Report-level: a broken binding on no page and no visual (a report
     // filter, a report-measure reference).
