@@ -1,13 +1,26 @@
-# `ripbi deps` output
+# `ripbi deps`: explore dependencies
 
-The user-facing contract for the `deps` command: what each output mode prints, which
-stream it goes to, and what the exit codes mean. `deps.rs` and `deps/render.rs`
-implement this; change them together.
+Use `deps` after a scan to see what an object depends on and what would be
+affected if it changed. These examples run from the root of a clone of this
+repository and use the committed AdventureWorks model:
 
-`deps` answers the exploration questions `scan` cannot: what does this object depend on,
-and what would be affected if it changed? The one-sentence version:
+```sh
+ripbi deps "'Sales'[Sales]" --model "samples/AdventureWorks Sales.SemanticModel"
+ripbi deps "'Sales'[Sales]" --model "samples/AdventureWorks Sales.SemanticModel" --impact --depth 1
+ripbi deps --model "samples/AdventureWorks Sales.SemanticModel" --table Sales
+```
 
-> `ripbi deps` shows what an object depends on and the impact of changing it.
+The default view shows dependencies above impact. Dependencies are what the
+object uses; impact is what uses it, including report bindings when reports
+are connected. `--model` also works without reports for model-only exploration.
+An empty impact is a valid result, not an error.
+
+The rest of this page is the detailed reference for lookup, filters, output
+formats, and exit codes.
+
+<!-- Maintainers: deps.rs and deps/render.rs implement this contract. -->
+
+## Command forms
 
 ```
 ripbi deps [OBJECT] [flags]
@@ -21,7 +34,7 @@ flags-over-positionals preference, because `deps` has one natural subject. A fil
 path is never inferred from it: model and report inputs arrive only through `--model`
 and `--report`.
 
-## Inputs
+## Model and report inputs
 
 The target ladder is scan's: `--model PATH` first, else the `ripbi.toml` `target`, else
 derivation from the `--report` anchors alone (every anchor must pair with the same
@@ -53,7 +66,7 @@ report. The announce line says so: `Exploring X with no reports`.
 References are resolved by the shared lookup in `ripbi-core`, so ambiguity rules and
 suggestions behave the same here as in any future command. Accepted forms:
 
-- member shorthands: `'Sales'[Total Sales]`, `Sales[Total Sales]` — match every member
+- member shorthands: `'Sales'[Sales]`, `Sales[Sales]` — match every member
   kind in the named table (column, measure, hierarchy, calculation item);
 - an unqualified `[Name]` — matches the global measure of that name, every table's
   member of that name, and report measures;

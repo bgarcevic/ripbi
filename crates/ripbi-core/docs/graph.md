@@ -1,8 +1,27 @@
-# Dependency graph and reachability
+# What counts as unused
 
-How the model and report ASTs become one graph, and what "unused" means. Every rule here
-is a decision someone made on purpose; changing one changes what `scan` tells users to
-delete. Read this before touching `src/graph.rs` or its submodules.
+`ripbi scan` starts with the fields used by the reports it can read, then
+follows the model expressions those fields depend on. An object is reported
+unused when no path from those report bindings reaches it. Role filters and
+other model rules can also keep their dependencies alive.
+
+For example, if a visual uses measure `[B]` and `[B]` uses `[A]`, both measures
+are live. If nothing in the reports reaches `[B]`, both can be reported unused,
+even though `[B]` refers to `[A]`. The finding describes the model and reports
+that ripbi analyzed; it is a starting point for review, not a deletion command.
+
+Before removing an object, check [the scan's known boundaries](https://bgarcevic.github.io/ripbi/output.html#known-boundaries).
+Thin reports, Excel, XMLA clients, and other external consumers are invisible
+unless their bindings were included. A model with no connected reports is
+refused by default, because a scan without report roots cannot give a useful
+unused verdict. Use `ripbi deps` to inspect what a finding relies on and what
+else relies on it.
+
+## Implementation rules
+
+The rest of this chapter explains the graph and each liveness rule for people
+auditing results or changing the analyzer. Changes here can change what
+`scan` suggests reviewing.
 
 ## Shape
 

@@ -101,8 +101,8 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
 /// phone layout — a `definition.mobile/` folder beside `definition/` — its
 /// pages are parsed into [`ReportModel::mobile_pages`] and bind the model
 /// exactly like desktop pages (issue #49). Unexpected drift is reported in
-/// [`Ingested::skips`]; only an unreadable or malformed `report.json` — the
-/// file that makes the folder a report — fails. A missing or anchor-less
+/// [`Ingested::skips`]; an unreadable or malformed `report.json`, or an
+/// unreadable report directory, fails. A missing or anchor-less
 /// phone layout is the common case and is silent.
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     let definition = locate_report_definition(path)?;
@@ -112,7 +112,7 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     let mut skips = Vec::new();
     let mut value = pbir::load_report(&definition, name, &mut skips)?;
     if let Some(mobile) = locate_mobile_definition(&definition) {
-        value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips);
+        value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips)?;
     }
     Ok(Ingested { value, skips })
 }

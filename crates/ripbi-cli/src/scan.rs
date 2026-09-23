@@ -674,6 +674,9 @@ fn resolve_model_mode(
         .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
         .collect();
     let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    if let Some(error) = &bound.walk_error {
+        return Err(error.clone());
+    }
     let mut reports = bound.reports.clone();
     reports.extend(direct.iter().cloned());
     Ok((
@@ -754,6 +757,9 @@ fn attach_extras(
             .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone())),
     );
     let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    if let Some(error) = &bound.walk_error {
+        return Err(error.clone());
+    }
     report_paths.extend(direct);
     report_paths.extend(bound.reports.iter().cloned());
     Ok((

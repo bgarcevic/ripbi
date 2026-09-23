@@ -21,68 +21,6 @@ install the binary into `~/.local/bin` as both `ripbi` and its short alias
 `rib` — the two names are the same tool, so `rib scan` works anywhere
 `ripbi scan` does. Or `cargo install ripbi`.
 
-<details>
-<summary>Pinning a version, reviewing the scripts first, building from source</summary>
-
-Pin a version:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | RIPBI_VERSION=v0.4.1 sh
-```
-
-```powershell
-$env:RIPBI_VERSION = 'v0.4.1'; irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
-```
-
-Both scripts are plain shell and PowerShell. Download them first if you would
-rather read before running:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh -o install.sh
-sh install.sh
-```
-
-```powershell
-irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 -OutFile install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1  # the flag is only needed if your policy blocks script files
-```
-
-From a clone of this repository:
-
-```sh
-cargo install --path crates/ripbi-cli
-```
-
-</details>
-
-## Updating
-
-Installed with one of the scripts above? `ripbi update` downloads the latest
-release, verifies its sha256 checksum, and replaces `ripbi` and `rib` in place:
-
-```sh
-ripbi update           # update in place; exits 0 when done
-ripbi update --check   # report only: exits 1 when a newer release exists
-```
-
-Exit codes: `0` updated or up to date, `1` update available (only from
-`--check`), `2` error (network, checksum, unsupported platform).
-
-Every command checks for a new release at most once a day and prints a dim
-one-line notice when one is available. That check is a plain `GET` of the
-public release metadata — no data is sent — and `RIPBI_NO_UPDATE_CHECK=1`
-disables it. It is also skipped automatically when stderr is not a terminal
-(pipes, CI logs), when `CI` is set, or under `-q`.
-
-Cargo-installed copies are never self-replaced: `ripbi update` prints the
-`cargo install ripbi --force` command instead. A source build found under a
-`target/` directory prints the install-script and `cargo install --path`
-alternatives.
-
-On Windows a running executable cannot be deleted, so a completed update may
-leave `ripbi.exe.old` (or `rib.exe.old`) beside the new binary. It is safe to
-delete, and the next update removes it.
-
 ## Quickstart
 
 Clone the repository to get the sample projects, then scan one:
@@ -124,8 +62,65 @@ Exit codes:
 | `2`  | Error (bad path, ingestion failure, …) |
 
 ```sh
-ripbi scan -q   # no output; exit code only
+ripbi scan "samples/AdventureWorks Sales.pbip" -q   # no output; exit code only
 ```
 
 The [scan command](output.md) chapter documents every flag, the output
 shapes, `ripbi.toml`, and the exit codes in full.
+
+## More installation options
+
+<details>
+<summary>Pin a version, review the scripts, or build from source</summary>
+
+Pin a version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | RIPBI_VERSION=v0.4.1 sh
+```
+
+```powershell
+$env:RIPBI_VERSION = 'v0.4.1'; irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
+```
+
+Download a script to review it before running:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh -o install.sh
+sh install.sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+From a clone of this repository:
+
+```sh
+cargo install --path crates/ripbi-cli
+```
+
+</details>
+
+## Updating
+
+If you installed with one of the scripts above, `ripbi update` downloads the
+latest release, verifies its sha256 checksum, and replaces `ripbi` and `rib`:
+
+```sh
+ripbi update           # update in place; exits 0 when done
+ripbi update --check   # report only: exits 1 when a newer release exists
+```
+
+Exit codes: `0` updated or up to date, `1` update available (only from
+`--check`), `2` error (network, checksum, unsupported platform).
+
+The optional daily release check prints one notice when a new version is
+available. Set `RIPBI_NO_UPDATE_CHECK=1` to disable it; it is already off in
+CI, with redirected stderr, and under `-q`.
+
+For Cargo installs, use `cargo install ripbi --force` instead. A source build
+under `target/` also needs to be rebuilt or reinstalled. On Windows an update
+may leave `ripbi.exe.old` or `rib.exe.old` beside the new binary; the next
+update removes it.

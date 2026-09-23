@@ -302,6 +302,9 @@ pub struct BoundReports {
     pub malformed: Vec<PathBuf>,
     /// `definition.pbir` read or parse drift from the unresolved items.
     pub parse_skips: Vec<SkipNotice>,
+    /// A filesystem error during the search. An incomplete walk cannot
+    /// establish the full set of report roots.
+    pub walk_error: Option<ScanError>,
 }
 
 /// The shapes `--model` accepts, listed whenever resolution fails.
@@ -355,7 +358,7 @@ fn model_target(item_root: &Path) -> Result<ModelTarget, ScanError> {
 /// never re-walked, so an explicit `--report` produces no walk notice. A
 /// directory holding a report item is not searched further, an anchor-less
 /// `.Report` directory is recorded as malformed rather than vanishing, and
-/// unreadable directories are skipped silently, mirroring [`discover`].
+/// unreadable directories fail the walk.
 #[must_use]
 pub fn discover_bound_reports(
     model: &ModelTarget,
@@ -366,7 +369,12 @@ pub fn discover_bound_reports(
     let mut malformed = Vec::new();
     let mut visited = exclude.clone();
     for root in roots {
-        walk_report_items(root, &mut visited, &mut items, &mut malformed);
+        if let Err(error) = walk_report_items(root, &mut visited, &mut items, &mut malformed) {
+            return BoundReports {
+                walk_error: Some(error),
+                ..BoundReports::default()
+            };
+        }
     }
     items.sort_by_cached_key(|item| canonical_key(item));
     malformed.sort_by_cached_key(|path| canonical_key(path));
@@ -487,32 +495,40 @@ fn name_matches(model: &ModelTarget, catalog: &str) -> bool {
 /// not searched further. Hidden and `.SemanticModel` directories are pruned
 /// from descent silently; a `.Report` directory without an anchor cannot be a
 /// report item and is pushed to `malformed` instead. Directory symlinks are
-/// skipped outright, so a traversal cycle can never trap the walk. Unreadable
-/// directories are skipped silently.
+/// skipped outright, so a traversal cycle can never trap the walk.
 fn walk_report_items(
     dir: &Path,
     visited: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
     malformed: &mut Vec<PathBuf>,
-) {
+) -> Result<(), ScanError> {
     if !visited.insert(canonical_key(dir)) {
-        return;
+        return Ok(());
     }
     if is_report_item(dir) {
         out.push(dir.to_path_buf());
-        return;
+        return Ok(());
     }
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<fs::DirEntry> = entries.filter_map(|entry| entry.ok()).collect();
+    let entries = fs::read_dir(dir).map_err(|error| {
+        ScanError::new(format!(
+            "cannot search {} for reports: {error}",
+            dir.display()
+        ))
+    })?;
+    let mut entries: Vec<fs::DirEntry> =
+        entries.collect::<std::io::Result<_>>().map_err(|error| {
+            ScanError::new(format!("cannot read entries in {}: {error}", dir.display()))
+        })?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         // `file_type` does not follow symlinks, so a linked directory never
         // reports `is_dir` and is skipped here.
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
+        let file_type = entry.file_type().map_err(|error| {
+            ScanError::new(format!(
+                "cannot inspect {}: {error}",
+                entry.path().display()
+            ))
+        })?;
         if !file_type.is_dir() {
             continue;
         }
@@ -531,8 +547,9 @@ fn walk_report_items(
             malformed.push(path);
             continue;
         }
-        walk_report_items(&path, visited, out, malformed);
+        walk_report_items(&path, visited, out, malformed)?;
     }
+    Ok(())
 }
 
 /// True when `path` is a folder that makes a report item: one directly
@@ -1286,6 +1303,20 @@ mod tests {
         use super::*;
 
         #[test]
+        fn unreadable_search_root_fails_instead_of_omitting_reports() {
+            let temp = TempDir::new("walk-error");
+            temp.write("not-a-directory", "x");
+            let error = walk_report_items(
+                &temp.0.join("not-a-directory"),
+                &mut HashSet::new(),
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .expect_err("search must fail");
+            assert!(error.message.contains("cannot search"));
+        }
+
+        #[test]
         fn the_walker_prunes_by_convention_and_keeps_nested_items() {
             let temp = TempDir::new("walk-prune");
             temp.write("r/Inner.Report/report.json", "{}");
@@ -1297,7 +1328,8 @@ mod tests {
             let mut visited = HashSet::new();
             let mut out = Vec::new();
             let mut malformed = Vec::new();
-            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed);
+            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed)
+                .expect("walk succeeds");
 
             assert_eq!(
                 out,
@@ -1324,7 +1356,8 @@ mod tests {
             let mut visited = HashSet::new();
             let mut out = Vec::new();
             let mut malformed = Vec::new();
-            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed);
+            walk_report_items(&temp.0.join("r"), &mut visited, &mut out, &mut malformed)
+                .expect("walk succeeds");
 
             assert!(out.is_empty(), "no report item lives under r");
             assert_eq!(
@@ -1349,7 +1382,8 @@ mod tests {
             let mut visited = HashSet::new();
             let mut out = Vec::new();
             let mut malformed = Vec::new();
-            walk_report_items(&temp.0.join("real"), &mut visited, &mut out, &mut malformed);
+            walk_report_items(&temp.0.join("real"), &mut visited, &mut out, &mut malformed)
+                .expect("walk succeeds");
 
             assert!(out.is_empty(), "a linked directory is never entered");
         }

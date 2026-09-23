@@ -8,6 +8,14 @@ fn ripbi() -> Command {
     Command::cargo_bin("ripbi").expect("the ripbi binary")
 }
 
+#[test]
+fn no_arguments_show_help_successfully() {
+    ripbi()
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage:"));
+}
+
 fn rib() -> Command {
     Command::cargo_bin("rib").expect("the rib alias binary")
 }

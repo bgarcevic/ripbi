@@ -17,7 +17,9 @@ reports; `.pbix` and `.pbit` files are not supported yet.
 > [`main`](https://github.com/bgarcevic/ripbi/commits/main) and may document
 > changes that have not shipped in a release yet.
 
-Start with [installation and quickstart](installation.md), then
-[the scan command](output.md) for everything `ripbi scan` can do — flags,
-output shapes, `ripbi.toml`, and exit codes. [What counts as
-unused](graph.md) explains the liveness rules behind the findings.
+Start with [installation and quickstart](installation.md). Then use
+[the scan command](output.md) to find candidates for review,
+[the report command](report.md) to check what ripbi read, and
+[the deps command](deps.md) to follow an object's dependencies and impact.
+[What counts as unused](graph.md) explains how to interpret a finding before
+you remove anything.
