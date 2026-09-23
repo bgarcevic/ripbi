@@ -8,8 +8,8 @@
 //! per-file key policies ([`Keys`]): keys the AST models are parsed, keys
 //! deliberately unmodeled are skipped silently, and anything else is reported
 //! as a [`SkipNotice`] (see `docs/formats.md`). Only the anchor `report.json`
-//! can fail the run; every other file, object, or field that cannot be read is
-//! a notice, because a single drifted visual must never abort an analysis.
+//! and directory traversal can fail the run; malformed individual objects
+//! remain notices, because a single drifted visual must not abort analysis.
 //!
 //! Every model reference that keeps an object alive lands in the AST, whatever
 //! its visual type: field wells (`queryState`), report/page/visual filters and
@@ -98,9 +98,9 @@ pub(super) fn load_report(
         model.filters = filter_config(report.get("filterConfig"), &mut ctx, "/filterConfig");
     }
     model.measures = report_extensions(definition, skips);
-    model.pages = pages(definition, skips);
+    model.pages = pages(definition, skips)?;
     let live = live_sections(definition, &model.pages, skips);
-    model.bookmarks = bookmarks(definition, &live, skips);
+    model.bookmarks = bookmarks(definition, &live, skips)?;
     Ok(model)
 }
 
@@ -115,7 +115,10 @@ pub(super) fn load_report(
 /// anchor, report measures, or bookmarks, and any other file it contains is
 /// layout state the AST does not model. Callers probe for the tree first; a
 /// `pages/` folder with no page folders simply yields no pages.
-pub(super) fn load_mobile_pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Page> {
+pub(super) fn load_mobile_pages(
+    definition: &Path,
+    skips: &mut Vec<SkipNotice>,
+) -> Result<Vec<Page>> {
     pages(definition, skips)
 }
 
@@ -219,8 +222,8 @@ pub(super) fn dataset_reference(item_root: &Path, skips: &mut Vec<SkipNotice>) -
 }
 
 /// Parses every page folder under `pages/`, in folder-name order.
-fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Page> {
-    let mut folders = child_folders(&definition.join("pages"))
+fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Page>> {
+    let mut folders = child_folders(&definition.join("pages"))?
         .into_iter()
         .filter(|folder| folder.join("page.json").is_file())
         .collect::<Vec<_>>();
@@ -246,10 +249,10 @@ fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Page> {
             skips,
         };
         let mut page = page(&value, folder_name(&folder), &mut ctx);
-        page.visuals = visuals(&folder, ctx.skips);
+        page.visuals = visuals(&folder, ctx.skips)?;
         out.push(page);
     }
-    out
+    Ok(out)
 }
 
 /// The folded object names of every page the report defines — the authority a
@@ -422,8 +425,8 @@ fn page_binding(value: &Value, ctx: &mut Ctx, location: &str) -> PageBinding {
 
 /// Parses every visual folder of a page, in folder-name order. Group
 /// containers (`visualGroup`, which carry no query) are skipped.
-fn visuals(folder: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Visual> {
-    let mut folders = child_folders(&folder.join("visuals"))
+fn visuals(folder: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Visual>> {
+    let mut folders = child_folders(&folder.join("visuals"))?
         .into_iter()
         .filter(|folder| folder.join("visual.json").is_file())
         .collect::<Vec<_>>();
@@ -452,7 +455,7 @@ fn visuals(folder: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Visual> {
             out.push(visual);
         }
     }
-    out
+    Ok(out)
 }
 
 /// Parses one visual container (`visual.json`).
@@ -524,12 +527,13 @@ fn bookmarks(
     definition: &Path,
     live: &HashSet<String>,
     skips: &mut Vec<SkipNotice>,
-) -> Vec<Bookmark> {
-    let Ok(entries) = fs::read_dir(definition.join("bookmarks")) else {
-        return Vec::new();
+) -> Result<Vec<Bookmark>> {
+    let path = definition.join("bookmarks");
+    let Some(entries) = read_entries(&path)? else {
+        return Ok(Vec::new());
     };
     let mut files = entries
-        .filter_map(|entry| entry.ok())
+        .into_iter()
         .map(|entry| entry.path())
         .filter(|path| {
             path.is_file()
@@ -558,7 +562,7 @@ fn bookmarks(
         let mut ctx = Ctx { path: &file, skips };
         out.push(bookmark_file(&value, bookmark_name(&file), live, &mut ctx));
     }
-    out
+    Ok(out)
 }
 
 /// Parses one bookmark file: saved filters (report level, per section, per
@@ -1939,15 +1943,37 @@ fn read_optional(path: &Path, skips: &mut Vec<SkipNotice>) -> Option<Value> {
 }
 
 /// The immediate subdirectories of `path`, in no particular order.
-fn child_folders(path: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(path) else {
-        return Vec::new();
+fn child_folders(path: &Path) -> Result<Vec<PathBuf>> {
+    let Some(entries) = read_entries(path)? else {
+        return Ok(Vec::new());
     };
-    entries
-        .filter_map(|entry| entry.ok())
+    Ok(entries
+        .into_iter()
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
-        .collect()
+        .collect())
+}
+
+/// An absent optional folder is normal; an unreadable one fails because
+/// analysis cannot know whether it contains report bindings.
+fn read_entries(path: &Path) -> Result<Option<Vec<fs::DirEntry>>> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    Ok(Some(entries.collect::<std::io::Result<Vec<_>>>()?))
+}
+
+#[cfg(test)]
+mod directory_read_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_where_a_report_directory_is_expected_fails() {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert!(read_entries(&file).is_err());
+    }
 }
 
 /// A path's final component as text, empty when it has none or is not UTF-8.

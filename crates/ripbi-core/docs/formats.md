@@ -159,10 +159,11 @@ bookmark whose `activeSection` is stale gets the same treatment (folded into
 the section's notice when they coincide). Report-level `explorationState.filters`
 are page-independent and always bind.
 
-**Errors.** Only the anchor `report.json` can fail the run (`Error::Io` /
-`Error::Json`) — it is what makes the folder a report. An unreadable page,
-visual, or bookmark file, a malformed filter field, an unknown property: all
-notices, never failures.
+**Errors.** The anchor `report.json` and unreadable `pages/`, `visuals/`, or
+`bookmarks/` directories fail the run (`Error::Io` / `Error::Json`). A directory
+read failure could hide bindings and produce false unused findings. An
+unreadable individual page, visual, or bookmark file, a malformed filter
+field, or an unknown property produces a notice.
 
 ### PBIR known gaps
 

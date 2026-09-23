@@ -1,8 +1,28 @@
-# `ripbi scan` output
+# `ripbi scan`: find unused objects
 
-The user-facing contract for the `scan` command: what each output mode prints, which
-stream it goes to, and what the exit codes mean. `render.rs` implements this; change
-the two together.
+Find model objects that none of the connected reports reach. These examples
+run from the root of a clone of this repository; replace the sample path with
+your own PBIP project:
+
+```sh
+ripbi scan "samples/AdventureWorks Sales.pbip"
+ripbi scan "samples/AdventureWorks Sales.pbip" --summary
+ripbi scan --model "samples/AdventureWorks Sales.SemanticModel" --report samples/
+```
+
+The first line of output counts objects, reachable objects, report bindings,
+and unused objects. Findings below it name objects to investigate; a finding
+does not prove deletion is safe when other consumers use the model. Exit `1`
+means findings were reported, `0` means none were reported, and `2` means the
+scan could not complete. See [what counts as unused](https://bgarcevic.github.io/ripbi/graph.html)
+before cleanup.
+
+The rest of this page is the detailed reference for inputs, flags, output
+formats, and exit codes.
+
+<!-- Maintainers: render.rs implements this contract; change both together. -->
+
+## Inputs and pairing
 
 ```
 ripbi scan [PATH] [flags]
@@ -493,6 +513,7 @@ Pretty-printed JSON, stable field order, additive schema:
 
 Found in the working directory or its nearest ancestor; relative paths resolve against
 the file's own directory. Flags override the file; the file overrides discovery.
+Unknown keys are errors, so a misspelled setting cannot silently change a scan.
 
 ```toml
 target = "samples/AdventureWorks Sales.SemanticModel"  # used when no PATH is given

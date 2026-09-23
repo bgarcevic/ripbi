@@ -1,14 +1,26 @@
-# `ripbi report` output
+# `ripbi report`: inspect report bindings
 
-The user-facing contract for the `report` command: the inventory of what ripbi sees in
-a report — pages → visuals → fields — printed as data, with list views for exploration
-and glob filters to narrow everything (issue #33). `src/report.rs` and
-`src/report/render.rs` implement this; change the two together.
+Use `report` when you want to check what ripbi read from a report: its pages,
+visuals, filters, and model fields. This is useful when a scan finding looks
+surprising. These examples run from the root of a clone of this repository:
 
-The command exists because a scan result that looks wrong raises exactly one question:
-*what did ripbi actually see in the report?* ("why is this measure live? → show me the
-visual that uses it.") It is informational by design: it never gates on what it lists,
-so `scan`'s exit-code contract stays untouched.
+```sh
+ripbi report "samples/AdventureWorks Sales.pbip"
+ripbi report "samples/AdventureWorks Sales.pbip" --visuals
+ripbi report "samples/AdventureWorks Sales.pbip" --used
+```
+
+The default tree shows each visual's bindings. `--visuals` gives one row per
+visual; `--used` lists the model objects the report keeps alive. The command
+is informational: a produced inventory exits `0`, even if it lists unresolved
+bindings. Add `--broken` to the report command to focus on those bindings.
+
+The rest of this page is the detailed reference for inputs, filters, output
+formats, and exit codes.
+
+<!-- Maintainers: src/report.rs and src/report/render.rs implement this contract. -->
+
+## Inputs and pairing
 
 ```
 ripbi report [PATH] [flags]

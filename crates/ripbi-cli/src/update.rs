@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use semver::Version;
 use serde::Deserialize;
@@ -44,8 +44,9 @@ const MAX_DOWNLOAD_BYTES: u64 = 256 * 1024 * 1024;
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// The background notifier child's shorter budget.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
-/// The staging directory the archive is unpacked into, beside the install dir.
-const STAGING_DIR: &str = ".ripbi.update.tmp";
+/// The install lock and staging prefix beside the installed binaries.
+const INSTALL_LOCK: &str = ".ripbi.update.lock";
+const STAGING_PREFIX: &str = ".ripbi.update.tmp";
 
 /// A release as parsed from the GitHub API.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,10 +346,8 @@ fn install_archive(
     install_dir: &Path,
     exe: &Path,
 ) -> Result<(), ScanError> {
-    let staging = install_dir.join(STAGING_DIR);
-    let _ = fs::remove_dir_all(&staging);
-    fs::create_dir_all(&staging)
-        .map_err(|error| io_error("cannot create the staging directory", &staging, error))?;
+    let _lock = InstallLock::acquire(install_dir)?;
+    let staging = create_staging(install_dir)?;
     let result = (|| {
         extract_archive(archive_bytes, version, &staging)?;
         set_staged_permissions(&staging, exe);
@@ -356,6 +355,71 @@ fn install_archive(
     })();
     let _ = fs::remove_dir_all(&staging);
     result
+}
+
+/// `create_new` gives one process ownership of replacement at a time.
+struct InstallLock {
+    path: PathBuf,
+    file: Option<fs::File>,
+}
+
+impl InstallLock {
+    fn acquire(install_dir: &Path) -> Result<Self, ScanError> {
+        let path = install_dir.join(INSTALL_LOCK);
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                io_error(
+                    "cannot start the update; another update may be running",
+                    &path,
+                    error,
+                )
+                .with_hint(format!(
+                    "retry after the other update finishes; if it crashed, remove {}",
+                    path.display()
+                ))
+            })?;
+        Ok(Self {
+            path,
+            file: Some(file),
+        })
+    }
+}
+
+impl Drop for InstallLock {
+    fn drop(&mut self) {
+        drop(self.file.take());
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn create_staging(install_dir: &Path) -> Result<PathBuf, ScanError> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    for attempt in 0..10 {
+        let path = install_dir.join(format!(
+            "{STAGING_PREFIX}-{}-{stamp}-{attempt}",
+            std::process::id()
+        ));
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "cannot create the staging directory",
+                    &path,
+                    error,
+                ));
+            }
+        }
+    }
+    Err(ScanError::new(
+        "cannot create a unique update staging directory",
+    ))
 }
 
 /// Extracts `ripbi-<version>/ripbi` and `.../rib` into `staging`, by archive
@@ -786,6 +850,16 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("create scratch dir");
         path
+    }
+
+    #[test]
+    fn update_lock_prevents_a_second_installer() {
+        let dir = scratch("install-lock");
+        let lock = InstallLock::acquire(&dir).expect("first update owns lock");
+        assert!(InstallLock::acquire(&dir).is_err());
+        drop(lock);
+        assert!(InstallLock::acquire(&dir).is_ok());
+        let _ = fs::remove_dir_all(dir);
     }
 
     fn archive_files() -> Vec<(String, Vec<u8>)> {

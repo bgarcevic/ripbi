@@ -42,9 +42,10 @@ pub struct Loaded {
     pub config: Config,
 }
 
-/// The file format. Unknown fields are ignored: config drift must never fail
-/// a scan, mirroring core's ingestion policy.
+/// The user-authored file format. Reject unknown keys so a typo cannot
+/// silently change the analysis.
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FileFormat {
     target: Option<String>,
     #[serde(default)]
@@ -53,6 +54,7 @@ struct FileFormat {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ScanSection {
     #[serde(default)]
     ignore: Vec<String>,
@@ -148,15 +150,23 @@ mod tests {
     }
 
     #[test]
-    fn unknown_fields_are_ignored_and_reports_resolve_relatively() {
+    fn reports_resolve_relatively() {
         let temp = TempDir::new("drift");
         temp.write(
             "ripbi.toml",
-            "future_key = 1\nreports = [\"r.Report\"]\n[scan]\nignore = []\nfuture_section = true\n",
+            "reports = [\"r.Report\"]\n[scan]\nignore = []\n",
         );
 
         let loaded = find_in(&temp.0).expect("no error").expect("config found");
 
         assert_eq!(loaded.config.reports, vec![temp.0.join("r.Report")]);
+    }
+
+    #[test]
+    fn unknown_config_keys_fail_with_a_parse_error() {
+        let temp = TempDir::new("typo");
+        temp.write("ripbi.toml", "[scan]\nignroe = [\"*\"]\n");
+        let error = find_in(&temp.0).expect_err("unknown key");
+        assert!(error.message.contains("ignroe"));
     }
 }

@@ -3,7 +3,7 @@
 
 use std::io::{self, IsTerminal, Write};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use crate::deps;
 use crate::scan::{self, Streams};
@@ -14,6 +14,13 @@ use crate::{Cli, Command, notify, report, update};
 /// `update`; see `ambient_notice_follows`). The notifier never changes the
 /// exit code.
 pub fn run() -> std::process::ExitCode {
+    if std::env::args_os().nth(1).is_none() {
+        let mut command = Cli::command();
+        return match command.print_help() {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(_) => std::process::ExitCode::FAILURE,
+        };
+    }
     let cli = Cli::parse();
     let quiet = match &cli.command {
         Command::Scan(args) => args.quiet,
