@@ -276,6 +276,7 @@ fn scan(
         }));
         skips.extend(scan.bound.parse_skips.iter().map(skip_notice_out));
     }
+    dedupe_opaque_skips(&mut skips);
 
     // Analysis: entirely core's job.
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
@@ -1212,6 +1213,20 @@ pub(crate) fn skip_notice_out(notice: &SkipNotice) -> SkipNoticeOut {
     }
 }
 
+/// Keeps the first instance of an opaque-source notice while retaining every
+/// distinct partition and every notice of another kind.
+fn dedupe_opaque_skips(skips: &mut Vec<SkipNoticeOut>) {
+    let mut seen = HashSet::new();
+    skips.retain(|skip| {
+        skip.kind != "opaque_source"
+            || seen.insert((
+                skip.path.clone(),
+                skip.location.clone(),
+                skip.detail.clone(),
+            ))
+    });
+}
+
 pub(crate) fn skip_kind_out(kind: SkipKind) -> &'static str {
     match kind {
         SkipKind::UnknownObject => "unknown_object",
@@ -1219,5 +1234,44 @@ pub(crate) fn skip_kind_out(kind: SkipKind) -> &'static str {
         SkipKind::MalformedValue => "malformed_value",
         SkipKind::UnresolvedAlias => "unresolved_alias",
         SkipKind::StaleState => "stale_state",
+        SkipKind::OpaqueSource => "opaque_source",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SkipNoticeOut, dedupe_opaque_skips};
+
+    #[test]
+    fn opaque_skip_deduplication_preserves_distinct_partitions_and_other_kinds() {
+        let opaque = SkipNoticeOut {
+            path: "Sales.tmdl".to_string(),
+            location: Some("line 1".to_string()),
+            kind: "opaque_source",
+            detail: "partition 'Sales'".to_string(),
+        };
+        let mut skips = vec![
+            opaque.clone(),
+            opaque.clone(),
+            SkipNoticeOut {
+                location: Some("line 2".to_string()),
+                detail: "partition 'Other'".to_string(),
+                ..opaque.clone()
+            },
+            SkipNoticeOut {
+                kind: "malformed_value",
+                ..opaque.clone()
+            },
+            SkipNoticeOut {
+                kind: "malformed_value",
+                ..opaque
+            },
+        ];
+
+        dedupe_opaque_skips(&mut skips);
+
+        assert_eq!(skips.len(), 4);
+        assert_eq!(skips[0].detail, "partition 'Sales'");
+        assert_eq!(skips[1].detail, "partition 'Other'");
     }
 }

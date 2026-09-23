@@ -88,6 +88,13 @@ an unrelated string is not a use. That is the one deliberate narrowing against t
 whole-word substring matcher, and it is visible in scans — a shared expression named
 only inside a comment is now correctly reported unused.
 
+An M partition that calls `Value.NativeQuery` or `Odbc.Query` receives an
+`opaque_source` skip notice. Detection uses identifier tokens in call position;
+the function names inside strings and comments do not count. The M around the
+call is still analyzed, but references inside its SQL text are not extracted.
+The whitelist is deliberately limited to these two functions until real models
+provide evidence for more.
+
 ## Binding
 
 `m::bind` resolves one raw reference against the model (`Binding::Bound { targets }` /

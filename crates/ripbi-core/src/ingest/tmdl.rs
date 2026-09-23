@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use crate::identity::fold_name;
 use crate::ingest::{SkipKind, SkipNotice};
+use crate::m::refs::has_native_query_call;
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission, Function,
     Hierarchy, HierarchyLevel, HierarchyRef, Kpi, Measure, MetadataPermission,
@@ -1016,7 +1017,9 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
             "measure" => table.measures.push(map_measure(child, path, skips)),
             "column" => table.columns.push(map_column(child, path, skips)),
             "hierarchy" => table.hierarchies.push(map_hierarchy(child, path, skips)),
-            "partition" => table.partitions.push(map_partition(child, path, skips)),
+            "partition" => table
+                .partitions
+                .push(map_partition(child, &table.name, path, skips)),
             "calendar" => table.calendars.push(map_calendar(child, path, skips)),
             "calculationGroup" => {
                 table.calculation_group = Some(map_calculation_group(child, path, skips));
@@ -1324,7 +1327,7 @@ fn map_calendar(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Calend
     calendar
 }
 
-fn map_partition(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Partition {
+fn map_partition(node: &Node, table: &str, path: &Path, skips: &mut Vec<SkipNotice>) -> Partition {
     let name = unquote(node.name.as_deref().unwrap_or_default());
     let kind = node.text();
     let source = node
@@ -1348,7 +1351,20 @@ fn map_partition(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Parti
         _ => String::new(),
     };
     let source = match kind {
-        Some("m") => PartitionSource::M { expression },
+        Some("m") => {
+            if has_native_query_call(&expression) {
+                notice(
+                    skips,
+                    path,
+                    Some(node.line),
+                    SkipKind::OpaqueSource,
+                    format!(
+                        "partition '{name}' on table '{table}' sources through a native query; references inside the SQL text are not analyzed."
+                    ),
+                );
+            }
+            PartitionSource::M { expression }
+        }
         Some("calculated") => PartitionSource::Calculated { expression },
         Some("query") => PartitionSource::Query { query: expression },
         Some(other) => {
@@ -2348,7 +2364,7 @@ mod tests {
                 "partition P = m\n\tmode: import\n\tqueryGroup: 'Extract Tables\\\\e_X'\n\tsource =\n\t\tlet\n\t\t    S = 1\n\t\tin\n\t\t    S\n",
                 "partition",
             );
-            let partition = map_partition(&partition, Path::new("t"), &mut skips);
+            let partition = map_partition(&partition, "Sales", Path::new("t"), &mut skips);
 
             assert!(skips.is_empty(), "query groups must be silent: {skips:?}");
             assert!(expression.expression.contains("S = 1"));
@@ -2628,7 +2644,7 @@ mod tests {
                 ),
             };
             let node = map_one(&text, "partition");
-            let partition = map_partition(&node, Path::new("t"), &mut skips);
+            let partition = map_partition(&node, "Sales", Path::new("t"), &mut skips);
 
             assert!(skips.is_empty());
             assert_eq!(partition.source, expected);
@@ -2638,7 +2654,7 @@ mod tests {
         fn notices_an_m_partition_without_a_source() {
             let mut skips = Vec::new();
             let node = map_one("partition P = m\n\tmode: import\n", "partition");
-            let partition = map_partition(&node, Path::new("t"), &mut skips);
+            let partition = map_partition(&node, "Sales", Path::new("t"), &mut skips);
 
             assert_eq!(
                 partition.source,
@@ -2648,6 +2664,41 @@ mod tests {
             );
             assert_eq!(skips.len(), 1);
             assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+        }
+
+        #[test]
+        fn notices_a_native_query_once_per_m_partition() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "partition P = m\n\tsource = Value.NativeQuery(Source, \"SELECT 1\") & Odbc.Query(\"dsn\", \"SELECT 2\")\n",
+                "partition",
+            );
+            let partition = map_partition(&node, "Sales", Path::new("Sales.tmdl"), &mut skips);
+
+            assert!(matches!(partition.source, PartitionSource::M { .. }));
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::OpaqueSource);
+            assert_eq!(skips[0].location.as_deref(), Some("line 1"));
+            assert_eq!(skips[0].path, Path::new("Sales.tmdl"));
+            assert_eq!(
+                skips[0].detail,
+                "partition 'P' on table 'Sales' sources through a native query; references inside the SQL text are not analyzed."
+            );
+        }
+
+        #[test]
+        fn non_m_and_missing_partition_sources_do_not_false_notice() {
+            for text in [
+                "partition P = m\n\tsource = Sql.Database(\"srv\", \"db\")\n",
+                "partition P = m\n",
+                "partition P = query\n\tsource = Value.NativeQuery(Source, \"SELECT 1\")\n",
+                "partition P = future\n\tsource = Value.NativeQuery(Source, \"SELECT 1\")\n",
+            ] {
+                let mut skips = Vec::new();
+                let node = map_one(text, "partition");
+                map_partition(&node, "Sales", Path::new("Sales.tmdl"), &mut skips);
+                assert!(skips.iter().all(|skip| skip.kind != SkipKind::OpaqueSource));
+            }
         }
 
         #[test]

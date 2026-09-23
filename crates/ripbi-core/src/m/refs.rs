@@ -179,6 +179,28 @@ const COLUMN_STRING_FUNCTIONS: [&str; 26] = [
     "table.unpivotothercolumns",
 ];
 
+/// Native-query calls whose SQL arguments are opaque to M reference extraction.
+const NATIVE_QUERY_FUNCTIONS: [&str; 2] = ["odbc.query", "value.nativequery"];
+
+/// Whether an M expression calls a native-query function.
+///
+/// Only identifier tokens in call position count. Strings and comments are
+/// tokens too, so neither can create a false match.
+pub(crate) fn has_native_query_call(text: &str) -> bool {
+    let tokens = tokenize(text);
+    tokens.iter().enumerate().any(|(index, token)| {
+        token.kind == TokenKind::Identifier
+            && NATIVE_QUERY_FUNCTIONS
+                .iter()
+                .any(|name| token.text.eq_ignore_ascii_case(name))
+            && tokens
+                .iter()
+                .skip(index + 1)
+                .find(|next| next.kind != TokenKind::Comment)
+                .is_some_and(|next| next.kind == TokenKind::OpenParen)
+    })
+}
+
 fn is_keyword(name: &str) -> bool {
     KEYWORDS.contains(&name)
 }
@@ -694,6 +716,32 @@ mod tests {
             ["A"],
             "matching a built-in must not depend on its casing"
         );
+    }
+
+    #[test]
+    fn native_query_detection_recognizes_both_calls_and_case_variants() {
+        assert!(has_native_query_call(
+            "Value.NativeQuery(Source, \"SELECT 1\")"
+        ));
+        assert!(has_native_query_call("odbc.query(\"dsn\", \"SELECT 1\")"));
+        assert!(has_native_query_call(
+            "Value.NativeQuery(Source, \"SELECT 1\") & Odbc.Query(\"dsn\", \"SELECT 2\")"
+        ));
+        assert!(has_native_query_call(
+            "Value.NativeQuery /* note */ (Source, \"SQL\")"
+        ));
+    }
+
+    #[test]
+    fn native_query_detection_ignores_non_calls_and_opaque_tokens() {
+        assert!(!has_native_query_call("Sql.Database(\"server\", \"db\")"));
+        assert!(!has_native_query_call("let f = Value.NativeQuery in f"));
+        assert!(!has_native_query_call(
+            "\"Value.NativeQuery(Source, SQL)\" // Odbc.Query(DSN, SQL)"
+        ));
+        assert!(!has_native_query_call(
+            "/* Value.NativeQuery(Source, SQL) */ 1"
+        ));
     }
 
     #[test]

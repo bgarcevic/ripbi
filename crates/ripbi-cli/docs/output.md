@@ -55,7 +55,7 @@ reports.
 | Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
 | Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
 | Coverage caveat | stderr | once per run |
-| Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
+| Skip notices (parser drift, stale saved state, unresolved dataset references, opaque native-query sources) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
@@ -483,11 +483,15 @@ Pretty-printed JSON, stable field order, additive schema:
   consumer. Empty for every non-column finding and for columns no M step names.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
-  `stale_state`, and — when reports are discovered by walking search folders —
+  `stale_state`, `opaque_source` (an M partition calls `Value.NativeQuery` or
+  `Odbc.Query`; SQL text is not analyzed), and — when reports are discovered by walking search folders —
   `unresolved_dataset_reference` (a report item
   under a search folder with no usable `datasetReference`) and `malformed_report_item`
   (an anchor-less `.Report` folder the search walk pruned). Under `--strict`,
   `count > 0` corresponds to exit code `2`.
+  Each affected partition contributes one `opaque_source` notice; exact duplicate
+  notices are collapsed before rendering. In `--plain` and `--summary`, these
+  notices use the same stderr block as every other skip kind.
 
 ## `ripbi.toml`
 
