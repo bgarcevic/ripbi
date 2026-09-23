@@ -183,9 +183,7 @@ mod type_filters {
 
     /// The fixture has exactly one unused measure and one unused column, so
     /// every flag's effect is directly visible.
-    /// `--type` is the documented selection surface — the same machine
-    /// vocabulary `deps --type` speaks — and unions with the legacy
-    /// per-type flags.
+    /// `--type` uses the same machine vocabulary as `deps --type`.
     #[test]
     fn the_type_flag_selects_in_the_shared_vocabulary() {
         let temp = TempDir::new("filter-type-flag");
@@ -227,21 +225,6 @@ mod type_filters {
     }
 
     #[test]
-    fn the_type_flag_unions_with_the_legacy_flags() {
-        let temp = TempDir::new("filter-type-union");
-        let args = ScanArgs {
-            measures: true,
-            types: vec!["column".to_string()],
-            ..fixture_args(mini_pbip().join("Mini.pbip"))
-        };
-        let (code, stdout, _) = run_scan(&args, &temp.0, "");
-
-        assert_eq!(code, 1);
-        assert!(stdout.contains("Measures (1)"));
-        assert!(stdout.contains("Columns (1)"));
-    }
-
-    #[test]
     fn an_unknown_type_is_a_usage_error_naming_the_vocabulary() {
         let temp = TempDir::new("filter-type-unknown");
         let args = ScanArgs {
@@ -274,7 +257,7 @@ mod type_filters {
     fn a_type_flag_selects_only_its_group() {
         let temp = TempDir::new("filter-measures");
         let args = ScanArgs {
-            measures: true,
+            types: vec!["measure".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -303,8 +286,7 @@ mod type_filters {
     fn type_flags_passed_together_union_their_groups() {
         let temp = TempDir::new("filter-union");
         let args = ScanArgs {
-            measures: true,
-            columns: true,
+            types: vec!["measure".to_string(), "column".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -322,7 +304,7 @@ mod type_filters {
     fn a_filter_that_hides_every_finding_exits_clean() {
         let temp = TempDir::new("filter-none");
         let args = ScanArgs {
-            tables: true,
+            types: vec!["table".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -344,7 +326,7 @@ mod type_filters {
         let temp = TempDir::new("filter-quiet");
         let args = ScanArgs {
             quiet: true,
-            tables: true,
+            types: vec!["table".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
@@ -359,7 +341,7 @@ mod type_filters {
         let temp = TempDir::new("filter-json");
         let args = ScanArgs {
             json: true,
-            measures: true,
+            types: vec!["measure".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -383,7 +365,7 @@ mod type_filters {
         let temp = TempDir::new("filter-plain");
         let args = ScanArgs {
             plain: true,
-            measures: true,
+            types: vec!["measure".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -402,7 +384,7 @@ mod type_filters {
         let temp = TempDir::new("filter-summary");
         let args = ScanArgs {
             summary: true,
-            measures: true,
+            types: vec!["measure".to_string()],
             ..fixture_args(mini_pbip().join("Mini.pbip"))
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -451,7 +433,7 @@ mod type_filters {
         );
     }
 
-    /// `[scan].ignore` runs before the type flags: an object matched by both
+    /// `[scan].ignore` runs before type selection: an object matched by both
     /// is a suppression, not a filter hiding. The measure id ends in
     /// `Legacy Total`; the column is bare `Legacy`, so this pattern only
     /// ever matches the measure.
@@ -465,7 +447,7 @@ mod type_filters {
         );
 
         let args = ScanArgs {
-            measures: true,
+            types: vec!["measure".to_string()],
             ..ScanArgs::default()
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");
@@ -483,7 +465,7 @@ mod type_filters {
         );
 
         let args = ScanArgs {
-            columns: true,
+            types: vec!["column".to_string()],
             ..ScanArgs::default()
         };
         let (code, stdout, _) = run_scan(&args, &temp.0, "");

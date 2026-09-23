@@ -341,17 +341,17 @@ fn scan_agrees_with_the_committed_baseline() {
 }
 
 /// This sample's five dead auto date/time tables normally force exit 1. The
-/// type flags hide the whole section unless `--tables` is among them, and a
+/// type selection hides the whole section unless `--type table` is selected, and a
 /// hidden section cannot fail the run — with no findings left, the exit code
 /// is clean even though five dead tables exist.
 #[test]
-fn the_auto_datetime_section_follows_the_tables_flag() {
+fn the_auto_datetime_section_follows_the_table_type() {
     let sample = sample_pbip();
     let temp = TempDir::new("ai-section");
 
     let measures = ScanArgs {
         json: true,
-        measures: true,
+        types: vec!["measure".to_string()],
         path: Some(sample.clone()),
         ..ScanArgs::default()
     };
@@ -363,7 +363,7 @@ fn the_auto_datetime_section_follows_the_tables_flag() {
             .as_array()
             .expect("auto array")
             .is_empty(),
-        "without --tables the section is hidden entirely"
+        "without --type table the section is hidden entirely"
     );
     assert_eq!(
         payload["summary"]["auto_date_time"]["dead"], 0,
@@ -380,18 +380,18 @@ fn the_auto_datetime_section_follows_the_tables_flag() {
 
     let tables = ScanArgs {
         json: true,
-        tables: true,
+        types: vec!["table".to_string()],
         path: Some(sample),
         ..ScanArgs::default()
     };
     let (code, stdout, _) = run_scan(&tables, &temp.0, "");
     assert_eq!(
         code, 1,
-        "--tables keeps the section and its exit-code weight"
+        "--type table keeps the section and its exit-code weight"
     );
     let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
     let rows = payload["auto_date_time"].as_array().expect("auto array");
-    assert_eq!(rows.len(), 6, "--tables restores all six verdict rows");
+    assert_eq!(rows.len(), 6, "--type table restores all six verdict rows");
     assert_eq!(payload["summary"]["auto_date_time"]["in_use"], 1);
     assert_eq!(
         payload["summary"]["auto_date_time"]["dead"], 5,

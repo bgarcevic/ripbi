@@ -109,10 +109,9 @@ Ignored 1 report(s) bound to other models: HR.Report
 | `1` | Unused objects found, auto date/time machinery no report binds — or, under `--broken`, broken visual bindings found |
 | `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports (unless `--allow-no-reports` skips it), unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
-The exit code describes what was *reported*: findings hidden by the type selection, and an
-Auto date/time section hidden because `--type table` (or legacy `--tables`) was not among
-the passed selection, cannot
-fail the run. Broken visual bindings (issue #60) are the one advisory kind: they are
+The exit code describes what was *reported*: findings hidden by type selection, and an
+Auto date/time section hidden because `--type table` was not selected, cannot fail the
+run. Broken visual bindings (issue #60) are the one advisory kind: they are
 *reported* by default, but they gate the exit code only when `--broken` selects them —
 an unused-only gate must not start failing because one visual is broken, and a
 `--broken` gate must not fail on unused findings. `--strict` and `-q/--quiet` are
@@ -130,8 +129,7 @@ unaffected.
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. A `.pbip` expands to its project's reports. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model; with no other target, the reports' pairing derives the model and exactly these reports are scanned |
 | `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type column`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`. Filters every output mode and the exit code. With none of them, everything is reported |
-| `--measures`, `--columns`, `--hierarchies`, `--tables`, `--partitions`, `--relationships`, `--calc-items`, `--expressions`, `--functions`, `--report-measures` | Legacy per-type aliases of `--type`, one boolean each; still working (hidden from `--help` since v0.3.5's interface cleanup) and unioned with `--type` values. Prefer `--type` in new scripts |
-| `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` (and without any other type flag) breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
+| `--broken` | Report only broken visual bindings (issue #60) — field references that no longer resolve in the model. Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage so a pipeline can gate on it separately. Without `--broken` or `--type`, breakage is still reported, but never changes the exit code. When the model ingest recorded `unknown_object` skips, breakage is suppressed entirely — see the precision bar under Human output |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -446,12 +444,12 @@ Pretty-printed JSON, stable field order, additive schema:
   user date columns the machinery serves — the shared template serves none), and
   `member_findings` (the machinery's unused members covered by the rows, absent from
   `unused` individually).
-- Type flags filter the `unused` array and `summary.unused`; `summary.unused_total`
+- Type selection filters the `unused` array and `summary.unused`; `summary.unused_total`
   stays model-wide. The `broken` array and `summary.broken` follow the same rule:
-  every type flag without `--broken` empties them, `--broken` keeps only them. The
-  `auto_date_time` array and `summary.auto_date_time` counts
-  follow the section rule: present in full when no type flags are passed or `--tables`
-  is among them, empty and zero otherwise.
+  a `--type` selection without `--broken` empties them, while `--broken` retains them.
+  The `auto_date_time` array and `summary.auto_date_time` counts are present in full
+  when no type selection is passed or `--type table` is selected; otherwise they
+  are empty and zero.
 - `broken` (issue #60) carries one row per reported broken visual binding:
   `target` is the written field reference; `reason` is one of `table_not_found`,
   `field_not_found`, `measure_not_found`, `hierarchy_not_found`, `level_not_found`,
@@ -511,7 +509,7 @@ id (`'Sales'[Draft Amount]`) or the bare object name; for a broken binding it ma
 the written reference whole (`'Sales'[Color]` — a binding has no bare name of its own).
 Suppressed findings are excluded
 from the output and the exit code, and counted in `summary.ignored`. The suppression
-applies before the type flags: an object matched by both is simply gone. The auto
+applies before type selection: an object matched by both is simply gone. The auto
 date/time machinery can be silenced wholesale this way — see the recipe under the Auto
 date/time section.
 
@@ -585,8 +583,8 @@ which static analysis deliberately ignores.
 
 ## Known boundaries
 
-- The type flags cover the ten object-type groups plus `--broken` (issue #60); a
-  `role` finding has no flag and is filtered out whenever any type flag is passed.
+- `--type` covers the model object kinds, including `role`; `--broken` selects
+  broken visual bindings separately (issue #60).
   A broken binding's kind (`broken_visual`) also never appears in the `unused` array
   or the generic groups — it has no `ObjectId` of its own.
 - Only TMDL semantic models and PBIR reports can be ingested; `.pbix`/`.pbit`/

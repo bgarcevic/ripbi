@@ -1,7 +1,7 @@
 //! Integration tests for `ripbi scan` against the broken-visual PBIP fixture
 //! (issue #60): field bindings that no longer resolve in the model surface as
 //! `broken_visual` findings — advisory by default (they never change the exit
-//! code), gating under `--broken` exactly the way the type flags gate their
+//! code), gating under `--broken` exactly the way type selection gates its
 //! kinds. The fixture carries one healthy card (V1 → `Total`), one card on a
 //! dropped column (V2 → `Sales.Color`), one card on a measure whose own DAX
 //! is broken (V3 → `Broken Total`), and one KPI-style card (V4 → `Total
@@ -115,7 +115,7 @@ fn the_human_output_names_field_reason_and_site() {
 
 /// `--broken` scopes the run to breakage and gates on it: unused findings
 /// are filter-hidden and the exit code follows the broken bindings alone —
-/// the mirror image of the type flags.
+/// the mirror image of object type selection.
 #[test]
 fn broken_scopes_the_run_and_gates_the_exit_code() {
     let args = ScanArgs {
@@ -216,7 +216,7 @@ fn breakage_alone_does_not_fail_the_default_exit_code() {
 fn a_type_flag_hides_breakage_into_its_own_count() {
     let args = ScanArgs {
         json: true,
-        measures: true,
+        types: vec!["measure".to_string()],
         path: Some(broken_visual_pbip()),
         ..ScanArgs::default()
     };
@@ -234,7 +234,7 @@ fn a_type_flag_hides_breakage_into_its_own_count() {
     // In human modes the hidden breakage is accounted for like every other
     // summary-arithmetic gap.
     let args = ScanArgs {
-        measures: true,
+        types: vec!["measure".to_string()],
         path: Some(broken_visual_pbip()),
         ..ScanArgs::default()
     };
@@ -246,13 +246,13 @@ fn a_type_flag_hides_breakage_into_its_own_count() {
 }
 
 /// Combining `--broken` with a type flag gates on the union, the same
-/// reported-only rule the type flags obey.
+/// reported-only rule type selection obeys.
 #[test]
 fn broken_and_a_type_flag_gate_on_their_union() {
     let args = ScanArgs {
         json: true,
         broken: true,
-        measures: true,
+        types: vec!["measure".to_string()],
         path: Some(broken_visual_pbip()),
         ..ScanArgs::default()
     };

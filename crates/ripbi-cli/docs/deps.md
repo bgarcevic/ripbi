@@ -297,7 +297,7 @@ what the graph says, ignored or not.
 does it exist and what goes with it*:
 
 ```console
-ripbi scan --measures
+ripbi scan --type measure
 ripbi deps "'Sales'[Legacy Total]" --impact   # everything that references it, transitively
 ripbi deps "'Sales'[Legacy Total]" --dependencies   # what it pulls in
 ```
