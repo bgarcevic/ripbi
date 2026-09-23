@@ -1149,6 +1149,101 @@ mod extras {
         assert_eq!(strict_code, 2, "--strict turns the notice into an error");
     }
 
+    #[test]
+    fn native_query_partition_reports_opaque_source_without_changing_findings() {
+        let temp = TempDir::new("opaque-source");
+        project_into(&temp.0, "Mini");
+        let args = fixture_args(temp.0.join("Mini.pbip"));
+        let (baseline_code, baseline_stdout, _) = run_scan(&args, &temp.0, "");
+
+        let table_path = temp
+            .0
+            .join("Mini.SemanticModel/definition/tables/Sales.tmdl");
+        let original = std::fs::read_to_string(&table_path).expect("read table");
+        let changed = original.replace(
+            "Source = #table({\"Amount\", \"Legacy\"}, {})",
+            "Source = Value.NativeQuery(#table({\"Amount\", \"Legacy\"}, {}), \"SELECT 1\")",
+        );
+        assert_ne!(original, changed);
+        std::fs::write(&table_path, changed).expect("write table");
+
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, baseline_code);
+        assert_eq!(stdout, baseline_stdout, "notice does not alter verdicts");
+        assert!(stderr.contains("1 skip notice(s)"));
+        assert!(stderr.contains("[opaque_source] partition 'Sales' on table 'Sales'"));
+
+        for mode in [
+            ScanArgs {
+                plain: true,
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+            ScanArgs {
+                summary: true,
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+        ] {
+            let (_, _, stderr) = run_scan(&mode, &temp.0, "");
+            assert!(stderr.contains("[opaque_source]"));
+        }
+
+        let json_args = ScanArgs {
+            json: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (_, json_stdout, json_stderr) = run_scan(&json_args, &temp.0, "");
+        let payload = json_payload(&json_stdout);
+        assert_eq!(payload["skips"]["count"], 1);
+        assert_eq!(payload["skips"]["notices"][0]["kind"], "opaque_source");
+        assert!(!json_stderr.contains("[opaque_source]"));
+
+        let strict_args = ScanArgs {
+            strict: true,
+            ..args
+        };
+        let (strict_code, _, _) = run_scan(&strict_args, &temp.0, "");
+        assert_eq!(strict_code, 2);
+    }
+
+    #[test]
+    fn native_query_partitions_keep_distinct_notices() {
+        let temp = TempDir::new("opaque-source-multiple");
+        project_into(&temp.0, "Mini");
+        let table_path = temp
+            .0
+            .join("Mini.SemanticModel/definition/tables/Sales.tmdl");
+        let original = std::fs::read_to_string(&table_path).expect("read table");
+        let changed = format!(
+            "{original}\n\tpartition Other = m\n\t\tsource = Odbc.Query(\"dsn\", \"SELECT 1\")\n"
+        )
+        .replace(
+            "Source = #table({\"Amount\", \"Legacy\"}, {})",
+            "Source = Value.NativeQuery(#table({\"Amount\", \"Legacy\"}, {}), \"SELECT 1\")",
+        );
+        std::fs::write(&table_path, changed).expect("write table");
+
+        let args = ScanArgs {
+            json: true,
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (_, stdout, _) = run_scan(&args, &temp.0, "");
+        let payload = json_payload(&stdout);
+        assert_eq!(payload["skips"]["count"], 2);
+        let notices = payload["skips"]["notices"].as_array().expect("notices");
+        assert!(
+            notices[0]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("partition 'Sales'")
+        );
+        assert!(
+            notices[1]["detail"]
+                .as_str()
+                .unwrap()
+                .contains("partition 'Other'")
+        );
+    }
+
     /// A bookmark's saved filter binds only when its section's page still
     /// exists (issue #48). Two bookmarks save a filter on `'Sales'[Legacy]`,
     /// which nothing else binds except the dead measure: the live-page one is

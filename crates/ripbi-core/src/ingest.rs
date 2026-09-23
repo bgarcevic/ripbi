@@ -56,6 +56,8 @@ pub enum SkipKind {
     /// Saved or indexed state that refers to objects which no longer exist —
     /// e.g. a bookmark section whose page was deleted from the report.
     StaleState,
+    /// A source expression contains a native query whose SQL is not analyzed.
+    OpaqueSource,
 }
 
 /// A parsed value plus everything unexpected the parser skipped on the way.
