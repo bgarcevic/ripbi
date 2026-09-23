@@ -28,7 +28,7 @@ pub struct ScanOutput {
     pub unused_raw: usize,
     /// Objects suppressed by `[scan].ignore` patterns.
     pub ignored: usize,
-    /// Unused objects hidden by the type flags (`--measures` and friends).
+    /// Unused objects hidden by type selection.
     /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
     /// instead.
     pub filtered_out: usize,
@@ -38,13 +38,13 @@ pub struct ScanOutput {
     /// #47). Counted here so the summary line's arithmetic stays explicable.
     pub machinery_members: usize,
     /// Every broken visual binding (issue #60) that survives `[scan].ignore`
-    /// and the type flags, sorted by where the binding lives. Suppressed
+    /// and type selection, sorted by where the binding lives. Suppressed
     /// entirely — moved into [`ScanOutput::broken_suppressed`] — when the
     /// model ingest recorded skips: a false "broken" claim is itself a
     /// breakage claim, so drift-parsed models don't get one.
     pub broken: Vec<BrokenOut>,
-    /// Broken bindings detected but hidden by the type flags (`--measures`
-    /// without `--broken`). Counted so the summary's arithmetic stays
+    /// Broken bindings detected but hidden by `--type` without `--broken`.
+    /// Counted so the summary's arithmetic stays
     /// explicable.
     pub broken_hidden: usize,
     /// Broken bindings suppressed because the model ingest recorded
@@ -64,7 +64,7 @@ pub struct ScanOutput {
     /// One row per auto date/time table (`LocalDateTable_*` /
     /// `DateTableTemplate_*`): the provenance verdict no reachability pass can
     /// produce. Rows suppressed by `[scan].ignore` are absent, and so is the
-    /// whole section when a type filter runs without `--tables`.
+    /// whole section when a type filter runs without `--type table`.
     pub auto_date_time: Vec<AutoDateTimeRow>,
     /// Every skip notice ingestion recorded.
     pub skips: Vec<SkipNoticeOut>,
@@ -147,9 +147,7 @@ pub struct SkipNoticeOut {
     pub detail: String,
 }
 
-/// Group order and labels: the fixed section order of human output. The
-/// `scan` type flags (`--measures` and friends) select exactly these kinds —
-/// `cli.rs`'s lockstep test pins the two together.
+/// Group order and labels: the fixed section order of human output.
 pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("measure", "Measures"),
     ("column", "Columns"),
@@ -790,7 +788,7 @@ struct JsonReport {
     summary: JsonSummary,
     unused: Vec<JsonFinding>,
     /// Broken visual bindings (issue #60) that survived `[scan].ignore` and
-    /// the type flags. Empty — but present — when the scan found none.
+    /// type selection. Empty — but present — when the scan found none.
     broken: Vec<JsonBroken>,
     auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
@@ -817,7 +815,7 @@ struct JsonSummary {
     objects: usize,
     reachable: usize,
     roots: usize,
-    /// Unused findings after `[scan].ignore` and the type flags — the length
+    /// Unused findings after `[scan].ignore` and type selection — the length
     /// of `unused`.
     unused: usize,
     /// Every unused object in the model: before `[scan].ignore`, the type

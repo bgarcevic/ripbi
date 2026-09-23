@@ -299,10 +299,7 @@ fn deps_type_flag_splits_comma_separated_values() {
 }
 
 #[test]
-fn scan_help_lists_the_type_flag_and_hides_the_legacy_booleans() {
-    // The per-type booleans still work for shipped scripts, but `--type` is
-    // the documented selection surface, and the help shows one flag, not
-    // eleven.
+fn scan_help_lists_the_type_flag_and_omits_the_removed_booleans() {
     let help = ripbi()
         .args(["scan", "--help"])
         .assert()
@@ -312,7 +309,7 @@ fn scan_help_lists_the_type_flag_and_hides_the_legacy_booleans() {
         .clone();
     let help = String::from_utf8(help).expect("help is utf-8");
     assert!(help.contains("--type <TYPE>"), "help lists --type:\n{help}");
-    assert!(!help.contains("--measures"), "legacy booleans are hidden");
+    assert!(!help.contains("--measures"), "legacy booleans are removed");
     assert!(!help.contains("--report-measures"));
 }
 
@@ -329,7 +326,7 @@ fn scan_help_lists_the_allow_no_reports_flag() {
 fn a_type_flag_runs_end_to_end_and_exits_by_what_it_reported() {
     // The only unused measure → exit 1 with just its record.
     ripbi()
-        .args(["scan", &mini_pbip(), "--plain", "--measures"])
+        .args(["scan", &mini_pbip(), "--plain", "--type", "measure"])
         .assert()
         .code(1)
         .stdout(predicate::str::contains("measure\t'Sales'[Legacy Total]"))
@@ -337,10 +334,19 @@ fn a_type_flag_runs_end_to_end_and_exits_by_what_it_reported() {
 
     // Both findings are non-tables → nothing reported → exit 0.
     ripbi()
-        .args(["scan", &mini_pbip(), "--plain", "--tables"])
+        .args(["scan", &mini_pbip(), "--plain", "--type", "table"])
         .assert()
         .code(0)
         .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn removed_measure_flag_is_a_usage_error() {
+    ripbi()
+        .args(["scan", &mini_pbip(), "--measures"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument '--measures'"));
 }
 
 #[test]

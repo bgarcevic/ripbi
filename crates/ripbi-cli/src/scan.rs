@@ -308,7 +308,7 @@ fn scan(
     let mut findings = Vec::new();
     let mut ignored = 0;
 
-    // The type flags narrow what is reported (issue #31): findings they hide
+    // Type selection narrows what is reported (issue #31): findings it hides
     // are counted in `filtered_out`, and the auto date/time section — which
     // is table-shaped — prints and gates the exit code only when tables are
     // among the reported kinds. `--broken` selects the breakage kind the same
@@ -414,7 +414,7 @@ fn scan(
     }
 
     // Broken visual bindings (issue #60), bucketed the same way the unused
-    // findings are: `[scan].ignore` counts as handled, type flags hide into
+    // findings are: `[scan].ignore` counts as handled, type selection hides into
     // their own count, and name-hiding model drift suppresses with its
     // count kept for the summary note.
     let mut broken = Vec::new();
@@ -503,8 +503,8 @@ fn scan(
         // Breakage gates the exit code only under `--broken` (issue #60):
         // a pipeline gating on unused findings must not start failing
         // because one visual is broken, and a `--broken` gate must not fail
-        // on unused findings — the same reported-only rule the type flags
-        // obey, applied to the new kind.
+        // on unused findings — the same reported-only rule type selection
+        // obeys, applied to breakage.
         && (!broken_gating || output.broken.is_empty())
         && output
             .auto_date_time
@@ -1176,8 +1176,8 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
     }
 }
 
-/// The selected finding kinds: the per-type flags' picks unioned with every
-/// `--type` value, in the same machine vocabulary `deps --type` speaks. An
+/// The selected finding kinds: `--broken` unioned with every `--type` value,
+/// in the same machine vocabulary `deps --type` speaks. An
 /// unknown kind is a usage error, never silence — and `broken_visual` is
 /// deliberately outside the vocabulary, because selecting it is what makes
 /// breakage gate the exit code, and that is `--broken`'s job alone (issue
