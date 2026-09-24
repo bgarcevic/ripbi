@@ -17,7 +17,8 @@ use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
 use crate::render::{
-    self, AutoDateTimeRow, BrokenOut, Finding, ScanOutput, SkipNoticeOut, UsedByOut,
+    self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, Finding, ScanOutput, SkipNoticeOut,
+    UsedByOut,
 };
 use crate::style::Palette;
 
@@ -322,6 +323,9 @@ fn scan(
     let broken_selected = selected
         .as_ref()
         .is_none_or(|kinds| kinds.contains("broken_visual"));
+    let artifact_selected = selected
+        .as_ref()
+        .is_none_or(|kinds| kinds.contains("broken_artifact"));
     // Gating is not reporting: with no flags everything is *reported*, but
     // breakage gates the exit code only when `--broken` explicitly selected
     // it (issue #60: advisory until asked).
@@ -330,10 +334,10 @@ fn scan(
         .is_some_and(|kinds| kinds.contains("broken_visual"));
     // Under a lone `--broken` the findings list is empty by construction —
     // the flag scopes the run to breakage — so the human modes' clean
-    // placeholder speaks for the bindings, not for the filtered-out list.
-    let broken_only = selected
-        .as_ref()
-        .is_some_and(|kinds| kinds.len() == 1 && kinds.contains("broken_visual"));
+    // placeholder speaks for breakage, not for the filtered-out list.
+    let broken_only = selected.as_ref().is_some_and(|kinds| {
+        kinds.len() == 2 && kinds.contains("broken_visual") && kinds.contains("broken_artifact")
+    });
     // Issue #60's precision bar: a "broken" claim is itself a breakage
     // claim, so it fires only when nothing in the model ingest could have
     // hidden the name the binding wrote. That is exactly the
@@ -434,21 +438,53 @@ fn scan(
             broken_hidden += 1;
             continue;
         }
-        let (reason, bound_artifact) = match &binding.reason {
-            BrokenReason::BoundArtifactBroken { artifact } => {
-                ("bound_artifact_broken", Some(artifact.to_string()))
-            }
-            BrokenReason::TableNotFound => ("table_not_found", None),
-            BrokenReason::FieldNotFound => ("field_not_found", None),
-            BrokenReason::MeasureNotFound => ("measure_not_found", None),
-            BrokenReason::HierarchyNotFound => ("hierarchy_not_found", None),
-            BrokenReason::LevelNotFound => ("level_not_found", None),
+        let (reason, bound_artifact, bound_artifact_report) = match &binding.reason {
+            BrokenReason::BoundArtifactBroken {
+                artifact,
+                report_index,
+            } => (
+                "bound_artifact_broken",
+                Some(artifact.to_string()),
+                report_index.map(|index| report_paths[index].display().to_string()),
+            ),
+            BrokenReason::TableNotFound => ("table_not_found", None, None),
+            BrokenReason::FieldNotFound => ("field_not_found", None, None),
+            BrokenReason::MeasureNotFound => ("measure_not_found", None, None),
+            BrokenReason::HierarchyNotFound => ("hierarchy_not_found", None, None),
+            BrokenReason::LevelNotFound => ("level_not_found", None, None),
         };
         broken.push(BrokenOut {
             target: binding.target.to_string(),
             reason,
             bound_artifact,
+            bound_artifact_report,
             provenance: binding.edge.to_string(),
+        });
+    }
+
+    let mut broken_artifacts = Vec::new();
+    let mut broken_artifacts_hidden = 0;
+    let mut broken_artifacts_suppressed = 0;
+    for artifact in graph.broken_artifacts() {
+        if is_ignored(&artifact.id, patterns) {
+            ignored += 1;
+            continue;
+        }
+        if hides_a_name {
+            broken_artifacts_suppressed += 1;
+            continue;
+        }
+        if !artifact_selected {
+            broken_artifacts_hidden += 1;
+            continue;
+        }
+        broken_artifacts.push(BrokenArtifactOut {
+            id: artifact.id.to_string(),
+            kind: render::kind_of(&artifact.id),
+            report: artifact
+                .report_index
+                .map(|index| report_paths[index].display().to_string()),
+            unresolved_references: artifact.unresolved_references.clone(),
         });
     }
 
@@ -469,6 +505,10 @@ fn scan(
         broken_hidden,
         broken_suppressed,
         broken_raw: graph.broken_bindings().len(),
+        broken_artifacts,
+        broken_artifacts_hidden,
+        broken_artifacts_suppressed,
+        broken_artifacts_raw: graph.broken_artifacts().len(),
         findings,
         auto_date_time,
         skips,
@@ -503,10 +543,10 @@ fn scan(
     } else if output.findings.is_empty()
         // Breakage gates the exit code only under `--broken` (issue #60):
         // a pipeline gating on unused findings must not start failing
-        // because one visual is broken, and a `--broken` gate must not fail
+        // because DAX or a visual binding is broken, and a `--broken` gate must not fail
         // on unused findings — the same reported-only rule type selection
         // obeys, applied to breakage.
-        && (!broken_gating || output.broken.is_empty())
+        && (!broken_gating || (output.broken.is_empty() && output.broken_artifacts.is_empty()))
         && output
             .auto_date_time
             .iter()
@@ -1192,7 +1232,7 @@ fn selected_kinds(args: &ScanArgs) -> Result<Option<HashSet<&'static str>>, Scan
         let Some(static_kind) = render::KINDS.iter().find(|known| known == &kind) else {
             return Err(
                 ScanError::new(format!("--type {kind} is not an object type")).with_hint(format!(
-                    "one of: {}; broken bindings are selected by --broken",
+                    "one of: {}; broken findings are selected by --broken",
                     render::KINDS.join(", ")
                 )),
             );

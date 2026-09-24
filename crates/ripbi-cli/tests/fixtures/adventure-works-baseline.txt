@@ -1,4 +1,5 @@
 # Unused-objects baseline for the Adventure Works Sales sample.
+# Broken-artifact baseline: 0 unresolved DAX owners (asserted in adventure_works.rs).
 #
 # Distilled from target/adventure-works-unused-analysis.csv (an external
 # unused-objects analysis export over the same model in samples/), one object

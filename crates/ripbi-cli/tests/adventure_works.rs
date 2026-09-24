@@ -107,6 +107,10 @@ fn scan_agrees_with_the_committed_baseline() {
     assert_eq!(code, 1, "the sample has unused objects");
 
     let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(
+        payload["summary"]["broken_artifacts_total"], 0,
+        "Adventure Works contains no unresolved DAX owners"
+    );
     let findings = payload["unused"].as_array().expect("unused array");
     let by_id: HashMap<&str, &serde_json::Value> = findings
         .iter()

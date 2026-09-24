@@ -55,6 +55,14 @@ pub struct ScanOutput {
     /// Broken bindings detected before any suppression, filtering, or
     /// `[scan].ignore` — the JSON summary's `broken_total`.
     pub broken_raw: usize,
+    /// Broken DAX owners reported independently of visual bindings.
+    pub broken_artifacts: Vec<BrokenArtifactOut>,
+    /// Artifact findings hidden by type selection.
+    pub broken_artifacts_hidden: usize,
+    /// Artifact findings suppressed by an `unknown_object` model skip.
+    pub broken_artifacts_suppressed: usize,
+    /// Artifact findings before filtering and suppression.
+    pub broken_artifacts_raw: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
     /// A dead auto date/time table's own finding lives in
     /// [`ScanOutput::auto_date_time`] instead, under its verdict, and the
@@ -129,9 +137,20 @@ pub struct BrokenOut {
     /// The broken artifact the binding lands on, for the
     /// `bound_artifact_broken` reason; `None` otherwise.
     pub bound_artifact: Option<String>,
+    /// Report path when the bound artifact is a report-level measure.
+    pub bound_artifact_report: Option<String>,
     /// Where the binding lives, as a phrase — the same provenance rendering
     /// the unused findings' `used_by` lines carry.
     pub provenance: String,
+}
+
+/// One DAX-owning artifact with unresolved references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenArtifactOut {
+    pub id: String,
+    pub kind: &'static str,
+    pub report: Option<String>,
+    pub unresolved_references: Vec<String>,
 }
 
 /// One parser skip notice, shaped for output.
@@ -165,8 +184,8 @@ pub(crate) const GROUPS: &[(&str, &str)] = &[
 /// The machine kind vocabulary every type-selecting flag speaks: the keys
 /// [`kind_of`] returns and `--plain`/`--json` emit, and what `scan --type`
 /// and `deps --type`/`--consumer` validate against. Deliberately not the
-/// [`GROUPS`] keys: `broken_visual` is a finding kind selected by scan's
-/// `--broken`, not an object type.
+/// [`GROUPS`] keys: breakage kinds are selected by scan's `--broken`, not
+/// object types.
 pub(crate) const KINDS: &[&str] = &[
     "table",
     "column",
@@ -285,6 +304,7 @@ pub fn human(
     } else if let Some(line) = clean_line(report, broken_only) {
         writeln!(out, "{line}")?;
     }
+    write_broken_artifacts(out, palette, report)?;
     write_broken(out, palette, report)?;
     write_auto_date_time(out, palette, report, show_power_query)
 }
@@ -292,14 +312,47 @@ pub fn human(
 /// The placeholder line for an empty findings list. Under a lone `--broken`
 /// the run's scope is the broken bindings — the empty reachability list is
 /// the filter's doing, not a result — so the placeholder speaks for them:
-/// `No broken reports.` when none were found, and no line at all when the
-/// section below has rows. Every other selection keeps the reachability
+/// `No broken reports or artifacts.` when none were found, and no line when
+/// either breakage section has rows. Every other selection keeps the reachability
 /// phrasing.
 fn clean_line(report: &ScanOutput, broken_only: bool) -> Option<&'static str> {
     if !broken_only {
         return Some("No unused objects.");
     }
-    report.broken.is_empty().then_some("No broken reports.")
+    (report.broken.is_empty() && report.broken_artifacts.is_empty())
+        .then_some("No broken reports or artifacts.")
+}
+
+fn write_broken_artifacts(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
+    if report.broken_artifacts.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{}",
+        palette.red(&format!(
+            "Broken artifacts ({})",
+            report.broken_artifacts.len()
+        ))
+    )?;
+    for artifact in &report.broken_artifacts {
+        match &artifact.report {
+            Some(path) => writeln!(out, "  {} — in report {path}", artifact.id)?,
+            None => writeln!(out, "  {}", artifact.id)?,
+        }
+        for reference in &artifact.unresolved_references {
+            writeln!(
+                out,
+                "{}",
+                palette.dim(&format!("    ← {reference} not found"))
+            )?;
+        }
+    }
+    writeln!(out)
 }
 
 /// The broken-visual section (issue #60), rendered in both human modes after
@@ -502,6 +555,14 @@ pub fn human_summary(
             report.broken.len()
         )?;
     }
+    if !report.broken_artifacts.is_empty() {
+        writeln!(
+            out,
+            "{}: {}",
+            palette.red("Broken artifacts"),
+            report.broken_artifacts.len()
+        )?;
+    }
     if report.auto_date_time.is_empty() {
         return Ok(());
     }
@@ -590,12 +651,27 @@ fn write_summary(
             report.broken_hidden
         )?;
     }
+    if report.broken_artifacts_hidden > 0 {
+        writeln!(
+            out,
+            "({} broken artifacts hidden by type filters)",
+            report.broken_artifacts_hidden
+        )?;
+    }
     if report.broken_suppressed > 0 {
         writeln!(
             out,
             "({} possible broken-visual bindings suppressed — the model ingest \
              reported skips, listed on stderr; --strict fails on those skips)",
             report.broken_suppressed
+        )?;
+    }
+    if report.broken_artifacts_suppressed > 0 {
+        writeln!(
+            out,
+            "({} possible broken artifacts suppressed — the model ingest reported skips, \
+             listed on stderr; --strict fails on those skips)",
+            report.broken_artifacts_suppressed
         )?;
     }
     if report.machinery_members > 0 {
@@ -657,7 +733,9 @@ fn write_annotations(
 }
 
 /// Writes `--plain` output: one `<type>\t<id>` record per finding, one
-/// `broken_visual:<reason>\t<target>` record per reported broken binding, then
+/// `broken_visual:<reason>\t<target>` record per reported broken binding, a
+/// `broken_artifact\t<id>` record per DAX owner (with a report-path field for
+/// report measures), then
 /// one `auto_date_time:<verdict>\t<id>` record per auto date/time table.
 ///
 /// # Errors
@@ -668,6 +746,12 @@ pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     }
     for binding in &report.broken {
         writeln!(out, "broken_visual:{}\t{}", binding.reason, binding.target)?;
+    }
+    for artifact in &report.broken_artifacts {
+        match &artifact.report {
+            Some(path) => writeln!(out, "broken_artifact\t{}\t{path}", artifact.id)?,
+            None => writeln!(out, "broken_artifact\t{}", artifact.id)?,
+        }
     }
     for row in &report.auto_date_time {
         writeln!(out, "auto_date_time:{}\t{}", row.verdict, row.id)?;
@@ -693,6 +777,8 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             ignored: report.ignored,
             broken: report.broken.len(),
             broken_total: report.broken_raw,
+            broken_artifacts: report.broken_artifacts.len(),
+            broken_artifacts_total: report.broken_artifacts_raw,
             auto_date_time: JsonAutoDateTimeCounts {
                 hidden_tables: report.auto_date_time.len(),
                 date_columns: date_column_count(&report.auto_date_time),
@@ -731,7 +817,18 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 target: binding.target.clone(),
                 reason: binding.reason,
                 bound_artifact: binding.bound_artifact.clone(),
+                bound_artifact_report: binding.bound_artifact_report.clone(),
                 provenance: binding.provenance.clone(),
+            })
+            .collect(),
+        broken_artifacts: report
+            .broken_artifacts
+            .iter()
+            .map(|artifact| JsonBrokenArtifact {
+                id: artifact.id.clone(),
+                kind: artifact.kind,
+                report: artifact.report.clone(),
+                unresolved_references: artifact.unresolved_references.clone(),
             })
             .collect(),
         auto_date_time: report
@@ -790,6 +887,7 @@ struct JsonReport {
     /// Broken visual bindings (issue #60) that survived `[scan].ignore` and
     /// type selection. Empty — but present — when the scan found none.
     broken: Vec<JsonBroken>,
+    broken_artifacts: Vec<JsonBrokenArtifact>,
     auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
 }
@@ -805,9 +903,19 @@ struct JsonBroken {
     /// The broken artifact the binding lands on — present exactly when
     /// `reason` is `bound_artifact_broken`.
     bound_artifact: Option<String>,
+    bound_artifact_report: Option<String>,
     /// Where the binding lives, as a phrase — the same provenance the unused
     /// findings' `used_by` entries carry.
     provenance: String,
+}
+
+#[derive(Serialize)]
+struct JsonBrokenArtifact {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    report: Option<String>,
+    unresolved_references: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -831,6 +939,8 @@ struct JsonSummary {
     /// suppressed findings (the issue #60 precision bar) or a type filter hid
     /// them.
     broken_total: usize,
+    broken_artifacts: usize,
+    broken_artifacts_total: usize,
     auto_date_time: JsonAutoDateTimeCounts,
 }
 
@@ -1065,6 +1175,10 @@ mod tests {
             broken_hidden: 0,
             broken_suppressed: 0,
             broken_raw: 0,
+            broken_artifacts: Vec::new(),
+            broken_artifacts_hidden: 0,
+            broken_artifacts_suppressed: 0,
+            broken_artifacts_raw: 0,
             findings,
             auto_date_time: Vec::new(),
             skips: Vec::new(),
@@ -1307,6 +1421,7 @@ mod tests {
             target: target.to_string(),
             reason,
             bound_artifact: artifact.map(str::to_string),
+            bound_artifact_report: None,
             provenance: "field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
                 .to_string(),
         }
@@ -1332,7 +1447,7 @@ mod tests {
     }
 
     /// Under a lone `--broken` the placeholder speaks for the scope the flag
-    /// asked about: nothing flags reads "No broken reports.", never the
+    /// asked about: nothing flags reads "No broken reports or artifacts.", never the
     /// reachability phrasing — the empty findings list is the filter's doing.
     #[test]
     fn a_broken_only_clean_scan_places_the_no_broken_reports_line() {
@@ -1348,7 +1463,7 @@ mod tests {
 
         let text = String::from_utf8(out).unwrap();
         assert!(
-            text.contains("No broken reports."),
+            text.contains("No broken reports or artifacts."),
             "the placeholder names the scope:\n{text}"
         );
         assert!(
@@ -1371,7 +1486,10 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("Broken visual bindings (1)"), ":\n{text}");
         assert!(!text.contains("No unused objects."), ":\n{text}");
-        assert!(!text.contains("No broken reports."), ":\n{text}");
+        assert!(
+            !text.contains("No broken reports or artifacts."),
+            ":\n{text}"
+        );
     }
 
     /// `--summary` shares the placeholder: one phrasing per scope, both human
@@ -1382,7 +1500,10 @@ mod tests {
         human_summary(&mut out, &Palette::plain(), &scan_output(vec![]), true).unwrap();
 
         let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("No broken reports."), ":\n{text}");
+        assert!(
+            text.contains("No broken reports or artifacts."),
+            ":\n{text}"
+        );
     }
 
     /// The propagated reason names the artifact: the visual is what a user

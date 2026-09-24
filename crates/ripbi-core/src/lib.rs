@@ -60,8 +60,9 @@ pub use dax::{
     Binding, RawRef, Token, TokenKind, bind, quoted_names, references, tokenize, unescape_name,
 };
 pub use graph::{
-    AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, BrokenBinding, BrokenReason,
-    DepEdge, DepSlice, DependencyGraph, Provenance, StructuralEdge, UnusedObject, UsedBy,
+    AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, BrokenArtifact,
+    BrokenBinding, BrokenReason, DepEdge, DepSlice, DependencyGraph, Provenance, StructuralEdge,
+    UnusedObject, UsedBy,
 };
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};

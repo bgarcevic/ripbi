@@ -207,10 +207,11 @@ resolution is classified — resolved, resolved only to its qualifying table (th
 is gone), or resolved to nothing — and the misses become `BrokenBinding`s carrying the
 binding's full provenance (`BindingEdge`), the written `FieldTarget`, and a
 `BrokenReason`. A second, standalone pass walks every DAX expression the model and the
-reports own and records the artifacts whose own field references bind to nothing; a
-binding that *resolves* onto such an artifact stays a root but reports the inherited
-breakage (`bound_artifact_broken`, the seam issue #84 will promote to its own finding
-kind).
+reports own. `broken_artifacts()` reports each owner with unresolved field references
+once, whether or not a visual binds it; report measures are distinguished by their
+position in the input report slice. A binding that *resolves* onto such an artifact
+stays a root and also reports inherited breakage (`bound_artifact_broken`). Neither
+finding changes reachability.
 
 The conservatism rule inverts: a liveness claim may over-keep, a breakage claim must
 under-claim — a false "broken" is itself a breakage claim. So the classification never
