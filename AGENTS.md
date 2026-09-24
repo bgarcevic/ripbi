@@ -29,6 +29,7 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | CLI flags, output, exit codes | [crates/ripbi-cli/](crates/ripbi-cli/) | [ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) | All printing lives here, never in core |
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |
 | Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Two-crate workspace |
+| Desktop UI (Tauri) | [desktop/](desktop/) | [desktop/README.md](desktop/README.md) | Separate native package; reuses CLI scan orchestration |
 | Project intro / positioning | [README.md](README.md) | [README.md](README.md) | User-facing overview |
 | Docs site (mdBook on Pages) | [book/](book/) | [CONTRIBUTING.md](CONTRIBUTING.md) | `book/src/` is generated — edit the canonical docs, never the projection |
 

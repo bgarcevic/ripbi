@@ -20,7 +20,8 @@ Desktop or similar.
 
 It currently works only on local PBIP projects — a TMDL semantic model plus
 PBIR reports; `.pbix` and `.pbit` files are not supported yet. I plan to
-implement guided automated cleanup, a UI, and tenant scanning.
+implement guided automated cleanup and tenant scanning. An experimental
+[desktop UI](desktop/README.md) provides guided model/report selection and usage metrics.
 
 ## Install
 
@@ -40,6 +41,12 @@ Both scripts verify the download against the release's sha256 checksums and
 install the binary into `~/.local/bin` as both `ripbi` and its short alias
 `rib` — the two names are the same tool, so `rib scan` works anywhere
 `ripbi scan` does. Or `cargo install ripbi`.
+
+**Desktop (experimental, Windows x64):** starting with the next release,
+the same [release page](https://github.com/bgarcevic/ripbi/releases) will also
+include a `ripbi-desktop-<version>-x86_64-pc-windows-msvc-setup.exe` installer.
+It shares the CLI version and checksums. Installers are unsigned and may trigger
+Windows trust warnings. See [desktop setup and updates](desktop/README.md#releases-experimental).
 
 ## Quickstart
 

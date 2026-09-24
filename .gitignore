@@ -1,5 +1,11 @@
 # Rust / Cargo
 /target
+/desktop/node_modules/
+/desktop/dist/
+/desktop/dist-installer/
+__pycache__/
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
 **/*.rs.bk
 *.pdb
 
