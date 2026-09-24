@@ -58,6 +58,10 @@ Two crates:
 - [`crates/ripbi-cli`](crates/ripbi-cli) — the `ripbi` binary: a thin
   orchestration layer over core. All printing lives here.
 
+The optional [Tauri desktop app](desktop/README.md) lives in `desktop/`, with
+its own frontend dependencies and Cargo package. It is excluded from CLI-only
+workspace builds; its README includes native prerequisites and checks.
+
 For anything deeper, follow the routing: [AGENTS.md](AGENTS.md) →
 [crates/ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) and
 [crates/ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) → the topic docs
@@ -117,3 +121,29 @@ them.
 - Keep PRs small and focused — one change per PR.
 - Versions and releases are maintainer-run: pushing a `v*` tag drives the
   release and crates.io publish workflow. Don't bump versions in your PR.
+
+## Release preparation
+
+CLI and experimental Windows desktop releases use the same version and tag.
+The source of truth is `[workspace.package].version` in the root `Cargo.toml`.
+To prepare a maintainer-approved release:
+
+1. Change that workspace version.
+2. Run `python scripts/sync_version.py --write` (Python 3.11+). This updates
+   the core dependency requirement, desktop Cargo/Tauri/npm metadata, and local
+   package versions in both Cargo lockfiles and the npm lockfile. Third-party
+   dependency versions stay unchanged.
+3. Run `python scripts/sync_version.py --check --tag vX.Y.Z` with the intended
+   tag and the normal CLI and desktop checks. Commit all synchronized files.
+4. Push the matching `vX.Y.Z` tag through the existing release process.
+
+CI rejects version drift. The release workflow also checks the tag before
+starting builds, waits for CLI archives and the Windows desktop installer,
+then publishes one release with shared checksums. The desktop build and installer
+checks also run on PRs via `.github/workflows/desktop.yml`. Windows uses MSVC;
+the existing CLI build matrix is unchanged. Desktop remains outside crates.io.
+
+The desktop installer is experimental and unsigned. Release notes disclose
+Windows trust prompts, the WebView2 download requirement, and manual updates.
+Code signing and a desktop updater need separate configuration before enabling
+them; neither uses the CLI's self-update mechanism.
