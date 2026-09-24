@@ -113,6 +113,8 @@ impl Provenance {
                 role: StructuralEdge::InactiveRelationship
             } | Provenance::Structural {
                 role: StructuralEdge::InactiveRelationshipEndpoint
+            } | Provenance::Structural {
+                role: StructuralEdge::StaleBookmark
             }
         )
     }
@@ -131,6 +133,8 @@ impl Provenance {
                 role: StructuralEdge::InactiveRelationship
             } | Provenance::Structural {
                 role: StructuralEdge::InactiveRelationshipEndpoint
+            } | Provenance::Structural {
+                role: StructuralEdge::StaleBookmark
             }
         )
     }
@@ -200,6 +204,7 @@ impl StructuralEdge {
             StructuralEdge::EngineManaged => "engine_managed",
             StructuralEdge::MParameterBinding => "m_parameter_binding",
             StructuralEdge::RolePermission => "role_permission",
+            StructuralEdge::StaleBookmark => "stale_bookmark",
         }
     }
 }
@@ -325,6 +330,9 @@ pub enum StructuralEdge {
     /// permission on this column — granting or revoking (`none`) both count,
     /// since dropping either object would break the role.
     RolePermission,
+    /// A fully stale bookmark saved this field on a deleted page. The edge
+    /// explains a dead chain but never confers liveness.
+    StaleBookmark,
 }
 
 impl fmt::Display for StructuralEdge {
@@ -342,6 +350,7 @@ impl fmt::Display for StructuralEdge {
             StructuralEdge::EngineManaged => "engine-managed column",
             StructuralEdge::MParameterBinding => "dynamic M parameter binding",
             StructuralEdge::RolePermission => "role permission",
+            StructuralEdge::StaleBookmark => "stale bookmark",
         })
     }
 }

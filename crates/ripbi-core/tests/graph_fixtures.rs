@@ -8,7 +8,7 @@ use ripbi_core::graph::{DependencyGraph, Provenance, StructuralEdge};
 use ripbi_core::identity::{NameKey, ObjectId};
 use ripbi_core::ingest::{report, semantic_model};
 use ripbi_core::model::TabularDatabase;
-use ripbi_core::report::ReportModel;
+use ripbi_core::report::{FieldTarget, ReportModel};
 
 fn fixture(groups: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -146,6 +146,14 @@ fn golden_unused_set_is_exact() {
         // The report defines `Budget %` but no visual binds it: a dead report
         // measure.
         report_measure_id("Budget %"),
+        // B2 saves state only for the deleted page Pgone.
+        ObjectId::Bookmark {
+            report_index: 0,
+            bookmark: ripbi_core::identity::BookmarkKey {
+                name: NameKey::new("B2"),
+                display_name: Some("Deleted page view".to_string()),
+            },
+        },
         // Shared expressions no M query mentions.
         expression_id("ServerName"),
         expression_id("Calendar"),
@@ -161,6 +169,51 @@ fn golden_unused_set_is_exact() {
 
     let ids: Vec<ObjectId> = unused.iter().map(|finding| finding.id.clone()).collect();
     assert_eq!(ids, expected, "exact unused set for the golden pair");
+}
+
+#[test]
+fn golden_stale_bookmark_is_a_finding_and_never_a_root() {
+    let (db, report) = golden_pair();
+    let graph = DependencyGraph::build(&db, &[&report]);
+    let bookmark = ObjectId::Bookmark {
+        report_index: 0,
+        bookmark: ripbi_core::identity::BookmarkKey {
+            name: NameKey::new("B2"),
+            display_name: Some("Deleted page view".to_string()),
+        },
+    };
+
+    assert!(
+        graph
+            .unused_objects()
+            .iter()
+            .any(|finding| finding.id == bookmark)
+    );
+    assert!(graph.roots_of(&column_id("Product", "Color")).iter().all(|edge| {
+        !matches!(edge, Provenance::Binding(binding) if binding.bookmark.as_ref().is_some_and(|name| name.as_str() == "B2"))
+    }));
+}
+
+#[test]
+fn a_stale_bookmarks_saved_field_chains_without_becoming_a_root() {
+    let (db, mut report) = golden_pair();
+    report.bookmarks[1].stale_sections[0].filters[0].target = Some(FieldTarget::Column {
+        table: NameKey::new("Sales"),
+        column: NameKey::new("YearNum"),
+    });
+    let graph = DependencyGraph::build(&db, &[&report]);
+    let column = column_id("Sales", "YearNum");
+    let finding = find(&graph.unused_objects(), &column).clone();
+
+    assert!(graph.roots_of(&column).is_empty());
+    assert!(finding.used_by.iter().any(|used| {
+        used.id.to_string() == "bookmark 'Deleted page view'"
+            && used.provenance
+                == Provenance::Structural {
+                    role: StructuralEdge::StaleBookmark,
+                }
+            && used.also_unused
+    }));
 }
 
 /// The relationships follow the activation rule: the active relationship and

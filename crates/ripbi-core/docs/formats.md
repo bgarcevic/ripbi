@@ -153,11 +153,14 @@ only when its page exists, judged by *both* sources: `pages.json` `pageOrder`
 and the `pages/` folders. The live set is their case-insensitive union (a page
 named by either source is real; stripping its bookmarks' bindings would
 under-count roots), a disagreement between the sources is itself a `StaleState`
-notice, and a section outside the set is skipped whole — filters and saved
-projections — with one `StaleState` notice naming the bookmark and section. A
+notice, and a section outside the set contributes no bindings. Its filters and
+projections remain in `Bookmark::stale_sections` for unused-chain explanations,
+with one `StaleState` notice naming the bookmark and section. A
 bookmark whose `activeSection` is stale gets the same treatment (folded into
 the section's notice when they coincide). Report-level `explorationState.filters`
-are page-independent and always bind.
+are page-independent and always bind. A bookmark is an unused finding only
+when it has at least one stale section, no live sections, and no report-level
+filters; a bookmark with no sections is page-independent, not stale.
 
 **Errors.** The anchor `report.json` and unreadable `pages/`, `visuals/`, or
 `bookmarks/` directories fail the run (`Error::Io` / `Error::Json`). A directory

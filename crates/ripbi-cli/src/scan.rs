@@ -1220,6 +1220,7 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
         ObjectId::Expression { name } => vec![name.as_str()],
         ObjectId::Function { name } => vec![name.as_str()],
         ObjectId::ReportMeasure { measure } => vec![measure.as_str()],
+        ObjectId::Bookmark { bookmark, .. } => vec![bookmark.label()],
     }
 }
 

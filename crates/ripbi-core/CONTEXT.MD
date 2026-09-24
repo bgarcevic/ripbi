@@ -13,7 +13,8 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   parsing, no I/O.
 - **Report** (`src/report.rs`): the normalized `ReportModel` AST — pages, visuals,
   filters, bookmarks, and report-level measures. Its `bindings()` enumeration is the
-  reachability-root surface; pure data, populated by the ingestion formats.
+  reachability-root surface; deleted-page bookmark sections stay in
+  `Bookmark::stale_sections` for unused chains and never enumerate as roots.
 - **Ingestion** (`src/ingest/`): detect and parse the four source formats —
   legacy `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` + `Report/Layout`),
   `.pbip` folders (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL

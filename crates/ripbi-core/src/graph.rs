@@ -6,14 +6,15 @@
 //!
 //! Nodes are [`ObjectId`]s — every table, column, measure, partition,
 //! hierarchy, relationship, role, calculation item, shared expression,
-//! user-defined function, and report measure, whether or not anything
+//! user-defined function, report measure, and fully stale bookmark, whether or not anything
 //! references them. Edges point from user to used and carry their
 //! [`Provenance`] as first-class data, so a reverse query
 //! ([`consumers_of`](DependencyGraph::consumers_of)) is a pure read and a
 //! second view over the graph (`ripbi deps`) is pure rendering in the CLI.
-//! Report sites — visuals, pages, bookmarks — are not model objects, so their
-//! bindings live beside the graph as [`roots`](DependencyGraph::roots) with
-//! full provenance.
+//! Live report sites — visuals, pages, bookmarks — are not model objects, so
+//! their bindings live beside the graph as [`roots`](DependencyGraph::roots)
+//! with full provenance. Fully stale bookmarks are dead nodes whose saved
+//! fields form explanation-only edges.
 //!
 //! # Liveness policy (conservative — what "unused" means)
 //!
@@ -2281,6 +2282,7 @@ mod tests {
                             }],
                         }],
                     }],
+                    stale_sections: Vec::new(),
                 }],
                 ..Default::default()
             };

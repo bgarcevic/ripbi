@@ -457,4 +457,14 @@ mod tests {
             Some(HashSet::from(["broken_visual", "broken_artifact"]))
         );
     }
+
+    #[test]
+    fn bookmark_uses_the_existing_type_flag() {
+        let cli = Cli::try_parse_from(["ripbi", "scan", "--type", "bookmark"])
+            .expect("bookmark type parses");
+        let Command::Scan(args) = cli.command else {
+            panic!("expected scan");
+        };
+        assert_eq!(args.types, ["bookmark"]);
+    }
 }

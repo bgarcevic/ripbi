@@ -148,7 +148,7 @@ unaffected.
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. A `.pbip` expands to its project's reports. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model; with no other target, the reports' pairing derives the model and exactly these reports are scanned |
-| `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type column`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`. Filters every output mode and the exit code. With none of them, everything is reported |
+| `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type bookmark`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`. Filters every output mode and the exit code. With none of them, everything is reported |
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
@@ -181,7 +181,7 @@ Columns (28)
   filtered or machinery-heavy model never reads as a clean one by accident.
 - Findings are grouped by object type (measures, columns, hierarchies, tables,
   partitions, relationships, calculation items, expressions, functions, report
-  measures — fixed order, empty groups omitted), sorted by object identity. The type
+  measures, bookmarks — fixed order, empty groups omitted), sorted by object identity. The type
   flags restrict the groups to the selected kinds; empty groups are still never printed.
 - Chain annotations, one per referencing object:
   - `← nothing references it` — a true orphan, deletable outright;
@@ -377,6 +377,7 @@ record has a third field containing the report path; model artifacts have two:
 ```
 measure	'Sales'[Legacy Total]
 column	'Sales'[Legacy]
+bookmark	bookmark 'FY24 view'
 broken_visual:field_not_found	'Sales'[Color]
 broken_visual:bound_artifact_broken	'Sales'[Broken Total]
 broken_artifact	'Sales'[Broken Total]
@@ -468,7 +469,7 @@ Pretty-printed JSON, stable field order, additive schema:
 ```
 
 - `summary.unused` is the length of `unused` — after `[scan].ignore` and the type
-  flags. `summary.unused_total` counts every unused object in the model before any
+  flags. `summary.unused_total` counts every unused object in the graph before any
   suppression, filter, or section move, so `reachable = objects − unused_total` always
   holds and a consumer can tell a filtered-away finding from an absent one.
   `summary.ignored` counts findings suppressed by `[scan].ignore` — unused objects,
@@ -520,13 +521,14 @@ Pretty-printed JSON, stable field order, additive schema:
   `summary.auto_date_time.member_findings` counts them.
 - `type` is one of `table`, `column`, `measure`, `hierarchy`, `partition`,
   `relationship`, `role`, `calculation_item`, `expression`, `function`,
-  `report_measure`.
+  `report_measure`, `bookmark`.
 - `table` is the finding's model table, quoted (`'Sales'`) — a relationship reports
   its "from" side. It is `null` for the kinds with no model table (`role`,
-  `expression`, `function`, `report_measure`). `--plain` deliberately omits it: its
+  `expression`, `function`, `report_measure`, `bookmark`). `--plain` deliberately omits it: its
   records are a two-column grep contract.
 - `provenance` is the human phrase for how the use is made (e.g. `measure expression`,
   `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`). A
+  stale bookmark edge uses `stale bookmark` and always has `also_unused: true`. A
   binding from the phone layout prefixes `mobile layout ` (`mobile layout field well
   'Y' — visual 'V' on page 'P' in report 'R'`), so an audit names the right surface.
 - `named_in_power_query` lists the M expressions (partitions by their table, shared
@@ -563,6 +565,8 @@ and `?` exactly one; everything else (quotes and brackets included — they appe
 display ids) is literal. A pattern matches a finding when it matches the full display
 id (`'Sales'[Draft Amount]`) or the bare object name; for a broken binding it matches
 the written reference whole (`'Sales'[Color]` — a binding has no bare name of its own).
+For a stale bookmark, both forms use its author-facing `displayName` when present,
+falling back to its source object name.
 Suppressed findings are excluded
 from the output and the exit code, and counted in `summary.ignored`. The suppression
 applies before type selection: an object matched by both is simply gone. The auto
@@ -593,8 +597,10 @@ through the `auto_date_time` section. One conservatism policy
 the external analyses do not share, visible in that baseline: bookmark saved filters
 count as bindings (re-applying a bookmark re-binds its fields) — but only for
 sections whose page still exists. Power BI leaves deleted pages' sections inside
-bookmarks forever, so those sections are skipped as stale (a `stale_state`
-notice, surfaced by `--strict`), and the columns their filters were the last
+bookmarks forever, so those sections do not bind (a `stale_state` notice,
+surfaced by `--strict`), and a bookmark with only such sections and no
+report-level filters is an ordinary `bookmark` finding. Its saved fields carry
+`stale bookmark` dead-chain edges: the columns their filters were the last
 consumers of surface as ordinary findings; on the Artificial Intelligence
 sample that closes the last bookmark-kept-alive delta with the export, at the
 cost of a documented cascade (the fully-dead `'Cases'` and `'Case Calendar'`

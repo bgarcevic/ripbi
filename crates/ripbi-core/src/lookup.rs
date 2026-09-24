@@ -190,6 +190,7 @@ fn single_name(id: &ObjectId) -> Option<&NameKey> {
         ObjectId::Function { name } => Some(name),
         ObjectId::Role { role } => Some(role),
         ObjectId::ReportMeasure { measure } => Some(measure),
+        ObjectId::Bookmark { bookmark, .. } => Some(&bookmark.name),
         ObjectId::Column { column, .. } => Some(column),
         ObjectId::Hierarchy { hierarchy, .. } => Some(hierarchy),
         ObjectId::CalculationItem { item, .. } => Some(item),
@@ -263,7 +264,7 @@ fn match_keys(id: &ObjectId) -> Vec<String> {
             keys.push(format!("[{}]", measure.as_str()));
             keys.push(measure.as_str().to_string());
         }
-        ObjectId::Partition { .. } | ObjectId::Relationship { .. } => {}
+        ObjectId::Partition { .. } | ObjectId::Relationship { .. } | ObjectId::Bookmark { .. } => {}
     }
     keys
 }

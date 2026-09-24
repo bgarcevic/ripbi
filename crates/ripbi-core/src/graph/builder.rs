@@ -3,9 +3,9 @@
 //!
 //! Everything flows through the sanctioned enumerations —
 //! [`TabularDatabase::dax_expressions`], [`TabularDatabase::m_expressions`],
-//! [`ReportModel::bindings`], and [`ReportModel::dax_expressions`] — never by
-//! walking the AST, so a new expression or binding site cannot be silently
-//! omitted from the graph.
+//! [`ReportModel::bindings`], [`ReportModel::dax_expressions`], and fully stale
+//! bookmarks' saved bindings. Live bindings are roots; stale bookmark fields
+//! are explanation-only edges.
 //!
 //! Resolution follows the conservatism rule: an unqualified `[Name]` keeps every
 //! candidate alive (never [`UnqualifiedMatches::primary`]), and beyond the
@@ -20,13 +20,13 @@ use std::collections::{HashMap, HashSet};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::dax::{self, RawRef, unescape_name};
-use crate::identity::{NameKey, ObjectId, fold_name};
+use crate::identity::{BookmarkKey, NameKey, ObjectId, fold_name};
 use crate::model::index::{ModelIndex, Resolved, UnqualifiedMatches};
 use crate::model::{
     ColumnKind, DaxExpressionRef, Hierarchy, HierarchyRef, Relationship, Table, TabularDatabase,
     Variation,
 };
-use crate::report::{BindingKind, FieldTarget, ReportModel};
+use crate::report::{BindingKind, Bookmark, FieldTarget, ReportModel};
 
 use super::DependencyGraph;
 use super::broken::{self, BrokenBinding, BrokenReason};
@@ -54,6 +54,7 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
     builder.add_m_edges(db, &index);
     for (report_index, report) in reports.iter().enumerate() {
         builder.add_roots(db, &index, report, report_index);
+        builder.add_stale_bookmark_edges(db, &index, report, report_index);
     }
 
     builder.finish()
@@ -203,11 +204,16 @@ impl Builder {
                 name: NameKey::new(&function.name),
             });
         }
-        for report in reports {
+        for (report_index, report) in reports.iter().enumerate() {
             for measure in &report.measures {
                 self.node(&ObjectId::ReportMeasure {
                     measure: measure.name.clone(),
                 });
+            }
+            for bookmark in &report.bookmarks {
+                if bookmark.is_fully_stale() {
+                    self.node(&bookmark_id(report_index, bookmark));
+                }
             }
         }
     }
@@ -691,6 +697,32 @@ impl Builder {
                             });
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// References saved only on deleted pages belong to the fully stale
+    /// bookmark, not to the report's live binding roots.
+    fn add_stale_bookmark_edges(
+        &mut self,
+        db: &TabularDatabase,
+        index: &ModelIndex,
+        report: &ReportModel,
+        report_index: usize,
+    ) {
+        let provenance = Provenance::Structural {
+            role: StructuralEdge::StaleBookmark,
+        };
+        for bookmark in &report.bookmarks {
+            if !bookmark.is_fully_stale() {
+                continue;
+            }
+            let owner = bookmark_id(report_index, bookmark);
+            for binding in bookmark.stale_bindings() {
+                let outcome = self.field_target_outcome(db, index, report, binding.target);
+                for target in &outcome.targets {
+                    self.edge(&owner, target, provenance.clone());
                 }
             }
         }
@@ -1180,6 +1212,16 @@ fn report_measure(report: &ReportModel, name: &NameKey) -> Option<ObjectId> {
         .map(|measure| ObjectId::ReportMeasure {
             measure: measure.name.clone(),
         })
+}
+
+fn bookmark_id(report_index: usize, bookmark: &Bookmark) -> ObjectId {
+    ObjectId::Bookmark {
+        report_index,
+        bookmark: BookmarkKey {
+            name: bookmark.name.clone(),
+            display_name: bookmark.display_name.clone(),
+        },
+    }
 }
 
 /// Every model relationship whose endpoints are exactly the two qualified

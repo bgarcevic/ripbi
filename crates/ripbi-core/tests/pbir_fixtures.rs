@@ -226,16 +226,23 @@ fn golden_report() -> ReportModel {
                         )],
                     }],
                 }],
+                stale_sections: Vec::new(),
             },
-            // Saved on a page since deleted: `Pgone` appears in neither
-            // `pages.json` `pageOrder` nor the `pages/` folders, so the
-            // section — and the `'Product'[Color]` filter it carries — never
-            // reaches the AST (issue #48). It is the fixture's one notice.
+            // Saved on a deleted page: retained for chaining, never a root.
             Bookmark {
                 name: NameKey::new("B2"),
                 display_name: Some("Deleted page view".to_string()),
                 filters: Vec::new(),
                 sections: Vec::new(),
+                stale_sections: vec![BookmarkSection {
+                    page: NameKey::new("Pgone"),
+                    filters: vec![filter_on(
+                        "StaleFilter",
+                        "Categorical",
+                        column("Product", "Color"),
+                    )],
+                    visuals: Vec::new(),
+                }],
             },
         ],
         measures: vec![ReportMeasure {
