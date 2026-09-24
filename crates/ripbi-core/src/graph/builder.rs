@@ -52,8 +52,8 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
     builder.add_structural_edges(db, &index);
     builder.add_dax_edges(db, &index, reports);
     builder.add_m_edges(db, &index);
-    for report in reports {
-        builder.add_roots(db, &index, report);
+    for (report_index, report) in reports.iter().enumerate() {
+        builder.add_roots(db, &index, report, report_index);
     }
 
     builder.finish()
@@ -75,7 +75,7 @@ struct Builder {
     broken: Vec<BrokenBinding>,
     /// The artifacts whose own DAX binds a field reference to nothing. Key:
     /// the artifact. Value: its unresolved references, as written.
-    broken_artifacts: HashMap<ObjectId, Vec<String>>,
+    broken_artifacts: HashMap<broken::ArtifactKey, Vec<String>>,
 }
 
 impl Builder {
@@ -119,7 +119,28 @@ impl Builder {
         let mut broken = self.broken;
         broken.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
         broken.dedup_by(|a, b| a == b);
-        DependencyGraph::assemble(self.graph, self.nodes, self.roots, self.m_named, broken)
+        let mut artifacts: Vec<broken::BrokenArtifact> = self
+            .broken_artifacts
+            .into_iter()
+            .map(|(key, unresolved_references)| broken::BrokenArtifact {
+                id: key.id,
+                report_index: key.report_index,
+                unresolved_references,
+            })
+            .collect();
+        artifacts.sort_by(|a, b| {
+            a.report_index
+                .cmp(&b.report_index)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        DependencyGraph::assemble(
+            self.graph,
+            self.nodes,
+            self.roots,
+            self.m_named,
+            broken,
+            artifacts,
+        )
     }
 
     /// Pre-creates a node for every model and report object, so isolated
@@ -618,7 +639,13 @@ impl Builder {
     /// provenance. Bindings that resolve to nothing — or land on a broken
     /// artifact — are recorded as [`BrokenBinding`]s on the way past; their
     /// liveness effect is exactly what it was before (issue #60).
-    fn add_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
+    fn add_roots(
+        &mut self,
+        db: &TabularDatabase,
+        index: &ModelIndex,
+        report: &ReportModel,
+        report_index: usize,
+    ) {
         let report_name = report.name.as_ref().map(NameKey::new);
         for binding in report.bindings() {
             let edge = BindingEdge {
@@ -648,12 +675,18 @@ impl Builder {
                 // broken* is what it says.
                 None => {
                     for target in &outcome.targets {
-                        if self.broken_artifacts.contains_key(target) {
+                        let artifact_report = matches!(target, ObjectId::ReportMeasure { .. })
+                            .then_some(report_index);
+                        if self.broken_artifacts.contains_key(&broken::ArtifactKey {
+                            id: target.clone(),
+                            report_index: artifact_report,
+                        }) {
                             self.broken.push(BrokenBinding {
                                 edge: edge.clone(),
                                 target: binding.target.clone(),
                                 reason: BrokenReason::BoundArtifactBroken {
-                                    artifact: target.clone(),
+                                    artifact: Box::new(target.clone()),
+                                    report_index: artifact_report,
                                 },
                             });
                         }

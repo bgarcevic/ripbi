@@ -715,7 +715,7 @@ fn filter_node(filter: &Filter) -> FilterNode {
 /// One unresolved binding, in `scan`'s broken-binding vocabulary.
 fn unresolved_node(binding: &BrokenBinding) -> UnresolvedNode {
     let (reason, artifact) = match &binding.reason {
-        BrokenReason::BoundArtifactBroken { artifact } => {
+        BrokenReason::BoundArtifactBroken { artifact, .. } => {
             ("bound_artifact_broken", Some(artifact.to_string()))
         }
         BrokenReason::TableNotFound => ("table_not_found", None),

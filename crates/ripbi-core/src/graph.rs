@@ -152,7 +152,7 @@ pub mod slice;
 mod builder;
 mod reachability;
 
-pub use broken::{BrokenBinding, BrokenReason};
+pub use broken::{BrokenArtifact, BrokenBinding, BrokenReason};
 pub use provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
 pub use reachability::{UnusedObject, UsedBy};
 pub use slice::{DepEdge, DepSlice};
@@ -186,6 +186,8 @@ pub struct DependencyGraph {
     /// Computed with the same resolution the roots come from; liveness is
     /// untouched by them.
     broken: Vec<BrokenBinding>,
+    /// Broken DAX owners, independently of report bindings (issue #84).
+    broken_artifacts: Vec<BrokenArtifact>,
 }
 
 impl DependencyGraph {
@@ -205,6 +207,7 @@ impl DependencyGraph {
         roots: Vec<(ObjectId, Provenance)>,
         m_named: HashMap<ObjectId, Vec<ObjectId>>,
         broken: Vec<BrokenBinding>,
+        broken_artifacts: Vec<BrokenArtifact>,
     ) -> Self {
         Self {
             graph,
@@ -212,6 +215,7 @@ impl DependencyGraph {
             roots,
             m_named,
             broken,
+            broken_artifacts,
         }
     }
 
@@ -262,6 +266,13 @@ impl DependencyGraph {
     /// hierarchies behind a stale qualifier — never appears here.
     pub fn broken_bindings(&self) -> &[BrokenBinding] {
         &self.broken
+    }
+
+    /// Every DAX owner with unresolved field references, whether a report
+    /// binds it or not. Model owners sort by identity, followed by report
+    /// measures in report order and then identity.
+    pub fn broken_artifacts(&self) -> &[BrokenArtifact] {
+        &self.broken_artifacts
     }
 
     /// The M expressions that name `id` — its Power Query supply chain. A
@@ -2970,7 +2981,8 @@ mod tests {
             assert_eq!(
                 broken.reason,
                 BrokenReason::BoundArtifactBroken {
-                    artifact: measure_id("Sales", "Broken"),
+                    artifact: Box::new(measure_id("Sales", "Broken")),
+                    report_index: None,
                 }
             );
             not_unused(&graph.unused_objects(), &measure_id("Sales", "Broken"));
@@ -2998,8 +3010,51 @@ mod tests {
             let graph = DependencyGraph::build(&db, &[&report]);
 
             assert!(graph.broken_bindings().is_empty());
+            assert_eq!(graph.broken_artifacts().len(), 1);
+            assert_eq!(
+                graph.broken_artifacts()[0].unresolved_references,
+                ["'Sales'[Nope]"]
+            );
             let unused = graph.unused_objects();
             find(&unused, &measure_id("Sales", "Dead Broken"));
+        }
+
+        #[test]
+        fn equally_named_report_measures_keep_breakage_in_their_own_report() {
+            let db = TabularDatabase {
+                tables: vec![table("Sales")],
+                ..Default::default()
+            };
+            let mut healthy = visual_page("P1", "V1", &[measure_target("Sales", "Local")]);
+            healthy.measures.push(crate::report::ReportMeasure {
+                name: NameKey::new("Local"),
+                expression: "1".to_string(),
+                format_string: None,
+            });
+            let mut broken = visual_page("P2", "V2", &[measure_target("Sales", "Local")]);
+            broken.measures.push(crate::report::ReportMeasure {
+                name: NameKey::new("Local"),
+                expression: "SUM('Sales'[Gone])".to_string(),
+                format_string: None,
+            });
+
+            let graph = DependencyGraph::build(&db, &[&healthy, &broken]);
+            assert_eq!(graph.broken_artifacts().len(), 1);
+            assert_eq!(graph.broken_artifacts()[0].report_index, Some(1));
+            assert_eq!(graph.broken_bindings().len(), 1);
+            assert_eq!(
+                graph.broken_bindings()[0].edge.page,
+                Some(NameKey::new("P2"))
+            );
+            assert_eq!(
+                graph.broken_bindings()[0].reason,
+                BrokenReason::BoundArtifactBroken {
+                    artifact: Box::new(ObjectId::ReportMeasure {
+                        measure: NameKey::new("Local"),
+                    }),
+                    report_index: Some(1),
+                }
+            );
         }
 
         /// The records are ordered by where the binding lives: report, page,

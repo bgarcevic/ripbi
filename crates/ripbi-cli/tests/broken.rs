@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use ripbi_cli::cli::ScanArgs;
 
 use common::{
-    TempDir, auto_datetime_pbip, broken_visual_pbip, field_parameters_pbip, json_payload, run_scan,
-    scan_path,
+    TempDir, auto_datetime_pbip, broken_visual_pbip, by_path, field_parameters_pbip, json_payload,
+    mini_pbip, report_into, run_scan, scan_path,
 };
 
 fn fixture_args(path: impl Into<PathBuf>) -> ScanArgs {
@@ -34,6 +34,133 @@ fn json_args(path: impl Into<PathBuf>) -> ScanArgs {
         path: Some(path.into()),
         ..ScanArgs::default()
     }
+}
+
+#[test]
+fn an_unbound_broken_measure_is_an_artifact_finding_without_a_visual_finding() {
+    let temp = TempDir::new("unbound-broken-artifact");
+    temp.copy_tree(&mini_pbip());
+    let table = temp
+        .0
+        .join("Mini.SemanticModel/definition/tables/Sales.tmdl");
+    let source = std::fs::read_to_string(&table).expect("read table");
+    std::fs::write(
+        &table,
+        source.replace(
+            "column Amount",
+            "measure 'Unbound Broken' = SUM('Sales'[Gone])\n\n\tcolumn Amount",
+        ),
+    )
+    .expect("add unbound measure");
+
+    let args = ScanArgs {
+        json: true,
+        broken: true,
+        path: Some(temp.0.join("Mini.pbip")),
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &temp.0, "");
+    let payload = json_payload(&stdout);
+    assert_eq!(code, 1);
+    assert_eq!(payload["summary"]["broken"], 0);
+    assert_eq!(payload["summary"]["broken_artifacts"], 1);
+    assert_eq!(
+        payload["broken_artifacts"][0]["id"],
+        "'Sales'[Unbound Broken]"
+    );
+    assert_eq!(payload["summary"]["unused"], 0, "--broken hides unused");
+
+    let args = ScanArgs {
+        json: true,
+        types: vec!["measure".to_string()],
+        path: Some(temp.0.join("Mini.pbip")),
+        ..ScanArgs::default()
+    };
+    let (_, stdout, _) = run_scan(&args, &temp.0, "");
+    let payload = json_payload(&stdout);
+    assert_eq!(payload["summary"]["broken_artifacts"], 0);
+    assert_eq!(payload["summary"]["broken_artifacts_total"], 1);
+
+    temp.write(
+        "ripbi.toml",
+        "target = \"Mini.SemanticModel\"\n\n[scan]\nignore = [\"*Unbound Broken*\"]\n",
+    );
+    let (_, stdout, _) = run_scan(&json_args(temp.0.join("Mini.pbip")), &temp.0, "");
+    let payload = json_payload(&stdout);
+    assert_eq!(payload["summary"]["broken_artifacts"], 0);
+    assert_eq!(payload["summary"]["broken_artifacts_total"], 1);
+}
+
+#[test]
+fn report_measure_breakage_is_scoped_to_its_report_in_scan_output() {
+    let temp = TempDir::new("report-measure-identity");
+    temp.copy_tree(&broken_visual_pbip());
+    let reference = by_path("../Broken.SemanticModel");
+    let healthy = report_into(&temp.0, "Healthy.Report", Some(&reference));
+    let broken = report_into(&temp.0, "Other.Report", Some(&reference));
+    for report in [&healthy, &broken] {
+        let visual = report.join("definition/pages/P1/visuals/V1/visual.json");
+        let source = std::fs::read_to_string(&visual).expect("read visual");
+        std::fs::write(&visual, source.replace("Total", "Local")).expect("bind Local");
+    }
+    temp.write(
+        "Healthy.Report/definition/reportExtensions.json",
+        r#"{"entities":[{"measures":[{"name":"Local","expression":"1"}]}]}"#,
+    );
+    temp.write(
+        "Other.Report/definition/reportExtensions.json",
+        r#"{"entities":[{"measures":[{"name":"Local","expression":"SUM('Sales'[Gone])"}]}]}"#,
+    );
+
+    let args = ScanArgs {
+        json: true,
+        broken: true,
+        model: Some(temp.0.join("Broken.SemanticModel")),
+        reports: vec![healthy.clone(), broken.clone()],
+        ..ScanArgs::default()
+    };
+    let (code, stdout, _) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "the broken report's measure gates");
+    let payload = json_payload(&stdout);
+    let locals: Vec<_> = payload["broken_artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["id"] == "report measure 'Local'")
+        .collect();
+    assert_eq!(locals.len(), 1, "one report's Local is broken: {stdout}");
+    assert_eq!(locals[0]["report"], broken.display().to_string());
+    let inherited: Vec<_> = payload["broken"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["bound_artifact"] == "report measure 'Local'")
+        .collect();
+    assert_eq!(
+        inherited.len(),
+        1,
+        "only one visual inherits Local: {stdout}"
+    );
+    assert_eq!(
+        inherited[0]["bound_artifact_report"],
+        broken.display().to_string()
+    );
+
+    let args = ScanArgs {
+        plain: true,
+        broken: true,
+        model: Some(temp.0.join("Broken.SemanticModel")),
+        reports: vec![healthy, broken.clone()],
+        ..ScanArgs::default()
+    };
+    let (_, plain, _) = run_scan(&args, &temp.0, "");
+    assert!(
+        plain.contains(&format!(
+            "broken_artifact\treport measure 'Local'\t{}",
+            broken.display()
+        )),
+        "report path is the third field: {plain}"
+    );
 }
 
 fn broken_targets(payload: &serde_json::Value) -> Vec<&str> {
@@ -75,12 +202,26 @@ fn the_fixture_flags_exactly_the_two_broken_bindings() {
     let broken_total = &payload["broken"][1];
     assert_eq!(broken_total["reason"], "bound_artifact_broken");
     assert_eq!(broken_total["bound_artifact"], "'Sales'[Broken Total]");
+    assert!(broken_total["bound_artifact_report"].is_null());
+    assert_eq!(payload["summary"]["broken_artifacts"], 1);
+    assert_eq!(payload["summary"]["broken_artifacts_total"], 1);
+    assert_eq!(payload["broken_artifacts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        payload["broken_artifacts"][0]["id"],
+        "'Sales'[Broken Total]"
+    );
+    assert_eq!(payload["broken_artifacts"][0]["type"], "measure");
+    assert_eq!(
+        payload["broken_artifacts"][0]["unresolved_references"],
+        serde_json::json!(["'Sales'[Nope]"])
+    );
 
     // The KPI variant and the healthy card flag nothing; the summary counts
     // what is reported, and the model's objects are all live. The fixture's
     // database carries the standard Fabric metadata keys, so a zero skip
     // count also locks the whitelist end to end.
     assert_eq!(payload["summary"]["broken"], 2);
+    assert_eq!(payload["summary"]["broken_artifacts"], 1);
     assert_eq!(payload["summary"]["broken_total"], 2);
     assert_eq!(payload["summary"]["unused"], 0);
     assert_eq!(
@@ -99,6 +240,8 @@ fn the_human_output_names_field_reason_and_site() {
         stdout.contains("Broken visual bindings (2)"),
         "section header:\n{stdout}"
     );
+    assert!(stdout.contains("Broken artifacts (1)"), "{stdout}");
+    assert!(stdout.contains("← 'Sales'[Nope] not found"), "{stdout}");
     assert!(
         stdout.contains("  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — visual 'V2' on page 'P1'\n"),
         "the dropped-column binding:\n{stdout}"
@@ -147,6 +290,10 @@ fn broken_scopes_the_run_and_gates_the_exit_code() {
         "{stdout}"
     );
     assert!(
+        stdout.contains("broken_artifact\t'Sales'[Broken Total]\n"),
+        "{stdout}"
+    );
+    assert!(
         !stdout.contains("\nmeasure\t"),
         "--broken hides the unused findings:\n{stdout}"
     );
@@ -155,7 +302,7 @@ fn broken_scopes_the_run_and_gates_the_exit_code() {
 /// In human output a lone `--broken` speaks for its scope: the bindings are
 /// listed without a `No unused objects.` line stacked above them (the empty
 /// findings list is the filter's doing, not a result), and a run that flags
-/// nothing reads `No broken reports.` — the placeholder the flag's consumer
+/// nothing reads `No broken reports or artifacts.` — the placeholder the flag's consumer
 /// actually asked about.
 #[test]
 fn the_broken_only_human_output_speaks_for_its_scope() {
@@ -185,7 +332,7 @@ fn the_broken_only_human_output_speaks_for_its_scope() {
 
     assert_eq!(code, 0, "nothing broken in the machinery fixture");
     assert!(
-        stdout.contains("No broken reports."),
+        stdout.contains("No broken reports or artifacts."),
         "the clean placeholder names the scope:\n{stdout}"
     );
     assert!(!stdout.contains("No unused objects."), ":\n{stdout}");
@@ -226,6 +373,8 @@ fn a_type_flag_hides_breakage_into_its_own_count() {
     let payload = json_payload(&stdout);
     assert_eq!(payload["summary"]["broken"], 0);
     assert_eq!(payload["summary"]["broken_total"], 2);
+    assert_eq!(payload["summary"]["broken_artifacts"], 0);
+    assert_eq!(payload["summary"]["broken_artifacts_total"], 1);
     assert!(
         stdout.contains("\"broken\": []"),
         "the (present, empty) array:\n{stdout}"
@@ -243,6 +392,7 @@ fn a_type_flag_hides_breakage_into_its_own_count() {
         stdout.contains("(2 broken-visual bindings hidden by type filters)"),
         "the hidden breakage is accounted for:\n{stdout}"
     );
+    assert!(stdout.contains("(1 broken artifacts hidden by type filters)"));
 }
 
 /// Combining `--broken` with a type flag gates on the union, the same
@@ -261,6 +411,7 @@ fn broken_and_a_type_flag_gate_on_their_union() {
     assert_eq!(code, 1);
     let payload = json_payload(&stdout);
     assert_eq!(payload["summary"]["broken"], 2);
+    assert_eq!(payload["summary"]["broken_artifacts"], 1);
     assert_eq!(
         payload["broken"][1]["reason"], "bound_artifact_broken",
         "the broken records survive the type flag's scoping:\n{stdout}"
@@ -284,6 +435,7 @@ fn the_field_parameter_and_auto_datetime_fixtures_flag_nothing_broken() {
             payload["summary"]["broken_total"], 0,
             "{name} machinery must resolve, not flag:\n{stdout}"
         );
+        assert_eq!(payload["summary"]["broken_artifacts_total"], 0);
     }
 }
 
@@ -313,6 +465,7 @@ fn an_unknown_property_does_not_suppress_breakage() {
         "property drift does not suppress:\n{stdout}"
     );
     assert_eq!(payload["summary"]["broken_total"], 2);
+    assert_eq!(payload["summary"]["broken_artifacts"], 1);
 
     // --broken still gates on the reported breakage; --strict still fails on
     // the drift notice itself.
@@ -355,6 +508,8 @@ fn skips_in_the_model_ingest_suppress_breakage() {
     let payload = json_payload(&stdout);
     assert_eq!(payload["summary"]["broken"], 0, "nothing is claimed");
     assert_eq!(payload["summary"]["broken_total"], 2, "detection still ran");
+    assert_eq!(payload["summary"]["broken_artifacts"], 0);
+    assert_eq!(payload["summary"]["broken_artifacts_total"], 1);
     assert_eq!(code, 0, "suppressed breakage gates nothing");
 
     // Human modes explain the suppression, like every summary-arithmetic gap.
@@ -364,6 +519,7 @@ fn skips_in_the_model_ingest_suppress_breakage() {
         stdout.contains("(2 possible broken-visual bindings suppressed — the model ingest reported skips, listed on stderr; --strict fails on those skips)"),
         "the suppression is explained:\n{stdout}"
     );
+    assert!(stdout.contains("(1 possible broken artifacts suppressed"));
 
     // --strict surfaces the skips behind the suppression as the error they
     // are, independent of the breakage machinery.

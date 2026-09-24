@@ -330,7 +330,7 @@ pub struct ScanArgs {
     #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
     pub types: Vec<String>,
 
-    /// Only broken visual bindings; the only mode where they gate.
+    /// Only broken artifacts and visual bindings; the only mode where they gate.
     #[arg(long)]
     pub broken: bool,
 
@@ -340,11 +340,12 @@ pub struct ScanArgs {
 }
 
 impl ScanArgs {
-    /// The broken-binding kind selected by `--broken`, or `None` when it is
+    /// The breakage kinds selected by `--broken`, or `None` when it is
     /// absent. `scan` unions this with validated `--type` selections.
     #[must_use]
     pub fn selected_kinds(&self) -> Option<HashSet<&'static str>> {
-        self.broken.then(|| HashSet::from(["broken_visual"]))
+        self.broken
+            .then(|| HashSet::from(["broken_visual", "broken_artifact"]))
     }
 }
 
@@ -445,7 +446,7 @@ mod tests {
 
     /// `--broken` is the only boolean selection; object kinds use `--type`.
     #[test]
-    fn broken_selects_only_broken_visual() {
+    fn broken_selects_both_breakage_kinds() {
         assert_eq!(ScanArgs::default().selected_kinds(), None);
         assert_eq!(
             ScanArgs {
@@ -453,7 +454,7 @@ mod tests {
                 ..Default::default()
             }
             .selected_kinds(),
-            Some(HashSet::from(["broken_visual"]))
+            Some(HashSet::from(["broken_visual", "broken_artifact"]))
         );
     }
 }

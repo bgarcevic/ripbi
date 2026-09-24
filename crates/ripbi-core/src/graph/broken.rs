@@ -44,8 +44,29 @@ pub enum BrokenReason {
     /// error state.
     BoundArtifactBroken {
         /// The broken artifact the binding lands on.
-        artifact: ObjectId,
+        artifact: Box<ObjectId>,
+        /// Position in the graph's report slice for a report-level measure.
+        report_index: Option<usize>,
     },
+}
+
+/// An artifact whose DAX names one or more fields that cannot be resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenArtifact {
+    /// The owning model object or report-level measure.
+    pub id: ObjectId,
+    /// Position in the graph's report slice for a report-level measure.
+    pub report_index: Option<usize>,
+    /// Written unresolved field references, sorted and deduplicated.
+    pub unresolved_references: Vec<String>,
+}
+
+/// Artifact identity must include the report because report measures are only
+/// name-unique within their own report.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ArtifactKey {
+    pub id: ObjectId,
+    pub report_index: Option<usize>,
 }
 
 /// One report binding that is broken: where it lives, what it wrote, and why
@@ -104,11 +125,12 @@ pub(super) fn broken_artifacts(
     db: &TabularDatabase,
     reports: &[&ReportModel],
     index: &ModelIndex,
-) -> HashMap<ObjectId, Vec<String>> {
-    let mut out: HashMap<ObjectId, Vec<String>> = HashMap::new();
+) -> HashMap<ArtifactKey, Vec<String>> {
+    let mut out: HashMap<ArtifactKey, Vec<String>> = HashMap::new();
     let mut scan = |text: &str,
                     home_table: Option<&str>,
                     owner: &ObjectId,
+                    report_index: Option<usize>,
                     report_measures: &HashSet<String>| {
         // The names query time can introduce: extension columns named by a
         // string literal (`ADDCOLUMNS(t, "@Krav", …)`, `SELECTCOLUMNS(t,
@@ -131,7 +153,12 @@ pub(super) fn broken_artifacts(
                     .to_field_ref()
                     .expect("a field reference materializes")
                     .to_string();
-                out.entry(owner.clone()).or_default().push(written);
+                out.entry(ArtifactKey {
+                    id: owner.clone(),
+                    report_index,
+                })
+                .or_default()
+                .push(written);
             }
         }
     };
@@ -141,10 +168,11 @@ pub(super) fn broken_artifacts(
             expression.text,
             expression.home_table,
             &owner,
+            None,
             &HashSet::new(),
         );
     }
-    for report in reports {
+    for (report_index, report) in reports.iter().enumerate() {
         // A report measure referencing a sibling report measure is the graph's
         // ordinary report-measure edge (`add_expression_edges`), not breakage.
         let report_measures: HashSet<String> = report
@@ -158,6 +186,7 @@ pub(super) fn broken_artifacts(
                 expression.text,
                 expression.home_table,
                 &owner,
+                Some(report_index),
                 &report_measures,
             );
         }
@@ -348,7 +377,10 @@ pub(super) fn kpi_variant_base(name: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Column, Measure, Table};
+    use crate::model::{
+        CalculationGroup, CalculationItem, Column, ColumnKind, Measure, Role, Table,
+        TablePermission,
+    };
 
     fn db() -> TabularDatabase {
         TabularDatabase {
@@ -409,6 +441,67 @@ mod tests {
         use super::*;
 
         #[test]
+        fn distinct_dax_owners_and_properties_each_produce_one_artifact() {
+            let mut model = db();
+            model.tables[0].measures.push(Measure {
+                name: "Broken".to_string(),
+                expression: "SUM('Sales'[Gone]) + SUM('Sales'[Gone])".to_string(),
+                format_string_expression: Some("'Sales'[Other]".to_string()),
+                ..Default::default()
+            });
+            model.tables[0].columns.push(Column {
+                name: "Calculated".to_string(),
+                kind: ColumnKind::Calculated {
+                    expression: "'Missing'[X]".to_string(),
+                },
+                ..Default::default()
+            });
+            model.tables[0].calculation_group = Some(CalculationGroup {
+                items: vec![CalculationItem {
+                    name: "YTD".to_string(),
+                    expression: "'Sales'[Gone]".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+            model.roles.push(Role {
+                name: "Readers".to_string(),
+                table_permissions: vec![TablePermission {
+                    table: "Sales".to_string(),
+                    filter_expression: Some("'Sales'[Gone] = 1".to_string()),
+                }],
+                ..Default::default()
+            });
+
+            let graph = crate::graph::DependencyGraph::build(&model, &[]);
+            let artifacts = graph.broken_artifacts();
+            assert_eq!(artifacts.len(), 4);
+            let measure = artifacts
+                .iter()
+                .find(|artifact| artifact.id.to_string() == "'Sales'[Broken]")
+                .expect("broken measure");
+            assert_eq!(
+                measure.unresolved_references,
+                ["'Sales'[Gone]", "'Sales'[Other]"]
+            );
+            assert!(
+                artifacts
+                    .iter()
+                    .any(|a| matches!(a.id, ObjectId::Column { .. }))
+            );
+            assert!(
+                artifacts
+                    .iter()
+                    .any(|a| matches!(a.id, ObjectId::CalculationItem { .. }))
+            );
+            assert!(
+                artifacts
+                    .iter()
+                    .any(|a| matches!(a.id, ObjectId::Role { .. }))
+            );
+        }
+
+        #[test]
         fn a_measure_referencing_a_missing_column_is_broken() {
             let mut model = db();
             model.tables[0].measures.push(Measure {
@@ -420,9 +513,12 @@ mod tests {
 
             let broken = broken_artifacts(&model, &[], &index);
 
-            let refs = &broken[&ObjectId::Measure {
-                table: NameKey::new("Sales"),
-                measure: NameKey::new("Broken"),
+            let refs = &broken[&ArtifactKey {
+                id: ObjectId::Measure {
+                    table: NameKey::new("Sales"),
+                    measure: NameKey::new("Broken"),
+                },
+                report_index: None,
             }];
             assert_eq!(refs, &["'Sales'[Nope]".to_string()]);
         }
@@ -504,8 +600,11 @@ mod tests {
 
             let broken = broken_artifacts(&model, &[&report], &index);
 
-            let refs = &broken[&ObjectId::ReportMeasure {
-                measure: NameKey::new("Local"),
+            let refs = &broken[&ArtifactKey {
+                id: ObjectId::ReportMeasure {
+                    measure: NameKey::new("Local"),
+                },
+                report_index: Some(0),
             }];
             assert_eq!(refs, &["[Gone]".to_string()]);
         }
@@ -538,8 +637,11 @@ mod tests {
             let broken = broken_artifacts(&model, &[&report], &index);
 
             assert!(
-                !broken.contains_key(&ObjectId::ReportMeasure {
-                    measure: NameKey::new("Outer"),
+                !broken.contains_key(&ArtifactKey {
+                    id: ObjectId::ReportMeasure {
+                        measure: NameKey::new("Outer"),
+                    },
+                    report_index: Some(0),
                 }),
                 "the siblings resolve: {broken:?}"
             );
@@ -562,9 +664,12 @@ mod tests {
 
             let broken = broken_artifacts(&model, &[], &index);
 
-            let refs = &broken[&ObjectId::Measure {
-                table: NameKey::new("Sales"),
-                measure: NameKey::new("Kvalificerede"),
+            let refs = &broken[&ArtifactKey {
+                id: ObjectId::Measure {
+                    table: NameKey::new("Sales"),
+                    measure: NameKey::new("Kvalificerede"),
+                },
+                report_index: None,
             }];
             assert_eq!(refs, &["'Sales'[Nope]".to_string()]);
         }
@@ -585,9 +690,12 @@ mod tests {
 
             let broken = broken_artifacts(&model, &[], &index);
             assert!(
-                !broken.contains_key(&ObjectId::Measure {
-                    table: NameKey::new("Sales"),
-                    measure: NameKey::new("Dele"),
+                !broken.contains_key(&ArtifactKey {
+                    id: ObjectId::Measure {
+                        table: NameKey::new("Sales"),
+                        measure: NameKey::new("Dele"),
+                    },
+                    report_index: None,
                 }),
                 "the constructor column resolves: {broken:?}"
             );
@@ -629,9 +737,12 @@ mod tests {
             let index = ModelIndex::build(&model);
 
             let broken = broken_artifacts(&model, &[], &index);
-            let refs = &broken[&ObjectId::Measure {
-                table: NameKey::new("Sales"),
-                measure: NameKey::new("Label"),
+            let refs = &broken[&ArtifactKey {
+                id: ObjectId::Measure {
+                    table: NameKey::new("Sales"),
+                    measure: NameKey::new("Label"),
+                },
+                report_index: None,
             }];
             assert_eq!(
                 refs,
