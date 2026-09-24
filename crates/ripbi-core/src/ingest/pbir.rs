@@ -583,6 +583,7 @@ fn bookmark_file(value: &Value, fallback: &str, live: &HashSet<String>, ctx: &mu
             display_name: None,
             filters: Vec::new(),
             sections: Vec::new(),
+            stale_sections: Vec::new(),
         };
     };
     let state = value.get("explorationState");
@@ -598,6 +599,7 @@ fn bookmark_file(value: &Value, fallback: &str, live: &HashSet<String>, ctx: &mu
     let mut stale_sections: Vec<String> = Vec::new();
 
     let mut sections = Vec::new();
+    let mut stale_section_states = Vec::new();
     if let Some(map) = state
         .and_then(|state| state.get("sections"))
         .and_then(Value::as_object)
@@ -618,29 +620,24 @@ fn bookmark_file(value: &Value, fallback: &str, live: &HashSet<String>, ctx: &mu
                     detail,
                 );
                 stale_sections.push(folded);
+                // Keep the saved fields for an unused-chain explanation. Parse
+                // them without adding interior notices: this whole section has
+                // already been skipped with one precise stale-state notice.
+                let mut ignored_skips = Vec::new();
+                let mut silent_ctx = Ctx {
+                    path: ctx.path,
+                    skips: &mut ignored_skips,
+                };
+                stale_section_states.push(bookmark_section(
+                    page_name,
+                    section_state,
+                    &mut silent_ctx,
+                    &format!("/explorationState/sections/{page_name}"),
+                ));
                 continue;
             }
             let location = format!("/explorationState/sections/{page_name}");
-            check_keys(section_state, &SECTION_KEYS, ctx, &location);
-            let mut visuals = Vec::new();
-            if let Some(containers) = section_state
-                .get("visualContainers")
-                .and_then(Value::as_object)
-            {
-                for (visual_name, container) in containers {
-                    let location = format!("{location}/visualContainers/{visual_name}");
-                    visuals.push(bookmark_visual(visual_name, container, ctx, &location));
-                }
-            }
-            sections.push(BookmarkSection {
-                page: NameKey::new(page_name),
-                filters: filters_state(
-                    section_state.get("filters"),
-                    ctx,
-                    &format!("{location}/filters"),
-                ),
-                visuals,
-            });
+            sections.push(bookmark_section(page_name, section_state, ctx, &location));
         }
     }
 
@@ -673,6 +670,41 @@ fn bookmark_file(value: &Value, fallback: &str, live: &HashSet<String>, ctx: &mu
             "/explorationState/filters",
         ),
         sections,
+        stale_sections: stale_section_states,
+    }
+}
+
+/// Parses the fields saved for one page, whether the page still exists or not.
+fn bookmark_section(
+    page_name: &str,
+    section_state: &Value,
+    ctx: &mut Ctx,
+    location: &str,
+) -> BookmarkSection {
+    check_keys(section_state, &SECTION_KEYS, ctx, location);
+    let mut visuals = Vec::new();
+    if let Some(containers) = section_state
+        .get("visualContainers")
+        .and_then(Value::as_object)
+    {
+        for (visual_name, container) in containers {
+            let visual_location = format!("{location}/visualContainers/{visual_name}");
+            visuals.push(bookmark_visual(
+                visual_name,
+                container,
+                ctx,
+                &visual_location,
+            ));
+        }
+    }
+    BookmarkSection {
+        page: NameKey::new(page_name),
+        filters: filters_state(
+            section_state.get("filters"),
+            ctx,
+            &format!("{location}/filters"),
+        ),
+        visuals,
     }
 }
 
@@ -2675,8 +2707,8 @@ mod tests {
         }
     }
 
-    /// Deleted pages leave their sections inside bookmarks forever (issue
-    /// #48): the stale-section skip and the page-source reconciliation.
+    /// Deleted pages leave their sections inside bookmarks forever. Keep the
+    /// saved fields for unused chains while excluding them from live roots.
     mod stale_state {
         use super::*;
 
@@ -2737,10 +2769,13 @@ mod tests {
             let (bookmark, skips) =
                 parse_bookmark(&bookmark_json("PLive", &["PLive", "PGone"]), &["PLive"]);
 
-            // The live section survives; the stale one is gone whole.
+            // Only the live section can bind; the stale one remains as data.
             assert_eq!(bookmark.sections.len(), 1);
             assert_eq!(bookmark.sections[0].page.as_str(), "PLive");
             assert_eq!(bookmark.sections[0].filters.len(), 1);
+            assert_eq!(bookmark.stale_sections.len(), 1);
+            assert_eq!(bookmark.stale_sections[0].page.as_str(), "PGone");
+            assert_eq!(bookmark.stale_bindings().len(), 1);
             // The report-level saved filter is untouched by its section.
             assert_eq!(bookmark.filters.len(), 1);
 
@@ -2752,6 +2787,49 @@ mod tests {
             );
             assert!(skips[0].detail.contains("PGone"));
             assert!(skips[0].detail.contains("no longer defines"));
+        }
+
+        #[test]
+        fn a_bookmark_with_only_stale_sections_is_fully_stale() {
+            let mut json = bookmark_json("PGone", &["PGone"]);
+            json["explorationState"]
+                .as_object_mut()
+                .unwrap()
+                .remove("filters");
+            let (bookmark, skips) = parse_bookmark(&json, &[]);
+
+            assert!(bookmark.is_fully_stale());
+            assert_eq!(bookmark.stale_bindings().len(), 1);
+            assert_eq!(skips.len(), 1);
+        }
+
+        #[test]
+        fn one_live_section_prevents_a_stale_bookmark_finding() {
+            let mut json = bookmark_json("PLive", &["PLive", "PGone"]);
+            json["explorationState"]
+                .as_object_mut()
+                .unwrap()
+                .remove("filters");
+            let (bookmark, _) = parse_bookmark(&json, &["PLive"]);
+
+            assert!(!bookmark.is_fully_stale());
+        }
+
+        #[test]
+        fn report_level_filters_prevent_a_stale_bookmark_finding() {
+            let (bookmark, _) = parse_bookmark(&bookmark_json("PGone", &["PGone"]), &[]);
+
+            assert!(!bookmark.is_fully_stale());
+        }
+
+        #[test]
+        fn a_bookmark_with_no_sections_is_not_stale() {
+            let mut json = bookmark_json("PGone", &[]);
+            let state = json["explorationState"].as_object_mut().unwrap();
+            state.remove("filters");
+            let (bookmark, _) = parse_bookmark(&json, &[]);
+
+            assert!(!bookmark.is_fully_stale());
         }
 
         /// The section skip is the notice — the active section that coincides

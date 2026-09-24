@@ -37,7 +37,7 @@ command name is pinned to `ripbi` (`cli.rs`), so help and `--version` always say
 
 | Module | Role |
 |---|---|
-| `cli.rs` | clap definitions — the user-facing interface. Scan's selection resolves through `selected_kinds` (`--type`, validated against `render::KINDS`; `--broken` selects `broken_visual` and `broken_artifact` and is the only breakage gate). Two gates keep the surface consistent: help text stays one line ≤100 chars, and every command with a `--model` flag declares `--model`/`--report` first |
+| `cli.rs` | clap definitions — the user-facing interface. Scan's selection resolves through `selected_kinds` (`--type`, including `bookmark`, validated against `render::KINDS`; `--broken` selects `broken_visual` and `broken_artifact` and is the only breakage gate). Two gates keep the surface consistent: help text stays one line ≤100 chars, and every command with a `--model` flag declares `--model`/`--report` first |
 | `config.rs` | `ripbi.toml` discovery (cwd upward), parsing, path resolution |
 | `discover.rs` | PATH classification, PBIP stem pairing, cwd candidate discovery; model target resolution (`.SemanticModel`/`definition/`/`model.tmdl` folders, plus the `.pbip` naming the project) and bound-report folder walking (byPath → stem → `byConnection` name). Report→model pairing climbs stem sibling → sole `.SemanticModel` sibling → `definition.pbir` `byPath` → `byConnection` dataset name (pairing only when exactly one sibling model's stem or `.platform` display name carries it); a project with no model folder of its own pairs through its stem-named report's reference |
 | `entry.rs` | process entry shared by the `ripbi` and `rib` binaries: real stdio → one command → exit code → the update notifier hook |

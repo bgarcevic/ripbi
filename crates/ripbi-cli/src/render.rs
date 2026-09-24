@@ -178,6 +178,7 @@ pub(crate) const GROUPS: &[(&str, &str)] = &[
     ("expression", "Expressions"),
     ("function", "Functions"),
     ("report_measure", "Report measures"),
+    ("bookmark", "Bookmarks"),
     ("broken_visual", "Broken visual bindings"),
 ];
 
@@ -198,6 +199,7 @@ pub(crate) const KINDS: &[&str] = &[
     "expression",
     "function",
     "report_measure",
+    "bookmark",
 ];
 
 /// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
@@ -230,6 +232,7 @@ pub fn kind_of(id: &ObjectId) -> &'static str {
         ObjectId::Expression { .. } => "expression",
         ObjectId::Function { .. } => "function",
         ObjectId::ReportMeasure { .. } => "report_measure",
+        ObjectId::Bookmark { .. } => "bookmark",
     }
 }
 
@@ -1063,6 +1066,13 @@ mod tests {
             },
             ObjectId::ReportMeasure {
                 measure: NameKey::new("Local"),
+            },
+            ObjectId::Bookmark {
+                report_index: 0,
+                bookmark: ripbi_core::identity::BookmarkKey {
+                    name: NameKey::new("B1"),
+                    display_name: Some("Saved view".to_string()),
+                },
             },
         ]
         .each_ref()

@@ -199,9 +199,9 @@ pub struct Filter {
 
 /// A saved exploration state, restorable by a reader.
 ///
-/// Bookmark bindings are enumerated like any other: applying a bookmark re-applies
-/// its saved filters and projections, so a field kept alive only by a bookmark is
-/// still alive.
+/// Report-level and live-section bindings are enumerated like any other:
+/// applying a bookmark re-applies their saved filters and projections. Fields
+/// in stale sections are retained only to explain unused findings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bookmark {
     /// Bookmark object name — the PBIR file name, and the provenance key.
@@ -212,6 +212,27 @@ pub struct Bookmark {
     pub filters: Vec<Filter>,
     /// Captured state, per page it spans (usually one).
     pub sections: Vec<BookmarkSection>,
+    /// Sections saved for pages the report no longer defines. Their fields are
+    /// retained for unused chains, but never enumerate as report bindings.
+    pub stale_sections: Vec<BookmarkSection>,
+}
+
+impl Bookmark {
+    /// Whether none of this bookmark's saved state can still be applied.
+    /// A bookmark with no sections is page-independent, not stale.
+    #[must_use]
+    pub fn is_fully_stale(&self) -> bool {
+        !self.stale_sections.is_empty() && self.sections.is_empty() && self.filters.is_empty()
+    }
+
+    /// References saved on deleted pages, for dead-chain explanations only.
+    /// These must never be added to [`ReportModel::bindings`].
+    #[must_use]
+    pub fn stale_bindings(&self) -> Vec<BindingRef<'_>> {
+        let mut out = Vec::new();
+        extend_with_bookmark_sections(&mut out, &self.name, &self.stale_sections);
+        out
+    }
 }
 
 /// The slice of a bookmark's state belonging to one page.
@@ -461,36 +482,7 @@ impl ReportModel {
                 extend_with_filter(&mut out, None, None, bookmark_id, false, filter);
             }
 
-            for section in &bookmark.sections {
-                let page_id = Some(&section.page);
-
-                for filter in &section.filters {
-                    extend_with_filter(&mut out, page_id, None, bookmark_id, false, filter);
-                }
-
-                for visual in &section.visuals {
-                    let visual_id = Some(&visual.visual);
-                    extend_with_wells(
-                        &mut out,
-                        page_id,
-                        visual_id,
-                        bookmark_id,
-                        false,
-                        &visual.wells,
-                    );
-
-                    for filter in &visual.filters {
-                        extend_with_filter(
-                            &mut out,
-                            page_id,
-                            visual_id,
-                            bookmark_id,
-                            false,
-                            filter,
-                        );
-                    }
-                }
-            }
+            extend_with_bookmark_sections(&mut out, &bookmark.name, &bookmark.sections);
         }
 
         out
@@ -530,6 +522,29 @@ impl ReportModel {
         }
 
         out
+    }
+}
+
+/// Enumerates saved fields from the chosen sections. The caller determines
+/// whether they are live roots or references on a stale bookmark.
+fn extend_with_bookmark_sections<'a>(
+    out: &mut Vec<BindingRef<'a>>,
+    bookmark: &'a NameKey,
+    sections: &'a [BookmarkSection],
+) {
+    let bookmark_id = Some(bookmark);
+    for section in sections {
+        let page_id = Some(&section.page);
+        for filter in &section.filters {
+            extend_with_filter(out, page_id, None, bookmark_id, false, filter);
+        }
+        for visual in &section.visuals {
+            let visual_id = Some(&visual.visual);
+            extend_with_wells(out, page_id, visual_id, bookmark_id, false, &visual.wells);
+            for filter in &visual.filters {
+                extend_with_filter(out, page_id, visual_id, bookmark_id, false, filter);
+            }
+        }
     }
 }
 
@@ -942,6 +957,7 @@ mod tests {
                         filters: vec![filter_on(column_target("Products", "Product category"))],
                         visuals: Vec::new(),
                     }],
+                    stale_sections: Vec::new(),
                 }],
                 ..sample()
             };
@@ -970,6 +986,7 @@ mod tests {
                             filters: Vec::new(),
                         }],
                     }],
+                    stale_sections: Vec::new(),
                 }],
                 ..sample()
             };
@@ -1043,6 +1060,7 @@ mod tests {
                             filters: vec![filter_on(column_target("Product", "Color"))],
                         }],
                     }],
+                    stale_sections: Vec::new(),
                 }],
                 measures: Vec::new(),
                 ..sample()

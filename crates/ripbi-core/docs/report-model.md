@@ -63,14 +63,16 @@ rather than dropped, because a binding we cannot read is still a binding.
 here is display-only, never liveness. Inactive projections bind too — they are one
 toggle away from live.
 
-**Bookmarks are roots.** Applying a bookmark re-applies its saved filters and
+**Applicable bookmark state is a root.** Applying a bookmark re-applies its saved filters and
 projections, so a field kept alive only by a bookmark is still alive. Bookmark
 bindings enumerate with `bookmark` set, alongside the page and visual they
 captured. One bound: a section whose page the report no longer defines is not
 a binding — Power BI leaves deleted pages' sections inside bookmarks forever,
 and a filter on a page nobody can reach would keep its columns alive with no
-way to re-apply it. Those sections are dropped at ingest (see the bookmark
-staleness rule in [formats.md](formats.md)); they never reach this AST.
+way to re-apply it. Those sections live in `Bookmark::stale_sections` for
+unused-chain explanations (see the bookmark staleness rule in
+[formats.md](formats.md)); `ReportModel::bindings` never enumerates them. A
+bookmark with only stale sections and no report-level filters is itself unused.
 
 **Report measures bridge both directions.** A report-level measure's DAX body
 references model objects (so `ReportModel::dax_expressions` is an expression source on

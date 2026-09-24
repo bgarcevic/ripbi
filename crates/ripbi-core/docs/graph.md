@@ -26,14 +26,17 @@ auditing results or changing the analyzer. Changes here can change what
 ## Shape
 
 One `DependencyGraph` per semantic model, shared by every report that connects to it.
-Nodes are `ObjectId`s — every model object and report measure, whether or not anything
-references them, so an isolated object can be reported unused. Edges point from user to
+Nodes are `ObjectId`s — every model object, report measure, and fully stale
+bookmark, whether or not anything references them, so an isolated object can
+be reported unused. Edges point from user to
 used and carry their `Provenance` as the petgraph edge weight, written once at build
 time. Reverse queries (`consumers_of`) are plain reads; a second view over the graph
 (`ripbi deps`) must be pure rendering in the CLI.
 
-Report sites — visuals, pages, bookmarks — are not model objects and have no `ObjectId`,
-so report bindings live beside the graph as `roots`, each with its binding provenance.
+Live report sites — visuals, pages, bookmarks — are not model objects and have no
+`ObjectId`, so their bindings live beside the graph as `roots`, each with its
+binding provenance. A fully stale bookmark is instead a dead node: its
+deleted-page saved fields are non-liveness edges to their resolved targets.
 An `RLS role 'Reader' filter` edge, by contrast, *is* an object-to-object edge: the role
 is a node.
 
@@ -140,6 +143,13 @@ the string is data, not a reference the lexer can bind.
 **Report measures are nodes, not roots.** An unused report measure is dead — it is
 exactly the accumulated bloat this tool looks for. Its body's references stay alive
 only through it, so they die with it, annotated.
+
+**Stale bookmarks.** A bookmark with at least one saved section, no applicable
+sections, and no report-level filters is an unused node. Its saved filters and
+projections on deleted pages carry `stale bookmark` edges for dead-chain
+explanations, but those edges never confer liveness. A bookmark with any live
+section or report-level filters remains a root site for its applicable bindings;
+a bookmark with no sections is page-independent and is not a finding.
 
 **Containment.** A used member — column, measure, hierarchy, calculation item — keeps
 its table alive. A used table keeps its partitions, its relationships, and its

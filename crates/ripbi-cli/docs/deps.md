@@ -119,7 +119,8 @@ kind (repeatable). Both together intersect: the members of the table with the ki
 Selectors choose where exploration starts — they never restrict what traversal reaches,
 so a `Sales` root may reach `'Exchange Rates'[Rate]`. An unknown `--type` lists the
 vocabulary (`table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`,
-`role`, `calculation_item`, `expression`, `function`, `report_measure`); a selector
+`role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`);
+`bookmark` selects fully stale bookmarks only; a selector
 matching nothing is an error.
 
 ## Filters

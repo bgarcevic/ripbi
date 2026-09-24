@@ -44,6 +44,36 @@ const INACTIVE_RELATIONSHIP_FINDINGS: &[&str] = &[
     "'Owners'[SystemUserSeq]",
 ];
 
+const STALE_BOOKMARKS: &[&str] = &[
+    "bookmark 'Sales P - Funnel 1'",
+    "bookmark 'Key - Discount'",
+    "bookmark 'CSAT - KEY - High'",
+    "bookmark 'Services - KPI - Tabular'",
+    "bookmark 'Services - KPI - Chart'",
+    "bookmark 'Sales P - Chart 2'",
+    "bookmark 'Sales P - Tabular 2'",
+    "bookmark 'Service - SLA - Key Influencers'",
+    "bookmark 'Sales P - Chart 1'",
+    "bookmark 'CSAT - KEY - Low'",
+    "bookmark 'Key - Day to close'",
+    "bookmark 'CSAT - KEY - VS'",
+    "bookmark 'Services - KPI2 - Chart'",
+    "bookmark 'Service - KPI2 - Ribbon'",
+    "bookmark 'Service - SLA -PKPI'",
+];
+
+const STALE_BOOKMARK_COLUMNS: &[&str] = &[
+    "'Case Calendar'[RELATIVE 30 DAY PERIOD]",
+    "'Cases'[Agent]",
+    "'Cases'[Is Escalated]",
+    "'Cases'[Is SLA Violation]",
+    "'Cases'[Origin]",
+    "'Cases'[Severity]",
+    "'Cases'[Subject]",
+    "'Opportunities'[PipelineStep]",
+    "'Opportunity Calendar'[RELATIVE MONTH]",
+];
+
 /// Objects the export marks live that ripbi proves live through binding paths
 /// that are easy to miss; if any of these is ever flagged, an ingest or
 /// reachability rule regressed.
@@ -91,10 +121,12 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
     let inactive_relationship =
         id.contains("SystemUserSeq") && matches!(kind, "column" | "relationship");
     let orphaned_expression = kind == "expression" && id.contains("'Query1'");
+    let stale_bookmark = kind == "bookmark" && STALE_BOOKMARKS.contains(&id);
     dead_table_with_partition
         || stale_bookmark_cascade
         || inactive_relationship
         || orphaned_expression
+        || stale_bookmark
 }
 
 /// Whether a baseline row sits on the engine's auto date/time machinery
@@ -149,6 +181,41 @@ fn scan_agrees_with_the_committed_baseline() {
         .iter()
         .map(|finding| (finding["id"].as_str().expect("id"), finding))
         .collect();
+
+    let mut bookmark_ids: Vec<&str> = findings
+        .iter()
+        .filter(|finding| finding["type"] == "bookmark")
+        .map(|finding| finding["id"].as_str().expect("bookmark id"))
+        .collect();
+    bookmark_ids.sort_unstable();
+    let mut expected_bookmarks = STALE_BOOKMARKS.to_vec();
+    expected_bookmarks.sort_unstable();
+    assert_eq!(
+        bookmark_ids, expected_bookmarks,
+        "exactly the 15 stale bookmarks"
+    );
+    for live in ["bookmark 'Last 12'", "bookmark 'Last 90'"] {
+        assert!(!by_id.contains_key(live), "{live} still applies to a page");
+    }
+    let mut chained_columns: Vec<&str> = findings
+        .iter()
+        .filter(|finding| finding["type"] == "column")
+        .filter(|finding| {
+            finding["used_by"].as_array().is_some_and(|used_by| {
+                used_by.iter().any(|used| {
+                    used["provenance"] == "stale bookmark" && used["also_unused"] == true
+                })
+            })
+        })
+        .map(|finding| finding["id"].as_str().expect("column id"))
+        .collect();
+    chained_columns.sort_unstable();
+    let mut expected_columns = STALE_BOOKMARK_COLUMNS.to_vec();
+    expected_columns.sort_unstable();
+    assert_eq!(
+        chained_columns, expected_columns,
+        "the nine stale-bookmark chains"
+    );
 
     // 1. Every baseline-dead object is a ripbi finding with the matching chain —
     //    except the auto date/time machinery's members (issue #47): the
@@ -374,7 +441,7 @@ fn the_auto_datetime_section_follows_the_table_type() {
         "only the selected measures are reported"
     );
     assert_eq!(
-        payload["summary"]["unused_total"], 171,
+        payload["summary"]["unused_total"], 186,
         "the model-wide count is unfiltered, dead tables included"
     );
 

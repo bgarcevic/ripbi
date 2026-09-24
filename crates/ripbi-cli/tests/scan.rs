@@ -1247,8 +1247,8 @@ mod extras {
     /// A bookmark's saved filter binds only when its section's page still
     /// exists (issue #48). Two bookmarks save a filter on `'Sales'[Legacy]`,
     /// which nothing else binds except the dead measure: the live-page one is
-    /// a root, the deleted-page one is skipped with a `stale_state` notice
-    /// that `--strict` promotes to an error.
+    /// a root, the deleted-page one is an unused bookmark finding with a
+    /// `stale_state` notice that `--strict` promotes to an error.
     #[test]
     fn a_bookmark_filter_binds_only_on_a_live_page() {
         fn bookmark(name: &str, section: &str) -> String {
@@ -1301,10 +1301,22 @@ mod extras {
         let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
 
         // The live bookmark's saved filter is a root: 'Sales'[Legacy] stays
-        // alive, leaving only the dead measure.
+        // alive, while the stale bookmark joins the dead measure as a finding.
         let unused = payload["unused"].as_array().expect("unused array");
-        assert_eq!(unused.len(), 1, "only the measure: {unused:?}");
-        assert_eq!(unused[0]["id"], "'Sales'[Legacy Total]");
+        assert_eq!(unused.len(), 2, "measure and bookmark: {unused:?}");
+        assert!(
+            unused
+                .iter()
+                .any(|finding| finding["id"] == "'Sales'[Legacy Total]")
+        );
+        assert!(unused.iter().any(|finding| {
+            finding["type"] == "bookmark" && finding["id"] == "bookmark 'Stale'"
+        }));
+        assert!(
+            !unused
+                .iter()
+                .any(|finding| finding["id"] == "'Sales'[Legacy]")
+        );
 
         // The deleted page's section is skipped, and the skip is reported.
         assert_eq!(payload["skips"]["count"], 1);
@@ -1329,6 +1341,110 @@ mod extras {
             strict_code, 2,
             "--strict turns the stale-state notice into an error"
         );
+
+        let bookmarks_only = ScanArgs {
+            json: true,
+            types: vec!["bookmark".to_string()],
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&bookmarks_only, &temp.0, "");
+        let selected: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        assert_eq!(code, 1);
+        assert_eq!(selected["unused"].as_array().unwrap().len(), 1);
+        assert_eq!(selected["unused"][0]["id"], "bookmark 'Stale'");
+        assert_eq!(selected["summary"]["unused_total"], 2);
+
+        let measures_only = ScanArgs {
+            json: true,
+            types: vec!["measure".to_string()],
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&measures_only, &temp.0, "");
+        let selected: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        assert_eq!(code, 1);
+        assert_eq!(selected["unused"].as_array().unwrap().len(), 1);
+        assert_eq!(selected["unused"][0]["id"], "'Sales'[Legacy Total]");
+        assert_eq!(selected["summary"]["unused_total"], 2);
+
+        let both = ScanArgs {
+            json: true,
+            types: vec!["measure".to_string(), "bookmark".to_string()],
+            ..fixture_args(temp.0.join("Mini.pbip"))
+        };
+        let (code, stdout, _) = run_scan(&both, &temp.0, "");
+        let selected: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        assert_eq!(code, 1);
+        assert_eq!(selected["unused"].as_array().unwrap().len(), 2);
+
+        let (code, plain, _) = run_scan(
+            &ScanArgs {
+                plain: true,
+                types: vec!["bookmark".to_string()],
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+            &temp.0,
+            "",
+        );
+        assert_eq!(code, 1);
+        assert_eq!(plain.trim(), "bookmark\tbookmark 'Stale'");
+        let (code, human, _) = run_scan(
+            &ScanArgs {
+                types: vec!["bookmark".to_string()],
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+            &temp.0,
+            "",
+        );
+        assert_eq!(code, 1);
+        assert!(human.contains("Bookmarks (1)"));
+        assert!(human.contains("(1 unused hidden by type filters)"));
+
+        let (code, summary, _) = run_scan(
+            &ScanArgs {
+                summary: true,
+                types: vec!["bookmark".to_string()],
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+            &temp.0,
+            "",
+        );
+        assert_eq!(code, 1);
+        assert!(summary.contains("Bookmarks: 1"));
+        assert!(!summary.contains("bookmark 'Stale'"));
+        let (code, stdout, stderr) = run_scan(
+            &ScanArgs {
+                quiet: true,
+                types: vec!["bookmark".to_string()],
+                ..fixture_args(temp.0.join("Mini.pbip"))
+            },
+            &temp.0,
+            "",
+        );
+        assert_eq!(code, 1);
+        assert!(stdout.is_empty());
+        assert!(stderr.is_empty());
+
+        let named = bookmark("Stale", "Pgone").replace(
+            "\"name\": \"Stale\",",
+            "\"name\": \"Stale\", \"displayName\": \"FY24 view\",",
+        );
+        temp.write(
+            "Mini.Report/definition/bookmarks/Stale.bookmark.json",
+            &named,
+        );
+        temp.write(
+            "ripbi.toml",
+            "target = \"Mini.SemanticModel\"\n\n[scan]\nignore = [\"*FY24 view*\"]\n",
+        );
+        let (code, stdout, _) = run_scan(&bookmarks_only, &temp.0, "");
+        let ignored: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+        assert_eq!(
+            code, 0,
+            "the display-name glob suppresses the only selected finding"
+        );
+        assert!(ignored["unused"].as_array().unwrap().is_empty());
+        assert_eq!(ignored["summary"]["ignored"], 1);
+        assert_eq!(ignored["summary"]["unused_total"], 2);
     }
 
     #[test]

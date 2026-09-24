@@ -145,6 +145,54 @@ impl From<String> for NameKey {
     }
 }
 
+/// A bookmark's source identity and author-facing label. Equality, ordering,
+/// and hashing use only the source name; renaming its display label cannot
+/// change the graph key.
+#[derive(Debug, Clone)]
+pub struct BookmarkKey {
+    /// Bookmark object name from the source report.
+    pub name: NameKey,
+    /// Author-facing name, when present.
+    pub display_name: Option<String>,
+}
+
+impl BookmarkKey {
+    /// The label shown in findings and matched by scan ignore globs.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        self.display_name
+            .as_deref()
+            .filter(|label| !label.is_empty())
+            .unwrap_or(self.name.as_str())
+    }
+}
+
+impl PartialEq for BookmarkKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for BookmarkKey {}
+
+impl Hash for BookmarkKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl PartialOrd for BookmarkKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BookmarkKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
 /// An unresolved field reference as written in DAX or in a report binding.
 ///
 /// Holds the *logical* name: quote-unescaping (`''` → `'`) is the producer's job — the
@@ -275,6 +323,14 @@ pub enum ObjectId {
         /// Report measure name; unique within its report.
         measure: NameKey,
     },
+    /// A bookmark whose saved sections all refer to deleted pages. The source
+    /// name and report index keep identity distinct from its display label.
+    Bookmark {
+        /// Position of its report in the graph's input slice.
+        report_index: usize,
+        /// Source identity plus author-facing label.
+        bookmark: BookmarkKey,
+    },
 }
 
 impl fmt::Display for ObjectId {
@@ -342,6 +398,9 @@ impl fmt::Display for ObjectId {
             ObjectId::ReportMeasure { measure } => {
                 write!(f, "report measure {}", Quoted(measure.as_str()))
             }
+            ObjectId::Bookmark { bookmark, .. } => {
+                write!(f, "bookmark {}", Quoted(bookmark.label()))
+            }
         }
     }
 }
@@ -364,7 +423,8 @@ impl ObjectId {
             ObjectId::Role { .. }
             | ObjectId::Expression { .. }
             | ObjectId::Function { .. }
-            | ObjectId::ReportMeasure { .. } => None,
+            | ObjectId::ReportMeasure { .. }
+            | ObjectId::Bookmark { .. } => None,
         }
     }
 }
@@ -394,6 +454,21 @@ mod tests {
             table: None,
             name: NameKey::new(name),
         }
+    }
+
+    #[test]
+    fn bookmark_identity_ignores_its_display_label() {
+        let source = BookmarkKey {
+            name: NameKey::new("B1"),
+            display_name: Some("First label".to_string()),
+        };
+        let renamed = BookmarkKey {
+            name: NameKey::new("b1"),
+            display_name: Some("New label".to_string()),
+        };
+
+        assert_eq!(source, renamed);
+        assert_eq!(HashSet::from([source, renamed]).len(), 1);
     }
 
     mod fold_name {

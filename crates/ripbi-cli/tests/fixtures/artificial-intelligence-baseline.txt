@@ -14,10 +14,11 @@
 # saved filters count as bindings — re-applying a bookmark re-binds its fields —
 # but Power BI leaves sections of *deleted* pages inside bookmarks forever, and
 # a filter on a page nobody can navigate to would keep its columns live with no
-# way to ever re-apply it. Those sections are skipped (a `stale_state` notice,
+# way to ever re-apply it. Those sections do not bind (a `stale_state` notice,
 # surfaced by --strict); this sample's 15 of 17 bookmarks sit wholly on deleted
-# pages, which is why the nine columns below — whose last consumer was such a
-# saved filter — are findings here, in agreement with the export.
+# pages and are themselves unused findings (issue #61). Their saved fields are
+# dead-chain edges: four former orphan columns below are now chained, and five
+# already-chained columns gain an additional also-unused bookmark consumer.
 # Objects both sides mark dead, distilled out of the rows for their chain shape
 # (asserted in the test): the two unactivated inactive SystemUserSeq
 # relationships and their three key columns — externally Unused; ripbi flags
@@ -67,7 +68,7 @@ column	Case Calendar	DaySeq	orphan
 column	Case Calendar	MONTH	orphan
 column	Case Calendar	MONTH NUMBER	chained
 column	Case Calendar	RELATIVE 07 DAY PERIOD	orphan
-column	Case Calendar	RELATIVE 30 DAY PERIOD	orphan
+column	Case Calendar	RELATIVE 30 DAY PERIOD	chained
 column	Case Calendar	RELATIVE DAY	orphan
 column	Case Calendar	RELATIVE MONTH	orphan
 column	Case Calendar	RELATIVE WEEK	orphan
@@ -88,10 +89,10 @@ column	Cases	Escalations Goal	orphan
 column	Cases	Is Escalated	chained
 column	Cases	Is SLA Violation	chained
 column	Cases	Minutes to First Contact	orphan
-column	Cases	Origin	orphan
+column	Cases	Origin	chained
 column	Cases	Resolution Minutes	orphan
 column	Cases	Resolution Minutes Goal	orphan
-column	Cases	Severity	orphan
+column	Cases	Severity	chained
 column	Cases	SLA Compliance Goal	orphan
 column	Cases	Status	orphan
 column	Cases	Subject	chained
@@ -159,7 +160,7 @@ column	Opportunity Calendar	MONTH	orphan
 column	Opportunity Calendar	MONTH NUMBER	chained
 column	Opportunity Calendar	RELATIVE 07 DAY PERIOD	orphan
 column	Opportunity Calendar	RELATIVE 30 DAY PERIOD	orphan
-column	Opportunity Calendar	RELATIVE MONTH	orphan
+column	Opportunity Calendar	RELATIVE MONTH	chained
 column	Opportunity Calendar	RELATIVE WEEK	orphan
 column	Opportunity Calendar	YEAR	orphan
 column	Opportunity Calendar	YEAR WEEK	orphan
