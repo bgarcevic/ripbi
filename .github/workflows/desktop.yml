@@ -1,0 +1,68 @@
+name: Desktop Windows
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: Build an optimized installer for a tagged release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Desktop checks and installer (Windows x64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: desktop-windows-msvc
+      - run: npm ci
+      - run: npm test
+      # generate_context! embeds dist, so build the frontend before Rust checks.
+      - run: npm run build
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build installer
+        shell: pwsh
+        env:
+          RELEASE_BUILD: ${{ inputs.release }}
+        run: |
+          $buildArgs = @('run', 'tauri', '--', 'build', '--target', 'x86_64-pc-windows-msvc', '--bundles', 'nsis')
+          if ($env:RELEASE_BUILD -ne 'true') { $buildArgs += '--debug' }
+          $buildArgs += @('--', '--locked')
+          & npm @buildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage installer
+        shell: pwsh
+        env:
+          RELEASE_BUILD: ${{ inputs.release }}
+        run: |
+          $buildProfile = if ($env:RELEASE_BUILD -eq 'true') { 'release' } else { 'debug' }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installers = @(Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/$buildProfile/bundle/nsis/*-setup.exe")
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)" }
+          New-Item -ItemType Directory -Force -Path dist-installer | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName -Destination "dist-installer/ripbi-desktop-$version-x86_64-pc-windows-msvc-setup.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-desktop-windows-x64
+          path: desktop/dist-installer/*
+          if-no-files-found: error
