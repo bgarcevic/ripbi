@@ -12,6 +12,14 @@ fn main() {
         .file("vendor/src/Xpress9Misc.c")
         // Status codes only: no error-text formatting and no debug traps.
         .define("XPRESS9_MAX_TRACE_LEVEL", "0")
+        // The codec was written for MSVC, which never optimizes on type-based
+        // aliasing, signed overflow, or declared array bounds. The encoder
+        // indexes `m_uNext[8]` past its declared size by design, and GCC's
+        // -O3 miscompiles it without the last flag. Keep MSVC's semantics
+        // everywhere (flags a compiler lacks are skipped).
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-aggressive-loop-optimizations")
         .warnings(false);
     if encoder {
         build

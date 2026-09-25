@@ -545,6 +545,9 @@ Xpress9DecoderFetchDecompressedData (
     uxint               uOrigDataAvailable;
     uxint               uFlags;
     BOOL                fEof;
+    /* ripbi: forward-progress guard (see NOTICE.md) */
+    UInt64              uRipbiLastProgress = (UInt64) -1;
+    unsigned            uRipbiStalls = 0;
     BIO_DECLARE();
 
     uCompDataNeeded     = 0;
@@ -809,6 +812,32 @@ Xpress9DecoderFetchDecompressedData (
     fEof = FALSE;
     for (;;)
     {
+        /* ripbi: corrupt input can make the decode step return without
+           consuming input or producing output, so this loop would spin
+           forever. Every healthy pass moves at least one of these; two
+           stalled passes in a row are treated as corrupt data. */
+        {
+            UInt64 uRipbiProgress =
+                (UInt64) (pDecoder->m_DecodeData.m_uBufferOffset + pDecoder->m_DecodeData.m_uDecodePosition)
+                + (UInt64) pDecoder->m_DecodeData.m_uDecodedSizeBits
+                + (UInt64) pDecoder->m_UserData.m_uUserDataRead
+                + (UInt64) uOrigDataWritten
+                + (UInt64) pDecoder->m_DecodeData.m_uScratchBytesStored;
+            if (uRipbiProgress == uRipbiLastProgress)
+            {
+                if (++uRipbiStalls >= 2)
+                {
+                    SET_ERROR (Xpress9Status_DecoderCorruptedData, pStatus, "decoder made no progress");
+                    goto Failure;
+                }
+            }
+            else
+            {
+                uRipbiStalls = 0;
+                uRipbiLastProgress = uRipbiProgress;
+            }
+        }
+
         // first, copy already decompressed data into user buffer
         uBytesToCopy = pDecoder->m_DecodeData.m_uDecodePosition - pDecoder->m_DecodeData.m_uCopyPosition;
         if (uBytesToCopy > uOrigDataSize)
