@@ -201,7 +201,7 @@ fn visual(
         .get("visualType")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
-    if !known_visual_type(visual_type) {
+    if !config.is_null() && !known_visual_type(visual_type) {
         skips.push(SkipNotice {
             path: path.to_path_buf(),
             location: Some(format!("{location}/config/singleVisual/visualType")),

@@ -18,6 +18,7 @@ fn legacy_layout_keeps_unknown_visual_textbox_and_visual_calculation_fields() {
     assert_eq!(parsed.value.pages.len(), 1);
     assert_eq!(parsed.value.pages[0].visuals.len(), 3);
     assert_eq!(parsed.value.pages[0].visuals[0].visual_type, "futureVisual");
+    assert_eq!(parsed.skips.len(), 2);
     assert!(
         parsed
             .skips
