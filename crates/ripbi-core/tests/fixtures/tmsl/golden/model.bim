@@ -1,0 +1,327 @@
+{
+  "compatibilityLevel": 1606,
+  "model": {
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "discourageImplicitMeasures": true,
+    "sourceQueryCulture": "en-US",
+    "tables": [
+      {
+        "name": "Sales",
+        "description": "Sales fact table.",
+        "lineageTag": "11111111-1111-1111-1111-111111111111",
+        "defaultDetailRowsDefinition": {
+          "expression": "SELECTCOLUMNS(\u0027Sales\u0027, \u0022Key\u0022, [SalesOrderLineKey])"
+        },
+        "columns": [
+          {
+            "name": "SalesOrderLineKey",
+            "dataType": "int64",
+            "isHidden": true,
+            "sourceColumn": "SalesOrderLineKey",
+            "lineageTag": "33333333-3333-3333-3333-333333333333",
+            "summarizeBy": "none",
+            "changedProperties": [
+              {
+                "property": "IsHidden"
+              }
+            ],
+            "annotations": [
+              {
+                "name": "SummarizationSetBy",
+                "value": "Automatic"
+              }
+            ]
+          },
+          {
+            "name": "Sales Amount",
+            "dataType": "double",
+            "sourceColumn": "Sales Amount",
+            "lineageTag": "44444444-4444-4444-4444-444444444444",
+            "summarizeBy": "sum",
+            "relatedColumnDetails": {
+              "groupByColumns": [
+                {
+                  "groupingColumn": "SalesOrderLineKey"
+                }
+              ]
+            }
+          },
+          {
+            "type": "calculated",
+            "name": "Margin %",
+            "dataType": "double",
+            "description": "A calculated column; the sort-by target is quoted.",
+            "expression": "DIVIDE([Sales Amount], 10)",
+            "formatString": "0.0%",
+            "sortByColumn": "Sales Amount",
+            "lineageTag": "55555555-5555-5555-5555-555555555555"
+          },
+          {
+            "name": "Supplier Phone",
+            "dataType": "string",
+            "description": "Hidden from viewers by the Administrators role\u0027s column permission.",
+            "sourceColumn": "Supplier Phone",
+            "lineageTag": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            "summarizeBy": "none"
+          },
+          {
+            "name": "DueDateKey",
+            "dataType": "int64",
+            "isHidden": true,
+            "sourceColumn": "DueDateKey",
+            "lineageTag": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "summarizeBy": "none"
+          },
+          {
+            "name": "YearNum",
+            "dataType": "int64",
+            "sourceColumn": "YearNum",
+            "lineageTag": "cccccccc-cccc-cccc-cccc-cccccccccccc"
+          },
+          {
+            "name": "Month Name",
+            "dataType": "string",
+            "sourceColumn": "Month Name",
+            "lineageTag": "dddddddd-dddd-dddd-dddd-dddddddddddd"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Sales-ab12cd34",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": "let\n    Source = Excel.Workbook(File.Contents(\u0022C:\\Data\\Mini.xlsx\u0022), null, true),\n\n    Sales_Table = Source{[Item=\u0022Sales\u0022,Kind=\u0022Table\u0022]}[Data]\nin\n    Sales_Table"
+            }
+          }
+        ],
+        "measures": [
+          {
+            "name": "Sales",
+            "description": "Total sales revenue.",
+            "expression": "SUM(\u0027Sales\u0027[Sales Amount])",
+            "formatString": "\u0022$\u0022#,0",
+            "displayFolder": "Core",
+            "lineageTag": "22222222-2222-2222-2222-222222222222"
+          },
+          {
+            "name": "Growth %",
+            "description": "Growth versus prior year, written across two lines.",
+            "expression": "VAR prior = CALCULATE([Sales], DATEADD(\u0027Date\u0027[Date], -1, YEAR))\nRETURN DIVIDE([Sales] - prior, prior)",
+            "isHidden": true,
+            "kpi": {
+              "targetExpression": "[Sales Budget]",
+              "statusGraphic": "Three Traffic Lights",
+              "statusExpression": "IF([Sales] \u003E [Sales Budget], 1, -1)",
+              "trendExpression": "[Sales] - [Sales Budget]"
+            },
+            "detailRowsDefinition": {
+              "expression": "SELECTCOLUMNS(\u0027Sales\u0027, \u0022Key\u0022, [SalesOrderLineKey])"
+            },
+            "formatStringDefinition": {
+              "expression": "\u00220.0%;-0.0%;0.0%\u0022"
+            }
+          }
+        ],
+        "hierarchies": [
+          {
+            "name": "Fiscal",
+            "lineageTag": "66666666-6666-6666-6666-666666666666",
+            "levels": [
+              {
+                "name": "Year",
+                "ordinal": 0,
+                "column": "YearNum",
+                "lineageTag": "77777777-7777-7777-7777-777777777777"
+              },
+              {
+                "name": "Month Name",
+                "ordinal": 1,
+                "column": "Month Name"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Sales Order",
+        "lineageTag": "88888888-8888-8888-8888-888888888888",
+        "columns": [
+          {
+            "name": "SalesOrder",
+            "dataType": "string",
+            "sourceColumn": "SalesOrder"
+          },
+          {
+            "name": "SalesOrderLineKey",
+            "dataType": "int64",
+            "isHidden": true,
+            "sourceColumn": "SalesOrderLineKey",
+            "summarizeBy": "none"
+          },
+          {
+            "name": "DueDateKey",
+            "dataType": "int64",
+            "isHidden": true,
+            "sourceColumn": "DueDateKey",
+            "summarizeBy": "none"
+          },
+          {
+            "name": "It\u0027s quoted",
+            "dataType": "string",
+            "description": "An escaped quote in the name.",
+            "sourceColumn": "Quoted"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "SalesOrder-cd34ef56",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": "Sql.Database(\u0022server\u0022, \u0022db\u0022)"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Time Intelligence",
+        "lineageTag": "99999999-9999-9999-9999-999999999999",
+        "calculationGroup": {
+          "precedence": 100,
+          "multipleOrEmptySelectionExpression": {
+            "expression": "ERROR(\u0022Pick exactly one\u0022)",
+            "formatStringDefinition": {
+              "expression": "\u0022General\u0022"
+            }
+          },
+          "noSelectionExpression": {
+            "expression": "SELECTEDMEASURE()",
+            "formatStringDefinition": {
+              "expression": "SELECTEDMEASUREFORMATSTRING()"
+            }
+          },
+          "calculationItems": [
+            {
+              "name": "Current",
+              "expression": "SELECTEDMEASURE()",
+              "ordinal": 0
+            },
+            {
+              "name": "YoY %",
+              "expression": "DIVIDE(SELECTEDMEASURE(), CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR(\u0027Date\u0027[Date])))",
+              "ordinal": 1,
+              "formatStringDefinition": {
+                "expression": "\u00220%;-0%;0%\u0022"
+              }
+            }
+          ]
+        },
+        "columns": [
+          {
+            "name": "Time Intelligence",
+            "dataType": "string",
+            "description": "The group\u0027s field column, an ordinary column.",
+            "lineageTag": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Partition_Time Intelligence",
+            "source": {
+              "type": "calculationGroup"
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "00000000-0000-0000-0000-000000000001",
+        "fromTable": "Sales",
+        "fromColumn": "SalesOrderLineKey",
+        "toTable": "Sales Order",
+        "toColumn": "SalesOrderLineKey"
+      },
+      {
+        "name": "00000000-0000-0000-0000-000000000002",
+        "fromCardinality": "one",
+        "fromTable": "Sales Order",
+        "fromColumn": "SalesOrder",
+        "toTable": "Sales",
+        "toColumn": "SalesOrderLineKey",
+        "isActive": false,
+        "crossFilteringBehavior": "bothDirections"
+      },
+      {
+        "name": "00000000-0000-0000-0000-000000000003",
+        "fromTable": "Sales",
+        "fromColumn": "DueDateKey",
+        "toTable": "Sales Order",
+        "toColumn": "DueDateKey",
+        "isActive": false
+      }
+    ],
+    "cultures": [
+      {
+        "name": "en-US",
+        "linguisticMetadata": {
+          "content": {
+            "Version": "1.0.0",
+            "Language": "en-US"
+          },
+          "contentType": "json"
+        }
+      }
+    ],
+    "roles": [
+      {
+        "name": "Administrators",
+        "modelPermission": "read",
+        "tablePermissions": [
+          {
+            "name": "Sales",
+            "filterExpression": "FILTER(\u0027Sales\u0027, [Sales Amount] \u003E 0)",
+            "columnPermissions": [
+              {
+                "name": "Supplier Phone",
+                "metadataPermission": "none"
+              }
+            ]
+          },
+          {
+            "name": "Sales Order"
+          }
+        ]
+      }
+    ],
+    "expressions": [
+      {
+        "name": "ServerName",
+        "kind": "m",
+        "expression": "\u0022localhost\u0022"
+      },
+      {
+        "name": "Calendar",
+        "description": "A shared calendar query, written as a block.",
+        "kind": "m",
+        "expression": "let\n    StartDate = #date(2024, 1, 1),\n    EndDate = #date(2024, 12, 31)\nin\n    {StartDate, EndDate}"
+      }
+    ],
+    "annotations": [
+      {
+        "name": "PBI_QueryOrder",
+        "value": "[\u0022Sales\u0022,\u0022Sales Order\u0022,\u0022Time Intelligence\u0022]"
+      },
+      {
+        "name": "PBI_ResultType",
+        "value": "Table"
+      }
+    ]
+  }
+}

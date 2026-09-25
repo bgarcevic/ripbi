@@ -1,0 +1,34 @@
+{
+  "sections": [
+    {
+      "name": "ReportSection",
+      "displayName": "Overview",
+      "filters": [
+        {"name": "PageFilter", "expression": {"Column": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Region"}}}
+      ],
+      "visualContainers": [
+        {
+          "config": {
+            "name": "FutureVisual",
+            "singleVisual": {
+              "visualType": "futureVisual",
+              "projections": {"Values": [{"queryRef": "Sales.Amount"}]},
+              "prototypeQuery": {
+                "From": [{"Name": "s", "Entity": "Sales"}],
+                "Select": [{"Measure": {"Expression": {"SourceRef": {"Source": "s"}}, "Property": "Amount"}, "Name": "Sales.Amount"}],
+                "OrderBy": [{"Expression": {"Column": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Quantity"}}}]
+              },
+              "objects": {"dataPoint": [{"properties": {"fill": {"expr": {"Measure": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Profit"}}}}}]}
+            }
+          },
+          "query": {"Commands": [{"SemanticQueryDataShapeCommand": {"Query": {"Version": 2, "From": [{"Name": "s", "Entity": "Sales"}], "Select": [{"Measure": {"Expression": {"SourceRef": {"Source": "s"}}, "Property": "Amount"}}]}}}]},
+          "visualCalculations": [{"Name": "VisualCalc", "Expression": "SUM('Sales'[Quantity]) + [Amount]"}]
+        },
+        {
+          "config": {"name": "TextBox", "singleVisual": {"visualType": "textbox", "objects": {"general": [{"properties": {"paragraphs": [{"textRuns": [{"expr": {"Measure": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Caption"}}}]}]}}]}}}
+        },
+        {"config": "{broken"}
+      ]
+    }
+  ]
+}

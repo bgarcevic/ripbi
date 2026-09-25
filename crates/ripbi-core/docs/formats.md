@@ -4,9 +4,8 @@ What each ingestion format's parser accepts, how it maps into the ASTs, and —
 most importantly — the policy for everything it does *not* model. Read this
 before changing anything under `src/ingest/`.
 
-Two formats are covered today: TMDL semantic models (`ingest::semantic_model`
-→ `TabularDatabase`) and PBIR reports (`ingest::report` → `ReportModel`, its
-own section below).
+TMDL and TMSL model sources normalize to `TabularDatabase`. PBIR folders and
+PBIR or legacy Layout members inside ZIP archives normalize to `ReportModel`.
 
 ## Detection
 
@@ -15,13 +14,38 @@ own section below).
 - a `.SemanticModel` item folder (its `definition/` subfolder is located
   automatically), or
 - a `definition/` folder itself (any directory that directly contains a
-  `model.tmdl`, or is named `definition`).
+  `model.tmdl`, or is named `definition`),
+- a TMSL JSON file such as `model.bim`, or
+- a ZIP archive containing `DataModelSchema` (usually PBIT).
 
-Anything else is `Error::UnsupportedFormat`. The item's display name is read
+`ingest::report(path)` also accepts PBIX and PBIT ZIPs containing
+`Report/Layout` or `Report/definition/report.json`. ZIP readers load only the
+schema, report definition, and (when present) `DataMashup` members needed for
+analysis. A PBIX's compressed `DataModel` is never unpacked or decoded; pair
+its report with a separate model. TMSL and legacy Layout JSON may be UTF-8 or
+UTF-16, with or without a byte order mark.
+
+Anything else is `Error::UnsupportedFormat`. The PBIP item's display name is read
 from `.platform` (`metadata.displayName`) beside `definition/` — TMDL itself
 records no usable model name (`model.tmdl` names its root object `Model`). A
 missing or unreadable `.platform` yields `None`; a name is provenance, never
 liveness.
+
+## TMSL and archive mapping
+
+`model.bim` and PBIT `DataModelSchema` map the same supported tables, columns,
+measures, relationships, partitions, expressions, functions, roles, calculation
+groups, and expression-bearing metadata as TMDL. Empty M expressions in a PBIT
+are recovered from `DataMashup`'s `Formulas/*.m` section declarations; if a
+required expression remains absent, ingestion fails with an M coverage error.
+Bare TMSL with missing M also fails. The public AdventureWorks PBIT is compared
+with its PBIP conversion for unused objects and M references in tests.
+
+Legacy `Report/Layout` is decoded into pages, visuals, filters, bookmarks,
+sorts, and formatting references. Its nested stringified JSON is traversed for
+field and visual-calculation references; unknown visual types and malformed
+config blobs produce skip notices while recognizable references are retained.
+The small UTF-16 Layout fixture follows the shape of a public older PBIX.
 
 ## TMDL grammar subset
 

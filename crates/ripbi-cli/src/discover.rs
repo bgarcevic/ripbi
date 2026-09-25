@@ -19,11 +19,13 @@
 //!   `byPath`, else by the `byConnection` dataset name when it matches
 //!   exactly one sibling model's stem or `.platform` display name.
 //! - A `--model` target — a `.SemanticModel` folder, its `definition/`, a
-//!   bare `model.tmdl` folder, or a `.pbip` naming the project — pairs with
+//!   bare `model.tmdl` folder, a `.pbip` naming the project, `model.bim`, or
+//!   a PBIT — pairs with
 //!   every report item found under its search folders whose `definition.pbir`
 //!   resolves to it, whose folder stem names it (`X.Report` beside
 //!   `X.SemanticModel`), or whose `byConnection` names its dataset.
-//! - `.pbix`/`.pbit`/`model.bim` are recognized but not yet ingestable.
+//! - A PBIT supplies its own model and report; a PBIX report pairs with one
+//!   unambiguous sibling model, while a bare `model.bim` follows model-only rules.
 
 use std::collections::HashSet;
 use std::fs;
@@ -39,7 +41,7 @@ use crate::error::ScanError;
 pub struct Paired {
     /// The semantic-model folder to ingest.
     pub model: PathBuf,
-    /// Every report folder to ingest as reachability roots, in discovery order.
+    /// Every report item to ingest as reachability roots, in discovery order.
     pub reports: Vec<PathBuf>,
 }
 
@@ -54,7 +56,7 @@ pub struct Candidate {
     pub project_root: Option<PathBuf>,
     /// The project stem, when this is a project.
     pub stem: Option<String>,
-    /// True for archives (`.pbix` and friends): recognized, not ingestable.
+    /// True for archive entries (`.pbix` and `.pbit`) in the picker.
     pub is_archive: bool,
 }
 
@@ -68,7 +70,7 @@ pub enum Resolution {
         dir: PathBuf,
         candidates: Vec<Candidate>,
     },
-    /// Recognized but not yet ingestable: a `.pbix`, `.pbit`, or `model.bim`.
+    /// An archive without the entries needed for a scan.
     Archive(PathBuf),
     /// Nothing ripbi recognizes.
     Unrecognized(PathBuf),
@@ -92,8 +94,45 @@ pub fn resolve_path(path: &Path) -> Result<Resolution, ScanError> {
 fn resolve_file(path: &Path) -> Result<Resolution, ScanError> {
     let name = file_name(path);
     let lower = name.to_lowercase();
-    if lower == "model.bim" || lower.ends_with(".pbix") || lower.ends_with(".pbit") {
+    if lower.ends_with(".pbit") {
+        if ingest::archive_has_model(path) && ingest::archive_has_report(path) {
+            return Ok(Resolution::Paired(Paired {
+                model: path.to_path_buf(),
+                reports: vec![path.to_path_buf()],
+            }));
+        }
         return Ok(Resolution::Archive(path.to_path_buf()));
+    }
+    if lower.ends_with(".bim") {
+        return Ok(Resolution::Paired(Paired {
+            model: path.to_path_buf(),
+            reports: Vec::new(),
+        }));
+    }
+    if lower.ends_with(".pbix") {
+        if !ingest::archive_has_report(path) {
+            return Ok(Resolution::Archive(path.to_path_buf()));
+        }
+        let parent = parent_of(path);
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let model = sibling_model(&parent, &stem);
+        return model
+            .map(|model| {
+                Resolution::Paired(Paired {
+                    model,
+                    reports: vec![path.to_path_buf()],
+                })
+            })
+            .ok_or_else(|| {
+                ScanError::no_model(format!(
+                    "cannot locate the semantic model for report {}",
+                    path.display()
+                ))
+                .with_hint("pass --model <PBIP or model.bim> with --report <PBIX>")
+            });
     }
     if let Some(stem) = strip_suffix(&name, ".pbip") {
         let root = parent_of(path);
@@ -113,20 +152,39 @@ fn resolve_dir(path: &Path) -> Result<Resolution, ScanError> {
     }
     let stems = project_stems(path);
     match stems.len() {
-        0 => Ok(Resolution::Unrecognized(path.to_path_buf())),
+        0 => {
+            let candidates = discover(path);
+            match candidates.len() {
+                0 => Ok(Resolution::Unrecognized(path.to_path_buf())),
+                1 => match resolve_path(&candidates[0].path)? {
+                    Resolution::Paired(paired) => Ok(Resolution::Paired(paired)),
+                    other => Ok(other),
+                },
+                _ => Ok(Resolution::Ambiguous {
+                    dir: path.to_path_buf(),
+                    candidates,
+                }),
+            }
+        }
         1 => {
             let stem = stems.values().next().expect("exactly one stem").clone();
             pair_project(path, &stem).map(Resolution::Paired)
         }
         _ => Ok(Resolution::Ambiguous {
             dir: path.to_path_buf(),
-            candidates: project_candidates(path, &stems),
+            candidates: discover(path),
         }),
     }
 }
 
-/// Pairs a candidate from folder discovery. Archives never pair.
+/// Pairs a candidate from folder discovery.
 pub fn pair(candidate: &Candidate) -> Result<Paired, ScanError> {
+    if candidate.path.is_file() && candidate.is_archive {
+        return match resolve_path(&candidate.path)? {
+            Resolution::Paired(paired) => Ok(paired),
+            _ => Err(archive_error(&candidate.path)),
+        };
+    }
     let (Some(root), Some(stem)) = (&candidate.project_root, &candidate.stem) else {
         return Err(archive_error(&candidate.path));
     };
@@ -217,10 +275,13 @@ pub fn pair_report(report_dir: &Path) -> Result<Paired, ScanError> {
 /// reports.
 ///
 /// # Errors
-/// When the path names no report items. Archives, model folders, plain
-/// folders, and missing paths are usage errors even under `--allow-no-model`:
+/// When the path names no report items. Model folders, plain folders, and
+/// missing paths are usage errors even under `--allow-no-model`:
 /// the flag rescues a missing model, never a mistyped path.
 pub fn report_items_without_model(path: &Path) -> Result<Vec<PathBuf>, ScanError> {
+    if path.is_file() && ingest::archive_has_report(path) {
+        return Ok(vec![path.to_path_buf()]);
+    }
     if path.is_dir() {
         let lower = file_name(path).to_lowercase();
         if lower.ends_with(".report") || path.join("report.json").is_file() {
@@ -308,13 +369,14 @@ pub struct BoundReports {
 }
 
 /// The shapes `--model` accepts, listed whenever resolution fails.
-const MODEL_SHAPES_HINT: &str = "pass a .pbip, a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl";
+const MODEL_SHAPES_HINT: &str = "pass a .pbip, .pbit, model.bim, a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl";
 
 /// Resolves a `--model` PATH into the model item it names.
 ///
 /// The accepted shapes are core's — a `.SemanticModel` folder, its
 /// `definition/` subfolder, or any folder directly containing `model.tmdl` —
-/// plus a `.pbip` file naming the project whose model to use.
+/// plus a `.pbip` file naming the project whose model to use, a TMSL `.bim`
+/// file, or a PBIT with `DataModelSchema`.
 ///
 /// # Errors
 /// When `path` is none of those, or the `.pbip` names no model. The message
@@ -322,6 +384,10 @@ const MODEL_SHAPES_HINT: &str = "pass a .pbip, a .SemanticModel folder, its defi
 /// error) and the hint lists the accepted shapes.
 pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
     if path.is_file() {
+        let lower = file_name(path).to_lowercase();
+        if lower.ends_with(".bim") || lower.ends_with(".pbit") {
+            return model_target(path);
+        }
         return match strip_suffix(&file_name(path), ".pbip") {
             Some(stem) => {
                 let root = parent_of(path);
@@ -337,6 +403,23 @@ pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
 
 /// Resolves an already-located model item root into a [`ModelTarget`].
 fn model_target(item_root: &Path) -> Result<ModelTarget, ScanError> {
+    if item_root.is_file() {
+        let lower = file_name(item_root).to_lowercase();
+        if lower.ends_with(".bim") || lower.ends_with(".pbit") {
+            let name = ingest::semantic_model(item_root)
+                .map_err(|error| ScanError::new(error.to_string()))?
+                .value
+                .name;
+            return Ok(ModelTarget {
+                item_root: item_root.to_path_buf(),
+                definition: item_root.to_path_buf(),
+                stem: item_root
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned()),
+                display_name: name,
+            });
+        }
+    }
     let definition = ingest::locate_definition(item_root)
         .map_err(|error| ScanError::new(error.to_string()).with_hint(MODEL_SHAPES_HINT))?;
     let item_root = parent_of(&definition);
@@ -783,10 +866,44 @@ fn model_names_dataset(model: &Path, catalog: &str) -> bool {
 /// The error for an archive a caller tried to scan: recognized, not ingestable.
 pub fn archive_error(path: &Path) -> ScanError {
     ScanError::new(format!(
-        "{} is not supported yet: only TMDL semantic models and PBIR reports can be scanned",
+        "{} is not a supported PBIT or PBIX input",
         path.display()
     ))
-    .with_hint("track .pbix/.pbit support in the ripbi issue tracker")
+    .with_hint("PBIT needs DataModelSchema and a report; PBIX needs a report and a separate model")
+}
+
+/// A stem-matched model wins; otherwise every supported sibling model is
+/// considered together and only a sole candidate can be inferred.
+fn sibling_model(parent: &Path, stem: &str) -> Option<PathBuf> {
+    if let Some(item) = stem_item(parent, stem, "SemanticModel") {
+        return Some(item);
+    }
+    for suffix in ["bim", "pbit"] {
+        let path = parent.join(format!("{stem}.{suffix}"));
+        if path.is_file() && (suffix == "bim" || ingest::archive_has_model(&path)) {
+            return Some(path);
+        }
+    }
+    let mut candidates = children_matching(parent, |name| {
+        name.to_lowercase().ends_with(".semanticmodel")
+    });
+    if let Ok(entries) = fs::read_dir(parent) {
+        for path in entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+        {
+            if !path.is_file() {
+                continue;
+            }
+            let lower = file_name(&path).to_lowercase();
+            if lower.ends_with(".bim")
+                || lower.ends_with(".pbit") && ingest::archive_has_model(&path)
+            {
+                candidates.push(path);
+            }
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
 }
 
 fn file_name(path: &Path) -> String {
@@ -936,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn an_archive_is_recognized_but_never_pairs() {
+    fn a_malformed_archive_is_recognized_but_cannot_pair() {
         let temp = TempDir::new("archive");
         temp.write("Model.pbix", "PK");
 
@@ -950,8 +1067,8 @@ mod tests {
             stem: None,
             is_archive: true,
         };
-        let error = pair(&candidate).expect_err("archives do not pair");
-        assert!(error.message.contains("not supported yet"));
+        let error = pair(&candidate).expect_err("malformed archive cannot pair");
+        assert!(error.message.contains("not a supported PBIT or PBIX input"));
     }
 
     #[test]

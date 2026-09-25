@@ -3,10 +3,15 @@
 Microsoft Power BI Desktop sample projects (PBIP format) used as fixtures for
 developing and manually testing `ripbi`.
 
+`AdventureWorks Sales.pbit` was exported with Power BI Desktop from Microsoft's
+public `2026 Power BI Samples Revamp/AdventureWorks Sales.pbix`. It is paired
+with the AdventureWorks PBIP conversion in the archive parity tests. The PBIT
+contains the model schema and report definition, without the PBIX data model.
+
 These files are **not** part of ripbi's source code and are not covered by the
-Apache-2.0/MIT dual license at the repository root. They are copied from
-<https://github.com/microsoft/powerbi-desktop-samples> and redistributed here
-under the MIT license reproduced below, as that license requires.
+Apache-2.0/MIT dual license at the repository root. They are copied or exported
+from <https://github.com/microsoft/powerbi-desktop-samples> and redistributed
+here under the MIT license reproduced below, as that license requires.
 
 Local Power BI Desktop artifacts (`*/.pbi/` directories) are regenerated when a
 project is opened and are intentionally not committed.

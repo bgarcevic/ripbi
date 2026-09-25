@@ -18,9 +18,10 @@ It works without opening the reports or semantic models, so it can run as part
 of a CI pipeline. It's also cross-platform, with no dependency on Power BI
 Desktop or similar.
 
-It currently works only on local PBIP projects — a TMDL semantic model plus
-PBIR reports; `.pbix` and `.pbit` files are not supported yet. I plan to
-implement guided automated cleanup and tenant scanning. An experimental
+It reads local PBIP projects, TMSL `model.bim` files, PBIT templates, and
+PBIX report layouts paired with a separate model. Compressed PBIX `DataModel`
+decoding is tracked separately in issue #10. I plan to implement guided
+automated cleanup and tenant scanning. An experimental
 [desktop UI](desktop/README.md) provides guided model/report selection and usage metrics.
 
 ## Install
@@ -56,6 +57,8 @@ Clone the repository to get the sample projects, then scan one:
 git clone https://github.com/bgarcevic/ripbi.git
 cd ripbi
 ripbi scan "samples/AdventureWorks Sales.pbip"
+ripbi scan "samples/AdventureWorks Sales.pbit"
+ripbi scan --model model.bim --report report.pbix
 ```
 
 Output from the committed AdventureWorks sample (trimmed):

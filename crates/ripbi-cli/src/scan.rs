@@ -702,6 +702,12 @@ fn resolve_model_mode(
 ) -> Result<(discover::Paired, ModelScan), ScanError> {
     let target = discover::resolve_model(model_path)?;
     let mut direct = Vec::new();
+    if model_path.is_file()
+        && file_name_lower(model_path).ends_with(".pbit")
+        && ingest::archive_has_report(model_path)
+    {
+        direct.push(model_path.to_path_buf());
+    }
     let mut search_roots = Vec::new();
     for extra in extras {
         partition_report_value(extra, &mut direct, &mut search_roots)?;
@@ -1009,6 +1015,9 @@ pub(crate) fn capped_names(names: &[String]) -> String {
 /// loose: core's locator accepts any folder with a `definition/` subfolder,
 /// `.Report` folders included.
 fn names_semantic_model(path: &Path) -> bool {
+    if path.is_file() {
+        return file_name_lower(path).ends_with(".bim") || file_name_lower(path).ends_with(".pbit");
+    }
     path.is_dir()
         && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())
 }
@@ -1152,6 +1161,11 @@ fn file_name_lower(path: &Path) -> String {
 /// property core's report locator accepts (a folder that is a report item,
 /// whatever it is named).
 fn is_report_item(path: &Path) -> bool {
+    if path.is_file() {
+        return (file_name_lower(path).ends_with(".pbix")
+            || file_name_lower(path).ends_with(".pbit"))
+            && ingest::archive_has_report(path);
+    }
     path.is_dir()
         && (path.join("report.json").is_file()
             || path.join("definition").join("report.json").is_file())

@@ -14,15 +14,60 @@
 //! to parse — is recorded as a notice. The full policy, including the curated
 //! ignore list, lives in `docs/formats.md`.
 
+mod archive;
+mod legacy;
 mod pbir;
 mod tmdl;
+mod tmsl;
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::model::TabularDatabase;
 use crate::report::{DatasetReference, ReportModel};
 use crate::{Error, Result};
+
+/// Power BI writes some JSON archive members as UTF-16 even without a BOM.
+fn decode_json_text(bytes: &[u8], label: &str) -> Result<String> {
+    let (bytes, endian) = if let Some(rest) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        (rest, Some(false))
+    } else if let Some(rest) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        (rest, Some(true))
+    } else if bytes.starts_with(b"{\0") || bytes.starts_with(b"[\0") {
+        (bytes, Some(false))
+    } else if bytes.starts_with(b"\0{") || bytes.starts_with(b"\0[") {
+        (bytes, Some(true))
+    } else {
+        (
+            bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes),
+            None,
+        )
+    };
+    if let Some(big_endian) = endian {
+        let (chunks, remainder) = bytes.as_chunks::<2>();
+        if !remainder.is_empty() {
+            return Err(Error::UnsupportedFormat(format!(
+                "{label} has an odd UTF-16 byte count"
+            )));
+        }
+        let units = chunks
+            .iter()
+            .map(|pair| {
+                if big_endian {
+                    u16::from_be_bytes([pair[0], pair[1]])
+                } else {
+                    u16::from_le_bytes([pair[0], pair[1]])
+                }
+            })
+            .collect::<Vec<_>>();
+        String::from_utf16(&units)
+            .map_err(|_| Error::UnsupportedFormat(format!("{label} is not valid UTF-16")))
+    } else {
+        String::from_utf8(bytes.to_vec())
+            .map_err(|_| Error::UnsupportedFormat(format!("{label} is not valid UTF-8")))
+    }
+}
 
 /// One thing a parser skipped, and why.
 ///
@@ -72,17 +117,49 @@ pub struct Ingested<T> {
     pub skips: Vec<SkipNotice>,
 }
 
-/// Parses a TMDL semantic model into a [`TabularDatabase`].
+/// Parses a TMDL folder, TMSL JSON file, or archive `DataModelSchema` into a
+/// [`TabularDatabase`].
 ///
-/// `path` is a `.SemanticModel` folder (its `definition/` subfolder is located
-/// automatically) or a `definition/` folder itself. Unknown-but-harmless TMDL
-/// drift is reported in [`Ingested::skips`]; only a file that cannot be parsed
-/// into a tree at all fails with [`Error::Tmdl`].
+/// `path` may be a `.SemanticModel` folder (its `definition/` subfolder is
+/// located automatically), a `definition/` folder, a `model.bim` file, or a
+/// ZIP with `DataModelSchema`. Compressed PBIX `DataModel` members are not
+/// decoded. Unexpected parse drift is reported in [`Ingested::skips`].
 ///
 /// Table order follows `model.tmdl`'s `ref table` directives; tables present as
 /// files but never referenced are appended in file-name order. The `cultures/`
 /// folder is deliberately not read.
 pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
+    if path.is_file() {
+        let mut signature = [0; 4];
+        let count = fs::File::open(path)?.read(&mut signature)?;
+        if count == 4 && signature == *b"PK\x03\x04" {
+            return archive::model(path);
+        }
+        let bytes = fs::read(path)?;
+        let leading = bytes
+            .iter()
+            .copied()
+            .find(|byte| !byte.is_ascii_whitespace());
+        let looks_like_json = leading == Some(b'{')
+            || bytes.starts_with(&[0xef, 0xbb, 0xbf])
+            || bytes.starts_with(&[0xff, 0xfe])
+            || bytes.starts_with(&[0xfe, 0xff])
+            || bytes.starts_with(b"\0{");
+        if looks_like_json
+            || path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bim"))
+        {
+            let mut skips = Vec::new();
+            let value = tmsl::load(&bytes, path, &mut skips)?;
+            archive::ensure_m_coverage(&value, path)?;
+            return Ok(Ingested { value, skips });
+        }
+        return Err(Error::UnsupportedFormat(format!(
+            "{} is neither TMSL JSON nor a PBIT archive",
+            path.display()
+        )));
+    }
     let definition = locate_definition(path)?;
     // `.platform` (which carries the display name) sits beside `definition/`.
     let item_root = definition.parent().unwrap_or(path);
@@ -92,10 +169,11 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
     Ok(Ingested { value, skips })
 }
 
-/// Parses a PBIR report folder into a [`ReportModel`].
+/// Parses a PBIR folder or an archive report into a [`ReportModel`].
 ///
-/// `path` is a `.Report` folder (its `definition/` subfolder is located
-/// automatically) or a `definition/` folder itself. A report is parsed
+/// `path` may be a `.Report` folder (its `definition/` subfolder is located
+/// automatically), a `definition/` folder, or a PBIX/PBIT ZIP with
+/// `Report/Layout` or `Report/definition/report.json`. A report is parsed
 /// standalone: the semantic model it connects to need not sit beside it, so
 /// one model can be scanned against several reports. When the report ships a
 /// phone layout — a `definition.mobile/` folder beside `definition/` — its
@@ -105,6 +183,9 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
 /// unreadable report directory, fails. A missing or anchor-less
 /// phone layout is the common case and is silent.
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
+    if path.is_file() {
+        return archive::report(path);
+    }
     let definition = locate_report_definition(path)?;
     // `.platform` (which carries the display name) sits beside `definition/`.
     let item_root = definition.parent().unwrap_or(path);
@@ -115,6 +196,19 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
         value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips)?;
     }
     Ok(Ingested { value, skips })
+}
+
+/// Whether a ZIP archive contains a TMSL `DataModelSchema` member.
+#[must_use]
+pub fn archive_has_model(path: &Path) -> bool {
+    archive::has_member(path, "DataModelSchema")
+}
+
+/// Whether a ZIP archive contains either supported report representation.
+#[must_use]
+pub fn archive_has_report(path: &Path) -> bool {
+    archive::has_member(path, "Report/Layout")
+        || archive::has_member(path, "Report/definition/report.json")
 }
 
 /// Reads a report item's `definition.pbir` dataset reference without parsing
