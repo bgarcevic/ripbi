@@ -646,7 +646,14 @@ struct Block {
     indent: usize,
     body: Vec<String>,
     prefix: Option<String>,
+    /// Set for a ```` ``` ```` fenced block: the opener line's depth. Its body
+    /// is kept raw until the closing fence, then dedented by the common tab
+    /// indent — no other trimming.
+    fence: Option<usize>,
 }
+
+/// The TMDL verbatim-expression delimiter.
+const FENCE: &str = "```";
 
 impl TreeBuilder {
     fn run(&mut self, lines: &[&str], path: &Path) -> Result<()> {
@@ -654,6 +661,23 @@ impl TreeBuilder {
             let depth = tab_depth(raw);
 
             let absorbed = match self.block.as_mut() {
+                // A fenced block takes every line verbatim up to its closing
+                // fence. A non-blank line at or above the opener's depth means
+                // the fence was never closed: end the block there rather than
+                // swallow the rest of the file.
+                Some(block) if block.fence.is_some() => {
+                    if raw.trim() == FENCE {
+                        self.close_block();
+                        continue;
+                    }
+                    let unterminated = block
+                        .fence
+                        .is_some_and(|opener| !raw.trim().is_empty() && depth <= opener);
+                    if !unterminated {
+                        block.body.push((*raw).to_string());
+                    }
+                    !unterminated
+                }
                 // Blank lines and lines at or below the body's indent belong
                 // to the block; trailing blanks are trimmed on close.
                 Some(block) if raw.trim().is_empty() => {
@@ -698,6 +722,30 @@ impl TreeBuilder {
             };
 
             if line.equals_form {
+                let value = line.value.unwrap_or_default();
+                // `key = ```` opens a verbatim block ending at a ```` ``` ````
+                // line (TMDL spec); `key = ```text```` is verbatim inline.
+                if value.trim_end() == FENCE {
+                    self.open(node, depth);
+                    self.block = Some(Block {
+                        indent: 0,
+                        body: Vec::new(),
+                        prefix: None,
+                        fence: Some(depth),
+                    });
+                    continue;
+                }
+                if let Some(inner) = value
+                    .trim_end()
+                    .strip_prefix(FENCE)
+                    .and_then(|rest| rest.strip_suffix(FENCE))
+                {
+                    let mut node = node;
+                    node.value = NodeValue::Inline(inner.to_string());
+                    self.open(node, depth);
+                    continue;
+                }
+
                 // Two ways an `=` expression grows a block:
                 //
                 // 1. `key =` with nothing after it — the whole value is the
@@ -707,10 +755,8 @@ impl TreeBuilder {
                 //    depth+1 (a measure's formatString) closes the expression.
                 //
                 // 2. `key = start` where the expression continues below the
-                //    property level (deeper than depth+1) — PBI Desktop
-                //    serializes multi-line DAX this way when the first line
-                //    belongs on the header (samples/…/Owners.tmdl).
-                let value = line.value.unwrap_or_default();
+                //    property level (deeper than depth+1) — multi-line DAX
+                //    whose first line sits on the header itself.
                 let continuation = !value.is_empty();
                 let next = lines[index + 1..]
                     .iter()
@@ -728,6 +774,7 @@ impl TreeBuilder {
                         indent,
                         body: Vec::new(),
                         prefix,
+                        fence: None,
                     });
                     continue;
                 }
@@ -771,6 +818,12 @@ impl TreeBuilder {
         let Some(block) = self.block.take() else {
             return;
         };
+        if block.fence.is_some() {
+            if let Some((_, node)) = self.stack.last_mut() {
+                node.value = NodeValue::Block(dedent_verbatim(&block.body));
+            }
+            return;
+        }
         let mut body = block.body;
         while body.last().is_some_and(String::is_empty) {
             body.pop();
@@ -782,6 +835,23 @@ impl TreeBuilder {
             };
         }
     }
+}
+
+/// Joins a fenced block's raw lines, removing the tab indent they share
+/// (whitespace-only lines don't set it) and nothing else: leading and trailing
+/// blank lines, spaces, and trailing whitespace are all part of the expression.
+fn dedent_verbatim(lines: &[String]) -> String {
+    let indent = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| tab_depth(line))
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .map(|line| &line[tab_depth(line).min(indent)..])
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Leading tab count. TMDL is tab-indented; spaces after the tabs belong to
@@ -2050,20 +2120,100 @@ mod tests {
             assert_eq!(roots[1].value, NodeValue::Inline("2".to_string()));
         }
 
-        /// PBI Desktop serializes multi-line DAX with the first line on the
-        /// header itself when the expression starts there; the rest continues
-        /// below the property level (samples/…/Owners.tmdl). A property at
-        /// depth+1 must close the expression, not join it.
+        /// Multi-line DAX can start on the header itself; the rest continues
+        /// below the property level. A property at depth+1 must close the
+        /// expression, not join it.
         #[test]
         fn continues_an_inline_expression_below_property_depth() {
-            let roots =
-                parse("measure M = ```\n\t\t\tVAR x = 1\n\t\t\tRETURN x\n\t\tformatString: 0\n");
+            let roots = parse("measure M = VAR x = 1\n\t\t\tRETURN x\n\t\tformatString: 0\n");
             assert_eq!(
                 roots[0].value,
-                NodeValue::Block("```\nVAR x = 1\nRETURN x".to_string())
+                NodeValue::Block("VAR x = 1\nRETURN x".to_string())
             );
             assert_eq!(roots[0].children.len(), 1);
             assert_eq!(roots[0].children[0].key, "formatString");
+        }
+
+        /// The Regional Sales Sample shape: the body between the fences is the
+        /// expression verbatim — its leading blank line, inner spaces, and
+        /// trailing whitespace included — minus only the shared tab indent.
+        #[test]
+        fn reads_a_fenced_expression_verbatim_between_the_fences() {
+            let roots = parse(
+                "table T\n\tmeasure 'Revenue Won' = ```\n\t\t\t\n\t\t\t CALCULATE(\n\t\t\t     SUM(T[V]) \n\t\t\t )\n\t\t\t```\n\t\tformatString: 0\n",
+            );
+            let measure = &roots[0].children[0];
+            assert_eq!(
+                measure.value,
+                NodeValue::Block("\n CALCULATE(\n     SUM(T[V]) \n )".to_string())
+            );
+            assert_eq!(measure.children.len(), 1);
+            assert_eq!(measure.children[0].key, "formatString");
+        }
+
+        /// Blank lines before the closing fence are content, not padding —
+        /// PBIX catalogs store the trailing newline.
+        #[test]
+        fn keeps_blank_lines_around_a_fenced_body() {
+            let roots = parse("measure M = ```\n\t\t\n\t\t1\n\t\t\n\n\t\t```\n");
+            assert_eq!(roots[0].value, NodeValue::Block("\n1\n\n".to_string()));
+        }
+
+        /// The closing fence ends the block even when the body holds lines
+        /// that would otherwise read as properties or object headers.
+        #[test]
+        fn a_fenced_body_swallows_property_shaped_lines() {
+            let roots = parse(
+                "measure M = ```\n\t\tVAR x = 1\n\tformatString: 0\n\t\tRETURN x\n\t\t```\n\tlineageTag: t\n",
+            );
+            assert_eq!(
+                roots[0].value,
+                NodeValue::Block("\tVAR x = 1\nformatString: 0\n\tRETURN x".to_string())
+            );
+            assert_eq!(roots[0].children.len(), 1);
+            assert_eq!(roots[0].children[0].key, "lineageTag");
+        }
+
+        /// Property-form expressions (`source =`, `expression =`,
+        /// `formatStringDefinition =`) fence the same way as object headers.
+        #[rstest]
+        #[case("source")]
+        #[case("expression")]
+        #[case("formatStringDefinition")]
+        #[case("detailRowsDefinition")]
+        fn fences_property_form_expressions(#[case] key: &str) {
+            let text = format!(
+                "partition P = calculated\n\t{key} = ```\n\t\t\t\n\t\t\tVAR d = 1\n\t\t\tRETURN d\n\t\t\t```\n\tmode: import\n"
+            );
+            let partition = map_one(&text, "partition");
+            assert_eq!(
+                key_at(&partition, key).value,
+                NodeValue::Block("\nVAR d = 1\nRETURN d".to_string())
+            );
+            assert_eq!(key_at(&partition, "mode").text(), Some("import"));
+        }
+
+        #[test]
+        fn reads_a_single_line_fence_verbatim() {
+            let roots = parse("measure M = ```1 + 1 ```\n");
+            assert_eq!(roots[0].value, NodeValue::Inline("1 + 1 ".to_string()));
+        }
+
+        #[test]
+        fn accepts_a_closing_fence_with_trailing_whitespace_and_crlf() {
+            let roots = parse("measure M = ``` \r\n\t\t1\r\n\t\t``` \r\nmeasure N = 2\r\n");
+            assert_eq!(roots[0].value, NodeValue::Block("1".to_string()));
+            assert_eq!(roots[1].value, NodeValue::Inline("2".to_string()));
+        }
+
+        /// A fence that is never closed ends at the next line back at the
+        /// opener's depth, so a sibling object isn't swallowed.
+        #[test]
+        fn ends_an_unterminated_fence_at_a_sibling() {
+            let roots = parse("measure M = ```\n\t\t1\nmeasure N = 2\n");
+            assert_eq!(roots.len(), 2);
+            assert_eq!(roots[0].value, NodeValue::Block("1".to_string()));
+            assert_eq!(roots[1].value, NodeValue::Inline("2".to_string()));
         }
 
         /// A plain property at depth+1 after an inline value is a sibling, not

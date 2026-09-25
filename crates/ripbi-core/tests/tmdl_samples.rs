@@ -6,8 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ripbi_core::SkipNotice;
+use ripbi_core::graph::DependencyGraph;
+use ripbi_core::identity::{NameKey, ObjectId};
 use ripbi_core::ingest::{Ingested, semantic_model};
-use ripbi_core::model::{PartitionSource, TabularDatabase};
+use ripbi_core::model::{DaxExpressionKind, PartitionSource, TabularDatabase};
 
 fn samples() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples");
@@ -23,6 +25,37 @@ fn samples() -> Vec<PathBuf> {
         .collect();
     found.sort();
     found
+}
+
+fn sample(name: &str) -> TabularDatabase {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../samples")
+        .join(format!("{name}.SemanticModel"));
+    semantic_model(&path)
+        .unwrap_or_else(|error| panic!("{name} failed to parse: {error}"))
+        .value
+}
+
+fn dax_text<'a>(db: &'a TabularDatabase, kind: DaxExpressionKind, owner: &ObjectId) -> &'a str {
+    db.dax_expressions()
+        .into_iter()
+        .find(|item| item.kind == kind && item.owner.to_object_id() == *owner)
+        .unwrap_or_else(|| panic!("no {kind:?} expression on {owner:?}"))
+        .text
+}
+
+fn measure_id(table: &str, measure: &str) -> ObjectId {
+    ObjectId::Measure {
+        table: NameKey::new(table),
+        measure: NameKey::new(measure),
+    }
+}
+
+fn column_id(table: &str, column: &str) -> ObjectId {
+    ObjectId::Column {
+        table: NameKey::new(table),
+        column: NameKey::new(column),
+    }
 }
 
 fn adventure_works() -> PathBuf {
@@ -198,4 +231,100 @@ fn adventure_works_matches_its_known_shape() {
 fn notices_are_public_data() {
     let ingested = semantic_model(&adventure_works()).expect("AdventureWorks parses");
     let _skips: &Vec<SkipNotice> = &ingested.skips;
+}
+
+/// ```` ``` ```` fenced expressions read as the verbatim body between the
+/// fences — the text the PBIX catalog of the same Microsoft sample stores,
+/// leading and trailing blank lines included — never with the fences inside.
+#[test]
+fn fenced_expressions_match_the_published_pbix_text() {
+    let regional = sample("Regional Sales Sample");
+    assert_eq!(
+        dax_text(
+            &regional,
+            DaxExpressionKind::Measure,
+            &measure_id("Calculations", "Revenue Won")
+        ),
+        "\n CALCULATE(\n     SUMX(Opportunities, Opportunities[Value]),\n     FILTER(Opportunities, Opportunities[Status] = \"Won\")\n )"
+    );
+
+    let ai = sample("Artificial Intelligence Sample");
+    assert_eq!(
+        dax_text(
+            &ai,
+            DaxExpressionKind::Measure,
+            &measure_id("Cases", "Case Count")
+        ),
+        "\n    COUNTROWS('Cases')"
+    );
+
+    let spend = sample("Corporate Spend");
+    let label = dax_text(
+        &spend,
+        DaxExpressionKind::Measure,
+        &measure_id("IT Area", "IT Area/Sub Area"),
+    );
+    assert!(
+        label.starts_with("\nSWITCH ( TRUE(),\n    ISINSCOPE("),
+        "{label:?}"
+    );
+    assert!(label.ends_with("    BLANK()\n)\n"), "{label:?}");
+
+    let store = sample("Store Sales");
+    let cluster = dax_text(
+        &store,
+        DaxExpressionKind::CalculatedColumn,
+        &column_id("Item", "Category (clusters) 2"),
+    );
+    assert!(
+        cluster.starts_with("VAR __ClusterValue = \n  LOOKUPVALUE("),
+        "{cluster:?}"
+    );
+    assert!(
+        cluster.ends_with("\n    CONCATENATE(\"Cluster\", __ClusterValue)\n  )"),
+        "{cluster:?}"
+    );
+
+    for name in [
+        "Artificial Intelligence Sample",
+        "Corporate Spend",
+        "Regional Sales Sample",
+        "Store Sales",
+    ] {
+        let db = sample(name);
+        for item in db.dax_expressions() {
+            assert!(!item.text.contains("```"), "{name}: {:?}", item.owner);
+        }
+        for item in db.m_expressions() {
+            assert!(!item.text.contains("```"), "{name}: {:?}", item.owner);
+        }
+    }
+}
+
+/// The DAX lexer still finds every reference inside a fenced body.
+#[test]
+fn fenced_expressions_keep_their_references() {
+    let db = sample("Regional Sales Sample");
+    let graph = DependencyGraph::build(&db, &[]);
+    let producers: Vec<ObjectId> = graph
+        .producers_of(&measure_id("Calculations", "Revenue Won"))
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    for expected in [
+        column_id("Opportunities", "Value"),
+        column_id("Opportunities", "Status"),
+    ] {
+        assert!(producers.contains(&expected), "{producers:#?}");
+    }
+
+    let goal: Vec<ObjectId> = graph
+        .producers_of(&measure_id("Calculations", "Rev Goal"))
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert!(
+        goal.contains(&measure_id("Calculations", "Revenue Won")),
+        "{goal:#?}"
+    );
 }
