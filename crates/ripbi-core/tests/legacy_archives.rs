@@ -3,8 +3,10 @@
 
 use std::path::PathBuf;
 
+use ripbi_core::identity::NameKey;
 use ripbi_core::ingest::{SkipKind, report, semantic_model};
 use ripbi_core::model::PartitionSource;
+use ripbi_core::report::FieldTarget;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -55,6 +57,48 @@ fn legacy_layout_keeps_unknown_visual_textbox_and_visual_calculation_fields() {
             .is_some_and(|visual| visual.as_str() == "TextBox")
             && binding.target.to_string() == "'Sales'[Caption]"
     }));
+}
+
+/// Issue #126: legacy prototype queries bind hierarchy levels through a
+/// `From` alias (`SourceRef.Source`), which must resolve to the hierarchy.
+#[test]
+fn legacy_layout_resolves_aliased_hierarchy_bindings() {
+    let parsed = report(&fixture("hierarchy-alias.pbix")).unwrap();
+    assert!(parsed.skips.is_empty(), "{:?}", parsed.skips);
+    let bindings = parsed.value.bindings();
+    let targets: Vec<FieldTarget> = bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect();
+    let level = |table: &str, hierarchy: &str, level: &str, via: Option<(&str, &str)>| {
+        FieldTarget::HierarchyLevel {
+            table: NameKey::new(table),
+            hierarchy: NameKey::new(hierarchy),
+            level: NameKey::new(level),
+            via_column: via.map(|(column, _)| NameKey::new(column)),
+            via_variation: via.map(|(_, name)| NameKey::new(name)),
+        }
+    };
+    for expected in [
+        level("Accounts", "Street Hierarchy", "State or Province", None),
+        level(
+            "Date",
+            "Date Hierarchy",
+            "Year",
+            Some(("Date", "Variation")),
+        ),
+    ] {
+        assert!(
+            targets.contains(&expected),
+            "missing {expected}: {targets:?}"
+        );
+    }
+    assert!(
+        targets
+            .iter()
+            .any(|target| target.to_string() == "'Accounts'[Sales Hierarchy]"),
+        "{targets:?}"
+    );
 }
 
 #[test]

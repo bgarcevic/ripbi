@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "name": "ReportSection",
+      "displayName": "Map",
+      "visualContainers": [
+        {
+          "config": {
+            "name": "ShapeMap",
+            "singleVisual": {
+              "visualType": "map",
+              "projections": {"Category": [{"queryRef": "Accounts.Street Hierarchy.State or Province", "active": true}]},
+              "prototypeQuery": {
+                "Version": 2,
+                "From": [{"Name": "a", "Entity": "Accounts", "Type": 0}, {"Name": "d", "Entity": "Date", "Type": 0}],
+                "Select": [
+                  {"HierarchyLevel": {"Expression": {"Hierarchy": {"Expression": {"SourceRef": {"Source": "a"}}, "Hierarchy": "Street Hierarchy"}}, "Level": "State or Province"}, "Name": "Accounts.Street Hierarchy.State or Province"},
+                  {"HierarchyLevel": {"Expression": {"Hierarchy": {"Expression": {"PropertyVariationSource": {"Expression": {"SourceRef": {"Source": "d"}}, "Name": "Variation", "Property": "Date"}}, "Hierarchy": "Date Hierarchy"}}, "Level": "Year"}, "Name": "Date.Date.Variation.Date Hierarchy.Year"},
+                  {"Hierarchy": {"Expression": {"SourceRef": {"Source": "a"}}, "Hierarchy": "Sales Hierarchy"}, "Name": "Accounts.Sales Hierarchy"}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
