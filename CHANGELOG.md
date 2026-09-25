@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.abf` backups are accepted as model-only inputs. Only metadata is read. A thin
   PBIX report pairs with a sibling `.SemanticModel`, `model.bim`, `.abf`, or
   model-bearing PBIT/PBIX.
+- **Storage size of unused objects** (issue #122): scanning a PBIX or `.abf`
+  model shows each unused table, column, and relationship's size on disk, read
+  from the storage catalog and the backup's file sizes (metadata only), with an
+  `Unused storage: ≈ 165.6 KB of 318.5 KB on disk` total. `--json` adds `bytes`,
+  `size_basis`, `rows`, and `cardinality` per entry and `unused_bytes`/`model_bytes`
+  to the summary; `--plain` adds a bytes field. `--sort size` orders findings by
+  payoff. Other inputs have no storage catalog and their output is unchanged.
 - **`ripbi-xpress9` crate**: a safe wrapper over Microsoft's MIT-licensed XPress9
   C decoder, compiled statically; the only crate allowed `unsafe` (FFI).
 

@@ -10,7 +10,10 @@ use common::{
     Backup, archive, data_mashup, decoded_backup, metadata_db, multithreaded, single_threaded,
 };
 use ripbi_core::ingest::{SkipKind, semantic_model};
-use ripbi_core::model::{ColumnKind, MetadataPermission, PartitionSource, TabularDatabase};
+use ripbi_core::model::{
+    Column, ColumnKind, MetadataPermission, PartitionSource, SizeBasis, StorageStats,
+    TabularDatabase,
+};
 use ripbi_core::{Error, Ingested};
 
 fn write(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
@@ -309,4 +312,217 @@ fn random_bytes_after_a_valid_signature_never_panic() {
             assert!(result.is_err(), "fuzz {index}/{len} unexpectedly parsed");
         }
     }
+}
+
+/// Issue #122: the storage catalog of the fixture model, with only the
+/// columns the mapping reads. `Amount` (11) owns a dictionary, a segment and
+/// its metadata, an `.hidx`, and the `H$` table (30) serving its attribute
+/// hierarchy; `rel-1` (50) owns the `R$` table (35). `RowNumber` (14) and a
+/// file no storage row names land on the table alone.
+const STORAGE: &str = r#"
+INSERT INTO "Table" VALUES
+    (35, 1, 'R$Sales (10)$rel-1 (50)', 1, 0, 1, NULL, NULL, NULL);
+INSERT INTO "Column" VALUES (36, 35, 'INDEX', NULL, 1, NULL, 1, NULL, NULL);
+CREATE TABLE "StorageFolder" (ID INTEGER, OwnerID INTEGER, OwnerType INTEGER, Path TEXT);
+INSERT INTO "StorageFolder" VALUES
+    (100, 0, 18, 'Sales (10).tbl'), (101, 0, 20, 'Sales (10).tbl\17.prt'),
+    (102, 0, 18, 'Product (20).tbl'), (103, 0, 20, 'Product (20).tbl\23.prt'),
+    (104, 0, 18, 'H$Sales (10)$Amount (11)$(30).tbl'),
+    (105, 0, 20, 'H$Sales (10)$Amount (11)$(30).tbl\32.prt'),
+    (106, 0, 18, 'R$Sales (10)$rel-1 (50)$(35).tbl');
+CREATE TABLE "TableStorage" (ID INTEGER, TableID INTEGER, StorageFolderID INTEGER);
+INSERT INTO "TableStorage" VALUES (110, 10, 100), (111, 20, 102), (112, 30, 104), (113, 35, 106);
+CREATE TABLE "PartitionStorage" (ID INTEGER, PartitionID INTEGER, SegmentMapStorageID INTEGER,
+    StorageFolderID INTEGER);
+INSERT INTO "PartitionStorage" VALUES (120, 17, 130, 101), (121, 23, 131, 103), (122, 32, 132, 105);
+CREATE TABLE "SegmentMapStorage" (ID INTEGER, PartitionStorageID INTEGER, RecordCount INTEGER);
+INSERT INTO "SegmentMapStorage" VALUES (130, 120, 1000), (131, 121, 10), (132, 122, 5);
+CREATE TABLE "ColumnStorage" (ID INTEGER, ColumnID INTEGER, DictionaryStorageID INTEGER,
+    Statistics_DistinctStates INTEGER, Statistics_RowCount INTEGER);
+INSERT INTO "ColumnStorage" VALUES
+    (140, 11, 150, 900, 1000), (141, 12, 151, 10, 1000), (142, 13, NULL, 2, 1000),
+    (143, 14, NULL, 1000, 1000), (144, 21, NULL, 10, 10), (145, 22, NULL, 3, 10),
+    (146, 31, NULL, 5, 5), (147, 36, NULL, 1, 1);
+CREATE TABLE "DictionaryStorage" (ID INTEGER, ColumnStorageID INTEGER, StorageFileID INTEGER,
+    Size INTEGER);
+INSERT INTO "DictionaryStorage" VALUES (150, 140, 200, 4500), (151, 141, 201, NULL);
+CREATE TABLE "ColumnPartitionStorage" (ID INTEGER, ColumnStorageID INTEGER,
+    PartitionStorageID INTEGER, StorageFileID INTEGER);
+INSERT INTO "ColumnPartitionStorage" VALUES
+    (160, 140, 120, 210), (161, 141, 120, 211), (162, 142, 120, 212), (163, 143, 120, 213),
+    (164, 144, 121, 214), (165, 145, 121, 215), (166, 146, 122, 216), (167, 147, NULL, 217);
+CREATE TABLE "SegmentStorage" (ID INTEGER, ColumnPartitionStorageID INTEGER,
+    StorageFileID INTEGER);
+INSERT INTO "SegmentStorage" VALUES (170, 160, 220);
+CREATE TABLE "AttributeHierarchy" (ID INTEGER, ColumnID INTEGER);
+INSERT INTO "AttributeHierarchy" VALUES (180, 11);
+CREATE TABLE "AttributeHierarchyStorage" (ID INTEGER, AttributeHierarchyID INTEGER,
+    StorageFileID INTEGER, SystemTableID INTEGER);
+INSERT INTO "AttributeHierarchyStorage" VALUES (181, 180, 230, 30);
+CREATE TABLE "RelationshipStorage" (ID INTEGER, RelationshipID INTEGER);
+INSERT INTO "RelationshipStorage" VALUES (190, 50);
+CREATE TABLE "RelationshipIndexStorage" (ID INTEGER, RelationshipStorageID INTEGER,
+    StorageFileID INTEGER, SystemTableID INTEGER, SecondarySystemTableID INTEGER);
+INSERT INTO "RelationshipIndexStorage" VALUES (191, 190, 0, 35, 0);
+CREATE TABLE "StorageFile" (ID INTEGER, OwnerID INTEGER, OwnerType INTEGER,
+    StorageFolderID INTEGER, FileName TEXT);
+INSERT INTO "StorageFile" VALUES
+    (200, 150, 22, 100, '0.Sales (10).Amount (11).dictionary'),
+    (201, 151, 22, 100, '0.Sales (10).ProductKey (12).dictionary'),
+    (210, 160, 23, 101, '0.Sales (10).Amount (11).0.idf'),
+    (211, 161, 23, 101, '0.Sales (10).ProductKey (12).0.idf'),
+    (212, 162, 23, 101, '0.Sales (10).Double (13).0.idf'),
+    (213, 163, 23, 101, '0.Sales (10).RowNumber (14).0.idf'),
+    (214, 164, 23, 103, '0.Product (20).Key (21).0.idf'),
+    (215, 165, 23, 103, '0.Product (20).Category (22).0.idf'),
+    (216, 166, 23, 105, '0.H$Sales (10)$Amount (11).POS_TO_ID.0.idf'),
+    (217, 167, 23, 106, '0.R$Sales (10)$rel-1 (50).INDEX.0.idf'),
+    (220, 170, 24, 101, '0.Sales (10).Amount (11).0.idfmeta'),
+    (230, 181, 27, 100, '1.H$Sales (10)$Amount (11).hidx'),
+    (240, 0, 0, 100, 'table.bin');
+"#;
+
+/// The logged data files, each with its size.
+const STORAGE_FILES: &[(&str, usize)] = &[
+    (r"Sales (10).tbl\0.Sales (10).Amount (11).dictionary", 5000),
+    (
+        r"Sales (10).tbl\0.Sales (10).ProductKey (12).dictionary",
+        50,
+    ),
+    (
+        r"Sales (10).tbl\17.prt\0.Sales (10).Amount (11).0.idf",
+        1000,
+    ),
+    (
+        r"Sales (10).tbl\17.prt\0.Sales (10).ProductKey (12).0.idf",
+        200,
+    ),
+    (r"Sales (10).tbl\17.prt\0.Sales (10).Double (13).0.idf", 300),
+    (
+        r"Sales (10).tbl\17.prt\0.Sales (10).RowNumber (14).0.idf",
+        40,
+    ),
+    (r"Product (20).tbl\23.prt\0.Product (20).Key (21).0.idf", 20),
+    (
+        r"Product (20).tbl\23.prt\0.Product (20).Category (22).0.idf",
+        30,
+    ),
+    (
+        r"H$Sales (10)$Amount (11)$(30).tbl\32.prt\0.H$Sales (10)$Amount (11).POS_TO_ID.0.idf",
+        400,
+    ),
+    (
+        r"R$Sales (10)$rel-1 (50)$(35).tbl\0.R$Sales (10)$rel-1 (50).INDEX.0.idf",
+        70,
+    ),
+    // Paths match case-insensitively.
+    (
+        r"SALES (10).TBL\17.prt\0.Sales (10).Amount (11).0.idfmeta",
+        100,
+    ),
+    (r"Sales (10).tbl\1.H$Sales (10)$Amount (11).hidx", 8),
+    (r"Sales (10).tbl\table.bin", 3),
+];
+
+/// The storage fixture as a backup whose log lists every file but `omit`.
+fn storage_backup(omit: Option<&str>) -> Vec<u8> {
+    let options = Backup {
+        files: STORAGE_FILES
+            .iter()
+            .filter(|(path, _)| Some(*path) != omit)
+            .map(|(path, size)| (path.to_string(), *size))
+            .collect(),
+        ..Backup::default()
+    };
+    single_threaded(&decoded_backup(&metadata_db(STORAGE), &options), 4096)
+}
+
+fn column<'a>(model: &'a TabularDatabase, table: &str, column: &str) -> &'a Column {
+    model
+        .tables
+        .iter()
+        .find(|t| t.name == table)
+        .and_then(|t| t.columns.iter().find(|c| c.name == column))
+        .unwrap()
+}
+
+fn stats(
+    bytes: u64,
+    basis: SizeBasis,
+    rows: Option<u64>,
+    cardinality: Option<u64>,
+) -> Option<StorageStats> {
+    Some(StorageStats {
+        bytes: Some(bytes),
+        basis,
+        rows,
+        cardinality,
+    })
+}
+
+#[test]
+fn storage_files_are_attributed_to_columns_tables_and_relationships() {
+    let ingested = ingest("storage.abf", &storage_backup(None)).unwrap();
+    assert!(ingested.skips.is_empty(), "{:#?}", ingested.skips);
+    let model = &ingested.value;
+    let files = SizeBasis::Files;
+    // Dictionary + segment + segment metadata + .hidx + the H$ table.
+    assert_eq!(
+        column(model, "Sales", "Amount").storage,
+        stats(5000 + 1000 + 100 + 8 + 400, files, Some(1000), Some(900))
+    );
+    assert_eq!(
+        column(model, "Sales", "ProductKey").storage,
+        stats(250, files, Some(1000), Some(10))
+    );
+    assert_eq!(
+        column(model, "Sales", "Double").storage,
+        stats(300, files, Some(1000), Some(2))
+    );
+    assert_eq!(
+        column(model, "Product", "Category").storage,
+        stats(30, files, Some(10), Some(3))
+    );
+    assert_eq!(model.relationships[0].storage, stats(70, files, None, None));
+    // Columns, RowNumber, the R$ index, and the file no storage row names.
+    assert_eq!(
+        model.tables[0].storage,
+        stats(6508 + 250 + 300 + 40 + 70 + 3, files, Some(1000), None)
+    );
+    assert_eq!(model.tables[1].storage, stats(50, files, Some(10), None));
+    assert_eq!(model.tables[2].storage, None, "no storage rows");
+    assert_eq!(model.storage_bytes, Some(7171 + 50));
+    // Keyed by graph identity for the CLI.
+    let by_object = model.storage_by_object();
+    assert_eq!(by_object.len(), 2 + 5 + 1);
+}
+
+#[test]
+fn a_column_missing_files_falls_back_to_its_dictionary() {
+    let omit = r"Sales (10).tbl\17.prt\0.Sales (10).Amount (11).0.idf";
+    let ingested = ingest("storage.abf", &storage_backup(Some(omit))).unwrap();
+    assert!(ingested.skips.is_empty(), "{:#?}", ingested.skips);
+    let model = &ingested.value;
+    let lower = SizeBasis::LowerBound;
+    assert_eq!(
+        column(model, "Sales", "Amount").storage,
+        stats(4500, lower, Some(1000), Some(900)),
+        "DictionaryStorage.Size"
+    );
+    assert_eq!(
+        model.tables[0].storage,
+        stats(7171 - 1000, lower, Some(1000), None)
+    );
+    assert_eq!(model.tables[1].storage.unwrap().basis, SizeBasis::Files);
+    assert_eq!(model.storage_bytes, Some(7221 - 1000));
+}
+
+#[test]
+fn a_catalog_without_storage_tables_has_no_statistics() {
+    let ingested = ingest("plain.abf", &single_threaded(&stream(), 4096)).unwrap();
+    assert!(ingested.skips.is_empty());
+    let model = &ingested.value;
+    assert_eq!(model.storage_bytes, None);
+    assert!(model.storage_by_object().is_empty());
+    assert!(model.tables.iter().all(|table| table.storage.is_none()));
 }

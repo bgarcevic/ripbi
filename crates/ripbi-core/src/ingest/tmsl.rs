@@ -46,6 +46,7 @@ pub(super) fn load(
                 .get("isActive")
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
+            storage: None,
         });
     }
     for item in array(model, "roles") {
@@ -136,6 +137,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
                 name,
                 kind,
                 is_hidden: bool_value(column, "isHidden"),
+                storage: None,
                 sort_by_column: string(column, "sortByColumn"),
                 group_by_columns: column
                     .get("relatedColumnDetails")

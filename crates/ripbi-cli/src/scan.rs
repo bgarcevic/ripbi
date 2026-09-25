@@ -9,16 +9,16 @@ use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::{BrokenReason, DependencyGraph};
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
-use ripbi_core::{NameKey, ObjectId, ReportModel};
+use ripbi_core::{NameKey, ObjectId, ReportModel, SizeBasis, StorageStats};
 
-use crate::cli::ScanArgs;
+use crate::cli::{ScanArgs, SortKey};
 use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
 use crate::render::{
     self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, Finding, ScanOutput, SkipNoticeOut,
-    UsedByOut,
+    UnusedStorage, UsedByOut,
 };
 use crate::style::Palette;
 
@@ -286,6 +286,8 @@ fn scan(
     let verdicts = graph.auto_date_time_tables(&model.value);
     let objects = graph.object_ids().count();
     let roots = graph.roots().len();
+    // Storage statistics (issue #122): display-only, `.abf`/PBIX models only.
+    let storage = model.value.storage_by_object();
     let reachable = objects - unused.len();
 
     // The auto date/time machinery's members are never standalone findings
@@ -376,7 +378,9 @@ fn scan(
     let want_table = args.json || args.summary;
     let mut filtered_out = 0;
     let mut machinery_members = 0;
-    for finding in unused {
+    // The identities behind `findings`, for the storage total's dedupe.
+    let mut reported: Vec<&ObjectId> = Vec::new();
+    for finding in &unused {
         if is_machinery_member(&finding.id, &machinery) {
             machinery_members += 1;
             continue;
@@ -393,6 +397,7 @@ fn scan(
             continue;
         }
         let section_row = row_by_table.get(&finding.id).copied();
+        let id = &finding.id;
         let finding = Finding {
             kind,
             id: finding.id.to_string(),
@@ -411,10 +416,32 @@ fn scan(
                 })
                 .collect(),
             named_in_power_query: render::power_query_labels(&finding.named_by_m),
+            storage: storage.get(&finding.id).copied(),
         };
         match section_row {
             Some(position) => auto_date_time[position].finding = Some(finding),
-            None => findings.push(finding),
+            None => {
+                reported.push(id);
+                findings.push(finding);
+            }
+        }
+    }
+    let unused_storage = unused_storage(&reported, &storage);
+    if args.sort == SortKey::Size {
+        // Stable: equal sizes, and every finding without one (last), keep
+        // identity order.
+        findings.sort_by(|a, b| {
+            let bytes = |finding: &Finding| finding.storage.and_then(|stats| stats.bytes);
+            bytes(b).cmp(&bytes(a))
+        });
+        if storage.is_empty() && !args.quiet {
+            writeln!(
+                streams.err,
+                "Note: {} has no storage statistics (only .pbix and .abf models do); \
+                 --sort size keeps name order.",
+                paired.model.display()
+            )
+            .map_err(ScanError::from)?;
         }
     }
 
@@ -512,6 +539,8 @@ fn scan(
         findings,
         auto_date_time,
         skips,
+        model_bytes: model.value.storage_bytes,
+        unused_storage,
     };
 
     if !args.quiet {
@@ -1188,6 +1217,46 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// True for a finding the machinery verdicts already cover (issue #47): any
 /// object owned by an auto date/time table, except the table's own finding,
 /// which nests under its row.
+/// The on-disk cost of the reported findings (issue #122): each file once, so
+/// a column or relationship whose owning table is itself reported is covered
+/// by the table's size. `None` when no finding carries a size.
+fn unused_storage(
+    reported: &[&ObjectId],
+    storage: &HashMap<ObjectId, StorageStats>,
+) -> Option<UnusedStorage> {
+    let tables: HashSet<&NameKey> = reported
+        .iter()
+        .filter_map(|id| match id {
+            ObjectId::Table { table } => Some(table),
+            _ => None,
+        })
+        .collect();
+    let mut total: Option<UnusedStorage> = None;
+    for id in reported {
+        let Some(stats) = storage.get(*id) else {
+            continue;
+        };
+        let Some(bytes) = stats.bytes else {
+            continue;
+        };
+        let total = total.get_or_insert(UnusedStorage {
+            bytes: 0,
+            objects: 0,
+            lower_bound: false,
+        });
+        total.objects += 1;
+        total.lower_bound |= stats.basis == SizeBasis::LowerBound;
+        let covered = !matches!(id, ObjectId::Table { .. })
+            && id
+                .owning_table()
+                .is_some_and(|table| tables.contains(table));
+        if !covered {
+            total.bytes = total.bytes.saturating_add(bytes);
+        }
+    }
+    total
+}
+
 fn is_machinery_member(id: &ObjectId, machinery: &HashSet<NameKey>) -> bool {
     !matches!(id, ObjectId::Table { .. })
         && id
@@ -1302,7 +1371,65 @@ pub(crate) fn skip_kind_out(kind: SkipKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{SkipNoticeOut, dedupe_opaque_skips};
+    use std::collections::HashMap;
+
+    use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
+
+    use super::{SkipNoticeOut, UnusedStorage, dedupe_opaque_skips, unused_storage};
+
+    fn size(bytes: u64, basis: SizeBasis) -> StorageStats {
+        StorageStats {
+            bytes: Some(bytes),
+            basis,
+            rows: None,
+            cardinality: None,
+        }
+    }
+
+    /// Issue #122: a reported table's size already covers its reported
+    /// columns and relationships; other tables' objects still count.
+    #[test]
+    fn unused_storage_counts_each_file_once() {
+        let table = |name: &str| ObjectId::Table {
+            table: NameKey::new(name),
+        };
+        let column = |table: &str, name: &str| ObjectId::Column {
+            table: NameKey::new(table),
+            column: NameKey::new(name),
+        };
+        let relationship = ObjectId::Relationship {
+            from_table: NameKey::new("Old"),
+            from_column: NameKey::new("Key"),
+            to_table: NameKey::new("Dim"),
+            to_column: NameKey::new("Key"),
+        };
+        let measure = ObjectId::Measure {
+            table: NameKey::new("Sales"),
+            measure: NameKey::new("Total"),
+        };
+        let storage = HashMap::from([
+            (table("Old"), size(1000, SizeBasis::Files)),
+            (column("old", "A"), size(400, SizeBasis::Files)),
+            (relationship.clone(), size(50, SizeBasis::Files)),
+            (column("Sales", "B"), size(30, SizeBasis::LowerBound)),
+        ]);
+        let reported = [
+            &column("old", "A"),
+            &table("Old"),
+            &relationship,
+            &column("Sales", "B"),
+            &measure,
+        ];
+        assert_eq!(
+            unused_storage(&reported, &storage),
+            Some(UnusedStorage {
+                bytes: 1030,
+                objects: 4,
+                lower_bound: true,
+            })
+        );
+        assert_eq!(unused_storage(&[&measure], &storage), None);
+    }
 
     #[test]
     fn opaque_skip_deduplication_preserves_distinct_partitions_and_other_kinds() {

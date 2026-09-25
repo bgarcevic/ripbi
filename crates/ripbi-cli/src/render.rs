@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 
-use ripbi_core::{NameKey, ObjectId};
+use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
 use serde::Serialize;
 
 use crate::style::Palette;
@@ -76,6 +76,23 @@ pub struct ScanOutput {
     pub auto_date_time: Vec<AutoDateTimeRow>,
     /// Every skip notice ingestion recorded.
     pub skips: Vec<SkipNoticeOut>,
+    /// Bytes of every data file in the model — `.abf`/PBIX only.
+    pub model_bytes: Option<u64>,
+    /// What the reported findings cost on disk, when any carries a size
+    /// (issue #122). `None` for formats without a storage catalog.
+    pub unused_storage: Option<UnusedStorage>,
+}
+
+/// The on-disk cost of the reported findings (issue #122).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnusedStorage {
+    /// Bytes across the findings, each file counted once: a column or
+    /// relationship whose table is itself a finding is covered by the table.
+    pub bytes: u64,
+    /// Findings that carry a size.
+    pub objects: usize,
+    /// Some finding's size is a lower bound (files missing from the backup log).
+    pub lower_bound: bool,
 }
 
 /// One auto date/time table with its verdict — does a report bind the
@@ -112,6 +129,9 @@ pub struct Finding {
     /// that is deliberately not liveness. Unloading the column cannot break
     /// these; removing it from the script entirely means editing each.
     pub named_in_power_query: Vec<String>,
+    /// Storage statistics for tables, columns, and relationships of an
+    /// `.abf`/PBIX model (issue #122).
+    pub storage: Option<StorageStats>,
 }
 
 /// One referencing object behind a finding.
@@ -299,7 +319,7 @@ pub fn human(
                 palette.bold(&format!("{label} ({})", group.len()))
             )?;
             for finding in group {
-                writeln!(out, "  {}", finding.id)?;
+                writeln!(out, "  {}{}", finding.id, size_suffix(palette, finding))?;
                 write_annotations(out, palette, finding, "    ", show_power_query)?;
             }
             writeln!(out)?;
@@ -454,7 +474,12 @@ fn write_auto_date_time(
                 .as_deref()
                 .map(|column| format!(" — for {column}"))
                 .unwrap_or_default();
-            writeln!(out, "    {}{source}", row.id)?;
+            let size = row
+                .finding
+                .as_ref()
+                .map(|finding| size_suffix(palette, finding))
+                .unwrap_or_default();
+            writeln!(out, "    {}{source}{size}", row.id)?;
             if let Some(finding) = &row.finding {
                 write_annotations(out, palette, finding, "      ", show_power_query)?;
             }
@@ -633,6 +658,26 @@ fn write_summary(
         palette.bold(&report.reachable.to_string()),
         palette.bold(&report.roots.to_string()),
     )?;
+    if let Some(storage) = &report.unused_storage {
+        let of = report
+            .model_bytes
+            .map(|total| format!(" of {}", format_bytes(total)))
+            .unwrap_or_default();
+        let (approx, note) = if storage.lower_bound {
+            (
+                "at least",
+                "; a lower bound: some files are missing from the backup log",
+            )
+        } else {
+            ("\u{2248}", "")
+        };
+        writeln!(
+            out,
+            "Unused storage: {approx} {}{of} on disk ({} objects with size data{note})",
+            palette.bold(&format_bytes(storage.bytes)),
+            storage.objects,
+        )?;
+    }
     if report.ignored > 0 {
         writeln!(
             out,
@@ -685,6 +730,41 @@ fn write_summary(
         )?;
     }
     writeln!(out)
+}
+
+/// `  (1.2 MB)` after a finding's id, when its size is known.
+fn size_suffix(palette: &Palette, finding: &Finding) -> String {
+    let Some(stats) = finding.storage else {
+        return String::new();
+    };
+    let Some(bytes) = stats.bytes else {
+        return String::new();
+    };
+    let bound = if stats.basis == SizeBasis::LowerBound {
+        "\u{2265} "
+    } else {
+        ""
+    };
+    format!(
+        "  {}",
+        palette.dim(&format!("({bound}{})", format_bytes(bytes)))
+    )
+}
+
+/// Bytes in 1024-based units, the way VertiPaq Analyzer and DAX Studio show
+/// model sizes: `512 B`, `1.2 KB`, `4.2 MB`, `1.0 GB`.
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
 }
 
 fn write_annotations(
@@ -745,7 +825,10 @@ fn write_annotations(
 /// Propagates stream write failures.
 pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     for finding in &report.findings {
-        writeln!(out, "{}\t{}", finding.kind, finding.id)?;
+        match finding.storage.and_then(|stats| stats.bytes) {
+            Some(bytes) => writeln!(out, "{}\t{}\t{bytes}", finding.kind, finding.id)?,
+            None => writeln!(out, "{}\t{}", finding.kind, finding.id)?,
+        }
     }
     for binding in &report.broken {
         writeln!(out, "broken_visual:{}\t{}", binding.reason, binding.target)?;
@@ -782,6 +865,11 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             broken_total: report.broken_raw,
             broken_artifacts: report.broken_artifacts.len(),
             broken_artifacts_total: report.broken_artifacts_raw,
+            unused_bytes: report.unused_storage.map(|storage| storage.bytes),
+            unused_bytes_lower_bound: report
+                .unused_storage
+                .and_then(|storage| storage.lower_bound.then_some(true)),
+            model_bytes: report.model_bytes,
             auto_date_time: JsonAutoDateTimeCounts {
                 hidden_tables: report.auto_date_time.len(),
                 date_columns: date_column_count(&report.auto_date_time),
@@ -791,28 +879,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 dead: count_verdict(&report.auto_date_time, "dead"),
             },
         },
-        unused: report
-            .findings
-            .iter()
-            .map(|finding| JsonFinding {
-                kind: finding.kind,
-                id: finding.id.clone(),
-                table: finding
-                    .table
-                    .as_ref()
-                    .map(|table| table.quoted().to_string()),
-                used_by: finding
-                    .used_by
-                    .iter()
-                    .map(|used| JsonUsedBy {
-                        id: used.id.clone(),
-                        provenance: used.provenance.clone(),
-                        also_unused: used.also_unused,
-                    })
-                    .collect(),
-                named_in_power_query: finding.named_in_power_query.clone(),
-            })
-            .collect(),
+        unused: report.findings.iter().map(JsonFinding::from).collect(),
         broken: report
             .broken
             .iter()
@@ -841,24 +908,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 verdict: row.verdict,
                 id: row.id.clone(),
                 source_column: row.source_column.clone(),
-                finding: row.finding.as_ref().map(|finding| JsonFinding {
-                    kind: finding.kind,
-                    id: finding.id.clone(),
-                    table: finding
-                        .table
-                        .as_ref()
-                        .map(|table| table.quoted().to_string()),
-                    used_by: finding
-                        .used_by
-                        .iter()
-                        .map(|used| JsonUsedBy {
-                            id: used.id.clone(),
-                            provenance: used.provenance.clone(),
-                            also_unused: used.also_unused,
-                        })
-                        .collect(),
-                    named_in_power_query: finding.named_in_power_query.clone(),
-                }),
+                finding: row.finding.as_ref().map(JsonFinding::from),
             })
             .collect(),
         skips: JsonSkips {
@@ -944,6 +994,16 @@ struct JsonSummary {
     broken_total: usize,
     broken_artifacts: usize,
     broken_artifacts_total: usize,
+    /// Bytes on disk across `unused`, each file counted once (issue #122).
+    /// Present only for `.abf`/PBIX models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unused_bytes: Option<u64>,
+    /// `true` when `unused_bytes` is a lower bound; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unused_bytes_lower_bound: Option<bool>,
+    /// Bytes of every data file in the model. `.abf`/PBIX only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_bytes: Option<u64>,
     auto_date_time: JsonAutoDateTimeCounts,
 }
 
@@ -993,6 +1053,48 @@ struct JsonFinding {
     /// Power Query expressions naming this column — supply-chain context,
     /// not liveness. Empty for everything but columns.
     named_in_power_query: Vec<String>,
+    /// Bytes on disk (issue #122). This and the three fields below appear
+    /// only for tables, columns, and relationships of `.abf`/PBIX models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bytes: Option<u64>,
+    /// `"files"` (exact) or `"lower_bound"` (files missing from the backup log).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size_basis: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rows: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cardinality: Option<u64>,
+}
+
+impl From<&Finding> for JsonFinding {
+    fn from(finding: &Finding) -> Self {
+        let storage = finding.storage.unwrap_or_default();
+        Self {
+            kind: finding.kind,
+            id: finding.id.clone(),
+            table: finding
+                .table
+                .as_ref()
+                .map(|table| table.quoted().to_string()),
+            used_by: finding
+                .used_by
+                .iter()
+                .map(|used| JsonUsedBy {
+                    id: used.id.clone(),
+                    provenance: used.provenance.clone(),
+                    also_unused: used.also_unused,
+                })
+                .collect(),
+            named_in_power_query: finding.named_in_power_query.clone(),
+            bytes: storage.bytes,
+            size_basis: storage.bytes.map(|_| match storage.basis {
+                SizeBasis::Files => "files",
+                SizeBasis::LowerBound => "lower_bound",
+            }),
+            rows: storage.rows,
+            cardinality: storage.cardinality,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -1092,6 +1194,7 @@ mod tests {
             table: table.map(NameKey::new),
             used_by: Vec::new(),
             named_in_power_query: Vec::new(),
+            storage: None,
         }
     }
 
@@ -1192,6 +1295,8 @@ mod tests {
             findings,
             auto_date_time: Vec::new(),
             skips: Vec::new(),
+            model_bytes: None,
+            unused_storage: None,
         }
     }
 
@@ -1599,5 +1704,106 @@ mod tests {
             text.contains("(2 possible broken-visual bindings suppressed — the model ingest reported skips, listed on stderr; --strict fails on those skips)\n"),
             "the suppression is accounted for:\n{text}"
         );
+    }
+
+    #[test]
+    fn bytes_format_in_1024_based_units() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(326_135), "318.5 KB");
+        assert_eq!(format_bytes(4_404_019), "4.2 MB");
+        assert_eq!(format_bytes(3 << 30), "3.0 GB");
+    }
+
+    fn sized(bytes: u64, basis: SizeBasis) -> Finding {
+        Finding {
+            kind: "column",
+            id: "'Sales'[Comment]".to_string(),
+            storage: Some(StorageStats {
+                bytes: Some(bytes),
+                basis,
+                rows: Some(10),
+                cardinality: Some(3),
+            }),
+            ..finding(Some("Sales"))
+        }
+    }
+
+    /// Issue #122: sizes print beside findings and as a total line; a lower
+    /// bound says so in both places.
+    #[test]
+    fn sizes_print_beside_findings_and_as_a_total() {
+        let mut output = scan_output(vec![sized(2048, SizeBasis::Files)]);
+        output.model_bytes = Some(1 << 20);
+        output.unused_storage = Some(UnusedStorage {
+            bytes: 2048,
+            objects: 1,
+            lower_bound: false,
+        });
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains(
+                "Unused storage: \u{2248} 2.0 KB of 1.0 MB on disk (1 objects with size data)\n"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("  'Sales'[Comment]  (2.0 KB)\n"), "{text}");
+
+        output.findings = vec![sized(2048, SizeBasis::LowerBound)];
+        output.unused_storage = output.unused_storage.map(|storage| UnusedStorage {
+            lower_bound: true,
+            ..storage
+        });
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("Unused storage: at least 2.0 KB of 1.0 MB"),
+            "{text}"
+        );
+        assert!(
+            text.contains("a lower bound: some files are missing"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  'Sales'[Comment]  (\u{2265} 2.0 KB)\n"),
+            "{text}"
+        );
+
+        let mut out = Vec::new();
+        json(&mut out, &output).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["summary"]["unused_bytes"], 2048);
+        assert_eq!(value["summary"]["unused_bytes_lower_bound"], true);
+        assert_eq!(value["unused"][0]["size_basis"], "lower_bound");
+        assert_eq!(value["unused"][0]["cardinality"], 3);
+
+        let mut out = Vec::new();
+        plain(&mut out, &output).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "column\t'Sales'[Comment]\t2048\n"
+        );
+    }
+
+    /// Without storage data nothing new prints: the pre-#122 shapes.
+    #[test]
+    fn no_storage_adds_nothing() {
+        let output = scan_output(vec![finding(Some("Sales"))]);
+        let mut out = Vec::new();
+        json(&mut out, &output).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        for key in ["unused_bytes", "unused_bytes_lower_bound", "model_bytes"] {
+            assert!(value["summary"].get(key).is_none(), "{key}");
+        }
+        for key in ["bytes", "size_basis", "rows", "cardinality"] {
+            assert!(value["unused"][0].get(key).is_none(), "{key}");
+        }
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
+        assert!(!String::from_utf8(out).unwrap().contains("storage"));
     }
 }
