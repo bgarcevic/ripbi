@@ -103,6 +103,10 @@ pub enum Error {
     /// The path is not a Power BI source this crate recognizes.
     #[error("unsupported or unrecognized source format: {0}")]
     UnsupportedFormat(String),
+    /// An ABF backup (a `.abf` file or a PBIX `DataModel` member) is corrupt,
+    /// truncated, or lacks the metadata this crate needs.
+    #[error("invalid embedded data model: {0}")]
+    DataModel(String),
 }
 
 /// A result whose error is this crate's [`enum@Error`].

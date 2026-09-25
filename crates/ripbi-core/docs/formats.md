@@ -15,21 +15,73 @@ PBIR or legacy Layout members inside ZIP archives normalize to `ReportModel`.
   automatically), or
 - a `definition/` folder itself (any directory that directly contains a
   `model.tmdl`, or is named `definition`),
-- a TMSL JSON file such as `model.bim`, or
-- a ZIP archive containing `DataModelSchema` (usually PBIT).
+- a TMSL JSON file such as `model.bim`,
+- an Analysis Services backup (`.abf`), recognized by its signature, or
+- a ZIP archive containing `DataModelSchema` (usually PBIT) or a compressed
+  `DataModel` (PBIX). When both are present, `DataModelSchema` wins.
 
 `ingest::report(path)` also accepts PBIX and PBIT ZIPs containing
 `Report/Layout` or `Report/definition/report.json`. ZIP readers load only the
-schema, report definition, and (when present) `DataMashup` members needed for
-analysis. A PBIX's compressed `DataModel` is never unpacked or decoded; pair
-its report with a separate model. TMSL and legacy Layout JSON may be UTF-8 or
-UTF-16, with or without a byte order mark.
+schema, `DataModel`, report definition, and (when present) `DataMashup`
+members needed for analysis. A PBIX without either model member is a thin
+report: model ingestion fails with a "no embedded semantic model" error, and
+its report pairs with a separate model. TMSL and legacy Layout JSON may be
+UTF-8 or UTF-16, with or without a byte order mark.
 
 Anything else is `Error::UnsupportedFormat`. The PBIP item's display name is read
 from `.platform` (`metadata.displayName`) beside `definition/` — TMDL itself
 records no usable model name (`model.tmdl` names its root object `Model`). A
 missing or unreadable `.platform` yields `None`; a name is provenance, never
 liveness.
+
+## ABF backups (PBIX `DataModel` and `.abf`)
+
+A backup is decoded for its metadata only; VertiPaq row data and storage
+statistics are never interpreted. The container comes in three framings,
+detected from its first 102 bytes:
+
+- `STREAM_STORAGE` — the UTF-16 signature `STREAM_STORAGE_SIGNATURE_)!@#$%^&*(`;
+  already decoded.
+- Single-threaded XPress9 — the UTF-16 text "This backup was created using
+  XPress9 compression.", then `{u32 uncompressed, u32 compressed, payload}`
+  chunks to the end, all sharing one decoder history.
+- Multithreaded XPress9 — "…using multithreaded XPrs9.", five `u64` header
+  fields (main chunks per thread, prefix chunks per thread, prefix thread
+  count, main thread count, chunk size), then the prefix groups followed by
+  the main groups; each group has its own decoder history.
+
+The decoded stream goes to an anonymous temporary file that is deleted on
+every exit path. Its 4 KiB header page holds the backup-log header XML, which
+locates the `VirtualDirectory` (storage key → offset and size); the directory's
+last entry is the `BackupLog`, which names each original file. Only
+`metadata.sqlitedb` is extracted. Every size and offset is bounds-checked
+before it is read or allocated, so a truncated or malformed backup fails with
+`Error::DataModel` rather than panicking.
+
+The XPress9 codec is Microsoft's MIT-licensed C implementation, compiled
+statically into the `ripbi-xpress9` crate — the one crate allowed `unsafe`
+code, for its FFI (see that crate's docs and `NOTICE.md`).
+
+`metadata.sqlitedb` is the engine's TMSCHEMA catalog. It is opened read-only
+from memory, and rows are joined by ID into the same AST as TMSL: tables,
+columns (data, calculated, calculated-table; `RowNumber` dropped), measures
+with format-string, detail-rows and KPI expressions, partitions (M, calculated,
+query, and the other source types as `Other`), hierarchies and levels,
+relationships, roles with table and column permissions, calculation groups
+(items and selection expressions), refresh policies, calendars, shared
+expressions, and functions. Engine-internal tables (`SystemFlags` bit 0, such
+as `H$…` attribute-hierarchy tables) are dropped. Columns are read by name, so
+a catalog from an older or newer schema that lacks an optional table or column
+still loads. Unknown enum values, nameless objects, and foreign keys that
+point nowhere become skip notices located as `Table#ID`. A catalog without
+`Model`, `Table`, or `Column` tables, or one SQLite cannot read, fails. In a
+PBIX, empty M expressions are recovered from `DataMashup` exactly as for PBIT.
+
+Microsoft's public `Revenue Opportunities.pbix` is compared with its committed
+PBIP conversion in tests (object identities, DAX and M text, and the unused
+set). Setting `RIPBI_PBI_DESKTOP_SAMPLES` to a local copy of
+`microsoft/powerbi-desktop-samples` also runs the opt-in corpus test over every
+PBIX and PBIT there.
 
 ## TMSL and archive mapping
 
@@ -350,10 +402,14 @@ golden fixture is held to the same standard — it loads clean in the engine:
   list; the machinery's identity comes from the `__PBI_LocalDateTable` /
   `__PBI_TemplateDateTable` annotations, `isPrivate`, and the name prefixes,
   all mapped onto `Table` flags.
-- **`ColumnKind::CalculatedTableColumn`** has no sampled TMDL form; the
-  column kind is not mapped. If it appears, the drift policy notices it —
-  which is the correct signal, not silence. (The table-level `calendar`
-  object, once in the same boat, is mapped now — see above.)
+- **`ColumnKind::CalculatedTableColumn`** has no TMDL form: TMDL writes no
+  `type: calculatedTableColumn` line, and a calculated table's columns look
+  like data columns (`isNameInferred`, `sourceColumn: [Date]`). The reader
+  infers the kind from the table instead: once a table is parsed, every
+  non-calculated column of a table with a `calculated` partition (and no
+  calculation group) becomes `CalculatedTableColumn`, matching what TOM, TMSL,
+  and the ABF catalog record — so a PBIP scan agrees with a PBIT/PBIX scan of
+  the same model.
 - A multi-line expression that continues at exactly the property level
   (depth+1) after a non-empty `=` value is indistinguishable from properties
   and reads as a sibling; TMDL serialization keeps expression bodies below

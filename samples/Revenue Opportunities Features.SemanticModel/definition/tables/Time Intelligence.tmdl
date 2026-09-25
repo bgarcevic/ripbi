@@ -1,0 +1,26 @@
+table 'Time Intelligence'
+	lineageTag: fb191751-44bf-4536-b9be-1584b1a7e124
+
+	calculationGroup
+		precedence: 10
+
+		multipleOrEmptySelectionExpression = BLANK()
+
+			formatStringDefinition = "General"
+
+		noSelectionExpression = SELECTEDMEASURE()
+
+		calculationItem Current = SELECTEDMEASURE()
+
+		calculationItem YTD = CALCULATE(SELECTEDMEASURE(), DATESYTD('Calendar'[Date]))
+
+		calculationItem PY = CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Calendar'[Date]))
+
+			formatStringDefinition = "#,0"
+
+	column 'Time Intelligence'
+		dataType: string
+		lineageTag: 2fb8ff09-52a5-42fe-b499-784585984298
+
+	partition 'Partition_Time Intelligence' = calculationGroup
+

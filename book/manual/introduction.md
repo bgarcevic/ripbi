@@ -10,8 +10,10 @@ It works without opening the reports or the semantic model, so it runs in a
 terminal or headless CI/CD (GitHub Actions, Azure DevOps). It is
 cross-platform, with no dependency on Power BI Desktop.
 
-Today it works on local PBIP projects — a TMDL semantic model plus PBIR
-reports; `.pbix` and `.pbit` files are not supported yet.
+Today it works on local PBIP projects (a TMDL semantic model plus PBIR
+reports), TMSL `model.bim` files, `.pbit` templates, `.pbix` files (including
+the embedded model, whose metadata is decoded from the compressed `DataModel`),
+and standalone `.abf` backups.
 
 > This book is built from
 > [`main`](https://github.com/bgarcevic/ripbi/commits/main) and may document

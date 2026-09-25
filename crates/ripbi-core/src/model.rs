@@ -26,7 +26,8 @@ use crate::model::index::{
 };
 
 /// Normalized semantic model, regardless of source format (TMDL, model.bim,
-/// .pbix DataModelSchema). Downstream code never branches on source format.
+/// .pbix DataModelSchema or DataModel, .abf). Downstream code never branches on
+/// source format.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TabularDatabase {
     /// Model name, when the source format records one.

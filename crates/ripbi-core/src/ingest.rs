@@ -14,6 +14,7 @@
 //! to parse — is recorded as a notice. The full policy, including the curated
 //! ignore list, lives in `docs/formats.md`.
 
+mod abf;
 mod archive;
 mod legacy;
 mod pbir;
@@ -117,13 +118,15 @@ pub struct Ingested<T> {
     pub skips: Vec<SkipNotice>,
 }
 
-/// Parses a TMDL folder, TMSL JSON file, or archive `DataModelSchema` into a
+/// Parses a TMDL folder, TMSL JSON file, ABF backup, or archive model into a
 /// [`TabularDatabase`].
 ///
 /// `path` may be a `.SemanticModel` folder (its `definition/` subfolder is
-/// located automatically), a `definition/` folder, a `model.bim` file, or a
-/// ZIP with `DataModelSchema`. Compressed PBIX `DataModel` members are not
-/// decoded. Unexpected parse drift is reported in [`Ingested::skips`].
+/// located automatically), a `definition/` folder, a `model.bim` file, an
+/// `.abf` backup, or a PBIX/PBIT ZIP carrying `DataModelSchema` or a
+/// compressed `DataModel`. When an archive carries both, `DataModelSchema`
+/// wins. Only the model's metadata is read from a backup, never its data.
+/// Unexpected parse drift is reported in [`Ingested::skips`].
 ///
 /// Table order follows `model.tmdl`'s `ref table` directives; tables present as
 /// files but never referenced are appended in file-name order. The `cultures/`
@@ -134,6 +137,14 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
         let count = fs::File::open(path)?.read(&mut signature)?;
         if count == 4 && signature == *b"PK\x03\x04" {
             return archive::model(path);
+        }
+        let mut header = [0; abf::SIGNATURE_LEN];
+        let count = read_prefix(&mut fs::File::open(path)?, &mut header)?;
+        if abf::is_abf(&header[..count]) {
+            let mut skips = Vec::new();
+            let value = abf::load(fs::File::open(path)?, path, &mut skips)?;
+            archive::ensure_m_coverage(&value, path)?;
+            return Ok(Ingested { value, skips });
         }
         let bytes = fs::read(path)?;
         let leading = bytes
@@ -156,7 +167,7 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
             return Ok(Ingested { value, skips });
         }
         return Err(Error::UnsupportedFormat(format!(
-            "{} is neither TMSL JSON nor a PBIT archive",
+            "{} is neither TMSL JSON, an ABF backup, nor a PBIX/PBIT archive",
             path.display()
         )));
     }
@@ -198,10 +209,33 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     Ok(Ingested { value, skips })
 }
 
-/// Whether a ZIP archive contains a TMSL `DataModelSchema` member.
+/// Whether a ZIP archive embeds a semantic model: a TMSL `DataModelSchema`
+/// or an ABF `DataModel` member.
 #[must_use]
 pub fn archive_has_model(path: &Path) -> bool {
-    archive::has_member(path, "DataModelSchema")
+    archive::has_model(path)
+}
+
+/// Whether `path` is a file that opens with an ABF backup signature
+/// (uncompressed, or single- or multithreaded XPress9).
+#[must_use]
+pub fn is_abf(path: &Path) -> bool {
+    let mut header = [0; abf::SIGNATURE_LEN];
+    fs::File::open(path)
+        .and_then(|mut file| read_prefix(&mut file, &mut header))
+        .is_ok_and(|count| abf::is_abf(&header[..count]))
+}
+
+/// Reads up to `buf.len()` leading bytes, returning how many were read.
+fn read_prefix(reader: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match reader.read(&mut buf[filled..])? {
+            0 => break,
+            count => filled += count,
+        }
+    }
+    Ok(filled)
 }
 
 /// Whether a ZIP archive contains either supported report representation.

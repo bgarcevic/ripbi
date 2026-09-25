@@ -156,3 +156,148 @@ fn report_only_pbix_uses_a_sole_differently_named_bim_model() {
     };
     assert_eq!(paired.model, model);
 }
+
+/// Microsoft's public PBIX: its model exists only as the compressed ABF
+/// `DataModel` member.
+fn pbix() -> PathBuf {
+    root().join("samples/Revenue Opportunities.pbix")
+}
+
+/// Writes the PBIX's `DataModel` member out as a standalone `.abf` backup.
+fn extract_abf(dir: &std::path::Path, name: &str) -> PathBuf {
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(pbix()).unwrap()).unwrap();
+    let mut bytes = Vec::new();
+    zip.by_name("DataModel")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn scan_pbix_decodes_its_data_model_and_uses_its_own_report() {
+    let temp = TempDir::new("archive-pbix-scan");
+    let args = ScanArgs {
+        path: Some(pbix()),
+        json: true,
+        strict: true,
+        ..ScanArgs::default()
+    };
+    let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    let payload = json_payload(&stdout);
+    assert_eq!(payload["summary"]["objects"], 99);
+    assert_eq!(payload["summary"]["unused"], 37);
+    assert_eq!(payload["reports"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["skips"]["count"], 0);
+}
+
+#[test]
+fn report_pbix_lists_its_visuals() {
+    let temp = TempDir::new("archive-pbix-report");
+    let args = ReportArgs {
+        path: Some(pbix()),
+        json: true,
+        ..ReportArgs::default()
+    };
+    let (code, stdout, stderr) = run_report(&args, &temp.0, "");
+    assert_eq!(code, 0, "{stderr}");
+    let payload = json_payload(&stdout);
+    assert_eq!(payload["reports"][0]["pages"].as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn deps_pbix_model_sees_its_report() {
+    let temp = TempDir::new("archive-pbix-deps");
+    let args = DepsArgs {
+        object: Some("'Calculations'[Revenue]".to_string()),
+        model: Some(pbix()),
+        ..DepsArgs::default()
+    };
+    let (code, stdout, stderr) = run_deps(&args, &temp.0, "");
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("Reports"), "{stdout}");
+}
+
+#[test]
+fn abf_follows_the_model_only_rule() {
+    let temp = TempDir::new("archive-abf");
+    let abf = extract_abf(&temp.0, "Revenue.abf");
+
+    let Resolution::Paired(paired) = resolve_path(&abf).unwrap() else {
+        panic!("an .abf resolves as a model");
+    };
+    assert_eq!(paired.model, abf);
+    assert!(paired.reports.is_empty());
+
+    let bare = ScanArgs {
+        path: Some(abf.clone()),
+        ..ScanArgs::default()
+    };
+    let (code, _, stderr) = run_scan(&bare, &temp.0, "");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("nothing to scan against"), "{stderr}");
+
+    let deps = DepsArgs {
+        model: Some(abf.clone()),
+        ..DepsArgs::default()
+    };
+    let (code, _, stderr) = run_deps(&deps, &temp.0, "");
+    assert_eq!(code, 0, "{stderr}");
+
+    let paired = ScanArgs {
+        model: Some(abf),
+        reports: vec![root().join("samples/Revenue Opportunities.Report")],
+        json: true,
+        ..ScanArgs::default()
+    };
+    let (code, stdout, stderr) = run_scan(&paired, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(json_payload(&stdout)["summary"]["objects"], 99);
+}
+
+#[test]
+fn thin_pbix_pairs_with_a_sibling_abf_or_model_pbix() {
+    let temp = TempDir::new("archive-thin-pbix");
+    let report = temp.0.join("Sales.pbix");
+    std::fs::copy(
+        root().join("crates/ripbi-core/tests/fixtures/legacy/modern-report.pbix"),
+        &report,
+    )
+    .unwrap();
+    let abf = extract_abf(&temp.0, "Sales.abf");
+    let Resolution::Paired(paired) = resolve_path(&report).unwrap() else {
+        panic!("thin PBIX should pair with its sibling backup");
+    };
+    assert_eq!(paired.model, abf);
+    assert_eq!(paired.reports, vec![report.clone()]);
+
+    std::fs::remove_file(&abf).unwrap();
+    let model = temp.0.join("Model.pbix");
+    std::fs::copy(pbix(), &model).unwrap();
+    let Resolution::Paired(paired) = resolve_path(&report).unwrap() else {
+        panic!("thin PBIX should pair with the sole model-bearing PBIX");
+    };
+    assert_eq!(paired.model, model);
+}
+
+#[test]
+fn thin_pbix_without_a_model_says_so() {
+    let temp = TempDir::new("archive-thin-alone");
+    let report = temp.0.join("Alone.pbix");
+    std::fs::copy(
+        root().join("crates/ripbi-core/tests/fixtures/legacy/modern-report.pbix"),
+        &report,
+    )
+    .unwrap();
+    let args = ScanArgs {
+        path: Some(report),
+        ..ScanArgs::default()
+    };
+    let (code, _, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("embeds no model"), "{stderr}");
+}

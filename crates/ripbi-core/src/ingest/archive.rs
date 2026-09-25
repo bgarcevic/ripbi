@@ -9,7 +9,7 @@ use zip::ZipArchive;
 use zip::result::ZipError;
 
 use crate::identity::NameKey;
-use crate::ingest::{Ingested, legacy, pbir, tmsl};
+use crate::ingest::{Ingested, abf, legacy, pbir, tmsl};
 use crate::m::{self, TokenKind};
 use crate::model::{PartitionSource, SharedExpression, TabularDatabase};
 use crate::report::ReportModel;
@@ -25,16 +25,37 @@ pub(super) fn has_member(path: &Path, member: &str) -> bool {
     zip.by_name(member).is_ok()
 }
 
+/// Whether the archive carries a semantic model: TMSL `DataModelSchema` or
+/// an ABF `DataModel`.
+pub(super) fn has_model(path: &Path) -> bool {
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    let Ok(mut zip) = ZipArchive::new(file) else {
+        return false;
+    };
+    zip.by_name("DataModelSchema").is_ok() || zip.by_name("DataModel").is_ok()
+}
+
+/// Reads the archive's model. `DataModelSchema` (TMSL JSON) wins when both
+/// representations are present; otherwise the ABF `DataModel` is decoded.
 pub(super) fn model(path: &Path) -> Result<Ingested<TabularDatabase>> {
     let mut zip = ZipArchive::new(File::open(path)?)?;
-    let bytes = read_member(&mut zip, "DataModelSchema")?.ok_or_else(|| {
-        Error::UnsupportedFormat(format!(
-            "{} has no DataModelSchema; compressed DataModel decoding is tracked by issue #10",
-            path.display()
-        ))
-    })?;
     let mut skips = Vec::new();
-    let mut value = tmsl::load(&bytes, path, &mut skips)?;
+    let mut value = if let Some(bytes) = read_member(&mut zip, "DataModelSchema")? {
+        tmsl::load(&bytes, path, &mut skips)?
+    } else {
+        match zip.by_name("DataModel") {
+            Ok(member) => abf::load(member, path, &mut skips)?,
+            Err(ZipError::FileNotFound) => {
+                return Err(Error::UnsupportedFormat(format!(
+                    "{} has no embedded semantic model (neither DataModelSchema nor DataModel);                      a thin report needs its model passed separately",
+                    path.display()
+                )));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
     fill_missing_m(&mut value, &mut zip, path)?;
     ensure_m_coverage(&value, path)?;
     Ok(Ingested { value, skips })

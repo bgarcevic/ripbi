@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Embedded PBIX models and `.abf` backups** (issue #10): a PBIX's compressed
+  `DataModel` is decoded (single-threaded, multithreaded, and uncompressed ABF
+  framings) and its `metadata.sqlitedb` catalog is normalized into the same model
+  as TMDL/TMSL, so `scan`, `report`, and `deps` work on a PBIX alone. Standalone
+  `.abf` backups are accepted as model-only inputs. Only metadata is read. A thin
+  PBIX report pairs with a sibling `.SemanticModel`, `model.bim`, `.abf`, or
+  model-bearing PBIT/PBIX.
+- **`ripbi-xpress9` crate**: a safe wrapper over Microsoft's MIT-licensed XPress9
+  C decoder, compiled statically; the only crate allowed `unsafe` (FFI).
+
+### Fixed
+
+- **Roles in PBIP/TMDL models no longer raise drift notices**: Desktop lists
+  each role as `ref role …` in `model.tmdl`, which the TMDL reader reported as
+  an unknown object (and `--strict` turned into exit 2). `ref role` and
+  `ref perspective` are now accepted like the other ordering directives.
+- **Calculated-table columns in PBIP/TMDL models**: TMDL has no
+  `calculatedTableColumn` marker, so the columns of a calculated table read as
+  data columns and a PBIP scan reported them unused on their own. They now ride
+  along with their table, as they already did for PBIT/PBIX/`model.bim` inputs;
+  a live calculated table (a `CALENDAR` date table, a `{1}` measure-home table)
+  no longer surfaces its columns as unused findings.
+
 ## [0.5.0] - 2026-09-25
 
 ### Added

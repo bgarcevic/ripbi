@@ -294,9 +294,10 @@ impl Loader {
                         let referenced = root.tail.as_deref().map(unquote).unwrap_or_default();
                         self.table_refs.push((referenced, root.line));
                     }
-                    // Expression and culture refs are valid directives whose
-                    // order this crate does not need.
-                    Some("cultureInfo") | Some("expression") => {}
+                    // Expression, culture, role, and perspective refs are
+                    // valid directives whose order this crate does not need.
+                    Some("cultureInfo") | Some("expression") | Some("role")
+                    | Some("perspective") => {}
                     other => notice(
                         skips,
                         path,
@@ -1115,6 +1116,17 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
     // the prefixes are the engine's own convention.
     table.is_local_date_table |= table.name.starts_with("LocalDateTable_");
     table.is_template_date_table |= table.name.starts_with("DateTableTemplate_");
+    // TMDL writes no `type: calculatedTableColumn` line, so a calculated
+    // table's columns read as data columns. TOM (and so TMSL and the ABF
+    // catalog) records them as calculated-table columns, which ride along
+    // with their table; the partition source is the only TMDL tell.
+    if table.is_calculated() && table.calculation_group.is_none() {
+        for column in &mut table.columns {
+            if column.kind == ColumnKind::Data {
+                column.kind = ColumnKind::CalculatedTableColumn;
+            }
+        }
+    }
     table
 }
 
@@ -2418,6 +2430,34 @@ mod tests {
             let plain = map_table(&plain, Path::new("t"), &mut skips);
             assert!(!plain.is_local_date_table);
             assert!(!plain.is_template_date_table);
+        }
+
+        /// A calculated table's columns are calculated-table columns, as TOM
+        /// records them (samples/…/Calendar.tmdl); its calculated columns
+        /// stay calculated, and an M-backed table's columns stay data.
+        #[test]
+        fn a_calculated_tables_columns_are_calculated_table_columns() {
+            let mut skips = Vec::new();
+            let node = map_one(
+                "table Calendar\n\tcolumn Date\n\t\tisNameInferred\n\t\tsourceColumn: [Date]\n\tcolumn Year = YEAR('Calendar'[Date])\n\tpartition Calendar = calculated\n\t\tmode: import\n\t\tsource = CALENDARAUTO()\n",
+                "table",
+            );
+            let table = map_table(&node, Path::new("t"), &mut skips);
+
+            assert!(skips.is_empty(), "{skips:?}");
+            assert!(table.is_calculated());
+            assert_eq!(table.columns[0].kind, ColumnKind::CalculatedTableColumn);
+            assert!(matches!(
+                table.columns[1].kind,
+                ColumnKind::Calculated { .. }
+            ));
+
+            let node = map_one(
+                "table Sales\n\tcolumn Amount\n\t\tsourceColumn: Amount\n\tpartition Sales = m\n\t\tmode: import\n\t\tsource = Sql.Database(\"srv\", \"db\")\n",
+                "table",
+            );
+            let table = map_table(&node, Path::new("t"), &mut skips);
+            assert_eq!(table.columns[0].kind, ColumnKind::Data);
         }
 
         /// A plain user table may be engine-private too (seen in the Store

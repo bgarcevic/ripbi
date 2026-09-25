@@ -650,9 +650,12 @@ which static analysis deliberately ignores.
   A broken binding's kind (`broken_visual`) also never appears in the `unused` array
   or the generic groups — it has no `ObjectId` of its own.
 - TMDL and TMSL (`model.bim`) semantic models, PBIR folders, PBIT templates,
-  and PBIX report layouts are ingested. A PBIT provides its own model and report;
-  a PBIX needs a separate model (`--model` or one unambiguous sibling). Reading
-  a PBIX's compressed `DataModel` remains outside this version (issue #10).
+  PBIX files, and `.abf` backups are ingested. A PBIT or PBIX provides its own
+  model and report (a PBIX's model is decoded from its compressed `DataModel`,
+  metadata only). A thin PBIX report with no embedded model needs a separate
+  model (`--model` or one unambiguous sibling: `.SemanticModel`, `model.bim`,
+  `.abf`, or a model-bearing PBIT/PBIX). An `.abf` is model-only, like
+  `model.bim`.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
   (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; scan prints this
   caveat on every run.

@@ -1,0 +1,4 @@
+/// Test UDF for ripbi ingestion
+function AddMargin = (amount : Scalar Val) => amount * 1.25
+	lineageTag: 627b5c8e-bd49-421d-b872-8c76334f5ed8
+

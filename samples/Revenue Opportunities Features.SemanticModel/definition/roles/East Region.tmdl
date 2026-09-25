@@ -1,0 +1,7 @@
+role 'East Region'
+	modelPermission: read
+
+	tablePermission Account = [Region] = "East"
+
+	annotation PBI_Id = 0e8aac1335ca42babbdc208030ac3adf
+
