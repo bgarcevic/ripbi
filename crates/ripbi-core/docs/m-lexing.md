@@ -149,6 +149,7 @@ Over-marking is harmless; under-marking deletes live code.
   cycle with the table-partition edge). Its naming its own *columns* is the supply-chain
   context, never a keep.
 - **What is not modeled, on purpose:** `let`-binding dataflow (resolving which table a
-  variable denotes), a full M parser, section documents, and `.pbix` DataMashup
-  ingestion. The `RawRef` surface is the seam a fuller parser could replace without
+  variable denotes) and a full M parser. PBIT `DataMashup` section declarations
+  are split to recover query expressions, but their bodies still use this lexer.
+  The `RawRef` surface is the seam a fuller parser could replace without
   touching the graph.

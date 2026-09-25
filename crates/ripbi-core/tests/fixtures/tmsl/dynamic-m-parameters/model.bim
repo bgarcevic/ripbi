@@ -1,0 +1,97 @@
+{
+  "compatibilityLevel": 1606,
+  "model": {
+    "name": "DynamicMParameters",
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "valueFilterBehavior": "independent",
+    "tables": [
+      {
+        "name": "DaysList",
+        "description": "The slicer table. Its Days column carries the column side of the dynamic M\nparameter binding: an anonymous \u0060ParameterMetadata\u0060 marker (kind 1). The\nauthoritative half is the MinDays expression\u0027s \u0060parameterValuesColumn\u0060.",
+        "columns": [
+          {
+            "name": "Days",
+            "dataType": "int64",
+            "sourceColumn": "Days",
+            "formatString": "0",
+            "sourceProviderType": "int",
+            "summarizeBy": "sum",
+            "extendedProperties": [
+              {
+                "type": "json",
+                "name": "ParameterMetadata",
+                "value": {
+                  "version": 2,
+                  "kind": 1,
+                  "selectAllValue": "__SelectAll__"
+                }
+              }
+            ]
+          }
+        ],
+        "partitions": [
+          {
+            "name": "DaysList",
+            "mode": "directQuery",
+            "source": {
+              "type": "m",
+              "expression": "let\n    Source = Sql.Database(\u0022example.datawarehouse.fabric.microsoft.com\u0022, \u0022Warehouse\u0022),\n    Probe = Source{[Schema=\u0022dbo\u0022,Item=\u0022DynamicMProbe\u0022]}[Data]\nin\n    Probe"
+            }
+          }
+        ]
+      },
+      {
+        "name": "SampleData",
+        "description": "The consumer: its partition M filters the source by the parameter, which\nkeeps MinDays alive through the M reference \u2014 and MinDays keeps\nDaysList[Days] alive through the parameter binding.",
+        "columns": [
+          {
+            "name": "Days",
+            "dataType": "int64",
+            "sourceColumn": "Days",
+            "formatString": "0",
+            "sourceProviderType": "int",
+            "summarizeBy": "sum"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "SampleData",
+            "mode": "directQuery",
+            "source": {
+              "type": "m",
+              "expression": "let\n    Source = Sql.Database(\u0022example.datawarehouse.fabric.microsoft.com\u0022, \u0022Warehouse\u0022),\n    Probe = Source{[Schema=\u0022dbo\u0022,Item=\u0022DynamicMProbe\u0022]}[Data],\n    FilterDays = Table.SelectRows(Probe, each [Days] \u003E= MinDays)\nin\n    FilterDays"
+            }
+          }
+        ]
+      }
+    ],
+    "expressions": [
+      {
+        "name": "MinDays",
+        "description": "A dynamic M query parameter: the SampleData partition\u0027s M consumes it by\nname, and its view-time values are bound from DaysList[Days] via the\n\u0060parameterValuesColumn\u0060 property \u2014 the binding\u0027s authoritative half. A\nconsumed parameter keeps its bound column alive.",
+        "kind": "m",
+        "expression": "15 meta [IsParameterQuery=true, Type=\u0022Number\u0022, IsParameterQueryRequired=true]",
+        "parameterValuesColumn": {
+          "table": "DaysList",
+          "column": "Days"
+        }
+      }
+    ],
+    "annotations": [
+      {
+        "name": "__PBI_TimeIntelligenceEnabled",
+        "value": "0"
+      },
+      {
+        "name": "PBI_QueryOrder",
+        "value": "[\u0022DaysList\u0022,\u0022SampleData\u0022,\u0022MinDays\u0022]"
+      }
+    ]
+  }
+}

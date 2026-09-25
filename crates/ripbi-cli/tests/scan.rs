@@ -572,13 +572,16 @@ mod refusals {
     }
 
     #[test]
-    fn an_archive_path_reports_it_is_not_yet_supported() {
+    fn a_malformed_archive_path_reports_missing_inputs() {
         let temp = TempDir::new("archive");
         temp.write("Model.pbix", "PK\u{3}\u{4}");
         let (code, _, stderr) = scan_path(&temp.0.join("Model.pbix"), &temp.0);
 
         assert_eq!(code, 2);
-        assert!(stderr.contains("not supported yet"), "error:\n{stderr}");
+        assert!(
+            stderr.contains("not a supported PBIT or PBIX input"),
+            "error:\n{stderr}"
+        );
     }
 
     #[test]

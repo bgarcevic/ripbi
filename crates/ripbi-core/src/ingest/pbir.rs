@@ -36,6 +36,71 @@ use crate::report::{
     ReportModel, Visual,
 };
 
+/// File access shared by folder PBIR and PBIR documents inside a ZIP archive.
+pub(super) enum Source<'a> {
+    Filesystem,
+    Archive(&'a HashMap<PathBuf, Vec<u8>>),
+}
+
+impl Source<'_> {
+    fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+        match self {
+            Self::Filesystem => fs::read(path),
+            Self::Archive(files) => files.get(path).cloned().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "archive member missing")
+            }),
+        }
+    }
+
+    fn is_file(&self, path: &Path) -> bool {
+        match self {
+            Self::Filesystem => path.is_file(),
+            Self::Archive(files) => files.contains_key(path),
+        }
+    }
+
+    fn entries(&self, path: &Path) -> crate::Result<Option<Vec<PathBuf>>> {
+        match self {
+            Self::Filesystem => {
+                let entries = match fs::read_dir(path) {
+                    Ok(entries) => entries,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    Err(error) => return Err(error.into()),
+                };
+                Ok(Some(
+                    entries
+                        .map(|entry| entry.map(|entry| entry.path()))
+                        .collect::<std::io::Result<Vec<_>>>()?,
+                ))
+            }
+            Self::Archive(files) => {
+                let mut children = HashSet::new();
+                for file in files.keys() {
+                    if let Ok(rest) = file.strip_prefix(path)
+                        && let Some(component) = rest.components().next()
+                    {
+                        children.insert(path.join(component));
+                    }
+                }
+                if children.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(children.into_iter().collect()))
+                }
+            }
+        }
+    }
+
+    fn is_dir(&self, path: &Path) -> bool {
+        match self {
+            Self::Filesystem => path.is_dir(),
+            Self::Archive(files) => files
+                .keys()
+                .any(|file| file.starts_with(path) && file != path),
+        }
+    }
+}
+
 /// Aggregation function names by PBIR `Function` code
 /// (`semanticQuery` `QueryAggregateFunction`). An unknown code keeps the inner
 /// reference with `function: None` — the code is diagnostics only.
@@ -78,14 +143,27 @@ pub(super) fn load_report(
     name: Option<String>,
     skips: &mut Vec<SkipNotice>,
 ) -> Result<ReportModel> {
+    load_report_from_source(definition, name, skips, &Source::Filesystem)
+}
+
+pub(super) fn load_report_from_source(
+    definition: &Path,
+    name: Option<String>,
+    skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
+) -> Result<ReportModel> {
     // The anchor: `locate_report_definition` guarantees report.json exists, so
     // a failure here is a real error, never drift.
     let report_path = definition.join("report.json");
-    let report = read_json(&report_path)?;
+    let report = read_json(&report_path, source)?;
 
     let mut model = ReportModel {
         name,
-        dataset: dataset_reference(definition.parent().unwrap_or(definition), skips),
+        dataset: dataset_reference_from_source(
+            definition.parent().unwrap_or(definition),
+            skips,
+            source,
+        ),
         ..Default::default()
     };
 
@@ -97,10 +175,10 @@ pub(super) fn load_report(
         check_keys(&report, &REPORT_KEYS, &mut ctx, "");
         model.filters = filter_config(report.get("filterConfig"), &mut ctx, "/filterConfig");
     }
-    model.measures = report_extensions(definition, skips);
-    model.pages = pages(definition, skips)?;
-    let live = live_sections(definition, &model.pages, skips);
-    model.bookmarks = bookmarks(definition, &live, skips)?;
+    model.measures = report_extensions(definition, skips, source);
+    model.pages = pages(definition, skips, source)?;
+    let live = live_sections(definition, &model.pages, skips, source);
+    model.bookmarks = bookmarks(definition, &live, skips, source)?;
     Ok(model)
 }
 
@@ -119,14 +197,26 @@ pub(super) fn load_mobile_pages(
     definition: &Path,
     skips: &mut Vec<SkipNotice>,
 ) -> Result<Vec<Page>> {
-    pages(definition, skips)
+    pages(definition, skips, &Source::Filesystem)
+}
+
+pub(super) fn load_mobile_pages_from_source(
+    definition: &Path,
+    skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
+) -> Result<Vec<Page>> {
+    pages(definition, skips, source)
 }
 
 /// Parses `reportExtensions.json`: report-level measures, grouped by extension
 /// entity and flattened in file order.
-fn report_extensions(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<ReportMeasure> {
+fn report_extensions(
+    definition: &Path,
+    skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
+) -> Vec<ReportMeasure> {
     let path = definition.join("reportExtensions.json");
-    let Some(value) = read_optional(&path, skips) else {
+    let Some(value) = read_optional(&path, skips, source) else {
         return Vec::new();
     };
     let mut ctx = Ctx { path: &path, skips };
@@ -169,8 +259,16 @@ fn report_extensions(definition: &Path, skips: &mut Vec<SkipNotice>) -> Vec<Repo
 /// report connects to. The file is absent in some standalone layouts and is
 /// provenance only, so any absence or drift yields [`DatasetReference::Unresolved`].
 pub(super) fn dataset_reference(item_root: &Path, skips: &mut Vec<SkipNotice>) -> DatasetReference {
+    dataset_reference_from_source(item_root, skips, &Source::Filesystem)
+}
+
+fn dataset_reference_from_source(
+    item_root: &Path,
+    skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
+) -> DatasetReference {
     let path = item_root.join("definition.pbir");
-    let Some(value) = read_optional(&path, skips) else {
+    let Some(value) = read_optional(&path, skips, source) else {
         return DatasetReference::Unresolved;
     };
     let unresolved = |skips: &mut Vec<SkipNotice>, detail: String| {
@@ -222,17 +320,17 @@ pub(super) fn dataset_reference(item_root: &Path, skips: &mut Vec<SkipNotice>) -
 }
 
 /// Parses every page folder under `pages/`, in folder-name order.
-fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Page>> {
-    let mut folders = child_folders(&definition.join("pages"))?
+fn pages(definition: &Path, skips: &mut Vec<SkipNotice>, source: &Source<'_>) -> Result<Vec<Page>> {
+    let mut folders = child_folders(&definition.join("pages"), source)?
         .into_iter()
-        .filter(|folder| folder.join("page.json").is_file())
+        .filter(|folder| source.is_file(&folder.join("page.json")))
         .collect::<Vec<_>>();
     folders.sort_by_key(|folder| folder.file_name().unwrap_or_default().to_os_string());
 
     let mut out = Vec::new();
     for folder in folders {
         let page_path = folder.join("page.json");
-        let value = match read_json(&page_path) {
+        let value = match read_json(&page_path, source) {
             Ok(value) => value,
             Err(error) => {
                 skips.push(SkipNotice {
@@ -249,7 +347,7 @@ fn pages(definition: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Page>> {
             skips,
         };
         let mut page = page(&value, folder_name(&folder), &mut ctx);
-        page.visuals = visuals(&folder, ctx.skips)?;
+        page.visuals = visuals(&folder, ctx.skips, source)?;
         out.push(page);
     }
     Ok(out)
@@ -271,6 +369,7 @@ fn live_sections(
     definition: &Path,
     pages: &[Page],
     skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
 ) -> HashSet<String> {
     let pages_path = definition.join("pages").join("pages.json");
     let mut page_order = Vec::new();
@@ -278,7 +377,7 @@ fn live_sections(
     // read: without the file (or with an unreadable one, already noticed)
     // there is nothing to disagree with, and the folders stand alone.
     let mut order_known = false;
-    if let Some(value) = read_optional(&pages_path, skips) {
+    if let Some(value) = read_optional(&pages_path, skips, source) {
         let mut ctx = Ctx {
             path: &pages_path,
             skips,
@@ -425,17 +524,17 @@ fn page_binding(value: &Value, ctx: &mut Ctx, location: &str) -> PageBinding {
 
 /// Parses every visual folder of a page, in folder-name order. Group
 /// containers (`visualGroup`, which carry no query) are skipped.
-fn visuals(folder: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Visual>> {
-    let mut folders = child_folders(&folder.join("visuals"))?
+fn visuals(folder: &Path, skips: &mut Vec<SkipNotice>, source: &Source<'_>) -> Result<Vec<Visual>> {
+    let mut folders = child_folders(&folder.join("visuals"), source)?
         .into_iter()
-        .filter(|folder| folder.join("visual.json").is_file())
+        .filter(|folder| source.is_file(&folder.join("visual.json")))
         .collect::<Vec<_>>();
     folders.sort_by_key(|folder| folder.file_name().unwrap_or_default().to_os_string());
 
     let mut out = Vec::new();
     for visual_folder in folders {
         let visual_path = visual_folder.join("visual.json");
-        let value = match read_json(&visual_path) {
+        let value = match read_json(&visual_path, source) {
             Ok(value) => value,
             Err(error) => {
                 skips.push(SkipNotice {
@@ -527,16 +626,16 @@ fn bookmarks(
     definition: &Path,
     live: &HashSet<String>,
     skips: &mut Vec<SkipNotice>,
+    source: &Source<'_>,
 ) -> Result<Vec<Bookmark>> {
     let path = definition.join("bookmarks");
-    let Some(entries) = read_entries(&path)? else {
+    let Some(entries) = read_entries(&path, source)? else {
         return Ok(Vec::new());
     };
     let mut files = entries
         .into_iter()
-        .map(|entry| entry.path())
         .filter(|path| {
-            path.is_file()
+            source.is_file(path)
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
@@ -547,7 +646,7 @@ fn bookmarks(
 
     let mut out = Vec::new();
     for file in files {
-        let value = match read_json(&file) {
+        let value = match read_json(&file, source) {
             Ok(value) => value,
             Err(error) => {
                 skips.push(SkipNotice {
@@ -1939,15 +2038,14 @@ impl Ctx<'_> {
 }
 
 /// Reads a required JSON document; I/O and parse errors fail the run.
-fn read_json(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&text)?)
+fn read_json(path: &Path, source: &Source<'_>) -> Result<Value> {
+    Ok(serde_json::from_slice(&source.read(path)?)?)
 }
 
 /// Reads an optional JSON document: `None` when absent, a notice when it
 /// exists but cannot be read or parsed.
-fn read_optional(path: &Path, skips: &mut Vec<SkipNotice>) -> Option<Value> {
-    let text = match fs::read_to_string(path) {
+fn read_optional(path: &Path, skips: &mut Vec<SkipNotice>, source: &Source<'_>) -> Option<Value> {
+    let text = match source.read(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
         Err(error) => {
@@ -1960,7 +2058,7 @@ fn read_optional(path: &Path, skips: &mut Vec<SkipNotice>) -> Option<Value> {
             return None;
         }
     };
-    match serde_json::from_str(&text) {
+    match serde_json::from_slice(&text) {
         Ok(value) => Some(value),
         Err(error) => {
             skips.push(SkipNotice {
@@ -1975,26 +2073,20 @@ fn read_optional(path: &Path, skips: &mut Vec<SkipNotice>) -> Option<Value> {
 }
 
 /// The immediate subdirectories of `path`, in no particular order.
-fn child_folders(path: &Path) -> Result<Vec<PathBuf>> {
-    let Some(entries) = read_entries(path)? else {
+fn child_folders(path: &Path, source: &Source<'_>) -> Result<Vec<PathBuf>> {
+    let Some(entries) = read_entries(path, source)? else {
         return Ok(Vec::new());
     };
     Ok(entries
         .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
+        .filter(|path| source.is_dir(path))
         .collect())
 }
 
 /// An absent optional folder is normal; an unreadable one fails because
 /// analysis cannot know whether it contains report bindings.
-fn read_entries(path: &Path) -> Result<Option<Vec<fs::DirEntry>>> {
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    Ok(Some(entries.collect::<std::io::Result<Vec<_>>>()?))
+fn read_entries(path: &Path, source: &Source<'_>) -> Result<Option<Vec<PathBuf>>> {
+    source.entries(path)
 }
 
 #[cfg(test)]
@@ -2004,7 +2096,7 @@ mod directory_read_tests {
     #[test]
     fn a_file_where_a_report_directory_is_expected_fails() {
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
-        assert!(read_entries(&file).is_err());
+        assert!(read_entries(&file, &Source::Filesystem).is_err());
     }
 }
 
