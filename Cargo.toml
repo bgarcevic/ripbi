@@ -4,14 +4,14 @@ members = ["crates/ripbi-core", "crates/ripbi-cli", "crates/ripbi-xpress9"]
 exclude = ["desktop/src-tauri"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bgarcevic/ripbi"
 
 [workspace.dependencies]
-ripbi-core = { path = "crates/ripbi-core", version = "0.5.0" }
-ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.5.0" }
+ripbi-core = { path = "crates/ripbi-core", version = "0.6.0" }
+ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.6.0" }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "serialize"] }
 quick-xml = "0.42"
 tempfile = "3"

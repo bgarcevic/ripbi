@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-25
+
 ### Added
 
+- **TMSL `model.bim`, PBIT templates, and PBIX report layouts** (issue #9):
+  `model.bim` files and a PBIT's `DataModelSchema` normalize into the same model
+  as TMDL, with empty M expressions recovered from `DataMashup`. PBIX and PBIT
+  reports are read from either PBIR members or the legacy `Report/Layout`
+  (pages, visuals, filters, bookmarks, sorts, and hierarchy bindings, including
+  `From`-aliased ones). UTF-8 and UTF-16 JSON are both accepted.
 - **Embedded PBIX models and `.abf` backups** (issue #10): a PBIX's compressed
   `DataModel` is decoded (single-threaded, multithreaded, and uncompressed ABF
   framings) and its `metadata.sqlitedb` catalog is normalized into the same model
@@ -38,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   along with their table, as they already did for PBIT/PBIX/`model.bim` inputs;
   a live calculated table (a `CALENDAR` date table, a `{1}` measure-home table)
   no longer surfaces its columns as unused findings.
+- **Fenced TMDL expressions read verbatim**: a ```` key = ``` ```` block now yields
+  the lines between the fences with the shared tab indent removed, matching what
+  TMSL and the PBIX catalog store. The fences themselves no longer leak into
+  measure, column, and partition expressions.
 
 ## [0.5.0] - 2026-09-25
 
@@ -608,7 +620,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/bgarcevic/ripbi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bgarcevic/ripbi/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/bgarcevic/ripbi/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bgarcevic/ripbi/compare/v0.3.4...v0.4.0
