@@ -111,7 +111,10 @@ fn model_archive_is_detected_by_contents_even_with_a_pbix_extension() {
 }
 
 #[test]
-fn report_only_pbix_does_not_claim_to_decode_its_model() {
+fn thin_report_pbix_has_no_embedded_model() {
     let error = semantic_model(&fixture("modern-report.pbix")).unwrap_err();
-    assert!(error.to_string().contains("issue #10"));
+    assert!(
+        error.to_string().contains("no embedded semantic model"),
+        "{error}"
+    );
 }

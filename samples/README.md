@@ -3,6 +3,11 @@
 Microsoft Power BI Desktop sample projects (PBIP format) used as fixtures for
 developing and manually testing `ripbi`.
 
+`Revenue Opportunities.pbix` is Microsoft's public
+`2026 Power BI Samples Revamp/Revenue Opportunities.pbix`, copied unmodified. Its
+model exists only as the compressed `DataModel`, so the archive parity tests
+compare it with the `Revenue Opportunities` PBIP conversion.
+
 `AdventureWorks Sales.pbit` was exported with Power BI Desktop from Microsoft's
 public `2026 Power BI Samples Revamp/AdventureWorks Sales.pbix`. It is paired
 with the AdventureWorks PBIP conversion in the archive parity tests. The PBIT

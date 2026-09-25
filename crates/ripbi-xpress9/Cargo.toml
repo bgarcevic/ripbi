@@ -1,0 +1,22 @@
+[package]
+name = "ripbi-xpress9"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Safe, statically linked XPress9 chunk decoder for Power BI ABF backups (ripbi)"
+keywords = ["powerbi", "xpress9", "decompression", "abf"]
+categories = ["compression"]
+links = "ripbi_xpress9"
+include = ["src/**", "csrc/**", "vendor/**", "build.rs", "Cargo.toml", "NOTICE.md"]
+
+[features]
+# The encoder exists only so tests can build ABF fixtures; release builds never
+# compile it.
+encoder = []
+
+[build-dependencies]
+cc = "1.2"
+
+[lints]
+workspace = true

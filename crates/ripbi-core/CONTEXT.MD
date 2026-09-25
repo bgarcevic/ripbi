@@ -15,10 +15,13 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   filters, bookmarks, and report-level measures. Its `bindings()` enumeration is the
   reachability-root surface; deleted-page bookmark sections stay in
   `Bookmark::stale_sections` for unused chains and never enumerate as roots.
-- **Ingestion** (`src/ingest/`): detect and parse the four source formats —
-  legacy `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` + `Report/Layout`),
-  `.pbip` folders (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL
-  folders, and TMSL `model.bim`. All normalize into `TabularDatabase` + `ReportModel`.
+- **Ingestion** (`src/ingest/`): detect and parse the source formats —
+  `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` or the ABF `DataModel` +
+  `Report/Layout` or PBIR), `.abf` backups (`src/ingest/abf/`: XPress9 container
+  → backup log → `metadata.sqlitedb` → AST; metadata only), `.pbip` folders
+  (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL folders, and TMSL
+  `model.bim`. All normalize into `TabularDatabase` + `ReportModel`. The XPress9
+  codec lives in `crates/ripbi-xpress9`, the only crate allowed `unsafe` (FFI).
 - **DAX lexing** (`src/dax/`): tokenize DAX expressions to extract object references
   (fields, bare table uses, function calls) and resolve them against the model as data.
   Zero-copy `&str` tokens; a conservative port of SQLBI Whiteboard's lexer.

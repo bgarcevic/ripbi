@@ -110,7 +110,21 @@ fn resolve_file(path: &Path) -> Result<Resolution, ScanError> {
         }));
     }
     if lower.ends_with(".pbix") {
-        if !ingest::archive_has_report(path) {
+        let has_model = ingest::archive_has_model(path);
+        let has_report = ingest::archive_has_report(path);
+        // A PBIX with its own model (TMSL schema or ABF `DataModel`) pairs
+        // with itself, like a PBIT; a thin report looks for a sibling model.
+        if has_model {
+            return Ok(Resolution::Paired(Paired {
+                model: path.to_path_buf(),
+                reports: if has_report {
+                    vec![path.to_path_buf()]
+                } else {
+                    Vec::new()
+                },
+            }));
+        }
+        if !has_report {
             return Ok(Resolution::Archive(path.to_path_buf()));
         }
         let parent = parent_of(path);
@@ -128,11 +142,20 @@ fn resolve_file(path: &Path) -> Result<Resolution, ScanError> {
             })
             .ok_or_else(|| {
                 ScanError::no_model(format!(
-                    "cannot locate the semantic model for report {}",
+                    "cannot locate the semantic model for report {}: it embeds no model",
                     path.display()
                 ))
-                .with_hint("pass --model <PBIP or model.bim> with --report <PBIX>")
+                .with_hint(
+                    "pass --model <PBIP, model.bim, .abf, or a PBIX with a model> with --report <PBIX>",
+                )
             });
+    }
+    // An ABF backup is model-only, like `model.bim`.
+    if lower.ends_with(".abf") || ingest::is_abf(path) {
+        return Ok(Resolution::Paired(Paired {
+            model: path.to_path_buf(),
+            reports: Vec::new(),
+        }));
     }
     if let Some(stem) = strip_suffix(&name, ".pbip") {
         let root = parent_of(path);
@@ -369,14 +392,14 @@ pub struct BoundReports {
 }
 
 /// The shapes `--model` accepts, listed whenever resolution fails.
-const MODEL_SHAPES_HINT: &str = "pass a .pbip, .pbit, model.bim, a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl";
+const MODEL_SHAPES_HINT: &str = "pass a .pbip, .pbit, a .pbix with an embedded model, model.bim, an .abf backup, a .SemanticModel folder, its definition/ folder, or any folder containing model.tmdl";
 
 /// Resolves a `--model` PATH into the model item it names.
 ///
 /// The accepted shapes are core's — a `.SemanticModel` folder, its
 /// `definition/` subfolder, or any folder directly containing `model.tmdl` —
 /// plus a `.pbip` file naming the project whose model to use, a TMSL `.bim`
-/// file, or a PBIT with `DataModelSchema`.
+/// file, an `.abf` backup, or a PBIT/PBIX that embeds its model.
 ///
 /// # Errors
 /// When `path` is none of those, or the `.pbip` names no model. The message
@@ -384,8 +407,7 @@ const MODEL_SHAPES_HINT: &str = "pass a .pbip, .pbit, model.bim, a .SemanticMode
 /// error) and the hint lists the accepted shapes.
 pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
     if path.is_file() {
-        let lower = file_name(path).to_lowercase();
-        if lower.ends_with(".bim") || lower.ends_with(".pbit") {
+        if is_model_file(path) {
             return model_target(path);
         }
         return match strip_suffix(&file_name(path), ".pbip") {
@@ -403,13 +425,19 @@ pub fn resolve_model(path: &Path) -> Result<ModelTarget, ScanError> {
 
 /// Resolves an already-located model item root into a [`ModelTarget`].
 fn model_target(item_root: &Path) -> Result<ModelTarget, ScanError> {
-    if item_root.is_file() {
+    if item_root.is_file() && is_model_file(item_root) {
         let lower = file_name(item_root).to_lowercase();
-        if lower.ends_with(".bim") || lower.ends_with(".pbit") {
-            let name = ingest::semantic_model(item_root)
-                .map_err(|error| ScanError::new(error.to_string()))?
-                .value
-                .name;
+        {
+            // TMSL carries a database name worth reading up front. A backup
+            // or PBIX would be decoded twice for it, and its stem names it.
+            let name = if lower.ends_with(".bim") || lower.ends_with(".pbit") {
+                ingest::semantic_model(item_root)
+                    .map_err(|error| ScanError::new(error.to_string()))?
+                    .value
+                    .name
+            } else {
+                None
+            };
             return Ok(ModelTarget {
                 item_root: item_root.to_path_buf(),
                 definition: item_root.to_path_buf(),
@@ -704,7 +732,10 @@ pub fn discover(dir: &Path) -> Vec<Candidate> {
         let path = dir.join(name);
         let lower = name.to_lowercase();
         if (path.is_file()
-            && (lower.ends_with(".pbix") || lower.ends_with(".pbit") || lower == "model.bim"))
+            && (lower.ends_with(".pbix")
+                || lower.ends_with(".pbit")
+                || lower.ends_with(".abf")
+                || lower == "model.bim"))
             && !candidates.iter().any(|candidate| candidate.path == path)
         {
             candidates.push(Candidate {
@@ -869,7 +900,18 @@ pub fn archive_error(path: &Path) -> ScanError {
         "{} is not a supported PBIT or PBIX input",
         path.display()
     ))
-    .with_hint("PBIT needs DataModelSchema and a report; PBIX needs a report and a separate model")
+    .with_hint("the archive holds neither a model (DataModelSchema or DataModel) nor a report")
+}
+
+/// True for a file `--model` accepts: `model.bim`, an `.abf` backup, or a
+/// PBIT/PBIX that embeds its model.
+pub(crate) fn is_model_file(path: &Path) -> bool {
+    let lower = file_name(path).to_lowercase();
+    lower.ends_with(".bim")
+        || lower.ends_with(".abf")
+        || ((lower.ends_with(".pbit") || lower.ends_with(".pbix"))
+            && ingest::archive_has_model(path))
+        || ingest::is_abf(path)
 }
 
 /// A stem-matched model wins; otherwise every supported sibling model is
@@ -878,9 +920,9 @@ fn sibling_model(parent: &Path, stem: &str) -> Option<PathBuf> {
     if let Some(item) = stem_item(parent, stem, "SemanticModel") {
         return Some(item);
     }
-    for suffix in ["bim", "pbit"] {
+    for suffix in ["bim", "pbit", "abf", "pbix"] {
         let path = parent.join(format!("{stem}.{suffix}"));
-        if path.is_file() && (suffix == "bim" || ingest::archive_has_model(&path)) {
+        if path.is_file() && is_model_file(&path) {
             return Some(path);
         }
     }
@@ -896,9 +938,10 @@ fn sibling_model(parent: &Path, stem: &str) -> Option<PathBuf> {
                 continue;
             }
             let lower = file_name(&path).to_lowercase();
-            if lower.ends_with(".bim")
-                || lower.ends_with(".pbit") && ingest::archive_has_model(&path)
-            {
+            let model_shaped = [".bim", ".pbit", ".pbix", ".abf"]
+                .iter()
+                .any(|suffix| lower.ends_with(suffix));
+            if model_shaped && is_model_file(&path) {
                 candidates.push(path);
             }
         }

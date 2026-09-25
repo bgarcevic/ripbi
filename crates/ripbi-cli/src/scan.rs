@@ -702,8 +702,9 @@ fn resolve_model_mode(
 ) -> Result<(discover::Paired, ModelScan), ScanError> {
     let target = discover::resolve_model(model_path)?;
     let mut direct = Vec::new();
+    let lower = file_name_lower(model_path);
     if model_path.is_file()
-        && file_name_lower(model_path).ends_with(".pbit")
+        && (lower.ends_with(".pbit") || lower.ends_with(".pbix"))
         && ingest::archive_has_report(model_path)
     {
         direct.push(model_path.to_path_buf());
@@ -1016,7 +1017,7 @@ pub(crate) fn capped_names(names: &[String]) -> String {
 /// `.Report` folders included.
 fn names_semantic_model(path: &Path) -> bool {
     if path.is_file() {
-        return file_name_lower(path).ends_with(".bim") || file_name_lower(path).ends_with(".pbit");
+        return discover::is_model_file(path);
     }
     path.is_dir()
         && (file_name_lower(path).ends_with(".semanticmodel") || path.join("model.tmdl").is_file())

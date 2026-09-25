@@ -234,7 +234,14 @@ async function pick(target: "model" | "reports", directory: boolean) {
           ? "Select a semantic model"
           : "Select reports or a search folder",
       ...(!directory
-        ? { filters: [{ name: "Power BI project", extensions: ["pbip"] }] }
+        ? {
+            filters: [
+              {
+                name: "Power BI project or file",
+                extensions: ["pbip", "pbix", "pbit", "bim", "abf"],
+              },
+            ],
+          }
         : {}),
     });
     if (!selected) return;

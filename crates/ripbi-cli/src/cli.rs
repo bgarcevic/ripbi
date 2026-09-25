@@ -199,7 +199,7 @@ pub struct UpdateCheckArgs {}
 /// `ripbi report` arguments.
 #[derive(Args, Debug, Default)]
 pub struct ReportArgs {
-    /// A .pbip file, project folder, .SemanticModel, or .Report.
+    /// A .pbip, .pbix, .pbit, .abf, model.bim, project folder, .SemanticModel, or .Report.
     pub path: Option<PathBuf>,
 
     /// Inventory one named semantic model; disables discovery.
@@ -278,7 +278,7 @@ pub struct ReportArgs {
 /// `ripbi scan` arguments.
 #[derive(Args, Debug, Default)]
 pub struct ScanArgs {
-    /// A .pbip file, project folder, .SemanticModel, or .Report.
+    /// A .pbip, .pbix, .pbit, .abf, model.bim, project folder, .SemanticModel, or .Report.
     pub path: Option<PathBuf>,
 
     /// Analyze one named semantic model; disables discovery.

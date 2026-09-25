@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Embedded PBIX models and `.abf` backups** (issue #10): a PBIX's compressed
+  `DataModel` is decoded (single-threaded, multithreaded, and uncompressed ABF
+  framings) and its `metadata.sqlitedb` catalog is normalized into the same model
+  as TMDL/TMSL, so `scan`, `report`, and `deps` work on a PBIX alone. Standalone
+  `.abf` backups are accepted as model-only inputs. Only metadata is read. A thin
+  PBIX report pairs with a sibling `.SemanticModel`, `model.bim`, `.abf`, or
+  model-bearing PBIT/PBIX.
+- **`ripbi-xpress9` crate**: a safe wrapper over Microsoft's MIT-licensed XPress9
+  C decoder, compiled statically; the only crate allowed `unsafe` (FFI).
+
 ## [0.5.0] - 2026-09-25
 
 ### Added

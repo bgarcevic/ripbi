@@ -1,9 +1,15 @@
-//! The PBIT was exported from Microsoft's public 2026 AdventureWorks PBIX.
+//! The PBIT was exported from Microsoft's public 2026 AdventureWorks PBIX;
+//! `Revenue Opportunities.pbix` is Microsoft's public PBIX itself.
+//!
+//! `microsoft_desktop_samples_corpus` is opt-in: point
+//! `RIPBI_PBI_DESKTOP_SAMPLES` at a local clone of
+//! <https://github.com/microsoft/powerbi-desktop-samples> to run it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest::{report, semantic_model};
+use ripbi_core::{ColumnKind, TabularDatabase};
 
 fn samples() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples")
@@ -48,4 +54,247 @@ fn adventureworks_pbit_matches_its_pbip_conversion() {
     let original = DependencyGraph::build(&tmdl.value, &[&pbir.value]);
     let exported = DependencyGraph::build(&tmsl.value, &[&archived_report.value]);
     assert_eq!(exported.unused_objects(), original.unused_objects());
+}
+
+/// Microsoft's public `Revenue Opportunities.pbix` (2026 samples revamp)
+/// carries only a compressed ABF `DataModel`; its PBIP conversion sits beside
+/// it. Both must normalize to the same model and the same unused set.
+#[test]
+fn revenue_opportunities_pbix_data_model_matches_its_pbip_conversion() {
+    let root = samples();
+    assert_pbix_matches_pbip(
+        &root.join("Revenue Opportunities.pbix"),
+        &root.join("Revenue Opportunities.SemanticModel"),
+        &root.join("Revenue Opportunities.Report"),
+    );
+}
+
+/// Sample pairs whose committed PBIP legitimately differs from the public
+/// PBIX, and why.
+const KNOWN_DIVERGENT: &[(&str, &str)] = &[
+    (
+        "Artificial Intelligence Sample",
+        "the PBIP was converted from an earlier revision (renamed columns, fewer measures)",
+    ),
+    (
+        "Corporate Spend",
+        "the TMDL reader keeps ``` fences in fenced expressions",
+    ),
+    (
+        "Regional Sales Sample",
+        "the TMDL reader keeps ``` fences in fenced expressions",
+    ),
+    (
+        "Store Sales",
+        "the TMDL reader keeps ``` fences in fenced expressions",
+    ),
+];
+
+/// Every Microsoft sample PBIX with a committed PBIP conversion must match
+/// it, and every other PBIX/PBIT in the corpus (2018-2020 files carry older
+/// catalog schemas) must ingest, or fail cleanly as a thin report.
+#[test]
+fn microsoft_desktop_samples_corpus() {
+    let Some(corpus) = std::env::var_os("RIPBI_PBI_DESKTOP_SAMPLES").map(PathBuf::from) else {
+        eprintln!("skipped: set RIPBI_PBI_DESKTOP_SAMPLES to a powerbi-desktop-samples clone");
+        return;
+    };
+    let root = samples();
+    let revamp = corpus.join("2026 Power BI Samples Revamp");
+    for entry in std::fs::read_dir(&revamp).unwrap() {
+        let pbix = entry.unwrap().path();
+        let Some(stem) = pbix.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let model = root.join(format!("{stem}.SemanticModel"));
+        if pbix.extension().is_some_and(|ext| ext == "pbix") && model.is_dir() {
+            if let Some((_, reason)) = KNOWN_DIVERGENT.iter().find(|(name, _)| *name == stem) {
+                eprintln!("parity skipped: {stem}: {reason}");
+                continue;
+            }
+            eprintln!("parity: {stem}");
+            assert_pbix_matches_pbip(&pbix, &model, &root.join(format!("{stem}.Report")));
+        }
+    }
+    let mut stack = vec![corpus];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                if path.file_name().is_none_or(|name| name != ".git") {
+                    stack.push(path);
+                }
+                continue;
+            }
+            let is_archive = path.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("pbix") || ext.eq_ignore_ascii_case("pbit")
+            });
+            if !is_archive {
+                continue;
+            }
+            match semantic_model(&path) {
+                Ok(model) => {
+                    eprintln!(
+                        "ok: {} ({} tables, {} skips)",
+                        path.display(),
+                        model.value.tables.len(),
+                        model.skips.len()
+                    );
+                    let report = report(&path).unwrap_or_else(|error| {
+                        panic!("{}: report failed: {error}", path.display())
+                    });
+                    let graph = DependencyGraph::build(&model.value, &[&report.value]);
+                    let _ = graph.unused_objects();
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    assert!(
+                        message.contains("no embedded semantic model"),
+                        "{}: {message}",
+                        path.display()
+                    );
+                    eprintln!("thin: {}", path.display());
+                }
+            }
+        }
+    }
+}
+
+fn assert_pbix_matches_pbip(archive: &Path, model: &Path, report_dir: &Path) {
+    let mut tmdl = semantic_model(model).unwrap();
+    let abf = semantic_model(archive).unwrap();
+    let pbir = report(report_dir).unwrap();
+    let archived_report = report(archive).unwrap();
+    // TMDL does not mark calculated-table columns, so the TMDL reader sees
+    // data columns where TOM (and TMSL, and the ABF catalog) records
+    // `calculatedTableColumn`. Align the PBIP side before comparing graphs.
+    for table in &mut tmdl.value.tables {
+        if table.is_calculated() {
+            for column in &mut table.columns {
+                if column.kind == ColumnKind::Data {
+                    column.kind = ColumnKind::CalculatedTableColumn;
+                }
+            }
+        }
+    }
+
+    assert!(
+        abf.skips.is_empty(),
+        "{}: {:#?}",
+        archive.display(),
+        abf.skips
+    );
+    assert_identities_match(&abf.value, &tmdl.value);
+
+    let original = DependencyGraph::build(&tmdl.value, &[&pbir.value]);
+    let with_pbip_report = DependencyGraph::build(&abf.value, &[&pbir.value]);
+    let with_own_report = DependencyGraph::build(&abf.value, &[&archived_report.value]);
+    let expected = original.unused_objects();
+    for graph in [&with_pbip_report, &with_own_report] {
+        let actual = graph.unused_objects();
+        let only_actual: Vec<_> = actual
+            .iter()
+            .filter(|item| !expected.contains(item))
+            .collect();
+        let only_expected: Vec<_> = expected
+            .iter()
+            .filter(|item| !actual.contains(item))
+            .collect();
+        assert!(
+            only_actual.is_empty() && only_expected.is_empty(),
+            "{}: only in PBIX: {only_actual:#?}
+only in PBIP: {only_expected:#?}",
+            archive.display()
+        );
+    }
+}
+
+/// Object identities, DAX text, and M text must agree between two ingests of
+/// the same model (order-insensitive).
+fn assert_identities_match(actual: &TabularDatabase, expected: &TabularDatabase) {
+    fn objects(model: &TabularDatabase) -> Vec<String> {
+        let mut out = Vec::new();
+        for table in &model.tables {
+            out.push(format!("table {}", table.name));
+            for column in &table.columns {
+                out.push(format!(
+                    "column {}[{}] {:?}",
+                    table.name, column.name, column.kind
+                ));
+            }
+            for measure in &table.measures {
+                out.push(format!("measure {}[{}]", table.name, measure.name));
+            }
+            for hierarchy in &table.hierarchies {
+                out.push(format!(
+                    "hierarchy {}[{}] {:?}",
+                    table.name, hierarchy.name, hierarchy.levels
+                ));
+            }
+            for partition in &table.partitions {
+                out.push(format!("partition {}[{}]", table.name, partition.name));
+            }
+        }
+        for relationship in &model.relationships {
+            out.push(format!(
+                "relationship {}[{}] -> {}[{}] active={}",
+                relationship.from_table,
+                relationship.from_column,
+                relationship.to_table,
+                relationship.to_column,
+                relationship.is_active
+            ));
+        }
+        for role in &model.roles {
+            out.push(format!("role {}", role.name));
+        }
+        for expression in &model.expressions {
+            out.push(format!("expression {}", expression.name));
+        }
+        for function in &model.functions {
+            out.push(format!("function {}", function.name));
+        }
+        out.sort();
+        out
+    }
+    fn texts(model: &TabularDatabase) -> Vec<(String, String)> {
+        let mut out: Vec<_> = model
+            .dax_expressions()
+            .iter()
+            .map(|item| {
+                (
+                    format!("{:?}", item.owner.to_object_id()),
+                    normalize(item.text),
+                )
+            })
+            .chain(model.m_expressions().iter().map(|item| {
+                (
+                    format!("{:?}", item.owner.to_object_id()),
+                    normalize(item.text),
+                )
+            }))
+            .collect();
+        out.sort();
+        out
+    }
+    fn normalize(text: &str) -> String {
+        text.replace("\r\n", "\n").trim().to_string()
+    }
+    fn assert_same<T: PartialEq + std::fmt::Debug>(what: &str, actual: &[T], expected: &[T]) {
+        let only_actual: Vec<_> = actual
+            .iter()
+            .filter(|item| !expected.contains(item))
+            .collect();
+        let only_expected: Vec<_> = expected
+            .iter()
+            .filter(|item| !actual.contains(item))
+            .collect();
+        assert!(
+            only_actual.is_empty() && only_expected.is_empty(),
+            "{what}: only in PBIX: {only_actual:#?}
+only in PBIP: {only_expected:#?}"
+        );
+    }
+    assert_same("objects", &objects(actual), &objects(expected));
+    assert_same("expressions", &texts(actual), &texts(expected));
 }

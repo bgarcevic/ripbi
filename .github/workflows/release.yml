@@ -140,9 +140,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - name: Publish ripbi-xpress9
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish --locked -p ripbi-xpress9
       - name: Publish ripbi-core
         if: env.CARGO_REGISTRY_TOKEN != ''
-        run: cargo publish --locked -p ripbi-core
+        shell: bash
+        run: |
+          # ripbi-core depends on ripbi-xpress9; wait for the sparse index.
+          for attempt in 1 2 3 4; do
+            if cargo publish --locked -p ripbi-core; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; ripbi-xpress9 may not be visible on the index yet"
+            sleep 30
+          done
+          exit 1
       - name: Publish ripbi
         if: env.CARGO_REGISTRY_TOKEN != ''
         shell: bash
