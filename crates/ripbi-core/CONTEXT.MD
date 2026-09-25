@@ -18,7 +18,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 - **Ingestion** (`src/ingest/`): detect and parse the source formats —
   `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` or the ABF `DataModel` +
   `Report/Layout` or PBIR), `.abf` backups (`src/ingest/abf/`: XPress9 container
-  → backup log → `metadata.sqlitedb` → AST; metadata only), `.pbip` folders
+  → backup log → `metadata.sqlitedb` → AST; metadata only — the storage catalog
+  and logged file sizes become display-only `StorageStats` on tables, columns, and
+  relationships in `abf/metadata/storage.rs`, issue #122), `.pbip` folders
   (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL folders, and TMSL
   `model.bim`. All normalize into `TabularDatabase` + `ReportModel`. The XPress9
   codec lives in `crates/ripbi-xpress9`, the only crate allowed `unsafe` (FFI).

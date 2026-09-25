@@ -34,6 +34,7 @@ fn fixture(groups: &[&str]) -> PathBuf {
 fn golden_database() -> TabularDatabase {
     TabularDatabase {
         name: Some("Mini".to_string()),
+        storage_bytes: None,
         tables: vec![
             Table {
                 name: "Sales".to_string(),
@@ -208,6 +209,7 @@ fn golden_database() -> TabularDatabase {
                 to_table: "Sales Order".to_string(),
                 to_column: "SalesOrderLineKey".to_string(),
                 is_active: true,
+                storage: None,
             },
             Relationship {
                 name: Some("00000000-0000-0000-0000-000000000002".to_string()),
@@ -220,6 +222,7 @@ fn golden_database() -> TabularDatabase {
                 // (PFE_XL_USERELATIONSHIP_AMBIGUOUS_PATH), so the second
                 // relationship on the pair must stay inactive.
                 is_active: false,
+                storage: None,
             },
             Relationship {
                 name: Some("00000000-0000-0000-0000-000000000003".to_string()),
@@ -228,6 +231,7 @@ fn golden_database() -> TabularDatabase {
                 to_table: "Sales Order".to_string(),
                 to_column: "DueDateKey".to_string(),
                 is_active: false,
+                storage: None,
             },
         ],
         roles: vec![Role {

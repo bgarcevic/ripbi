@@ -1,5 +1,6 @@
 //! The decoded backup: a header page, a virtual directory of stored files,
-//! and a backup log naming them. Only `metadata.sqlitedb` is extracted.
+//! and a backup log naming them. Only `metadata.sqlitedb` is extracted; every
+//! other file contributes its path and size, never its contents.
 //!
 //! Layout of the decoded stream:
 //! - bytes `0..72` — the UTF-16 `STREAM_STORAGE` signature;
@@ -24,8 +25,27 @@ const MAX_XML: u64 = 256 * 1024 * 1024;
 /// The metadata database of even a very large model is far below this.
 const MAX_METADATA: u64 = 2 * 1024 * 1024 * 1024;
 
-/// Reads the bytes of `metadata.sqlitedb` out of a decoded backup.
-pub(super) fn metadata_db(file: &mut (impl Read + Seek), len: u64) -> Result<Vec<u8>> {
+/// What the ingest reads out of a decoded backup.
+pub(super) struct Contents {
+    /// The bytes of `metadata.sqlitedb`.
+    pub metadata: Vec<u8>,
+    /// Every logged file inside the database folder, with the size the
+    /// virtual directory records for it.
+    pub files: Vec<LoggedFile>,
+}
+
+/// One file of the backed-up database folder.
+pub(super) struct LoggedFile {
+    /// The path relative to the database folder, e.g.
+    /// `Sales (12).tbl\0.Sales (12).Amount (20).dictionary` — the
+    /// `StorageFolder.Path` + `StorageFile.FileName` the catalog records.
+    pub path: String,
+    /// Stored size in bytes.
+    pub size: u64,
+}
+
+/// Reads `metadata.sqlitedb` and the logged file sizes out of a decoded backup.
+pub(super) fn read(file: &mut (impl Read + Seek), len: u64) -> Result<Contents> {
     if len < HEADER_PAGE {
         return Err(corrupt(format!(
             "the decoded backup is {len} bytes, shorter than its header page"
@@ -69,11 +89,32 @@ pub(super) fn metadata_db(file: &mut (impl Read + Seek), len: u64) -> Result<Vec
     }
     let log = parse(&log, "backup log")?;
 
-    let stored = log
-        .children("FileGroups")
-        .flat_map(|groups| groups.children("FileGroup"))
-        .flat_map(|group| group.children("FileList"))
-        .flat_map(|list| list.children("BackupFile"))
+    let logged = || {
+        log.children("FileGroups")
+            .flat_map(|groups| groups.children("FileGroup"))
+            .flat_map(|group| {
+                group
+                    .children("FileList")
+                    .flat_map(|list| list.children("BackupFile"))
+                    .map(move |file| (group, file))
+            })
+    };
+    // Sizes are best effort: a file that does not join the virtual directory,
+    // or lies outside the database folder, simply has no size.
+    let files = logged()
+        .filter_map(|(group, file)| {
+            let path = relative_path(
+                group.child_text("PersistLocationPath"),
+                file.child_text("Path")?,
+            )?;
+            let storage = file.child_text("StoragePath")?;
+            let size = entries.iter().find(|entry| entry.path == storage)?.size;
+            Some(LoggedFile { path, size })
+        })
+        .collect();
+
+    let stored = logged()
+        .map(|(_, file)| file)
         .find(|file| {
             file.child_text("Path").is_some_and(|path| {
                 path.rsplit(['\\', '/'])
@@ -96,7 +137,22 @@ pub(super) fn metadata_db(file: &mut (impl Read + Seek), len: u64) -> Result<Vec
     if entry.size > MAX_METADATA {
         return Err(corrupt("metadata.sqlitedb is implausibly large"));
     }
-    read_range(file, len, entry.offset, entry.size, "metadata.sqlitedb")
+    let metadata = read_range(file, len, entry.offset, entry.size, "metadata.sqlitedb")?;
+    Ok(Contents { metadata, files })
+}
+
+/// `path` relative to its file group's database folder: below
+/// `PersistLocationPath` when the log records one, else below the first
+/// `….db` folder. `None` for files outside the database folder.
+fn relative_path(folder: Option<&str>, path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+    let start = match folder.map(|folder| folder.trim_end_matches(['\\', '/']).to_lowercase()) {
+        Some(folder) if !folder.is_empty() => lower.starts_with(&folder).then_some(folder.len())?,
+        _ => lower.find(".db\\").map(|index| index + ".db".len())?,
+    };
+    let rest = path.get(start..)?;
+    let rest = rest.strip_prefix(['\\', '/'])?;
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 struct StoredFile {
@@ -259,7 +315,25 @@ fn decode_text(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse;
+    use super::{parse, relative_path};
+
+    #[test]
+    fn logged_paths_are_relative_to_the_database_folder() {
+        let folder = Some(r"\\?\C:\Data\m.2.db");
+        assert_eq!(
+            relative_path(
+                folder,
+                r"\\?\C:\DATA\m.2.db\T (1).tbl\0.T (1).C (2).dictionary"
+            )
+            .as_deref(),
+            Some(r"T (1).tbl\0.T (1).C (2).dictionary")
+        );
+        assert_eq!(relative_path(folder, r"\\?\C:\Data\m.3.db.xml"), None);
+        assert_eq!(
+            relative_path(None, r"C:\Data\m.0.db\metadata.sqlitedb").as_deref(),
+            Some("metadata.sqlitedb")
+        );
+    }
 
     #[test]
     fn xml_entities_and_nesting_parse() {

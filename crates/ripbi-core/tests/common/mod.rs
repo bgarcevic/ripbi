@@ -119,6 +119,9 @@ pub struct Backup {
     pub directory_offset_shift: u64,
     /// The file name the backup log records for the metadata database.
     pub metadata_name: Option<String>,
+    /// Data files to log beside the metadata database: a path relative to
+    /// the database folder, and a size (written as that many zero bytes).
+    pub files: Vec<(String, usize)>,
 }
 
 /// The decoded (`STREAM_STORAGE`) backup holding `db` as `metadata.sqlitedb`.
@@ -130,6 +133,22 @@ pub fn decoded_backup(db: &[u8], options: &Backup) -> Vec<u8> {
     let db_offset = stream.len() as u64;
     stream.extend_from_slice(db);
 
+    let mut logged = String::new();
+    let mut stored = String::new();
+    for (index, (path, size)) in options.files.iter().enumerate() {
+        let offset = stream.len();
+        stream.resize(offset + size, 0);
+        let path = path.replace('&', "&amp;");
+        logged.push_str(&format!(
+            "<BackupFile><Path>\\\\?\\C:\\Data\\db.0.db\\{path}</Path>\
+             <StoragePath>F{index}</StoragePath><Size>{size}</Size></BackupFile>"
+        ));
+        stored.push_str(&format!(
+            "<BackupFile><Path>F{index}</Path><Size>{size}</Size>\
+             <m_cbOffsetHeader>{offset}</m_cbOffsetHeader><Delete>false</Delete></BackupFile>"
+        ));
+    }
+
     let name = options
         .metadata_name
         .clone()
@@ -137,9 +156,10 @@ pub fn decoded_backup(db: &[u8], options: &Backup) -> Vec<u8> {
     let log = utf16_bom(&format!(
         "<BackupLog><BackupRestoreSyncVersion>11.53</BackupRestoreSyncVersion>\
          <ObjectName>Model</ObjectName><FileGroups><FileGroup><Class>100002</Class>\
-         <ID>db</ID><FileList><BackupFile>\
+         <ID>db</ID><PersistLocationPath>\\\\?\\C:\\Data\\db.0.db</PersistLocationPath>\
+         <FileList><BackupFile>\
          <Path>\\\\?\\C:\\Data\\db.0.db\\{name}</Path><StoragePath>K0</StoragePath>\
-         <LastWriteTime>0</LastWriteTime><Size>{}</Size></BackupFile></FileList>\
+         <LastWriteTime>0</LastWriteTime><Size>{}</Size></BackupFile>{logged}</FileList>\
          </FileGroup></FileGroups></BackupLog>",
         db.len()
     ));
@@ -149,7 +169,7 @@ pub fn decoded_backup(db: &[u8], options: &Backup) -> Vec<u8> {
     let directory = format!(
         "<VirtualDirectory><BackupFile><Path>K0</Path><Size>{}</Size>\
          <m_cbOffsetHeader>{db_offset}</m_cbOffsetHeader><Delete>false</Delete></BackupFile>\
-         <BackupFile><Path>LOG</Path><Size>{}</Size>\
+         {stored}<BackupFile><Path>LOG</Path><Size>{}</Size>\
          <m_cbOffsetHeader>{log_offset}</m_cbOffsetHeader><Delete>false</Delete></BackupFile>\
          </VirtualDirectory>",
         db.len(),

@@ -77,6 +77,28 @@ point nowhere become skip notices located as `Table#ID`. A catalog without
 `Model`, `Table`, or `Column` tables, or one SQLite cannot read, fails. In a
 PBIX, empty M expressions are recovered from `DataMashup` exactly as for PBIT.
 
+The storage tables and the backup log's file sizes become `StorageStats`
+(issue #122) — display-only, never liveness. Each `StorageFile` is
+`StorageFolder.Path` + `FileName` relative to the database folder, and its size is
+what the backup log records for that path (matched case-insensitively below the file
+group's `PersistLocationPath`). Files are attributed through the `StorageFileID`
+of the storage rows naming them (`DictionaryStorage`, `ColumnPartitionStorage`,
+`SegmentStorage`, `ColumnIndexStorage`, `StringIndexStorage`,
+`AttributeHierarchyStorage`, `RelationshipIndexStorage`); `OwnerType` codes are
+never interpreted. A file no row names belongs to the table owning its folder
+(`TableStorage`/`PartitionStorage`). Engine-internal tables resolve to what they
+serve: `H$…` to the column of `AttributeHierarchyStorage.SystemTableID`, `R$…` to
+the relationship of `RelationshipIndexStorage.SystemTableID`; `RowNumber` files
+stay with the table. A column's size is its files; a table's is every file it
+carries, its columns' and its "from"-side relationships' included. Rows and
+cardinality come from `ColumnStorage.Statistics_RowCount`/`Statistics_DistinctStates`
+and, for tables, `SegmentMapStorage.RecordCount` over the table's partitions. When
+an object's file is missing from the log its size is a lower bound
+(`SizeBasis::LowerBound`: a column falls back to `DictionaryStorage.Size`). A
+catalog without the storage tables loads with no statistics — no error, no skip
+notice. Every other format leaves the statistics `None`. On `Revenue
+Opportunities.pbix` the join is exact: every logged data file is attributed.
+
 Microsoft's public `Revenue Opportunities.pbix` is compared with its committed
 PBIP conversion in tests (object identities, DAX and M text, and the unused
 set). Setting `RIPBI_PBI_DESKTOP_SAMPLES` to a local copy of

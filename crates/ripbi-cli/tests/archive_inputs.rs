@@ -6,7 +6,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::{TempDir, json_payload, run_deps, run_report, run_scan};
-use ripbi_cli::cli::{DepsArgs, ReportArgs, ScanArgs};
+use ripbi_cli::cli::{DepsArgs, ReportArgs, ScanArgs, SortKey};
 use ripbi_cli::discover::{Resolution, resolve_path};
 
 fn root() -> PathBuf {
@@ -300,4 +300,114 @@ fn thin_pbix_without_a_model_says_so() {
     let (code, _, stderr) = run_scan(&args, &temp.0, "");
     assert_eq!(code, 2);
     assert!(stderr.contains("embeds no model"), "{stderr}");
+}
+
+fn revenue_pbix() -> PathBuf {
+    root().join("samples/Revenue Opportunities.pbix")
+}
+
+/// Issue #122: a PBIX scan carries the storage catalog's sizes — per finding
+/// and in total — and PBIP-only fields stay absent elsewhere.
+#[test]
+fn scan_pbix_reports_storage_sizes() {
+    let temp = TempDir::new("archive-storage-json");
+    let args = ScanArgs {
+        path: Some(revenue_pbix()),
+        json: true,
+        ..ScanArgs::default()
+    };
+    let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    let payload = json_payload(&stdout);
+    let summary = &payload["summary"];
+    let model_bytes = summary["model_bytes"].as_u64().unwrap();
+    let unused_bytes = summary["unused_bytes"].as_u64().unwrap();
+    assert!(unused_bytes > 0 && unused_bytes <= model_bytes);
+    assert!(summary.get("unused_bytes_lower_bound").is_none());
+
+    let unused = payload["unused"].as_array().unwrap();
+    let mut sized = 0;
+    for finding in unused {
+        match finding["type"].as_str().unwrap() {
+            "column" => {
+                sized += 1;
+                assert!(finding["bytes"].as_u64().unwrap() > 0, "{finding}");
+                assert_eq!(finding["size_basis"], "files");
+                assert!(finding["rows"].is_u64() && finding["cardinality"].is_u64());
+            }
+            "measure" => assert!(finding.get("bytes").is_none(), "{finding}"),
+            _ => {}
+        }
+    }
+    assert!(sized > 0);
+    // No reported table here, so nothing is covered twice: the total is the sum.
+    let sum: u64 = unused.iter().filter_map(|f| f["bytes"].as_u64()).sum();
+    assert_eq!(sum, unused_bytes);
+}
+
+#[test]
+fn scan_pbix_sorts_by_size_on_request() {
+    let temp = TempDir::new("archive-storage-sort");
+    let plain = |sort| ScanArgs {
+        path: Some(revenue_pbix()),
+        plain: true,
+        sort,
+        ..ScanArgs::default()
+    };
+    let (_, by_name, _) = run_scan(&plain(SortKey::Name), &temp.0, "");
+    let (code, by_size, stderr) = run_scan(&plain(SortKey::Size), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(!stderr.contains("no storage statistics"), "{stderr}");
+
+    let bytes = |line: &str| line.split('\t').nth(2).map(|b| b.parse::<u64>().unwrap());
+    let sizes: Vec<Option<u64>> = by_size.lines().map(bytes).collect();
+    // Largest first, then every finding without a size.
+    let mut expected = sizes.clone();
+    expected.sort_by(|a, b| b.cmp(a));
+    assert_eq!(sizes, expected);
+    assert_ne!(by_name, by_size);
+    let mut a: Vec<_> = by_name.lines().collect();
+    let mut b: Vec<_> = by_size.lines().collect();
+    a.sort_unstable();
+    b.sort_unstable();
+    assert_eq!(a, b, "sorting only reorders");
+}
+
+#[test]
+fn scan_pbix_human_output_shows_sizes() {
+    let temp = TempDir::new("archive-storage-human");
+    let args = ScanArgs {
+        path: Some(revenue_pbix()),
+        no_color: true,
+        ..ScanArgs::default()
+    };
+    let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    let total = stdout.lines().nth(1).unwrap();
+    assert!(
+        total.starts_with("Unused storage: \u{2248} ") && total.contains(" KB on disk ("),
+        "{total}"
+    );
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("  'Opportunity'[Name]  (") && line.ends_with(" KB)")),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn sort_by_size_without_storage_keeps_name_order_and_says_so() {
+    let temp = TempDir::new("archive-storage-none");
+    let args = |sort| ScanArgs {
+        path: Some(pbit()),
+        plain: true,
+        sort,
+        ..ScanArgs::default()
+    };
+    let (_, by_name, _) = run_scan(&args(SortKey::Name), &temp.0, "");
+    let (code, by_size, stderr) = run_scan(&args(SortKey::Size), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(by_name, by_size);
+    assert!(stderr.contains("has no storage statistics"), "{stderr}");
 }

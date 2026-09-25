@@ -11,7 +11,11 @@ roles (table and column permissions), calculation groups, KPIs, and model-level 
 expressions. Columns also carry their
 variations (TOM `variation`) — the declaration a report's date-hierarchy binding resolves
 through — and tables carry the engine's auto date/time identity flags (`is_private`,
-`is_local_date_table`, `is_template_date_table`).
+`is_local_date_table`, `is_template_date_table`). Tables, columns, and relationships
+carry optional `storage` (`StorageStats`: bytes on disk, rows, cardinality), and the
+database `storage_bytes` — read only from a PBIX/`.abf` storage catalog, `None` for
+every other format, and display-only: reachability never reads them (issue #122).
+`TabularDatabase::storage_by_object` keys them by graph identity.
 
 Deliberately absent: data sources, perspectives, cultures and translations, role
 memberships, annotations, linguistic metadata. None of them *consume* model objects, so

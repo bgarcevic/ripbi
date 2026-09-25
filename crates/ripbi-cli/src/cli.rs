@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
 #[derive(Parser)]
@@ -337,6 +337,20 @@ pub struct ScanArgs {
     /// Also print the "Power Query also names it" annotations.
     #[arg(long)]
     pub power_query: bool,
+
+    /// Order unused findings by name or by storage size (PBIX and .abf only).
+    #[arg(long, value_enum, value_name = "KEY", default_value_t)]
+    pub sort: SortKey,
+}
+
+/// How `scan` orders its unused findings.
+#[derive(ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortKey {
+    /// By object identity (the default).
+    #[default]
+    Name,
+    /// Largest storage first; objects without size data last.
+    Size,
 }
 
 impl ScanArgs {

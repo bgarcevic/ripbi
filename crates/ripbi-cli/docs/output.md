@@ -150,6 +150,7 @@ unaffected.
 | `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. A `.pbip` expands to its project's reports. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model; with no other target, the reports' pairing derives the model and exactly these reports are scanned |
 | `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type bookmark`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`. Filters every output mode and the exit code. With none of them, everything is reported |
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
+| `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data exists only for PBIX and `.abf` models (see [Storage sizes](#storage-sizes)); elsewhere `size` keeps name order and says so in a `Note:` on stderr |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -323,6 +324,40 @@ Columns (28)
   `in use` tables' advice, which is the part worth reading when you plan the migration
   to a real date table.
 
+## Storage sizes
+
+PBIX and `.abf` models carry the engine's storage catalog, so a scan of one also
+says what the unused objects cost (issue #122). Only metadata is read: the size of
+each data file the backup lists, attributed to the table, column, or relationship
+it belongs to — dictionaries, column segments, attribute-hierarchy and relationship
+indexes. PBIP, TMDL, `model.bim`, and PBIT inputs have no storage catalog, and
+their output is unchanged.
+
+```text
+99 objects, 62 reachable from 41 roots, 37 unused
+Unused storage: ≈ 165.6 KB of 318.5 KB on disk (35 objects with size data)
+
+Columns (35)
+  'Opportunity'[Name]  (25.3 KB)
+    ← nothing references it
+```
+
+- Tables, columns, and relationships carry a size; measures and the other kinds
+  never do. A column's size is its dictionary, segments, and attribute hierarchy;
+  a table's is every file of its own, its columns, and the relationships whose
+  "from" side it is.
+- The `Unused storage:` line (both human modes) totals the reported findings,
+  each file once: a column or relationship whose table is itself a finding is
+  covered by the table's size. `of …` is the whole model's data. It prints only
+  when some finding has a size.
+- Sizes are in 1024-based units (`KB`, `MB`, `GB`), as VertiPaq Analyzer and
+  DAX Studio show them. They measure the uncompressed files of the backup, which
+  track the model's memory footprint more closely than the compressed `.pbix`.
+- When some of an object's files are missing from the backup log, its size is a
+  lower bound: a column counts only its dictionary, a table or relationship only
+  the files found. The finding then reads `(≥ 1.2 MB)` and the total line says
+  `at least … ; a lower bound`.
+
 ## `--summary`
 
 The human mode for big models: the summary line, one `label: count` line per non-empty
@@ -384,6 +419,9 @@ broken_artifact	'Sales'[Broken Total]
 auto_date_time:in_use	table 'LocalDateTable_9e0bbdfc-…'
 auto_date_time:dead	table 'DateTableTemplate_0039983e-…'
 ```
+
+For PBIX and `.abf` models, an unused finding with a size gains a third field, its
+bytes on disk (`column	'Opportunity'[Name]	25887`); the first two fields never change.
 
 ## `--json`
 
@@ -525,7 +563,7 @@ Pretty-printed JSON, stable field order, additive schema:
 - `table` is the finding's model table, quoted (`'Sales'`) — a relationship reports
   its "from" side. It is `null` for the kinds with no model table (`role`,
   `expression`, `function`, `report_measure`, `bookmark`). `--plain` deliberately omits it: its
-  records are a two-column grep contract.
+  records keep the type and id as their first two fields.
 - `provenance` is the human phrase for how the use is made (e.g. `measure expression`,
   `field well 'Y' — visual 'V' on page 'P' in report 'R'`, `hierarchy level`). A
   stale bookmark edge uses `stale bookmark` and always has `also_unused: true`. A
@@ -534,6 +572,16 @@ Pretty-printed JSON, stable field order, additive schema:
 - `named_in_power_query` lists the M expressions (partitions by their table, shared
   expressions by name) that mention the column — supply-chain context, never a
   consumer. Empty for every non-column finding and for columns no M step names.
+- Storage fields (issue #122; see [Storage sizes](#storage-sizes)) appear only for
+  PBIX and `.abf` models and are omitted — not `null` — everywhere else, so the
+  output of other inputs is unchanged. An unused entry (or a dead auto date/time
+  row's `finding`) that is a table, column, or relationship carries `bytes`,
+  `size_basis` (`"files"`, exact, or `"lower_bound"`, files missing from the backup
+  log), `rows`, and — columns only — `cardinality` (distinct values).
+  `summary.unused_bytes` totals `unused`, each file once (a table covers its
+  reported columns and relationships); `summary.unused_bytes_lower_bound` is `true`
+  when any contributing size is a lower bound, and absent otherwise;
+  `summary.model_bytes` is every data file in the model.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
   `stale_state`, `opaque_source` (an M partition calls `Value.NativeQuery` or

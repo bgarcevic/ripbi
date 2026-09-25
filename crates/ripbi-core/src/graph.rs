@@ -830,6 +830,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: true,
+                    storage: None,
                 }],
                 ..Default::default()
             };
@@ -919,6 +920,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: false,
+                    storage: None,
                 }],
                 ..Default::default()
             };
@@ -1002,6 +1004,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: false,
+                    storage: None,
                 }],
                 ..Default::default()
             };

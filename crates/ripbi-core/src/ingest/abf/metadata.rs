@@ -7,12 +7,15 @@
 //! as empty. Engine-internal tables (`SystemFlags` bit 0: attribute-hierarchy
 //! and relationship storage such as `H$…`/`R$…`) and `RowNumber` columns are
 //! not part of the authored model and are dropped silently, as are the
-//! storage, culture, perspective and translation tables. Values the mapping
+//! culture, perspective and translation tables. The storage tables become
+//! [`StorageStats`] on tables, columns, and relationships (see [`storage`]). Values the mapping
 //! does not know, and foreign keys that point nowhere, become skip notices.
 //!
 //! Enum codes follow `Microsoft.AnalysisServices.Tabular`: `ColumnType`,
 //! `PartitionSourceType`, `MetadataPermission`, `CalculationGroupSelectionMode`,
 //! `RefreshPolicyType`, and `ObjectType` (3 = table) for annotations.
+
+mod storage;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -21,6 +24,8 @@ use std::rc::Rc;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
 
+use self::storage::{Storage, StorageCatalog};
+use super::backup::LoggedFile;
 use super::container::corrupt;
 use crate::Result;
 use crate::ingest::{SkipKind, SkipNotice};
@@ -28,7 +33,7 @@ use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission, Function,
     Hierarchy, HierarchyLevel, HierarchyRef, Kpi, Measure, MetadataPermission,
     ParameterValuesColumn, Partition, PartitionSource, RefreshPolicy, Relationship, Role,
-    SharedExpression, Table, TablePermission, TabularDatabase, Variation,
+    SharedExpression, StorageStats, Table, TablePermission, TabularDatabase, Variation,
 };
 
 /// `ObjectType` of a table in `Annotation` rows.
@@ -37,6 +42,7 @@ const OBJECT_TYPE_TABLE: i64 = 3;
 /// Maps the bytes of a `metadata.sqlitedb` into a [`TabularDatabase`].
 pub(super) fn load(
     bytes: &[u8],
+    files: &[LoggedFile],
     path: &Path,
     skips: &mut Vec<SkipNotice>,
 ) -> Result<TabularDatabase> {
@@ -51,7 +57,7 @@ pub(super) fn load(
     connection
         .pragma_update(None, "query_only", true)
         .map_err(sqlite)?;
-    Catalog::read(&connection)?.build(path, skips)
+    Catalog::read(&connection)?.build(files, path, skips)
 }
 
 fn sqlite(error: rusqlite::Error) -> crate::Error {
@@ -137,6 +143,7 @@ struct Catalog {
     calendars: Vec<Row>,
     calendar_groups: Vec<Row>,
     calendar_columns: Vec<Row>,
+    storage: StorageCatalog,
 }
 
 impl Catalog {
@@ -216,12 +223,39 @@ impl Catalog {
             calendars: rows("Calendar")?,
             calendar_groups: rows("CalendarColumnGroup")?,
             calendar_columns: rows("CalendarColumnReference")?,
+            storage: StorageCatalog {
+                files: rows("StorageFile")?,
+                folders: rows("StorageFolder")?,
+                table_storage: rows("TableStorage")?,
+                partition_storage: rows("PartitionStorage")?,
+                segment_maps: rows("SegmentMapStorage")?,
+                column_storage: rows("ColumnStorage")?,
+                dictionaries: rows("DictionaryStorage")?,
+                column_partitions: rows("ColumnPartitionStorage")?,
+                segments: rows("SegmentStorage")?,
+                column_indexes: rows("ColumnIndexStorage")?,
+                string_indexes: rows("StringIndexStorage")?,
+                attribute_hierarchies: rows("AttributeHierarchy")?,
+                attribute_hierarchy_storage: rows("AttributeHierarchyStorage")?,
+                relationship_storage: rows("RelationshipStorage")?,
+                relationship_indexes: rows("RelationshipIndexStorage")?,
+            },
         })
     }
 
-    fn build(&self, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<TabularDatabase> {
+    fn build(
+        &self,
+        files: &[LoggedFile],
+        path: &Path,
+        skips: &mut Vec<SkipNotice>,
+    ) -> Result<TabularDatabase> {
         let mut notes = Notes { path, skips };
-        let mut result = TabularDatabase::default();
+        let storage: Storage = storage::attribute(self, files);
+        let stats = |map: &HashMap<i64, StorageStats>, id: i64| map.get(&id).copied();
+        let mut result = TabularDatabase {
+            storage_bytes: storage.bytes,
+            ..TabularDatabase::default()
+        };
 
         // Tables, keyed by ID into `result.tables`.
         let mut table_index: HashMap<i64, usize> = HashMap::new();
@@ -250,6 +284,7 @@ impl Catalog {
                 detail_rows_expression: row
                     .int("DefaultDetailRowsDefinitionID")
                     .and_then(|id| expression_by_id(&self.detail_rows, id)),
+                storage: stats(&storage.tables, row.id()),
                 name,
                 ..Default::default()
             };
@@ -307,6 +342,7 @@ impl Catalog {
                     name,
                     kind,
                     is_hidden: row.flag("IsHidden"),
+                    storage: stats(&storage.columns, row.id()),
                     ..Default::default()
                 },
             ));
@@ -394,6 +430,7 @@ impl Catalog {
                 to_table: names[*to_table].clone(),
                 to_column: to_column.clone(),
                 is_active: row.int("IsActive").is_none_or(|value| value != 0),
+                storage: stats(&storage.relationships, row.id()),
             });
         }
 

@@ -2,9 +2,9 @@
 //! shared model AST.
 //!
 //! Only metadata is read: the container is decoded into a temporary file
-//! (deleted on drop, including on every error path), `metadata.sqlitedb` is
-//! extracted from it, and that catalog is mapped. VertiPaq row data and
-//! storage statistics are never interpreted.
+//! (deleted on drop, including on every error path), `metadata.sqlitedb` and
+//! the backup log's file sizes are extracted from it, and that catalog is
+//! mapped — storage statistics included. VertiPaq row data is never decoded.
 
 mod backup;
 mod container;
@@ -50,9 +50,9 @@ pub(super) fn load_with_temp(
     scratch.flush()?;
     let mut scratch = scratch.into_inner().map_err(|error| error.into_error())?;
     scratch.seek(SeekFrom::Start(0))?;
-    let db = backup::metadata_db(&mut scratch, len)?;
+    let contents = backup::read(&mut scratch, len)?;
     drop(scratch);
-    metadata::load(&db, path, skips)
+    metadata::load(&contents.metadata, &contents.files, path, skips)
 }
 
 #[cfg(test)]

@@ -7,9 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use ripbi_core::TabularDatabase;
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest::{report, semantic_model};
+use ripbi_core::{SizeBasis, TabularDatabase};
 
 fn samples() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples")
@@ -85,10 +85,13 @@ fn revenue_opportunities_features_pbix_matches_its_pbip_save() {
         &model,
         &root.join("Revenue Opportunities Features.Report"),
     );
-    let abf = semantic_model(&archive).unwrap().value;
+    let mut abf = semantic_model(&archive).unwrap().value;
     let mut tmdl = semantic_model(&model).unwrap().value;
     // A PBIP names the model after its folder; the PBIX catalog does not.
     tmdl.name = None;
+    // Only the PBIX carries a storage catalog.
+    assert!(abf.storage_bytes.is_some());
+    strip_storage(&mut abf);
     assert_eq!(abf, tmdl);
 
     // Guard against both sides silently dropping what the fixture exists for.
@@ -127,6 +130,80 @@ fn revenue_opportunities_features_pbix_matches_its_pbip_save() {
     let dynamic = measure("Revenue Dynamic");
     assert!(dynamic.format_string_expression.is_some());
     assert!(dynamic.detail_rows_expression.is_some());
+}
+
+/// Issue #122: the public PBIX's storage catalog attributes every data file,
+/// and the attribution adds up to the model's size.
+#[test]
+fn revenue_opportunities_pbix_carries_storage_statistics() {
+    let model = semantic_model(&samples().join("Revenue Opportunities.pbix"))
+        .unwrap()
+        .value;
+    let total = model.storage_bytes.expect("storage bytes");
+    // The decoded backup is ~1.5 MB, of which ~0.7 MB is metadata.sqlitedb.
+    assert!(total > 100_000 && total < 1_572_864, "{total}");
+
+    let mut table_bytes = 0;
+    for table in &model.tables {
+        let stats = table
+            .storage
+            .unwrap_or_else(|| panic!("{} has no storage", table.name));
+        assert_eq!(stats.basis, SizeBasis::Files, "{}", table.name);
+        table_bytes += stats.bytes.unwrap();
+        let column_bytes: u64 = table
+            .columns
+            .iter()
+            .filter_map(|column| column.storage.and_then(|stats| stats.bytes))
+            .sum();
+        assert!(column_bytes <= stats.bytes.unwrap(), "{}", table.name);
+        if !table.is_calculated() && !table.columns.is_empty() {
+            assert!(stats.rows.is_some_and(|rows| rows > 0), "{}", table.name);
+        }
+        for column in &table.columns {
+            let stats = column
+                .storage
+                .unwrap_or_else(|| panic!("'{}'[{}] has no storage", table.name, column.name));
+            assert_eq!(stats.basis, SizeBasis::Files);
+            assert!(
+                stats.bytes.is_some_and(|bytes| bytes > 0),
+                "'{}'[{}]",
+                table.name,
+                column.name
+            );
+            assert!(stats.cardinality.is_some() && stats.rows.is_some());
+        }
+    }
+    // Every file belongs to exactly one table: tables partition the total.
+    assert_eq!(table_bytes, total);
+    assert!(!model.relationships.is_empty());
+    for relationship in &model.relationships {
+        let stats = relationship.storage.expect("relationship storage");
+        assert!(stats.bytes.is_some_and(|bytes| bytes > 0));
+    }
+}
+
+/// The storage catalog is PBIX-only; comparisons with a PBIP drop it.
+fn strip_storage(model: &mut TabularDatabase) {
+    model.storage_bytes = None;
+    for table in &mut model.tables {
+        table.storage = None;
+        for column in &mut table.columns {
+            column.storage = None;
+        }
+    }
+    for relationship in &mut model.relationships {
+        relationship.storage = None;
+    }
+}
+
+/// Whether an archive's model is the ABF `DataModel` (which carries a
+/// storage catalog) rather than `DataModelSchema` JSON.
+fn has_abf_data_model(path: &Path) -> bool {
+    let file = std::fs::File::open(path).unwrap();
+    let Ok(mut zip) = zip::ZipArchive::new(file) else {
+        return false;
+    };
+    zip.by_name("DataModelSchema").is_err() && zip.by_name("DataModel").is_ok()
 }
 
 /// Sample pairs whose committed PBIP legitimately differs from the public
@@ -181,11 +258,24 @@ fn microsoft_desktop_samples_corpus() {
             match semantic_model(&path) {
                 Ok(model) => {
                     eprintln!(
-                        "ok: {} ({} tables, {} skips)",
+                        "ok: {} ({} tables, {} skips, {:?} storage bytes)",
                         path.display(),
                         model.value.tables.len(),
-                        model.skips.len()
+                        model.skips.len(),
+                        model.value.storage_bytes
                     );
+                    if has_abf_data_model(&path) {
+                        assert!(
+                            model.value.storage_bytes.is_some()
+                                && model
+                                    .value
+                                    .tables
+                                    .iter()
+                                    .all(|table| table.storage.is_some()),
+                            "{}: no storage statistics",
+                            path.display()
+                        );
+                    }
                     let report = report(&path).unwrap_or_else(|error| {
                         panic!("{}: report failed: {error}", path.display())
                     });

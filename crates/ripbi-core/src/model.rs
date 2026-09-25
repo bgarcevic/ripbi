@@ -19,6 +19,8 @@
 
 pub mod index;
 
+use std::collections::HashMap;
+
 use crate::identity::{NameKey, ObjectId};
 use crate::model::index::{
     ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, Resolved,
@@ -43,6 +45,10 @@ pub struct TabularDatabase {
     pub expressions: Vec<SharedExpression>,
     /// User-defined DAX functions (TOM functions). Names are model-global.
     pub functions: Vec<Function>,
+    /// On-disk bytes of every data file the storage catalog lists (dictionaries,
+    /// segments, hierarchy and relationship indexes). Only `.abf`/PBIX
+    /// `DataModel` inputs carry storage; every other format leaves `None`.
+    pub storage_bytes: Option<u64>,
 }
 
 /// A table and everything defined on it.
@@ -87,6 +93,10 @@ pub struct Table {
     /// fallback). Display-only metadata — never liveness; see
     /// [`Self::is_local_date_table`].
     pub is_template_date_table: bool,
+    /// Storage statistics: every file of the table, its columns, and the
+    /// relationships whose "from" side it is. Display-only; `None` for formats
+    /// without a storage catalog.
+    pub storage: Option<StorageStats>,
 }
 
 impl Table {
@@ -148,6 +158,35 @@ pub struct Column {
     /// hierarchies on other tables — for auto date/time, the engine's hidden
     /// `LocalDateTable_*` machinery.
     pub variations: Vec<Variation>,
+    /// Storage statistics: dictionary, segments, and attribute hierarchy.
+    /// Display-only; `None` for formats without a storage catalog.
+    pub storage: Option<StorageStats>,
+}
+
+/// What a model object costs in storage, read from the engine's storage
+/// catalog (`.abf`/PBIX `DataModel` only). Metadata only: no VertiPaq data is
+/// decoded. Never liveness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StorageStats {
+    /// On-disk bytes attributed to the object, when any are known.
+    pub bytes: Option<u64>,
+    /// How `bytes` was measured.
+    pub basis: SizeBasis,
+    /// Row count (columns and tables).
+    pub rows: Option<u64>,
+    /// Distinct values (columns only).
+    pub cardinality: Option<u64>,
+}
+
+/// How [`StorageStats::bytes`] was measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SizeBasis {
+    /// The exact sum of every file the storage catalog attributes to the object.
+    #[default]
+    Files,
+    /// Some attributed files are missing from the backup log: a column counts
+    /// only its dictionary, a table or relationship only the files found.
+    LowerBound,
 }
 
 /// A column variation (TOM variation): the model's declaration that the owning
@@ -309,6 +348,9 @@ pub struct Relationship {
     /// reference (`USERELATIONSHIP`) activates them — otherwise the
     /// relationship and its key columns are all findings.
     pub is_active: bool,
+    /// Storage statistics: the relationship's index. Display-only; `None` for
+    /// formats without a storage catalog.
+    pub storage: Option<StorageStats>,
 }
 
 impl Default for Relationship {
@@ -323,6 +365,7 @@ impl Default for Relationship {
             to_table: String::new(),
             to_column: String::new(),
             is_active: true,
+            storage: None,
         }
     }
 }
@@ -464,6 +507,47 @@ pub struct Calendar {
     pub name: String,
     /// Names of the columns (in the owning table) the calendar binds.
     pub columns: Vec<String>,
+}
+
+/// Storage lookup by graph identity.
+impl TabularDatabase {
+    /// Every table, column, and relationship carrying [`StorageStats`], keyed by
+    /// the [`ObjectId`] the graph reports it under. Empty for formats without a
+    /// storage catalog.
+    pub fn storage_by_object(&self) -> HashMap<ObjectId, StorageStats> {
+        let mut result = HashMap::new();
+        for table in &self.tables {
+            let key = NameKey::new(&table.name);
+            if let Some(stats) = table.storage {
+                result.insert(ObjectId::Table { table: key.clone() }, stats);
+            }
+            for column in &table.columns {
+                if let Some(stats) = column.storage {
+                    result.insert(
+                        ObjectId::Column {
+                            table: key.clone(),
+                            column: NameKey::new(&column.name),
+                        },
+                        stats,
+                    );
+                }
+            }
+        }
+        for relationship in &self.relationships {
+            if let Some(stats) = relationship.storage {
+                result.insert(
+                    ObjectId::Relationship {
+                        from_table: NameKey::new(&relationship.from_table),
+                        from_column: NameKey::new(&relationship.from_column),
+                        to_table: NameKey::new(&relationship.to_table),
+                        to_column: NameKey::new(&relationship.to_column),
+                    },
+                    stats,
+                );
+            }
+        }
+        result
+    }
 }
 
 /// Handle dereferencing: turning a positional handle from
@@ -1337,6 +1421,7 @@ mod tests {
                     to_table: String::new(),
                     to_column: String::new(),
                     is_active: true,
+                    storage: None,
                 }
             );
         }
