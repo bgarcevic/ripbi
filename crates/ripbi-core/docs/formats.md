@@ -402,10 +402,14 @@ golden fixture is held to the same standard — it loads clean in the engine:
   list; the machinery's identity comes from the `__PBI_LocalDateTable` /
   `__PBI_TemplateDateTable` annotations, `isPrivate`, and the name prefixes,
   all mapped onto `Table` flags.
-- **`ColumnKind::CalculatedTableColumn`** has no sampled TMDL form; the
-  column kind is not mapped. If it appears, the drift policy notices it —
-  which is the correct signal, not silence. (The table-level `calendar`
-  object, once in the same boat, is mapped now — see above.)
+- **`ColumnKind::CalculatedTableColumn`** has no TMDL form: TMDL writes no
+  `type: calculatedTableColumn` line, and a calculated table's columns look
+  like data columns (`isNameInferred`, `sourceColumn: [Date]`). The reader
+  infers the kind from the table instead: once a table is parsed, every
+  non-calculated column of a table with a `calculated` partition (and no
+  calculation group) becomes `CalculatedTableColumn`, matching what TOM, TMSL,
+  and the ABF catalog record — so a PBIP scan agrees with a PBIT/PBIX scan of
+  the same model.
 - A multi-line expression that continues at exactly the property level
   (depth+1) after a non-empty `=` value is indistinguishable from properties
   and reads as a sibling; TMDL serialization keeps expression bodies below

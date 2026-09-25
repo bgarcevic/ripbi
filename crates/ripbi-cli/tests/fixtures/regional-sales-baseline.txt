@@ -15,6 +15,11 @@
 # partition: the export lists no table rows, but with every non-key Contacts
 # column dead and only a relationship referencing the table, the table and
 # its partition are unused by the documented containment rule.
+# The 'Calculations' and 'Opportunity Calendar' column rows are asserted
+# *absent*: both are live calculated tables, and a calculated table's columns
+# ride along with their table (the engine materializes them from the table's
+# DAX; they cannot be dropped alone), as TOM records them and as a PBIT/PBIX
+# scan of this model reports them.
 column	Accounts	Account Number	orphan
 column	Accounts	AccountID	orphan
 column	Accounts	AccountOwnerSeq	orphan
