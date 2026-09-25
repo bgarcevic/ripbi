@@ -358,6 +358,22 @@ fn collect_targets(
         }
         return;
     };
+    // Hierarchy bindings carry no `Property`, so the name-based matching
+    // below never sees them; they are structured like PBIR's.
+    if let Some(level) = object.get("HierarchyLevel") {
+        if let Some(target) = hierarchy_level(level, aliases) {
+            targets.push(target);
+            return;
+        }
+    } else if let Some(hierarchy) = object.get("Hierarchy")
+        && let Some(name) = hierarchy.get("Hierarchy").and_then(Value::as_str)
+    {
+        let table = hierarchy
+            .get("Expression")
+            .and_then(|source| source_table(source, aliases));
+        targets.push(written(table, name));
+        return;
+    }
     if let (Some(entity), Some(property)) = (
         object.get("Entity").and_then(Value::as_str),
         object.get("Property").and_then(Value::as_str),
@@ -369,13 +385,7 @@ fn collect_targets(
             .get("Expression")
             .and_then(|expression| expression.get("SourceRef"))
     {
-        let table = source.get("Entity").and_then(Value::as_str).or_else(|| {
-            source
-                .get("Source")
-                .and_then(Value::as_str)
-                .and_then(|alias| aliases.get(alias).map(String::as_str))
-        });
-        targets.push(written(table, property));
+        targets.push(written(source_ref_table(source, aliases), property));
     }
     if let Some(query_ref) = object.get("queryRef").and_then(Value::as_str)
         && let Some((table, field)) = query_ref.rsplit_once('.')
@@ -385,6 +395,56 @@ fn collect_targets(
     for child in object.values() {
         collect_targets(child, aliases, targets);
     }
+}
+
+/// A `HierarchyLevel` binding (`Expression` → `Hierarchy` → table source,
+/// plus `Level`). `None` when it is too malformed to structure; the caller's
+/// walk then keeps whatever names it can still find.
+fn hierarchy_level(level: &Value, aliases: &HashMap<String, String>) -> Option<FieldTarget> {
+    let hierarchy = level.get("Expression")?.get("Hierarchy")?;
+    let name = hierarchy.get("Hierarchy")?.as_str()?;
+    let source = hierarchy.get("Expression");
+    let table = source.and_then(|source| source_table(source, aliases))?;
+    let variation = source.and_then(|source| source.get("PropertyVariationSource"));
+    let variation_key = |key: &str| {
+        variation
+            .and_then(|variation| variation.get(key))
+            .and_then(Value::as_str)
+            .map(NameKey::new)
+    };
+    Some(FieldTarget::HierarchyLevel {
+        table: NameKey::new(table),
+        hierarchy: NameKey::new(name),
+        level: NameKey::new(level.get("Level")?.as_str()?),
+        via_column: variation_key("Property"),
+        via_variation: variation_key("Name"),
+    })
+}
+
+/// A hierarchy's table source: a `SourceRef`, or the base table under a date
+/// variation's `PropertyVariationSource`.
+fn source_table<'a>(source: &'a Value, aliases: &'a HashMap<String, String>) -> Option<&'a str> {
+    match source.get("SourceRef") {
+        Some(source) => source_ref_table(source, aliases),
+        None => source_table(
+            source.get("PropertyVariationSource")?.get("Expression")?,
+            aliases,
+        ),
+    }
+}
+
+/// A `SourceRef`'s table: `Entity` directly, or `Source` through the query's
+/// `From` aliases.
+fn source_ref_table<'a>(
+    source: &'a Value,
+    aliases: &'a HashMap<String, String>,
+) -> Option<&'a str> {
+    source.get("Entity").and_then(Value::as_str).or_else(|| {
+        source
+            .get("Source")
+            .and_then(Value::as_str)
+            .and_then(|alias| aliases.get(alias).map(String::as_str))
+    })
 }
 
 fn collect_visual_calculations(value: &Value, targets: &mut Vec<FieldTarget>) {

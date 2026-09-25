@@ -131,18 +131,10 @@ fn revenue_opportunities_features_pbix_matches_its_pbip_save() {
 
 /// Sample pairs whose committed PBIP legitimately differs from the public
 /// PBIX, and why.
-const KNOWN_DIVERGENT: &[(&str, &str)] = &[
-    (
-        "Artificial Intelligence Sample",
-        "the PBIP was converted from an earlier revision (renamed columns, fewer measures)",
-    ),
-    (
-        "Regional Sales Sample",
-        "the legacy Layout binds 'Street Hierarchy' levels through a `From` alias \
-         (`SourceRef.Source`), which the report reader does not resolve to the \
-         hierarchy, so the PBIX's own report leaves it and Accounts[Country] unused",
-    ),
-];
+const KNOWN_DIVERGENT: &[(&str, &str)] = &[(
+    "Artificial Intelligence Sample",
+    "the PBIP was converted from an earlier revision (renamed columns, fewer measures)",
+)];
 
 /// Every Microsoft sample PBIX with a committed PBIP conversion must match
 /// it, and every other PBIX/PBIT in the corpus (2018-2020 files carry older
