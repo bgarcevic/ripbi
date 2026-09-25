@@ -67,6 +67,16 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
     matches!(kind, "table" | "partition") && id.contains("'Contacts'")
 }
 
+/// Whether a baseline row is a column of a live calculated table — the
+/// `{1}` measure-home 'Calculations' table or 'Opportunity Calendar'. The
+/// export marks these columns dead, but a calculated table's columns are
+/// materialized by the table's own DAX and cannot be dropped independently
+/// of it: ripbi rides them along with their (live) table, the same verdict a
+/// PBIT/PBIX scan of this model gives. These rows are asserted *absent*.
+fn is_live_calculated_table_column(kind: &str, table: &str) -> bool {
+    kind == "column" && matches!(table, "Calculations" | "Opportunity Calendar")
+}
+
 #[test]
 fn scan_agrees_with_the_committed_baseline() {
     let sample = sample_pbip();
@@ -119,6 +129,14 @@ fn scan_agrees_with_the_committed_baseline() {
             "hierarchy" => format!("hierarchy '{table}'[{name}]"),
             other => panic!("unhandled baseline type {other}"),
         };
+        if is_live_calculated_table_column(kind, table) {
+            assert!(
+                !by_id.contains_key(id.as_str()),
+                "'{id}' is a column of a live calculated table: it rides along with \
+                 its table, so it must not be a finding"
+            );
+            continue;
+        }
         let finding = by_id.get(id.as_str()).unwrap_or_else(|| {
             panic!("the baseline marks '{id}' dead, but ripbi does not report it");
         });
@@ -149,8 +167,13 @@ fn scan_agrees_with_the_committed_baseline() {
         );
     }
 
-    // 3. The findings are exactly baseline + the documented dead table.
-    let baseline_ids: Vec<String> = baseline
+    // 3. The findings are exactly baseline (less the live calculated-table
+    //    columns) + the documented dead table.
+    let reported_baseline = baseline
+        .iter()
+        .filter(|(kind, table, _, _)| !is_live_calculated_table_column(kind, table))
+        .collect::<Vec<_>>();
+    let baseline_ids: Vec<String> = reported_baseline
         .iter()
         .map(|(kind, table, name, _)| match kind.as_str() {
             "column" | "measure" => format!("'{table}'[{name}]"),
@@ -167,7 +190,7 @@ fn scan_agrees_with_the_committed_baseline() {
         .collect();
     assert_eq!(
         extras.len(),
-        findings.len() - baseline.len(),
+        findings.len() - reported_baseline.len(),
         "every finding is baseline or a known extra"
     );
     for extra in &extras {

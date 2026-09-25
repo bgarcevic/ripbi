@@ -71,7 +71,6 @@ const STALE_BOOKMARK_COLUMNS: &[&str] = &[
     "'Cases'[Severity]",
     "'Cases'[Subject]",
     "'Opportunities'[PipelineStep]",
-    "'Opportunity Calendar'[RELATIVE MONTH]",
 ];
 
 /// Objects the export marks live that ripbi proves live through binding paths
@@ -135,6 +134,17 @@ fn is_expected_extra(kind: &str, id: &str) -> bool {
 /// generic findings (issue #47).
 fn is_machinery_table(table: &str) -> bool {
     table.starts_with("LocalDateTable_") || table.starts_with("DateTableTemplate_")
+}
+
+/// Whether a baseline row is a column of the live calculated table
+/// 'Opportunity Calendar'. The export marks nine of its columns dead, but a
+/// calculated table's columns are materialized by the table's own DAX and
+/// cannot be dropped independently of it: ripbi rides them along with their
+/// table (engine-managed), and the table is live through
+/// 'Opportunity Calendar'[YEAR MONTH]. So these rows are asserted *absent* —
+/// the same verdict a PBIT/PBIX scan of this model gives.
+fn is_live_calculated_table_column(kind: &str, table: &str) -> bool {
+    kind == "column" && table == "Opportunity Calendar"
 }
 
 #[test]
@@ -214,7 +224,7 @@ fn scan_agrees_with_the_committed_baseline() {
     expected_columns.sort_unstable();
     assert_eq!(
         chained_columns, expected_columns,
-        "the nine stale-bookmark chains"
+        "the eight stale-bookmark chains"
     );
 
     // 1. Every baseline-dead object is a ripbi finding with the matching chain —
@@ -234,6 +244,14 @@ fn scan_agrees_with_the_committed_baseline() {
             );
             continue;
         }
+        if is_live_calculated_table_column(kind, table) {
+            assert!(
+                !by_id.contains_key(id.as_str()),
+                "'{id}' is a column of a live calculated table: it rides along with \
+                 its table, so it must not be a finding"
+            );
+            continue;
+        }
         let finding = by_id.get(id.as_str()).unwrap_or_else(|| {
             panic!("the baseline marks '{id}' dead, but ripbi does not report it");
         });
@@ -244,8 +262,13 @@ fn scan_agrees_with_the_committed_baseline() {
         );
         let used_by = finding["used_by"].as_array().expect("used_by");
         match chain.as_str() {
+            // A calculated table's columns ride along with their table, so
+            // in the dead 'Case Calendar' they read `only used by table …
+            // (also unused)` — still no consumer but the dead owner.
             "orphan" => assert!(
-                used_by.is_empty(),
+                used_by.iter().all(|used| {
+                    used["also_unused"] == true && used["provenance"] == "engine-managed column"
+                }),
                 "{id}: baseline says unused (0 uses); ripbi sees consumers: {used_by:?}"
             ),
             "chained" => assert!(
@@ -287,7 +310,9 @@ fn scan_agrees_with_the_committed_baseline() {
     //    reported generically (issue #47).
     let reported_baseline = baseline
         .iter()
-        .filter(|(_, table, _, _)| !is_machinery_table(table))
+        .filter(|(kind, table, _, _)| {
+            !is_machinery_table(table) && !is_live_calculated_table_column(kind, table)
+        })
         .collect::<Vec<_>>();
     let baseline_ids: Vec<String> = reported_baseline
         .iter()
@@ -441,7 +466,7 @@ fn the_auto_datetime_section_follows_the_table_type() {
         "only the selected measures are reported"
     );
     assert_eq!(
-        payload["summary"]["unused_total"], 186,
+        payload["summary"]["unused_total"], 177,
         "the model-wide count is unfiltered, dead tables included"
     );
 

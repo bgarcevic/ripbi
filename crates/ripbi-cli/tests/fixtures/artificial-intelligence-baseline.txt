@@ -48,6 +48,15 @@
 #     … (also unused)";
 #   - expression 'Query1', which the export does not track: nothing references
 #     it except a leftover refresh-order annotation.
+# Calculated-table columns ride along with their table (the engine
+# materializes them from the table's DAX; they cannot be dropped alone), as
+# TOM records them and as a PBIT/PBIX scan of this model reports them:
+#   - the nine 'Opportunity Calendar' rows below are asserted *absent*: the
+#     table is live through 'Opportunity Calendar'[YEAR MONTH], so ripbi
+#     reports none of its columns;
+#   - the dead 'Case Calendar' table's columns are still findings, but their
+#     one consumer is the (also unused) table itself, so the "orphan" rows
+#     among them read `only used by table 'Case Calendar' (also unused)`.
 column	Accounts	Account Name	chained
 column	Accounts	Account Number	orphan
 column	Accounts	AccountID	orphan

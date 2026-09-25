@@ -7,9 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
+use ripbi_core::TabularDatabase;
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest::{report, semantic_model};
-use ripbi_core::{ColumnKind, TabularDatabase};
 
 fn samples() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples")
@@ -161,23 +161,10 @@ fn microsoft_desktop_samples_corpus() {
 }
 
 fn assert_pbix_matches_pbip(archive: &Path, model: &Path, report_dir: &Path) {
-    let mut tmdl = semantic_model(model).unwrap();
+    let tmdl = semantic_model(model).unwrap();
     let abf = semantic_model(archive).unwrap();
     let pbir = report(report_dir).unwrap();
     let archived_report = report(archive).unwrap();
-    // TMDL does not mark calculated-table columns, so the TMDL reader sees
-    // data columns where TOM (and TMSL, and the ABF catalog) records
-    // `calculatedTableColumn`. Align the PBIP side before comparing graphs.
-    for table in &mut tmdl.value.tables {
-        if table.is_calculated() {
-            for column in &mut table.columns {
-                if column.kind == ColumnKind::Data {
-                    column.kind = ColumnKind::CalculatedTableColumn;
-                }
-            }
-        }
-    }
-
     assert!(
         abf.skips.is_empty(),
         "{}: {:#?}",

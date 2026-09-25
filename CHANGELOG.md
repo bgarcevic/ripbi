@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ripbi-xpress9` crate**: a safe wrapper over Microsoft's MIT-licensed XPress9
   C decoder, compiled statically; the only crate allowed `unsafe` (FFI).
 
+### Fixed
+
+- **Calculated-table columns in PBIP/TMDL models**: TMDL has no
+  `calculatedTableColumn` marker, so the columns of a calculated table read as
+  data columns and a PBIP scan reported them unused on their own. They now ride
+  along with their table, as they already did for PBIT/PBIX/`model.bim` inputs;
+  a live calculated table (a `CALENDAR` date table, a `{1}` measure-home table)
+  no longer surfaces its columns as unused findings.
+
 ## [0.5.0] - 2026-09-25
 
 ### Added
