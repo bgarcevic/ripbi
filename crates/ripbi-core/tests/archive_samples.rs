@@ -77,16 +77,10 @@ const KNOWN_DIVERGENT: &[(&str, &str)] = &[
         "the PBIP was converted from an earlier revision (renamed columns, fewer measures)",
     ),
     (
-        "Corporate Spend",
-        "the TMDL reader keeps ``` fences in fenced expressions",
-    ),
-    (
         "Regional Sales Sample",
-        "the TMDL reader keeps ``` fences in fenced expressions",
-    ),
-    (
-        "Store Sales",
-        "the TMDL reader keeps ``` fences in fenced expressions",
+        "the legacy Layout binds 'Street Hierarchy' levels through a `From` alias \
+         (`SourceRef.Source`), which the report reader does not resolve to the \
+         hierarchy, so the PBIX's own report leaves it and Accounts[Country] unused",
     ),
 ];
 
