@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-25
+
+### Added
+
+- **Broken DAX artifacts in `scan`** (issue #84): model objects and report measures
+  with unresolved references appear in human, plain, and JSON output. They are
+  advisory by default; `--broken` selects them for the exit-code gate alongside
+  broken visual bindings.
+- **Stale bookmarks as unused findings**: bookmarks whose saved state has no
+  live page or report-level filter binding appear under the new `bookmark`
+  object type. `--type bookmark` selects them, and saved fields retain dead-chain
+  provenance without keeping model objects alive.
+- **Opaque native-query notices**: partitions using `Value.NativeQuery` or
+  `Odbc.Query` report that embedded SQL cannot be analyzed. `--strict` treats
+  these notices as errors.
+
+### Changed
+
+- **Scan reliability and documentation**: configuration rejects unknown keys,
+  report and model discovery handles more ambiguous inputs, and the scan guide
+  explains the output and cleanup limits with examples.
+
 ### Removed
 
 - **Legacy `scan` type flags** (issue #111): `--measures`, `--columns`,
@@ -554,7 +576,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/bgarcevic/ripbi/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/bgarcevic/ripbi/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bgarcevic/ripbi/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/bgarcevic/ripbi/compare/v0.3.3...v0.3.4

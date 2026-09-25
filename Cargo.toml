@@ -4,13 +4,13 @@ members = ["crates/ripbi-core", "crates/ripbi-cli"]
 exclude = ["desktop/src-tauri"]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bgarcevic/ripbi"
 
 [workspace.dependencies]
-ripbi-core = { path = "crates/ripbi-core", version = "0.4.1" }
+ripbi-core = { path = "crates/ripbi-core", version = "0.5.0" }
 petgraph = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
