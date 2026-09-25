@@ -69,6 +69,66 @@ fn revenue_opportunities_pbix_data_model_matches_its_pbip_conversion() {
     );
 }
 
+/// `Revenue Opportunities Features` is the same sample after adding, in Power
+/// BI Desktop, what the public samples lack: a calculation group with
+/// selection expressions, RLS and metadata-permission roles, a DAX function
+/// (compatibility level 1702), a KPI, a dynamic format string, detail rows,
+/// and an M parameter. Desktop saved the PBIX and the PBIP from one session,
+/// so the two models must agree field for field, not just by identity.
+#[test]
+fn revenue_opportunities_features_pbix_matches_its_pbip_save() {
+    let root = samples();
+    let archive = root.join("Revenue Opportunities Features.pbix");
+    let model = root.join("Revenue Opportunities Features.SemanticModel");
+    assert_pbix_matches_pbip(
+        &archive,
+        &model,
+        &root.join("Revenue Opportunities Features.Report"),
+    );
+    let abf = semantic_model(&archive).unwrap().value;
+    let mut tmdl = semantic_model(&model).unwrap().value;
+    // A PBIP names the model after its folder; the PBIX catalog does not.
+    tmdl.name = None;
+    assert_eq!(abf, tmdl);
+
+    // Guard against both sides silently dropping what the fixture exists for.
+    let table = |name: &str| abf.tables.iter().find(|table| table.name == name).unwrap();
+    let group = table("Time Intelligence")
+        .calculation_group
+        .as_ref()
+        .unwrap();
+    let items: Vec<_> = group.items.iter().map(|item| item.name.as_str()).collect();
+    assert_eq!(items, ["Current", "YTD", "PY"]);
+    assert_eq!(
+        group.multiple_or_empty_selection_expression.as_deref(),
+        Some("BLANK()")
+    );
+    assert_eq!(
+        group.no_selection_expression.as_deref(),
+        Some("SELECTEDMEASURE()")
+    );
+    let roles: Vec<_> = abf.roles.iter().map(|role| role.name.as_str()).collect();
+    assert_eq!(roles, ["East Region", "No Partner Metadata"]);
+    assert!(
+        abf.roles[0].table_permissions[0]
+            .filter_expression
+            .is_some()
+    );
+    assert_eq!(abf.functions.len(), 1);
+    assert_eq!(abf.expressions.len(), 1);
+    let measure = |name: &str| {
+        table("Calculations")
+            .measures
+            .iter()
+            .find(|measure| measure.name == name)
+            .unwrap()
+    };
+    assert!(measure("Revenue KPI").kpi.is_some());
+    let dynamic = measure("Revenue Dynamic");
+    assert!(dynamic.format_string_expression.is_some());
+    assert!(dynamic.detail_rows_expression.is_some());
+}
+
 /// Sample pairs whose committed PBIP legitimately differs from the public
 /// PBIX, and why.
 const KNOWN_DIVERGENT: &[(&str, &str)] = &[

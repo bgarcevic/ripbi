@@ -1,0 +1,24 @@
+relationship 83263297-0ea8-4640-856a-ff7621b5a7ef
+	fromColumn: Calculations.'Account ID'
+	toColumn: Account.'Account ID'
+
+relationship 84787da3-95b1-457b-9959-ce35fd5e0c9e
+	fromColumn: Calculations.'Opportunity ID'
+	toColumn: Opportunity.'Opportunity ID'
+
+relationship 12e52b57-6662-46af-b5ac-22512b8920a2
+	fromColumn: Calculations.'Sales Stage ID'
+	toColumn: 'Sales stage'.'Sales Stage ID'
+
+relationship 1cc728c9-ecd5-4ce0-b6af-697dae236b73
+	fromColumn: Calculations.'Partner ID'
+	toColumn: Partner.'Partner ID'
+
+relationship d9cd3f40-b159-4cc6-926e-bdad1ed0757d
+	fromColumn: Calculations.'Product ID'
+	toColumn: Product.'Product ID'
+
+relationship 6589d966-a3b6-42cc-a7ba-abfc7f4eddfa
+	fromColumn: Calculations.Date
+	toColumn: Calendar.Date
+

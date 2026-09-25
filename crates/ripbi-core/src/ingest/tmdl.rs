@@ -294,9 +294,10 @@ impl Loader {
                         let referenced = root.tail.as_deref().map(unquote).unwrap_or_default();
                         self.table_refs.push((referenced, root.line));
                     }
-                    // Expression and culture refs are valid directives whose
-                    // order this crate does not need.
-                    Some("cultureInfo") | Some("expression") => {}
+                    // Expression, culture, role, and perspective refs are
+                    // valid directives whose order this crate does not need.
+                    Some("cultureInfo") | Some("expression") | Some("role")
+                    | Some("perspective") => {}
                     other => notice(
                         skips,
                         path,

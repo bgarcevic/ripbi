@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Roles in PBIP/TMDL models no longer raise drift notices**: Desktop lists
+  each role as `ref role …` in `model.tmdl`, which the TMDL reader reported as
+  an unknown object (and `--strict` turned into exit 2). `ref role` and
+  `ref perspective` are now accepted like the other ordering directives.
 - **Calculated-table columns in PBIP/TMDL models**: TMDL has no
   `calculatedTableColumn` marker, so the columns of a calculated table read as
   data columns and a PBIP scan reported them unused on their own. They now ride

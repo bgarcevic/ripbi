@@ -1,0 +1,127 @@
+/// Date dimension for time-based analysis. Marked as a date table.
+table Calendar
+	lineageTag: 04087a40-0093-43d2-929d-e72016004d75
+	dataCategory: Time
+
+	/// Calendar date (day grain) used for time-based analysis. Marked as the model's date column.
+	column Date
+		isUnique
+		formatString: dd-mmm-yyyy
+		lineageTag: 16e5f6cd-9b5c-4328-b68b-0c4b4b071c6a
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Date]
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar year.
+	column Year
+		lineageTag: 10d24de6-e144-4c18-be62-9d942d1c3a31
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Quarter Number'
+		isHidden
+		lineageTag: 5ad7b02c-e7b3-4f9b-82b3-2bb6199372d4
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Quarter Number]
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar quarter (Q1–Q4).
+	column Quarter
+		lineageTag: ad2fc4cd-07d3-48ef-9e8b-f795d9d203a5
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Quarter]
+		sortByColumn: 'Quarter Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Year and quarter combined (e.g., 2015-Q1).
+	column 'Year Quarter'
+		lineageTag: 4614f464-8aec-476a-896a-48a25413167e
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year Quarter]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Month Number'
+		isHidden
+		lineageTag: ea7b6cfe-9989-458c-a26b-da8a9e239ccf
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Month Number]
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Calendar month name, sorted in calendar order.
+	column Month
+		lineageTag: bf6fb3b0-402d-4035-b2f3-76927512d715
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Month]
+		sortByColumn: 'Month Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Year and month combined (e.g., 2015-Jan), sorted in calendar order.
+	column 'Year Month'
+		lineageTag: cf870c41-4b2c-4b99-9468-d4d45ab5188e
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year Month]
+		sortByColumn: 'Year Month Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Year Month Number'
+		isHidden
+		lineageTag: 6d791fa7-5b4e-4612-a847-014a87eb7961
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Year Month Number]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Day of Week Number'
+		isHidden
+		lineageTag: 9085e8b7-f315-4b04-b07b-180893963657
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Day of Week Number]
+
+		annotation SummarizationSetBy = Automatic
+
+	/// Day of the week name (Monday–Sunday), sorted starting with Monday.
+	column 'Day of Week'
+		lineageTag: 1e745ad0-8448-4e03-9eeb-dcd2a5d11ed8
+		summarizeBy: none
+		isNameInferred
+		sourceColumn: [Day of Week]
+		sortByColumn: 'Day of Week Number'
+
+		annotation SummarizationSetBy = Automatic
+
+	partition Calendar = calculated
+		mode: import
+		source =
+				ADDCOLUMNS(
+				    CALENDAR(DATE(2014,1,1), DATE(2016,12,31)),
+				    "Year", YEAR([Date]),
+				    "Quarter Number", QUARTER([Date]),
+				    "Quarter", "Q" & QUARTER([Date]),
+				    "Year Quarter", YEAR([Date]) & "-Q" & QUARTER([Date]),
+				    "Month Number", MONTH([Date]),
+				    "Month", FORMAT([Date], "mmm"),
+				    "Year Month", FORMAT([Date], "yyyy-mmm"),
+				    "Year Month Number", YEAR([Date]) * 100 + MONTH([Date]),
+				    "Day of Week Number", WEEKDAY([Date], 2),
+				    "Day of Week", FORMAT([Date], "dddd")
+				)
+

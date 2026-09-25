@@ -1,0 +1,8 @@
+role 'No Partner Metadata'
+	modelPermission: read
+
+	tablePermission Partner
+		metadataPermission: none
+
+	annotation PBI_Id = 41f52b89a48c43c5856ddf700eaad526
+
