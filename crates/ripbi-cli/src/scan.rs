@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::{BrokenReason, DependencyGraph};
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
-use ripbi_core::{NameKey, ObjectId, ReportModel, SizeBasis, StorageStats};
+use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
 use crate::cli::{ScanArgs, SortKey};
 use crate::config;
@@ -1278,7 +1278,7 @@ fn attach_storage(
                 source.display()
             ))
             .with_hint(
-                "pass an .abf backup or a .pbix saved with its data, or --stats-from none",
+                "pass an .abf backup, a .pbix saved with its data, or a .vpax, or --stats-from none",
             ));
         }
         Err(error) => {
@@ -1311,8 +1311,39 @@ fn attach_storage(
             )
             .map_err(ScanError::from)?;
         }
+        if holds_no_data(model) {
+            writeln!(
+                err,
+                "Note: {} has no rows in any table loaded by Power Query; was the \
+                 model refreshed before it was saved or exported? Sizes are the \
+                 engine's empty minimums.",
+                source.display()
+            )
+            .map_err(ScanError::from)?;
+        }
     }
     Ok(Some(source))
+}
+
+/// Whether the tables that load data (Power Query or a source query) got
+/// statistics but no rows: a model saved or exported before its first
+/// refresh, such as a PBIP opened in Desktop and exported to `.vpax` straight
+/// away. Calculated tables are left out; the engine fills them without one.
+fn holds_no_data(model: &ripbi_core::TabularDatabase) -> bool {
+    let mut loaded = model
+        .tables
+        .iter()
+        .filter(|table| {
+            table.partitions.iter().any(|partition| {
+                matches!(
+                    partition.source,
+                    PartitionSource::M { .. } | PartitionSource::Query { .. }
+                )
+            })
+        })
+        .filter_map(|table| table.storage)
+        .peekable();
+    loaded.peek().is_some() && loaded.all(|stats| stats.rows.is_none_or(|rows| rows == 0))
 }
 
 /// Whether `source` was last written before the newest file of the model.
@@ -1363,9 +1394,11 @@ fn unused_storage(
             bytes: 0,
             objects: 0,
             lower_bound: false,
+            in_memory: false,
         });
         total.objects += 1;
         total.lower_bound |= stats.basis == SizeBasis::LowerBound;
+        total.in_memory |= stats.basis == SizeBasis::Engine;
         let covered = !matches!(id, ObjectId::Table { .. })
             && id
                 .owning_table()
@@ -1546,6 +1579,7 @@ mod tests {
                 bytes: 1030,
                 objects: 4,
                 lower_bound: true,
+                in_memory: false,
             })
         );
         assert_eq!(unused_storage(&[&measure], &storage), None);

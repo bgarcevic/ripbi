@@ -103,6 +103,17 @@ backup's statistics onto such a model by identity with
 `ingest::pbip_storage_cache`. On `Revenue
 Opportunities.pbix` the join is exact: every logged data file is attributed.
 
+`ingest::storage_source` also reads a VertiPaq Analyzer `.vpax` (issue #108,
+`ingest/vpax.rs`): a ZIP whose `DaxModel.json` part (UTF-8 with a BOM,
+Newtonsoft `$id`/`$ref` references) lists tables, columns, and relationships
+with the engine's in-memory sizes. The result carries only names and
+`StorageStats` on `SizeBasis::Engine`: a column's `TotalSize` (dictionary +
+data + attribute hierarchies), a table's columns (the engine `RowNumber`
+column included, though it is no model object) plus user hierarchies plus the
+relationships it is the many side of, and relationships by endpoint columns.
+`DaxVpaView.json` and `Model.bim` are optional parts and are not read. The
+fixtures in `tests/fixtures/vpax` are written by the real `Dax.Vpax` library.
+
 Microsoft's public `Revenue Opportunities.pbix` is compared with its committed
 PBIP conversion in tests (object identities, DAX and M text, and the unused
 set). Setting `RIPBI_PBI_DESKTOP_SAMPLES` to a local copy of

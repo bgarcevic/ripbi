@@ -12,7 +12,7 @@
 //! [scan]
 //! # Object-name globs suppressed from the unused report.
 //! ignore = ["'*Time Intelligence'[*]"]
-//! # Storage sizes for a model without its own catalog: an .abf or .pbix,
+//! # Storage sizes for a model without its own catalog: an .abf, .pbix, or .vpax,
 //! # or "none" to turn off .pbi/cache.abf auto-detection.
 //! stats_from = "exports/Sales.abf"
 //! ```

@@ -20,6 +20,7 @@ mod legacy;
 mod pbir;
 mod tmdl;
 mod tmsl;
+mod vpax;
 
 use std::fs;
 use std::io::Read;
@@ -227,30 +228,39 @@ pub fn is_abf(path: &Path) -> bool {
 }
 
 /// Reads a storage catalog to attach to another model (issue #129): an `.abf`
-/// backup (a PBIP's `.pbi/cache.abf` included) or a PBIX embedding its
-/// compressed `DataModel`.
+/// backup (a PBIP's `.pbi/cache.abf` included), a PBIX embedding its
+/// compressed `DataModel`, or a VertiPaq Analyzer `.vpax` export (issue #108,
+/// recognized by its extension or its `DaxModel.json` part).
 ///
-/// The whole backup's metadata is parsed, but callers use only its
-/// [`StorageStats`](crate::StorageStats) and names, through
-/// [`TabularDatabase::attach_storage`]. A source without a storage catalog — a
-/// TMDL folder, `model.bim`, a PBIT, a thin PBIX — is
-/// [`Error::UnsupportedFormat`].
+/// Callers use only the result's [`StorageStats`](crate::StorageStats) and
+/// names, through [`TabularDatabase::attach_storage`]; a `.vpax` yields
+/// nothing else. A source without a storage catalog — a TMDL folder,
+/// `model.bim`, a PBIT, a thin PBIX — is [`Error::UnsupportedFormat`].
 pub fn storage_source(path: &Path) -> Result<Ingested<TabularDatabase>> {
     if !path.is_file() {
         return Err(Error::UnsupportedFormat(format!(
-            "{} is not a file; storage comes from an .abf backup or a .pbix with its data",
+            "{} is not a file; {STORAGE_SOURCES}",
             path.display()
         )));
+    }
+    let named_vpax = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("vpax"));
+    if named_vpax || archive::has_member(path, vpax::MODEL_PART) {
+        return vpax::load(path);
     }
     let ingested = semantic_model(path)?;
     if ingested.value.storage_bytes.is_none() {
         return Err(Error::UnsupportedFormat(format!(
-            "{} has no storage catalog; storage comes from an .abf backup or a .pbix with its data",
+            "{} has no storage catalog; {STORAGE_SOURCES}",
             path.display()
         )));
     }
     Ok(ingested)
 }
+
+const STORAGE_SOURCES: &str =
+    "storage comes from an .abf backup, a .pbix with its data, or a .vpax export";
 
 /// The data cache Power BI Desktop saves beside a PBIP semantic model —
 /// `<Model>.SemanticModel/.pbi/cache.abf` — when it exists.

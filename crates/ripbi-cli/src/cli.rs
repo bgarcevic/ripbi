@@ -342,7 +342,7 @@ pub struct ScanArgs {
     #[arg(long, value_enum, value_name = "KEY", default_value_t)]
     pub sort: SortKey,
 
-    /// Storage sizes from an .abf or .pbix export; `none` skips .pbi/cache.abf.
+    /// Storage stats from an .abf, .pbix, or .vpax export; `none` skips .pbi/cache.abf.
     #[arg(long, value_name = "PATH")]
     pub stats_from: Option<PathBuf>,
 }

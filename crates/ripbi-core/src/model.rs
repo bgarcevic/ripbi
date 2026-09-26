@@ -187,6 +187,10 @@ pub enum SizeBasis {
     /// Some attributed files are missing from the backup log: a column counts
     /// only its dictionary, a table or relationship only the files found.
     LowerBound,
+    /// The engine's in-memory size from a VertiPaq Analyzer `.vpax` export
+    /// (issue #108), not file sizes: the same model measures differently here
+    /// than in an `.abf`.
+    Engine,
 }
 
 /// A column variation (TOM variation): the model's declaration that the owning
