@@ -96,6 +96,9 @@ pub struct UnusedStorage {
     pub objects: usize,
     /// Some finding's size is a lower bound (files missing from the backup log).
     pub lower_bound: bool,
+    /// The sizes are the engine's in-memory figures (a `.vpax` source, issue
+    /// #108), not files on disk.
+    pub in_memory: bool,
 }
 
 /// One auto date/time table with its verdict — does a report bind the
@@ -674,9 +677,14 @@ fn write_summary(
         } else {
             ("\u{2248}", "")
         };
+        let place = if storage.in_memory {
+            "in memory"
+        } else {
+            "on disk"
+        };
         writeln!(
             out,
-            "Unused storage: {approx} {}{of} on disk ({} objects with size data{note})",
+            "Unused storage: {approx} {}{of} {place} ({} objects with size data{note})",
             palette.bold(&format_bytes(storage.bytes)),
             storage.objects,
         )?;
@@ -1750,6 +1758,7 @@ mod tests {
             bytes: 2048,
             objects: 1,
             lower_bound: false,
+            in_memory: false,
         });
         let mut out = Vec::new();
         human(&mut out, &Palette::plain(), &output, false, false).unwrap();
@@ -1797,6 +1806,22 @@ mod tests {
             String::from_utf8(out).unwrap(),
             "column\t'Sales'[Comment]\t2048\n"
         );
+
+        // Issue #108: `.vpax` sizes are the engine's, not files on disk.
+        output.findings = vec![sized(2048, SizeBasis::Engine)];
+        output.unused_storage = output.unused_storage.map(|storage| UnusedStorage {
+            lower_bound: false,
+            in_memory: true,
+            ..storage
+        });
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("Unused storage: \u{2248} 2.0 KB of 1.0 MB in memory (1 objects"),
+            "{text}"
+        );
+        assert!(text.contains("  'Sales'[Comment]  (2.0 KB)\n"), "{text}");
     }
 
     /// Without storage data nothing new prints: the pre-#122 shapes.

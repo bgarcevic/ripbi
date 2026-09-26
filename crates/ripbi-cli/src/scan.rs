@@ -1363,9 +1363,11 @@ fn unused_storage(
             bytes: 0,
             objects: 0,
             lower_bound: false,
+            in_memory: false,
         });
         total.objects += 1;
         total.lower_bound |= stats.basis == SizeBasis::LowerBound;
+        total.in_memory |= stats.basis == SizeBasis::Engine;
         let covered = !matches!(id, ObjectId::Table { .. })
             && id
                 .owning_table()
@@ -1546,6 +1548,7 @@ mod tests {
                 bytes: 1030,
                 objects: 4,
                 lower_bound: true,
+                in_memory: false,
             })
         );
         assert_eq!(unused_storage(&[&measure], &storage), None);

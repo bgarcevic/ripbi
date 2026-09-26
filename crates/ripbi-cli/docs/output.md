@@ -402,7 +402,7 @@ and semantic-link-labs write from a live model. Only its `DaxModel.json` is read
 sizes are the engine's in-memory figures (`size_basis` `"engine"`), not file sizes,
 so the same model reads somewhat differently than from an `.abf`: a column is its
 dictionary, data, and attribute hierarchies; a table is its columns, user
-hierarchies, and the relationships it is the many side of. An obfuscated `.vpax`
+hierarchies, and the relationships it is the many side of. The total line then reads `in memory` instead of `on disk`. An obfuscated `.vpax`
 matches nothing. The staleness note compares the `.vpax` file's own date.
 
 ## `--summary`
