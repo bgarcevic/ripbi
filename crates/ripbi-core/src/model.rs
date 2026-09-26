@@ -187,6 +187,10 @@ pub enum SizeBasis {
     /// Some attributed files are missing from the backup log: a column counts
     /// only its dictionary, a table or relationship only the files found.
     LowerBound,
+    /// The engine's in-memory size from a VertiPaq Analyzer `.vpax` export
+    /// (issue #108), not file sizes: the same model measures differently here
+    /// than in an `.abf`.
+    Engine,
 }
 
 /// A column variation (TOM variation): the model's declaration that the owning
@@ -548,6 +552,101 @@ impl TabularDatabase {
         }
         result
     }
+
+    /// Copies `source`'s storage statistics onto this model's matching tables,
+    /// columns, and relationships (issue #129), for a model whose own format
+    /// has no storage catalog — a TMDL folder read beside its `.pbi/cache.abf`,
+    /// or any model paired with an `.abf`/PBIX export of itself.
+    ///
+    /// Matching is by exact identity ([`ObjectId`], so case-insensitive), the
+    /// same keys as [`storage_by_object`](Self::storage_by_object). An object
+    /// the source does not name keeps its current `storage`; nothing is
+    /// guessed across renames. [`storage_bytes`](Self::storage_bytes) becomes
+    /// the source's — every data file it lists, including those of objects this
+    /// model no longer has. Display-only: nothing here touches liveness.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ripbi_core::{Column, StorageStats, Table, TabularDatabase};
+    ///
+    /// let table = |column: &str, bytes: Option<u64>| Table {
+    ///     name: "Sales".to_string(),
+    ///     columns: vec![Column {
+    ///         name: column.to_string(),
+    ///         storage: bytes.map(|bytes| StorageStats {
+    ///             bytes: Some(bytes),
+    ///             ..Default::default()
+    ///         }),
+    ///         ..Default::default()
+    ///     }],
+    ///     ..Default::default()
+    /// };
+    /// let source = TabularDatabase {
+    ///     tables: vec![table("AMOUNT", Some(512))],
+    ///     storage_bytes: Some(4096),
+    ///     ..Default::default()
+    /// };
+    /// let mut model = TabularDatabase {
+    ///     tables: vec![table("Amount", None)],
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let coverage = model.attach_storage(&source);
+    /// assert_eq!(model.tables[0].columns[0].storage.unwrap().bytes, Some(512));
+    /// assert_eq!((coverage.matched, coverage.total), (1, 2)); // the table had no stats
+    /// assert_eq!(model.storage_bytes, Some(4096));
+    /// ```
+    pub fn attach_storage(&mut self, source: &TabularDatabase) -> StorageCoverage {
+        let stats = source.storage_by_object();
+        let mut coverage = StorageCoverage::default();
+        let mut attach = |slot: &mut Option<StorageStats>, id: ObjectId, counted: bool| {
+            let found = stats.get(&id).copied();
+            if counted {
+                coverage.total += 1;
+                coverage.matched += usize::from(found.is_some());
+            }
+            if found.is_some() {
+                *slot = found;
+            }
+        };
+        for table in &mut self.tables {
+            let key = NameKey::new(&table.name);
+            attach(
+                &mut table.storage,
+                ObjectId::Table { table: key.clone() },
+                true,
+            );
+            for column in &mut table.columns {
+                let id = ObjectId::Column {
+                    table: key.clone(),
+                    column: NameKey::new(&column.name),
+                };
+                attach(&mut column.storage, id, true);
+            }
+        }
+        for relationship in &mut self.relationships {
+            let id = ObjectId::Relationship {
+                from_table: NameKey::new(&relationship.from_table),
+                from_column: NameKey::new(&relationship.from_column),
+                to_table: NameKey::new(&relationship.to_table),
+                to_column: NameKey::new(&relationship.to_column),
+            };
+            attach(&mut relationship.storage, id, false);
+        }
+        self.storage_bytes = source.storage_bytes;
+        coverage
+    }
+}
+
+/// How much of a model [`TabularDatabase::attach_storage`] found statistics
+/// for: its tables and columns (relationships are attached but not counted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StorageCoverage {
+    /// Tables and columns the storage source had statistics for.
+    pub matched: usize,
+    /// Tables and columns in the model.
+    pub total: usize,
 }
 
 /// Handle dereferencing: turning a positional handle from
@@ -1074,6 +1173,51 @@ impl TabularDatabase {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[test]
+    fn attach_storage_matches_relationships_by_identity_and_skips_misses() {
+        let sized = |bytes| {
+            Some(StorageStats {
+                bytes: Some(bytes),
+                ..Default::default()
+            })
+        };
+        let relationship = |to_column: &str, storage| Relationship {
+            from_table: "Sales".to_string(),
+            from_column: "DateKey".to_string(),
+            to_table: "Date".to_string(),
+            to_column: to_column.to_string(),
+            storage,
+            ..Default::default()
+        };
+        let source = TabularDatabase {
+            relationships: vec![relationship("datekey", sized(64))],
+            storage_bytes: Some(1024),
+            ..Default::default()
+        };
+        let mut model = TabularDatabase {
+            tables: vec![Table {
+                name: "Sales".to_string(),
+                ..Default::default()
+            }],
+            relationships: vec![relationship("DateKey", None), relationship("Key", None)],
+            ..Default::default()
+        };
+
+        let coverage = model.attach_storage(&source);
+
+        assert_eq!(model.relationships[0].storage, sized(64));
+        assert_eq!(model.relationships[1].storage, None, "no guessing");
+        assert_eq!(model.tables[0].storage, None);
+        // Relationships attach but are not counted.
+        assert_eq!(
+            coverage,
+            StorageCoverage {
+                matched: 0,
+                total: 1
+            }
+        );
+    }
 
     fn table_id(table: &str) -> ObjectId {
         ObjectId::Table {

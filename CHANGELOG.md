@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Storage sizes for PBIP and TMDL models** (issue #129): a PBIP saved with its
+  data gets per-finding sizes and the `Unused storage:` total from
+  `<Model>.SemanticModel/.pbi/cache.abf`, with no flag. `--stats-from <PATH>` (or
+  `[scan].stats_from` in `ripbi.toml`) attaches them from an `.abf` backup or a PBIX
+  saved with its data, for CI; `--stats-from none` turns auto-detection off. Sizes
+  attach by exact object identity, a note on stderr reports how many tables and
+  columns matched and warns when the source is older than the model, and `--json`
+  names the source in `summary.stats_source`. The model and findings still come
+  from TMDL. Without a storage source, output is unchanged.
+- **`.vpax` as a stats source** (issue #108): `--stats-from` also takes a
+  VertiPaq Analyzer export from DAX Studio, Tabular Editor, or semantic-link-labs.
+  Its sizes are the engine's in-memory figures, shown with `size_basis: "engine"`
+  in `--json`. A source with no rows in any Power Query table gets a note asking
+  whether the model was refreshed before export.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

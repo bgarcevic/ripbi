@@ -338,9 +338,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub power_query: bool,
 
-    /// Order unused findings by name or by storage size (PBIX and .abf only).
+    /// Order unused findings by name or by storage size, when sizes are known.
     #[arg(long, value_enum, value_name = "KEY", default_value_t)]
     pub sort: SortKey,
+
+    /// Storage stats from an .abf, .pbix, or .vpax export; `none` skips .pbi/cache.abf.
+    #[arg(long, value_name = "PATH")]
+    pub stats_from: Option<PathBuf>,
 }
 
 /// How `scan` orders its unused findings.

@@ -75,8 +75,8 @@ pub use model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission,
     DaxExpressionKind, DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel,
     HierarchyRef, Kpi, MExpressionRef, Measure, MetadataPermission, Partition, PartitionSource,
-    Relationship, Role, SharedExpression, SizeBasis, StorageStats, Table, TablePermission,
-    TabularDatabase, Variation,
+    Relationship, Role, SharedExpression, SizeBasis, StorageCoverage, StorageStats, Table,
+    TablePermission, TabularDatabase, Variation,
 };
 pub use report::{
     BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, DatasetReference,

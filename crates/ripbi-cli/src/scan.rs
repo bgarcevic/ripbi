@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::{BrokenReason, DependencyGraph};
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
-use ripbi_core::{NameKey, ObjectId, ReportModel, SizeBasis, StorageStats};
+use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
 use crate::cli::{ScanArgs, SortKey};
 use crate::config;
@@ -241,9 +241,22 @@ fn scan(
     }
 
     // Ingest: the model, then every report as a root.
-    let model = ingest::semantic_model(&paired.model).map_err(|error| {
+    let mut model = ingest::semantic_model(&paired.model).map_err(|error| {
         ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
     })?;
+    let setting = match &args.stats_from {
+        // Like `--model`, a relative flag path is taken as written.
+        Some(written) => Some(config::StatsSetting::parse(Path::new(""), written)),
+        None => config.as_ref().and_then(|config| config.stats_from.clone()),
+    };
+    let stats_source = attach_storage(
+        &mut model.value,
+        &paired.model,
+        setting,
+        args.stats_from.is_some(),
+        args.quiet,
+        streams.err,
+    )?;
     let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
     let mut reports = Vec::new();
     for path in &report_paths {
@@ -286,7 +299,8 @@ fn scan(
     let verdicts = graph.auto_date_time_tables(&model.value);
     let objects = graph.object_ids().count();
     let roots = graph.roots().len();
-    // Storage statistics (issue #122): display-only, `.abf`/PBIX models only.
+    // Storage statistics (issue #122): display-only, from a `.abf`/PBIX model's
+    // own catalog or attached from a storage source (issue #129).
     let storage = model.value.storage_by_object();
     let reachable = objects - unused.len();
 
@@ -437,8 +451,8 @@ fn scan(
         if storage.is_empty() && !args.quiet {
             writeln!(
                 streams.err,
-                "Note: {} has no storage statistics (only .pbix and .abf models do); \
-                 --sort size keeps name order.",
+                "Note: {} has no storage statistics (pass --stats-from with an .abf or \
+                 .pbix export); --sort size keeps name order.",
                 paired.model.display()
             )
             .map_err(ScanError::from)?;
@@ -541,6 +555,7 @@ fn scan(
         skips,
         model_bytes: model.value.storage_bytes,
         unused_storage,
+        stats_source: stats_source.map(|path| path.display().to_string()),
     };
 
     if !args.quiet {
@@ -1220,6 +1235,142 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// The on-disk cost of the reported findings (issue #122): each file once, so
 /// a column or relationship whose owning table is itself reported is covered
 /// by the table's size. `None` when no finding carries a size.
+/// Attaches storage sizes from outside the model (issue #129): the explicit
+/// `--stats-from`/`[scan].stats_from` source, else a PBIP's `.pbi/cache.abf`.
+/// Returns the source used, if any.
+///
+/// A model with its own catalog (PBIX, `.abf`) keeps it: `--stats-from` on one is
+/// a usage error, and the config setting is ignored. An explicit source that
+/// cannot be read fails the scan; an auto-detected cache only earns a note, so
+/// a stale or foreign `.pbi/` folder never blocks the analysis. Coverage and
+/// staleness notes are informational — `--strict` does not gate on them.
+fn attach_storage(
+    model: &mut ripbi_core::TabularDatabase,
+    model_path: &Path,
+    setting: Option<config::StatsSetting>,
+    from_flag: bool,
+    quiet: bool,
+    err: &mut dyn io::Write,
+) -> Result<Option<PathBuf>, ScanError> {
+    if model.storage_bytes.is_some() {
+        if from_flag && matches!(setting, Some(config::StatsSetting::Path(_))) {
+            return Err(ScanError::new(format!(
+                "--stats-from cannot be used with {}: it carries its own storage statistics",
+                model_path.display()
+            ))
+            .with_hint("--stats-from adds sizes to PBIP, TMDL, model.bim, and PBIT models"));
+        }
+        return Ok(None);
+    }
+    let (source, explicit) = match setting {
+        Some(config::StatsSetting::Off) => return Ok(None),
+        Some(config::StatsSetting::Path(path)) => (path, true),
+        None => match ingest::pbip_storage_cache(model_path) {
+            Some(cache) => (cache, false),
+            None => return Ok(None),
+        },
+    };
+    let stats = match ingest::storage_source(&source) {
+        Ok(stats) => stats.value,
+        Err(error) if explicit => {
+            return Err(ScanError::new(format!(
+                "cannot read stats from {}: {error}",
+                source.display()
+            ))
+            .with_hint(
+                "pass an .abf backup, a .pbix saved with its data, or a .vpax, or --stats-from none",
+            ));
+        }
+        Err(error) => {
+            if !quiet {
+                writeln!(
+                    err,
+                    "Note: cannot read stats from {}: {error}; continuing without sizes.",
+                    source.display()
+                )
+                .map_err(ScanError::from)?;
+            }
+            return Ok(None);
+        }
+    };
+    let coverage = model.attach_storage(&stats);
+    if !quiet {
+        writeln!(
+            err,
+            "Note: stats from {} cover {} of {} tables and columns.",
+            source.display(),
+            coverage.matched,
+            coverage.total
+        )
+        .map_err(ScanError::from)?;
+        if is_older_than_model(&source, model_path) {
+            writeln!(
+                err,
+                "Note: {} is older than the model's files; stats may be stale.",
+                source.display()
+            )
+            .map_err(ScanError::from)?;
+        }
+        if holds_no_data(model) {
+            writeln!(
+                err,
+                "Note: {} has no rows in any table loaded by Power Query; was the \
+                 model refreshed before it was saved or exported? Sizes are the \
+                 engine's empty minimums.",
+                source.display()
+            )
+            .map_err(ScanError::from)?;
+        }
+    }
+    Ok(Some(source))
+}
+
+/// Whether the tables that load data (Power Query or a source query) got
+/// statistics but no rows: a model saved or exported before its first
+/// refresh, such as a PBIP opened in Desktop and exported to `.vpax` straight
+/// away. Calculated tables are left out; the engine fills them without one.
+fn holds_no_data(model: &ripbi_core::TabularDatabase) -> bool {
+    let mut loaded = model
+        .tables
+        .iter()
+        .filter(|table| {
+            table.partitions.iter().any(|partition| {
+                matches!(
+                    partition.source,
+                    PartitionSource::M { .. } | PartitionSource::Query { .. }
+                )
+            })
+        })
+        .filter_map(|table| table.storage)
+        .peekable();
+    loaded.peek().is_some() && loaded.all(|stats| stats.rows.is_none_or(|rows| rows == 0))
+}
+
+/// Whether `source` was last written before the newest file of the model.
+/// Unreadable timestamps never warn.
+fn is_older_than_model(source: &Path, model: &Path) -> bool {
+    fn newest(path: &Path) -> Option<std::time::SystemTime> {
+        let meta = std::fs::metadata(path).ok()?;
+        if meta.is_file() {
+            return meta.modified().ok();
+        }
+        std::fs::read_dir(path)
+            .ok()?
+            .flatten()
+            // `.pbi/` holds the cache itself and Desktop's settings, not the model.
+            .filter(|entry| entry.file_name() != ".pbi")
+            .filter_map(|entry| newest(&entry.path()))
+            .max()
+    }
+    let Some(written) = std::fs::metadata(source)
+        .and_then(|meta| meta.modified())
+        .ok()
+    else {
+        return false;
+    };
+    newest(model).is_some_and(|model| written < model)
+}
+
 fn unused_storage(
     reported: &[&ObjectId],
     storage: &HashMap<ObjectId, StorageStats>,
@@ -1243,9 +1394,11 @@ fn unused_storage(
             bytes: 0,
             objects: 0,
             lower_bound: false,
+            in_memory: false,
         });
         total.objects += 1;
         total.lower_bound |= stats.basis == SizeBasis::LowerBound;
+        total.in_memory |= stats.basis == SizeBasis::Engine;
         let covered = !matches!(id, ObjectId::Table { .. })
             && id
                 .owning_table()
@@ -1426,6 +1579,7 @@ mod tests {
                 bytes: 1030,
                 objects: 4,
                 lower_bound: true,
+                in_memory: false,
             })
         );
         assert_eq!(unused_storage(&[&measure], &storage), None);

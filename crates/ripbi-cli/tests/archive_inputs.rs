@@ -411,3 +411,372 @@ fn sort_by_size_without_storage_keeps_name_order_and_says_so() {
     assert_eq!(by_name, by_size);
     assert!(stderr.contains("has no storage statistics"), "{stderr}");
 }
+
+/// Copies the Revenue Opportunities PBIP (project file, model, report) into
+/// `dir`, returning the project file. The samples carry no `.pbi/` folder.
+fn revenue_project(dir: &std::path::Path) -> PathBuf {
+    let samples = root().join("samples");
+    for item in [
+        "Revenue Opportunities.SemanticModel",
+        "Revenue Opportunities.Report",
+    ] {
+        copy_tree(&samples.join(item), &dir.join(item));
+    }
+    let pbip = dir.join("Revenue Opportunities.pbip");
+    std::fs::copy(samples.join("Revenue Opportunities.pbip"), &pbip).unwrap();
+    pbip
+}
+
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+/// Saves the PBIX's backup where Desktop keeps a PBIP's data cache.
+fn save_cache(project: &std::path::Path) -> PathBuf {
+    let pbi = project
+        .join("Revenue Opportunities.SemanticModel")
+        .join(".pbi");
+    std::fs::create_dir_all(&pbi).unwrap();
+    extract_abf(&pbi, "cache.abf")
+}
+
+/// `unused` id → `bytes`, for comparing sizes across inputs.
+fn sizes(stdout: &str) -> std::collections::BTreeMap<String, Option<u64>> {
+    json_payload(stdout)["unused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["id"].as_str().unwrap().to_string(), f["bytes"].as_u64()))
+        .collect()
+}
+
+fn json_scan(path: PathBuf) -> ScanArgs {
+    ScanArgs {
+        path: Some(path),
+        json: true,
+        ..ScanArgs::default()
+    }
+}
+
+/// Issue #129: a PBIP saved with its data cache gets the PBIX's exact sizes,
+/// with no flag.
+#[test]
+fn pbip_cache_abf_attaches_sizes_automatically() {
+    let temp = TempDir::new("storage-auto");
+    let pbip = revenue_project(&temp.0);
+    let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
+
+    let (code, before, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(!stderr.contains("Note: stats"), "{stderr}");
+    let summary = &json_payload(&before)["summary"];
+    for key in ["unused_bytes", "model_bytes", "stats_source"] {
+        assert!(summary.get(key).is_none(), "{key} without a cache");
+    }
+
+    let cache = save_cache(&temp.0);
+    let (code, stdout, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("cover 78 of 78 tables and columns"),
+        "{stderr}"
+    );
+    let payload = json_payload(&stdout);
+    assert_eq!(
+        payload["summary"]["stats_source"],
+        cache.display().to_string()
+    );
+    assert_eq!(
+        payload["summary"]["unused_bytes"],
+        json_payload(&pbix_out)["summary"]["unused_bytes"]
+    );
+    assert_eq!(sizes(&stdout), sizes(&pbix_out));
+}
+
+#[test]
+fn explicit_storage_beats_the_cache_and_none_turns_it_off() {
+    let temp = TempDir::new("storage-explicit");
+    let pbip = revenue_project(&temp.0);
+    // An unreadable cache: auto-detection only notes it and carries on.
+    let pbi = temp.0.join("Revenue Opportunities.SemanticModel/.pbi");
+    std::fs::create_dir_all(&pbi).unwrap();
+    std::fs::write(pbi.join("cache.abf"), b"not a backup").unwrap();
+    let (code, stdout, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("continuing without sizes"), "{stderr}");
+    assert!(
+        json_payload(&stdout)["summary"]
+            .get("unused_bytes")
+            .is_none()
+    );
+
+    let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
+    let explicit = ScanArgs {
+        stats_from: Some(revenue_pbix()),
+        ..json_scan(pbip.clone())
+    };
+    let (code, stdout, stderr) = run_scan(&explicit, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(!stderr.contains("continuing without sizes"), "{stderr}");
+    assert_eq!(sizes(&stdout), sizes(&pbix_out));
+    assert_eq!(
+        json_payload(&stdout)["summary"]["stats_source"],
+        revenue_pbix().display().to_string()
+    );
+
+    save_cache(&temp.0);
+    let off = ScanArgs {
+        stats_from: Some(PathBuf::from("none")),
+        ..json_scan(pbip)
+    };
+    let (code, stdout, stderr) = run_scan(&off, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(!stderr.contains("Note: stats"), "{stderr}");
+    assert!(
+        json_payload(&stdout)["summary"]
+            .get("unused_bytes")
+            .is_none()
+    );
+}
+
+#[test]
+fn config_stats_from_applies_and_the_flag_overrides_it() {
+    let temp = TempDir::new("storage-config");
+    let pbip = revenue_project(&temp.0);
+    extract_abf(&temp.0, "export.abf");
+    temp.write("ripbi.toml", "[scan]\nstats_from =\"export.abf\"\n");
+    let (code, stdout, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(
+        json_payload(&stdout)["summary"]["stats_source"],
+        temp.0.join("export.abf").display().to_string()
+    );
+
+    let off = ScanArgs {
+        stats_from: Some(PathBuf::from("none")),
+        ..json_scan(pbip)
+    };
+    let (_, stdout, _) = run_scan(&off, &temp.0, "");
+    assert!(
+        json_payload(&stdout)["summary"]
+            .get("stats_source")
+            .is_none()
+    );
+}
+
+/// Matching is by exact identity: a renamed column gets no size, and the
+/// coverage note counts it.
+#[test]
+fn a_renamed_object_has_no_size_and_lowers_coverage() {
+    let temp = TempDir::new("storage-rename");
+    let pbip = revenue_project(&temp.0);
+    let table = temp
+        .0
+        .join("Revenue Opportunities.SemanticModel/definition/tables/Opportunity.tmdl");
+    let text = std::fs::read_to_string(&table).unwrap();
+    let renamed = text.replacen("\n\tcolumn Name", "\n\tcolumn 'Deal Name'", 1);
+    assert_ne!(text, renamed, "fixture drift: column Name not found");
+    std::fs::write(&table, renamed).unwrap();
+    save_cache(&temp.0);
+
+    let (code, stdout, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("cover 77 of 78 tables and columns"),
+        "{stderr}"
+    );
+    let sizes = sizes(&stdout);
+    assert_eq!(sizes["'Opportunity'[Deal Name]"], None);
+    assert!(sizes.values().any(Option::is_some), "{sizes:?}");
+}
+
+#[test]
+fn a_cache_older_than_the_model_is_flagged_stale() {
+    let temp = TempDir::new("storage-stale");
+    let pbip = revenue_project(&temp.0);
+    let cache = save_cache(&temp.0);
+    let (_, _, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
+    assert!(!stderr.contains("stats may be stale"), "{stderr}");
+
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&cache)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let (code, _, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("stats may be stale"), "{stderr}");
+}
+
+#[test]
+fn storage_errors_are_usage_errors() {
+    let temp = TempDir::new("storage-errors");
+    let pbip = revenue_project(&temp.0);
+
+    let own_catalog = ScanArgs {
+        stats_from: Some(revenue_pbix()),
+        ..json_scan(revenue_pbix())
+    };
+    let (code, _, stderr) = run_scan(&own_catalog, &temp.0, "");
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("carries its own storage statistics"),
+        "{stderr}"
+    );
+
+    for source in [pbit(), temp.0.join("missing.abf")] {
+        let args = ScanArgs {
+            stats_from: Some(source),
+            ..json_scan(pbip.clone())
+        };
+        let (code, _, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 2, "{stderr}");
+        assert!(stderr.contains("cannot read stats from"), "{stderr}");
+    }
+}
+
+/// A `.vpax` (issue #108) naming every Revenue Opportunities table, column,
+/// and relationship, with the PBIX's own column and relationship sizes, in the
+/// `Dax.Vpax` shape: a BOM, `$id` on each column, `$ref` from relationships.
+fn save_vpax(dir: &std::path::Path, refreshed: bool) -> PathBuf {
+    use std::io::Write;
+    let source = ripbi_core::ingest::storage_source(&revenue_pbix())
+        .unwrap()
+        .value;
+    let bytes = |stats: Option<ripbi_core::StorageStats>| stats.and_then(|s| s.bytes);
+    let mut ids = std::collections::HashMap::new();
+    let tables: Vec<_> = source
+        .tables
+        .iter()
+        .map(|table| {
+            let columns: Vec<_> = table
+                .columns
+                .iter()
+                .map(|column| {
+                    let id = (ids.len() + 1).to_string();
+                    ids.insert(
+                        (table.name.to_lowercase(), column.name.to_lowercase()),
+                        id.clone(),
+                    );
+                    serde_json::json!({
+                        "$id": id,
+                        "ColumnName": column.name,
+                        "ColumnCardinality": column.storage.and_then(|s| s.cardinality),
+                        "TotalSize": bytes(column.storage).unwrap_or(0),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "TableName": table.name,
+                "RowsCount": table.storage.and_then(|s| s.rows).filter(|_| refreshed),
+                "Columns": columns,
+            })
+        })
+        .collect();
+    let reference = |table: &str, column: &str| serde_json::json!({"$ref": ids[&(table.to_lowercase(), column.to_lowercase())]});
+    let relationships: Vec<_> = source
+        .relationships
+        .iter()
+        .map(|relationship| {
+            serde_json::json!({
+                "FromColumn": reference(&relationship.from_table, &relationship.from_column),
+                "ToColumn": reference(&relationship.to_table, &relationship.to_column),
+                "UsedSizeFrom": bytes(relationship.storage).unwrap_or(0),
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "ModelName": "Revenue Opportunities",
+        "Tables": tables,
+        "Relationships": relationships,
+    });
+    let path = dir.join(if refreshed {
+        "Revenue Opportunities.vpax"
+    } else {
+        "Empty.vpax"
+    });
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    zip.start_file("DaxModel.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(format!("\u{feff}{document}").as_bytes())
+        .unwrap();
+    zip.finish().unwrap();
+    path
+}
+
+/// Issue #108: a `.vpax` is a stats source like an `.abf`; columns and
+/// relationships keep its sizes, measured on the engine basis.
+#[test]
+fn a_vpax_attaches_engine_sizes_to_a_pbip() {
+    let temp = TempDir::new("stats-vpax");
+    let pbip = revenue_project(&temp.0);
+    let vpax = save_vpax(&temp.0, true);
+    let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
+    let args = ScanArgs {
+        stats_from: Some(vpax.clone()),
+        ..json_scan(pbip)
+    };
+    let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("cover 78 of 78 tables and columns"),
+        "{stderr}"
+    );
+    let payload = json_payload(&stdout);
+    assert_eq!(
+        payload["summary"]["stats_source"],
+        vpax.display().to_string()
+    );
+    let expected = sizes(&pbix_out);
+    let mut checked = 0;
+    for finding in payload["unused"].as_array().unwrap() {
+        let id = finding["id"].as_str().unwrap();
+        if finding.get("bytes").is_none() {
+            assert!(expected[id].is_none(), "{id} lost its size");
+            continue;
+        }
+        assert_eq!(finding["size_basis"], "engine", "{finding}");
+        // A table's engine size is summed from its parts, not its files.
+        if finding["type"] != "table" {
+            assert_eq!(finding["bytes"].as_u64(), expected[id], "{id}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+/// A `.vpax` exported before the model was refreshed has no rows anywhere;
+/// the scan says so rather than presenting empty allocations as sizes.
+#[test]
+fn a_stats_source_without_rows_is_flagged_as_unrefreshed() {
+    let temp = TempDir::new("stats-empty");
+    let pbip = revenue_project(&temp.0);
+    let refreshed = ScanArgs {
+        stats_from: Some(save_vpax(&temp.0, true)),
+        ..json_scan(pbip.clone())
+    };
+    let (_, _, stderr) = run_scan(&refreshed, &temp.0, "");
+    assert!(!stderr.contains("no rows in any table"), "{stderr}");
+
+    let empty = ScanArgs {
+        stats_from: Some(save_vpax(&temp.0, false)),
+        ..json_scan(pbip)
+    };
+    let (code, _, stderr) = run_scan(&empty, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("Empty.vpax has no rows in any table loaded by Power Query"),
+        "{stderr}"
+    );
+}
