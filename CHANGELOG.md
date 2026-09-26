@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Storage sizes for PBIP and TMDL models** (issue #129): a PBIP saved with its
   data gets per-finding sizes and the `Unused storage:` total from
-  `<Model>.SemanticModel/.pbi/cache.abf`, with no flag. `--storage <PATH>` (or
-  `[scan].storage` in `ripbi.toml`) attaches them from an `.abf` backup or a PBIX
-  saved with its data, for CI; `--storage none` turns auto-detection off. Sizes
+  `<Model>.SemanticModel/.pbi/cache.abf`, with no flag. `--stats-from <PATH>` (or
+  `[scan].stats_from` in `ripbi.toml`) attaches them from an `.abf` backup or a PBIX
+  saved with its data, for CI; `--stats-from none` turns auto-detection off. Sizes
   attach by exact object identity, a note on stderr reports how many tables and
   columns matched and warns when the source is older than the model, and `--json`
-  names the source in `summary.storage_source`. The model and findings still come
+  names the source in `summary.stats_source`. The model and findings still come
   from TMDL. Without a storage source, output is unchanged.
 
 ## [0.6.0] - 2026-09-25

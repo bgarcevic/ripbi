@@ -344,7 +344,7 @@ pub struct ScanArgs {
 
     /// Storage sizes from an .abf or .pbix export; `none` skips .pbi/cache.abf.
     #[arg(long, value_name = "PATH")]
-    pub storage: Option<PathBuf>,
+    pub stats_from: Option<PathBuf>,
 }
 
 /// How `scan` orders its unused findings.

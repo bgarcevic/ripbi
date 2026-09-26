@@ -477,9 +477,9 @@ fn pbip_cache_abf_attaches_sizes_automatically() {
 
     let (code, before, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    assert!(!stderr.contains("Note: storage"), "{stderr}");
+    assert!(!stderr.contains("Note: stats"), "{stderr}");
     let summary = &json_payload(&before)["summary"];
-    for key in ["unused_bytes", "model_bytes", "storage_source"] {
+    for key in ["unused_bytes", "model_bytes", "stats_source"] {
         assert!(summary.get(key).is_none(), "{key} without a cache");
     }
 
@@ -487,12 +487,12 @@ fn pbip_cache_abf_attaches_sizes_automatically() {
     let (code, stdout, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
     assert!(
-        stderr.contains("covers 78 of 78 tables and columns"),
+        stderr.contains("cover 78 of 78 tables and columns"),
         "{stderr}"
     );
     let payload = json_payload(&stdout);
     assert_eq!(
-        payload["summary"]["storage_source"],
+        payload["summary"]["stats_source"],
         cache.display().to_string()
     );
     assert_eq!(
@@ -521,7 +521,7 @@ fn explicit_storage_beats_the_cache_and_none_turns_it_off() {
 
     let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
     let explicit = ScanArgs {
-        storage: Some(revenue_pbix()),
+        stats_from: Some(revenue_pbix()),
         ..json_scan(pbip.clone())
     };
     let (code, stdout, stderr) = run_scan(&explicit, &temp.0, "");
@@ -529,18 +529,18 @@ fn explicit_storage_beats_the_cache_and_none_turns_it_off() {
     assert!(!stderr.contains("continuing without sizes"), "{stderr}");
     assert_eq!(sizes(&stdout), sizes(&pbix_out));
     assert_eq!(
-        json_payload(&stdout)["summary"]["storage_source"],
+        json_payload(&stdout)["summary"]["stats_source"],
         revenue_pbix().display().to_string()
     );
 
     save_cache(&temp.0);
     let off = ScanArgs {
-        storage: Some(PathBuf::from("none")),
+        stats_from: Some(PathBuf::from("none")),
         ..json_scan(pbip)
     };
     let (code, stdout, stderr) = run_scan(&off, &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    assert!(!stderr.contains("Note: storage"), "{stderr}");
+    assert!(!stderr.contains("Note: stats"), "{stderr}");
     assert!(
         json_payload(&stdout)["summary"]
             .get("unused_bytes")
@@ -549,26 +549,26 @@ fn explicit_storage_beats_the_cache_and_none_turns_it_off() {
 }
 
 #[test]
-fn config_storage_applies_and_the_flag_overrides_it() {
+fn config_stats_from_applies_and_the_flag_overrides_it() {
     let temp = TempDir::new("storage-config");
     let pbip = revenue_project(&temp.0);
     extract_abf(&temp.0, "export.abf");
-    temp.write("ripbi.toml", "[scan]\nstorage = \"export.abf\"\n");
+    temp.write("ripbi.toml", "[scan]\nstats_from =\"export.abf\"\n");
     let (code, stdout, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        json_payload(&stdout)["summary"]["storage_source"],
+        json_payload(&stdout)["summary"]["stats_source"],
         temp.0.join("export.abf").display().to_string()
     );
 
     let off = ScanArgs {
-        storage: Some(PathBuf::from("none")),
+        stats_from: Some(PathBuf::from("none")),
         ..json_scan(pbip)
     };
     let (_, stdout, _) = run_scan(&off, &temp.0, "");
     assert!(
         json_payload(&stdout)["summary"]
-            .get("storage_source")
+            .get("stats_source")
             .is_none()
     );
 }
@@ -591,7 +591,7 @@ fn a_renamed_object_has_no_size_and_lowers_coverage() {
     let (code, stdout, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
     assert!(
-        stderr.contains("covers 77 of 78 tables and columns"),
+        stderr.contains("cover 77 of 78 tables and columns"),
         "{stderr}"
     );
     let sizes = sizes(&stdout);
@@ -605,7 +605,7 @@ fn a_cache_older_than_the_model_is_flagged_stale() {
     let pbip = revenue_project(&temp.0);
     let cache = save_cache(&temp.0);
     let (_, _, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
-    assert!(!stderr.contains("sizes may be stale"), "{stderr}");
+    assert!(!stderr.contains("stats may be stale"), "{stderr}");
 
     let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
     std::fs::File::options()
@@ -616,7 +616,7 @@ fn a_cache_older_than_the_model_is_flagged_stale() {
         .unwrap();
     let (code, _, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    assert!(stderr.contains("sizes may be stale"), "{stderr}");
+    assert!(stderr.contains("stats may be stale"), "{stderr}");
 }
 
 #[test]
@@ -625,7 +625,7 @@ fn storage_errors_are_usage_errors() {
     let pbip = revenue_project(&temp.0);
 
     let own_catalog = ScanArgs {
-        storage: Some(revenue_pbix()),
+        stats_from: Some(revenue_pbix()),
         ..json_scan(revenue_pbix())
     };
     let (code, _, stderr) = run_scan(&own_catalog, &temp.0, "");
@@ -637,11 +637,11 @@ fn storage_errors_are_usage_errors() {
 
     for source in [pbit(), temp.0.join("missing.abf")] {
         let args = ScanArgs {
-            storage: Some(source),
+            stats_from: Some(source),
             ..json_scan(pbip.clone())
         };
         let (code, _, stderr) = run_scan(&args, &temp.0, "");
         assert_eq!(code, 2, "{stderr}");
-        assert!(stderr.contains("cannot read storage from"), "{stderr}");
+        assert!(stderr.contains("cannot read stats from"), "{stderr}");
     }
 }

@@ -152,7 +152,7 @@ unaffected.
 | `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type bookmark`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`. Filters every output mode and the exit code. With none of them, everything is reported |
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
-| `--storage <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup or a PBIX saved with its data; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].storage`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
+| `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup or a PBIX saved with its data; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -366,17 +366,17 @@ Columns (35)
 The model, graph, and findings always come from the scanned model; a storage source
 only fills in sizes (issue #129). It is, in order of precedence:
 
-1. `--storage <PATH>`: an `.abf` backup, a PBIX saved with its data, or a PBIP's
-   `cache.abf`. `--storage none` attaches nothing.
-2. `[scan].storage` in `ripbi.toml`, with the same values.
+1. `--stats-from <PATH>`: an `.abf` backup, a PBIX saved with its data, or a PBIP's
+   `cache.abf`. `--stats-from none` attaches nothing.
+2. `[scan].stats_from` in `ripbi.toml`, with the same values.
 3. Auto-detection: when the model is a `.SemanticModel` folder (or its
    `definition/`, or the `model.bim` inside it) and
    `<Model>.SemanticModel/.pbi/cache.abf` exists — Power BI Desktop writes it when a
    PBIP is saved with data — it is used with no flag. `.pbi/` is gitignored by
-   default, so this mostly helps local runs; CI passes `--storage` with an exported
+   default, so this mostly helps local runs; CI passes `--stats-from` with an exported
    `.abf` or `.pbix`.
 
-A PBIX or `.abf` model always keeps its own catalog: `--storage` with one is a usage
+A PBIX or `.abf` model always keeps its own catalog: `--stats-from` with one is a usage
 error, and the config setting is ignored.
 
 Sizes attach by exact object identity (case-insensitive, like every other name). A
@@ -385,17 +385,17 @@ cache was saved — has no size; nothing is guessed across renames. `of …` on 
 line is the source's data, which may include objects the model no longer has.
 
 ```text
-Note: storage from Sales.SemanticModel/.pbi/cache.abf covers 212 of 240 tables and columns.
-Note: Sales.SemanticModel/.pbi/cache.abf is older than the model's files; sizes may be stale.
+Note: stats from Sales.SemanticModel/.pbi/cache.abf cover 212 of 240 tables and columns.
+Note: Sales.SemanticModel/.pbi/cache.abf is older than the model's files; stats may be stale.
 ```
 
 The coverage note prints whenever a source is attached; the staleness note when the
 source was written before the newest file of the model (the `.pbi/` folder aside).
 An explicit source that cannot be read, or has no storage catalog (a TMDL folder,
 `model.bim`, a PBIT, a thin PBIX), fails the scan with exit `2`. An auto-detected
-cache that cannot be read only prints `Note: cannot read storage from …; continuing
+cache that cannot be read only prints `Note: cannot read stats from …; continuing
 without sizes.` Neither note is a skip notice, so `--strict` does not gate on them;
-`--quiet` silences them. `--json` names the source in `summary.storage_source`.
+`--quiet` silences them. `--json` names the source in `summary.stats_source`.
 
 ## `--summary`
 
@@ -621,7 +621,7 @@ Pretty-printed JSON, stable field order, additive schema:
   reported columns and relationships); `summary.unused_bytes_lower_bound` is `true`
   when any contributing size is a lower bound, and absent otherwise;
   `summary.model_bytes` is every data file in the model (in the storage source, when
-  one is attached); `summary.storage_source` is that source's path (issue #129),
+  one is attached); `summary.stats_source` is that source's path (issue #129),
   absent for a PBIX or `.abf` model's own catalog.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
@@ -647,10 +647,10 @@ reports = ["samples/AdventureWorks Sales.Report"]      # extra roots when discov
 
 [scan]
 ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, never reported unused
-storage = "exports/AdventureWorks Sales.abf"           # sizes for a PBIP/TMDL model, or "none"
+stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL model, or "none"
 ```
 
-`storage` is the config form of `--storage` (see [Storage sizes](#storage-sizes)):
+`stats_from` is the config form of `--stats-from` (see [Storage sizes](#storage-sizes)):
 a path resolved against the file's directory, or `none` to turn off
 `.pbi/cache.abf` auto-detection. The flag replaces it. It is ignored when the
 scanned model carries its own storage catalog (a PBIX or `.abf`).

@@ -244,16 +244,16 @@ fn scan(
     let mut model = ingest::semantic_model(&paired.model).map_err(|error| {
         ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
     })?;
-    let setting = match &args.storage {
+    let setting = match &args.stats_from {
         // Like `--model`, a relative flag path is taken as written.
-        Some(written) => Some(config::StorageSetting::parse(Path::new(""), written)),
-        None => config.as_ref().and_then(|config| config.storage.clone()),
+        Some(written) => Some(config::StatsSetting::parse(Path::new(""), written)),
+        None => config.as_ref().and_then(|config| config.stats_from.clone()),
     };
-    let storage_source = attach_storage(
+    let stats_source = attach_storage(
         &mut model.value,
         &paired.model,
         setting,
-        args.storage.is_some(),
+        args.stats_from.is_some(),
         args.quiet,
         streams.err,
     )?;
@@ -451,7 +451,7 @@ fn scan(
         if storage.is_empty() && !args.quiet {
             writeln!(
                 streams.err,
-                "Note: {} has no storage statistics (pass --storage with an .abf or \
+                "Note: {} has no storage statistics (pass --stats-from with an .abf or \
                  .pbix export); --sort size keeps name order.",
                 paired.model.display()
             )
@@ -555,7 +555,7 @@ fn scan(
         skips,
         model_bytes: model.value.storage_bytes,
         unused_storage,
-        storage_source: storage_source.map(|path| path.display().to_string()),
+        stats_source: stats_source.map(|path| path.display().to_string()),
     };
 
     if !args.quiet {
@@ -1236,10 +1236,10 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// a column or relationship whose owning table is itself reported is covered
 /// by the table's size. `None` when no finding carries a size.
 /// Attaches storage sizes from outside the model (issue #129): the explicit
-/// `--storage`/`[scan].storage` source, else a PBIP's `.pbi/cache.abf`.
+/// `--stats-from`/`[scan].stats_from` source, else a PBIP's `.pbi/cache.abf`.
 /// Returns the source used, if any.
 ///
-/// A model with its own catalog (PBIX, `.abf`) keeps it: `--storage` on one is
+/// A model with its own catalog (PBIX, `.abf`) keeps it: `--stats-from` on one is
 /// a usage error, and the config setting is ignored. An explicit source that
 /// cannot be read fails the scan; an auto-detected cache only earns a note, so
 /// a stale or foreign `.pbi/` folder never blocks the analysis. Coverage and
@@ -1247,24 +1247,24 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 fn attach_storage(
     model: &mut ripbi_core::TabularDatabase,
     model_path: &Path,
-    setting: Option<config::StorageSetting>,
+    setting: Option<config::StatsSetting>,
     from_flag: bool,
     quiet: bool,
     err: &mut dyn io::Write,
 ) -> Result<Option<PathBuf>, ScanError> {
     if model.storage_bytes.is_some() {
-        if from_flag && matches!(setting, Some(config::StorageSetting::Path(_))) {
+        if from_flag && matches!(setting, Some(config::StatsSetting::Path(_))) {
             return Err(ScanError::new(format!(
-                "--storage cannot be used with {}: it carries its own storage statistics",
+                "--stats-from cannot be used with {}: it carries its own storage statistics",
                 model_path.display()
             ))
-            .with_hint("--storage adds sizes to PBIP, TMDL, model.bim, and PBIT models"));
+            .with_hint("--stats-from adds sizes to PBIP, TMDL, model.bim, and PBIT models"));
         }
         return Ok(None);
     }
     let (source, explicit) = match setting {
-        Some(config::StorageSetting::Off) => return Ok(None),
-        Some(config::StorageSetting::Path(path)) => (path, true),
+        Some(config::StatsSetting::Off) => return Ok(None),
+        Some(config::StatsSetting::Path(path)) => (path, true),
         None => match ingest::pbip_storage_cache(model_path) {
             Some(cache) => (cache, false),
             None => return Ok(None),
@@ -1274,16 +1274,18 @@ fn attach_storage(
         Ok(stats) => stats.value,
         Err(error) if explicit => {
             return Err(ScanError::new(format!(
-                "cannot read storage from {}: {error}",
+                "cannot read stats from {}: {error}",
                 source.display()
             ))
-            .with_hint("pass an .abf backup or a .pbix saved with its data, or --storage none"));
+            .with_hint(
+                "pass an .abf backup or a .pbix saved with its data, or --stats-from none",
+            ));
         }
         Err(error) => {
             if !quiet {
                 writeln!(
                     err,
-                    "Note: cannot read storage from {}: {error}; continuing without sizes.",
+                    "Note: cannot read stats from {}: {error}; continuing without sizes.",
                     source.display()
                 )
                 .map_err(ScanError::from)?;
@@ -1295,7 +1297,7 @@ fn attach_storage(
     if !quiet {
         writeln!(
             err,
-            "Note: storage from {} covers {} of {} tables and columns.",
+            "Note: stats from {} cover {} of {} tables and columns.",
             source.display(),
             coverage.matched,
             coverage.total
@@ -1304,7 +1306,7 @@ fn attach_storage(
         if is_older_than_model(&source, model_path) {
             writeln!(
                 err,
-                "Note: {} is older than the model's files; sizes may be stale.",
+                "Note: {} is older than the model's files; stats may be stale.",
                 source.display()
             )
             .map_err(ScanError::from)?;

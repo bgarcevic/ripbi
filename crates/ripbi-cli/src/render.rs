@@ -82,8 +82,8 @@ pub struct ScanOutput {
     /// (issue #122). `None` for formats without a storage catalog.
     pub unused_storage: Option<UnusedStorage>,
     /// Where the storage statistics came from when the model has no catalog of
-    /// its own: `--storage`, `[scan].storage`, or `.pbi/cache.abf` (issue #129).
-    pub storage_source: Option<String>,
+    /// its own: `--stats-from`, `[scan].stats_from`, or `.pbi/cache.abf` (issue #129).
+    pub stats_source: Option<String>,
 }
 
 /// The on-disk cost of the reported findings (issue #122).
@@ -873,7 +873,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 .unused_storage
                 .and_then(|storage| storage.lower_bound.then_some(true)),
             model_bytes: report.model_bytes,
-            storage_source: report.storage_source.clone(),
+            stats_source: report.stats_source.clone(),
             auto_date_time: JsonAutoDateTimeCounts {
                 hidden_tables: report.auto_date_time.len(),
                 date_columns: date_column_count(&report.auto_date_time),
@@ -1011,7 +1011,7 @@ struct JsonSummary {
     /// The `.abf`/PBIX the sizes were attached from (issue #129); absent when
     /// the model carries its own catalog or no source was attached.
     #[serde(skip_serializing_if = "Option::is_none")]
-    storage_source: Option<String>,
+    stats_source: Option<String>,
     auto_date_time: JsonAutoDateTimeCounts,
 }
 
@@ -1305,7 +1305,7 @@ mod tests {
             skips: Vec::new(),
             model_bytes: None,
             unused_storage: None,
-            storage_source: None,
+            stats_source: None,
         }
     }
 
