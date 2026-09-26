@@ -1278,7 +1278,7 @@ fn attach_storage(
                 source.display()
             ))
             .with_hint(
-                "pass an .abf backup or a .pbix saved with its data, or --stats-from none",
+                "pass an .abf backup, a .pbix saved with its data, or a .vpax, or --stats-from none",
             ));
         }
         Err(error) => {

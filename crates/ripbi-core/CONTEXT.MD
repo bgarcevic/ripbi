@@ -20,7 +20,7 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   `Report/Layout` or PBIR), `.abf` backups (`src/ingest/abf/`: XPress9 container
   → backup log → `metadata.sqlitedb` → AST; metadata only — the storage catalog
   and logged file sizes become display-only `StorageStats` on tables, columns, and
-  relationships in `abf/metadata/storage.rs`, issue #122; `ingest::storage_source` + `TabularDatabase::attach_storage` copy them by identity onto a PBIP/TMDL model, issue #129), `.pbip` folders
+  relationships in `abf/metadata/storage.rs`, issue #122; `ingest::storage_source` + `TabularDatabase::attach_storage` copy them by identity onto a PBIP/TMDL model, issue #129; `ingest/vpax.rs` reads a VertiPaq Analyzer `.vpax` as another such source, issue #108), `.pbip` folders
   (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL folders, and TMSL
   `model.bim`. All normalize into `TabularDatabase` + `ReportModel`. The XPress9
   codec lives in `crates/ripbi-xpress9`, the only crate allowed `unsafe` (FFI).

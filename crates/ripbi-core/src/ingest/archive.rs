@@ -112,7 +112,7 @@ fn stem_name(path: &Path) -> Option<String> {
         .map(|name| name.to_string_lossy().into_owned())
 }
 
-fn read_member<R: Read + std::io::Seek>(
+pub(super) fn read_member<R: Read + std::io::Seek>(
     zip: &mut ZipArchive<R>,
     name: &str,
 ) -> Result<Option<Vec<u8>>> {

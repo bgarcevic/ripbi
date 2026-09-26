@@ -152,7 +152,7 @@ unaffected.
 | `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type bookmark`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`. Filters every output mode and the exit code. With none of them, everything is reported |
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
-| `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup or a PBIX saved with its data; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
+| `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -366,15 +366,15 @@ Columns (35)
 The model, graph, and findings always come from the scanned model; a storage source
 only fills in sizes (issue #129). It is, in order of precedence:
 
-1. `--stats-from <PATH>`: an `.abf` backup, a PBIX saved with its data, or a PBIP's
-   `cache.abf`. `--stats-from none` attaches nothing.
+1. `--stats-from <PATH>`: an `.abf` backup, a PBIX saved with its data, a PBIP's
+   `cache.abf`, or a VertiPaq Analyzer `.vpax` (see below). `--stats-from none` attaches nothing.
 2. `[scan].stats_from` in `ripbi.toml`, with the same values.
 3. Auto-detection: when the model is a `.SemanticModel` folder (or its
    `definition/`, or the `model.bim` inside it) and
    `<Model>.SemanticModel/.pbi/cache.abf` exists — Power BI Desktop writes it when a
    PBIP is saved with data — it is used with no flag. `.pbi/` is gitignored by
    default, so this mostly helps local runs; CI passes `--stats-from` with an exported
-   `.abf` or `.pbix`.
+   `.abf`, `.pbix`, or `.vpax`.
 
 A PBIX or `.abf` model always keeps its own catalog: `--stats-from` with one is a usage
 error, and the config setting is ignored.
@@ -396,6 +396,14 @@ An explicit source that cannot be read, or has no storage catalog (a TMDL folder
 cache that cannot be read only prints `Note: cannot read stats from …; continuing
 without sizes.` Neither note is a skip notice, so `--strict` does not gate on them;
 `--quiet` silences them. `--json` names the source in `summary.stats_source`.
+
+A `.vpax` (issue #108) is the VertiPaq Analyzer export DAX Studio, Tabular Editor,
+and semantic-link-labs write from a live model. Only its `DaxModel.json` is read. Its
+sizes are the engine's in-memory figures (`size_basis` `"engine"`), not file sizes,
+so the same model reads somewhat differently than from an `.abf`: a column is its
+dictionary, data, and attribute hierarchies; a table is its columns, user
+hierarchies, and the relationships it is the many side of. An obfuscated `.vpax`
+matches nothing. The staleness note compares the `.vpax` file's own date.
 
 ## `--summary`
 
@@ -615,8 +623,8 @@ Pretty-printed JSON, stable field order, additive schema:
   PBIX and `.abf` models, or other models with a storage source attached, and are
   omitted — not `null` — everywhere else, so the output of other inputs is unchanged. An unused entry (or a dead auto date/time
   row's `finding`) that is a table, column, or relationship carries `bytes`,
-  `size_basis` (`"files"`, exact, or `"lower_bound"`, files missing from the backup
-  log), `rows`, and — columns only — `cardinality` (distinct values).
+  `size_basis` (`"files"`, exact; `"lower_bound"`, files missing from the backup log; or
+  `"engine"`, in-memory sizes from a `.vpax`, issue #108), `rows`, and — columns only — `cardinality` (distinct values).
   `summary.unused_bytes` totals `unused`, each file once (a table covers its
   reported columns and relationships); `summary.unused_bytes_lower_bound` is `true`
   when any contributing size is a lower bound, and absent otherwise;

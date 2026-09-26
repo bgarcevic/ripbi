@@ -1098,6 +1098,7 @@ impl From<&Finding> for JsonFinding {
             size_basis: storage.bytes.map(|_| match storage.basis {
                 SizeBasis::Files => "files",
                 SizeBasis::LowerBound => "lower_bound",
+                SizeBasis::Engine => "engine",
             }),
             rows: storage.rows,
             cardinality: storage.cardinality,

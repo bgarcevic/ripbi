@@ -645,3 +645,109 @@ fn storage_errors_are_usage_errors() {
         assert!(stderr.contains("cannot read stats from"), "{stderr}");
     }
 }
+
+/// A `.vpax` (issue #108) naming every Revenue Opportunities table, column,
+/// and relationship, with the PBIX's own column and relationship sizes, in the
+/// `Dax.Vpax` shape: a BOM, `$id` on each column, `$ref` from relationships.
+fn save_vpax(dir: &std::path::Path) -> PathBuf {
+    use std::io::Write;
+    let source = ripbi_core::ingest::storage_source(&revenue_pbix())
+        .unwrap()
+        .value;
+    let bytes = |stats: Option<ripbi_core::StorageStats>| stats.and_then(|s| s.bytes);
+    let mut ids = std::collections::HashMap::new();
+    let tables: Vec<_> = source
+        .tables
+        .iter()
+        .map(|table| {
+            let columns: Vec<_> = table
+                .columns
+                .iter()
+                .map(|column| {
+                    let id = (ids.len() + 1).to_string();
+                    ids.insert(
+                        (table.name.to_lowercase(), column.name.to_lowercase()),
+                        id.clone(),
+                    );
+                    serde_json::json!({
+                        "$id": id,
+                        "ColumnName": column.name,
+                        "ColumnCardinality": column.storage.and_then(|s| s.cardinality),
+                        "TotalSize": bytes(column.storage).unwrap_or(0),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "TableName": table.name,
+                "RowsCount": table.storage.and_then(|s| s.rows),
+                "Columns": columns,
+            })
+        })
+        .collect();
+    let reference = |table: &str, column: &str| serde_json::json!({"$ref": ids[&(table.to_lowercase(), column.to_lowercase())]});
+    let relationships: Vec<_> = source
+        .relationships
+        .iter()
+        .map(|relationship| {
+            serde_json::json!({
+                "FromColumn": reference(&relationship.from_table, &relationship.from_column),
+                "ToColumn": reference(&relationship.to_table, &relationship.to_column),
+                "UsedSizeFrom": bytes(relationship.storage).unwrap_or(0),
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "ModelName": "Revenue Opportunities",
+        "Tables": tables,
+        "Relationships": relationships,
+    });
+    let path = dir.join("Revenue Opportunities.vpax");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    zip.start_file("DaxModel.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(format!("\u{feff}{document}").as_bytes())
+        .unwrap();
+    zip.finish().unwrap();
+    path
+}
+
+/// Issue #108: a `.vpax` is a stats source like an `.abf`; columns and
+/// relationships keep its sizes, measured on the engine basis.
+#[test]
+fn a_vpax_attaches_engine_sizes_to_a_pbip() {
+    let temp = TempDir::new("stats-vpax");
+    let pbip = revenue_project(&temp.0);
+    let vpax = save_vpax(&temp.0);
+    let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
+    let args = ScanArgs {
+        stats_from: Some(vpax.clone()),
+        ..json_scan(pbip)
+    };
+    let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("cover 78 of 78 tables and columns"),
+        "{stderr}"
+    );
+    let payload = json_payload(&stdout);
+    assert_eq!(
+        payload["summary"]["stats_source"],
+        vpax.display().to_string()
+    );
+    let expected = sizes(&pbix_out);
+    let mut checked = 0;
+    for finding in payload["unused"].as_array().unwrap() {
+        let id = finding["id"].as_str().unwrap();
+        if finding.get("bytes").is_none() {
+            assert!(expected[id].is_none(), "{id} lost its size");
+            continue;
+        }
+        assert_eq!(finding["size_basis"], "engine", "{finding}");
+        // A table's engine size is summed from its parts, not its files.
+        if finding["type"] != "table" {
+            assert_eq!(finding["bytes"].as_u64(), expected[id], "{id}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns matched and warns when the source is older than the model, and `--json`
   names the source in `summary.stats_source`. The model and findings still come
   from TMDL. Without a storage source, output is unchanged.
+- **`.vpax` as a stats source** (issue #108): `--stats-from` also takes a
+  VertiPaq Analyzer export from DAX Studio, Tabular Editor, or semantic-link-labs.
+  Its sizes are the engine's in-memory figures, shown with `size_basis: "engine"`
+  in `--json`.
 
 ## [0.6.0] - 2026-09-25
 
