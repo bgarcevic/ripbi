@@ -12,6 +12,9 @@
 //! [scan]
 //! # Object-name globs suppressed from the unused report.
 //! ignore = ["'*Time Intelligence'[*]"]
+//! # Storage sizes for a model without its own catalog: an .abf or .pbix,
+//! # or "none" to turn off .pbi/cache.abf auto-detection.
+//! storage = "exports/Sales.abf"
 //! ```
 
 use std::fs;
@@ -31,6 +34,31 @@ pub struct Config {
     pub reports: Vec<PathBuf>,
     /// Object-name glob patterns suppressed from the unused report.
     pub ignore: Vec<String>,
+    /// `[scan].storage`: where storage sizes come from (issue #129).
+    pub storage: Option<StorageSetting>,
+}
+
+/// A `--storage` or `[scan].storage` value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageSetting {
+    /// `none`: attach nothing, not even an auto-detected `.pbi/cache.abf`.
+    Off,
+    /// An `.abf` backup or a `.pbix` with its data.
+    Path(PathBuf),
+}
+
+impl StorageSetting {
+    /// Reads a written value: `none` (any case) turns storage off; anything
+    /// else is a path, resolved against `base` when relative.
+    pub fn parse(base: &Path, written: &Path) -> Self {
+        if written
+            .to_str()
+            .is_some_and(|text| text.eq_ignore_ascii_case("none"))
+        {
+            return Self::Off;
+        }
+        Self::Path(resolve_against(base, &written.to_string_lossy()))
+    }
 }
 
 /// A loaded config plus the directory its paths were resolved against.
@@ -58,6 +86,7 @@ struct FileFormat {
 struct ScanSection {
     #[serde(default)]
     ignore: Vec<String>,
+    storage: Option<String>,
 }
 
 /// Finds and loads `ripbi.toml` in `start` or its nearest ancestor.
@@ -84,12 +113,18 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
         let resolve = |written: &String| resolve_against(&root, written);
         let target = file.target.as_ref().map(&resolve);
         let reports: Vec<PathBuf> = file.reports.iter().map(&resolve).collect();
+        let scan = file.scan.unwrap_or_default();
+        let storage = scan
+            .storage
+            .as_deref()
+            .map(|written| StorageSetting::parse(&root, Path::new(written)));
         return Ok(Some(Loaded {
             root,
             config: Config {
                 target,
                 reports,
-                ignore: file.scan.map(|scan| scan.ignore).unwrap_or_default(),
+                ignore: scan.ignore,
+                storage,
             },
         }));
     }
@@ -160,6 +195,31 @@ mod tests {
         let loaded = find_in(&temp.0).expect("no error").expect("config found");
 
         assert_eq!(loaded.config.reports, vec![temp.0.join("r.Report")]);
+    }
+
+    #[test]
+    fn storage_resolves_relatively_and_none_turns_it_off() {
+        let temp = TempDir::new("storage");
+        temp.write(
+            "ripbi.toml",
+            "[scan]
+storage = \"exports/m.abf\"
+",
+        );
+        let loaded = find_in(&temp.0).expect("no error").expect("config found");
+        assert_eq!(
+            loaded.config.storage,
+            Some(StorageSetting::Path(temp.0.join("exports/m.abf")))
+        );
+
+        temp.write(
+            "ripbi.toml",
+            "[scan]
+storage = \"None\"
+",
+        );
+        let loaded = find_in(&temp.0).expect("no error").expect("config found");
+        assert_eq!(loaded.config.storage, Some(StorageSetting::Off));
     }
 
     #[test]

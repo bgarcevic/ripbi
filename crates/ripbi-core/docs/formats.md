@@ -96,7 +96,11 @@ and, for tables, `SegmentMapStorage.RecordCount` over the table's partitions. Wh
 an object's file is missing from the log its size is a lower bound
 (`SizeBasis::LowerBound`: a column falls back to `DictionaryStorage.Size`). A
 catalog without the storage tables loads with no statistics — no error, no skip
-notice. Every other format leaves the statistics `None`. On `Revenue
+notice. Every other format leaves the statistics `None`; a caller can copy a
+backup's statistics onto such a model by identity with
+`TabularDatabase::attach_storage` (issue #129), reading the backup through
+`ingest::storage_source` and finding a PBIP's `.pbi/cache.abf` with
+`ingest::pbip_storage_cache`. On `Revenue
 Opportunities.pbix` the join is exact: every logged data file is attributed.
 
 Microsoft's public `Revenue Opportunities.pbix` is compared with its committed

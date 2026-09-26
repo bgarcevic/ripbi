@@ -226,6 +226,65 @@ pub fn is_abf(path: &Path) -> bool {
         .is_ok_and(|count| abf::is_abf(&header[..count]))
 }
 
+/// Reads a storage catalog to attach to another model (issue #129): an `.abf`
+/// backup (a PBIP's `.pbi/cache.abf` included) or a PBIX embedding its
+/// compressed `DataModel`.
+///
+/// The whole backup's metadata is parsed, but callers use only its
+/// [`StorageStats`](crate::StorageStats) and names, through
+/// [`TabularDatabase::attach_storage`]. A source without a storage catalog — a
+/// TMDL folder, `model.bim`, a PBIT, a thin PBIX — is
+/// [`Error::UnsupportedFormat`].
+pub fn storage_source(path: &Path) -> Result<Ingested<TabularDatabase>> {
+    if !path.is_file() {
+        return Err(Error::UnsupportedFormat(format!(
+            "{} is not a file; storage comes from an .abf backup or a .pbix with its data",
+            path.display()
+        )));
+    }
+    let ingested = semantic_model(path)?;
+    if ingested.value.storage_bytes.is_none() {
+        return Err(Error::UnsupportedFormat(format!(
+            "{} has no storage catalog; storage comes from an .abf backup or a .pbix with its data",
+            path.display()
+        )));
+    }
+    Ok(ingested)
+}
+
+/// The data cache Power BI Desktop saves beside a PBIP semantic model —
+/// `<Model>.SemanticModel/.pbi/cache.abf` — when it exists.
+///
+/// `model` may be the `.SemanticModel` folder, its `definition/` folder, or
+/// the `model.bim` file inside it. Any other path, or a folder without the
+/// cache, is `None`.
+#[must_use]
+pub fn pbip_storage_cache(model: &Path) -> Option<PathBuf> {
+    let item_root = if model.is_file() {
+        let is_bim = model
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bim"));
+        if !is_bim {
+            return None;
+        }
+        model.parent()?.to_path_buf()
+    } else {
+        // A bare TMDL folder (`model.tmdl` directly inside, not named
+        // `definition`) is its own item root: never look above it.
+        let definition = locate_definition(model).ok()?;
+        let nested = definition
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case("definition"));
+        if nested {
+            definition.parent()?.to_path_buf()
+        } else {
+            definition
+        }
+    };
+    let cache = item_root.join(".pbi").join("cache.abf");
+    cache.is_file().then_some(cache)
+}
+
 /// Reads up to `buf.len()` leading bytes, returning how many were read.
 fn read_prefix(reader: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
     let mut filled = 0;
@@ -341,4 +400,44 @@ pub fn platform_display_name(item_root: &Path) -> Option<String> {
         .get("displayName")?
         .as_str()
         .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::pbip_storage_cache;
+
+    #[test]
+    fn pbip_storage_cache_sits_beside_definition() {
+        let dir = tempfile::tempdir().unwrap();
+        let item = dir.path().join("Sales.SemanticModel");
+        let definition = item.join("definition");
+        fs::create_dir_all(&definition).unwrap();
+        fs::write(definition.join("model.tmdl"), "model Model\n").unwrap();
+        fs::write(item.join("model.bim"), "{}").unwrap();
+        assert_eq!(pbip_storage_cache(&item), None);
+
+        fs::create_dir_all(item.join(".pbi")).unwrap();
+        let cache = item.join(".pbi").join("cache.abf");
+        fs::write(&cache, b"").unwrap();
+        for model in [&item, &definition, &item.join("model.bim")] {
+            assert_eq!(
+                pbip_storage_cache(model).as_ref(),
+                Some(&cache),
+                "{model:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_tmdl_folder_never_looks_above_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmdl = dir.path().join("tmdl");
+        fs::create_dir_all(&tmdl).unwrap();
+        fs::write(tmdl.join("model.tmdl"), "model Model\n").unwrap();
+        fs::create_dir_all(dir.path().join(".pbi")).unwrap();
+        fs::write(dir.path().join(".pbi").join("cache.abf"), b"").unwrap();
+        assert_eq!(pbip_storage_cache(&tmdl), None);
+    }
 }
