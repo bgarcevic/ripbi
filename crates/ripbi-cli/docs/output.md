@@ -391,6 +391,10 @@ Note: Sales.SemanticModel/.pbi/cache.abf is older than the model's files; stats 
 
 The coverage note prints whenever a source is attached; the staleness note when the
 source was written before the newest file of the model (the `.pbi/` folder aside).
+A third note flags a source with no rows in any table loaded by Power Query (or a
+source query) — a model saved or exported before its first refresh, such as a PBIP
+opened in Desktop and exported to `.vpax` straight away; its sizes are the engine's
+empty minimums. Calculated tables are left out: the engine fills them without a refresh.
 An explicit source that cannot be read, or has no storage catalog (a TMDL folder,
 `model.bim`, a PBIT, a thin PBIX), fails the scan with exit `2`. An auto-detected
 cache that cannot be read only prints `Note: cannot read stats from …; continuing

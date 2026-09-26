@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`.vpax` as a stats source** (issue #108): `--stats-from` also takes a
   VertiPaq Analyzer export from DAX Studio, Tabular Editor, or semantic-link-labs.
   Its sizes are the engine's in-memory figures, shown with `size_basis: "engine"`
-  in `--json`.
+  in `--json`. A source with no rows in any Power Query table gets a note asking
+  whether the model was refreshed before export.
 
 ## [0.6.0] - 2026-09-25
 

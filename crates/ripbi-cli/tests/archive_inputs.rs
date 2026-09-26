@@ -649,7 +649,7 @@ fn storage_errors_are_usage_errors() {
 /// A `.vpax` (issue #108) naming every Revenue Opportunities table, column,
 /// and relationship, with the PBIX's own column and relationship sizes, in the
 /// `Dax.Vpax` shape: a BOM, `$id` on each column, `$ref` from relationships.
-fn save_vpax(dir: &std::path::Path) -> PathBuf {
+fn save_vpax(dir: &std::path::Path, refreshed: bool) -> PathBuf {
     use std::io::Write;
     let source = ripbi_core::ingest::storage_source(&revenue_pbix())
         .unwrap()
@@ -679,7 +679,7 @@ fn save_vpax(dir: &std::path::Path) -> PathBuf {
                 .collect();
             serde_json::json!({
                 "TableName": table.name,
-                "RowsCount": table.storage.and_then(|s| s.rows),
+                "RowsCount": table.storage.and_then(|s| s.rows).filter(|_| refreshed),
                 "Columns": columns,
             })
         })
@@ -701,7 +701,11 @@ fn save_vpax(dir: &std::path::Path) -> PathBuf {
         "Tables": tables,
         "Relationships": relationships,
     });
-    let path = dir.join("Revenue Opportunities.vpax");
+    let path = dir.join(if refreshed {
+        "Revenue Opportunities.vpax"
+    } else {
+        "Empty.vpax"
+    });
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
     zip.start_file("DaxModel.json", zip::write::SimpleFileOptions::default())
         .unwrap();
@@ -717,7 +721,7 @@ fn save_vpax(dir: &std::path::Path) -> PathBuf {
 fn a_vpax_attaches_engine_sizes_to_a_pbip() {
     let temp = TempDir::new("stats-vpax");
     let pbip = revenue_project(&temp.0);
-    let vpax = save_vpax(&temp.0);
+    let vpax = save_vpax(&temp.0, true);
     let (_, pbix_out, _) = run_scan(&json_scan(revenue_pbix()), &temp.0, "");
     let args = ScanArgs {
         stats_from: Some(vpax.clone()),
@@ -750,4 +754,29 @@ fn a_vpax_attaches_engine_sizes_to_a_pbip() {
         }
     }
     assert!(checked > 0);
+}
+
+/// A `.vpax` exported before the model was refreshed has no rows anywhere;
+/// the scan says so rather than presenting empty allocations as sizes.
+#[test]
+fn a_stats_source_without_rows_is_flagged_as_unrefreshed() {
+    let temp = TempDir::new("stats-empty");
+    let pbip = revenue_project(&temp.0);
+    let refreshed = ScanArgs {
+        stats_from: Some(save_vpax(&temp.0, true)),
+        ..json_scan(pbip.clone())
+    };
+    let (_, _, stderr) = run_scan(&refreshed, &temp.0, "");
+    assert!(!stderr.contains("no rows in any table"), "{stderr}");
+
+    let empty = ScanArgs {
+        stats_from: Some(save_vpax(&temp.0, false)),
+        ..json_scan(pbip)
+    };
+    let (code, _, stderr) = run_scan(&empty, &temp.0, "");
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("Empty.vpax has no rows in any table loaded by Power Query"),
+        "{stderr}"
+    );
 }
