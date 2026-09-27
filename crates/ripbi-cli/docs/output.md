@@ -407,30 +407,43 @@ without sizes.` Neither note is a skip notice, so `--strict` does not gate on th
 
 Desktop opens a `.pbip` only when it names a report, so a model-only project (a
 central model whose thin reports live elsewhere) never gets a `cache.abf`.
-`ripbi stub-report [PATH]` (issue #130) writes one:
+`ripbi stub-report [PATH]` (issue #130) writes a stub that Desktop can open:
 
 ```text
-ripbi stub-report models/Central.SemanticModel
+ripbi stub-report models/Central.SemanticModel --wait
 ```
 
-It writes `Central.Report/` (a PBIR report with one empty page and no visuals, bound
-by `byPath` and marked with a `ripbi.stub` `report.json` annotation) and `Central.pbip`
-beside the model. PATH is a `.SemanticModel` folder or its `definition/`; without it,
-the only `.SemanticModel` in the current directory. Then open `Central.pbip` in Power
-BI Desktop, refresh, and save: Desktop writes `Central.SemanticModel/.pbi/cache.abf`,
-which the auto-detection above reads. No `.platform` is written; Desktop adds one on
-save.
+The stub is `Central.Report/` (a PBIR report with one empty page and no visuals,
+marked with a `ripbi.stub` `report.json` annotation) plus `Central.pbip`. By default
+both go into a fresh temp folder (`ripbi-stub-Central-…`), so nothing lands in the
+repository. The report points back at the model with a relative `byPath`. PATH is a
+`.SemanticModel` folder or its `definition/`; without it, the only `.SemanticModel` in
+the current directory. No `.platform` is written; Desktop adds one on save.
+
+In an interactive run on Windows, the `.pbip` then opens in Power BI Desktop through
+its file association. It does not open under `--no-open`, `-q`, when stdin or stderr
+is not a terminal, or when `CI` is set; the next steps say to open it by hand instead.
+Refresh and save in Desktop: it writes `Central.SemanticModel/.pbi/cache.abf`, which
+the auto-detection above reads. With `--wait`, ripbi keeps running until that file is
+written after the stub was created (checked every second, done when its size stops
+changing), then prints its size and the `ripbi scan` command to run. Ctrl-C stops
+waiting.
 
 | Flag | Meaning |
 |---|---|
+| `--out <DIR>` | Write the stub into DIR (created if missing) instead of a temp folder, e.g. `--out .`. DIR must be on the model's drive |
 | `--name <NAME>` | File stem for the `.Report` folder and `.pbip`; defaults to the model's |
-| `-f`, `--force` | Replace an existing ripbi stub and `.pbip`. A `.Report` that is not a ripbi stub is never replaced |
-| `-q`, `--quiet` | Print nothing |
+| `--no-open` | Do not open the `.pbip` in Desktop |
+| `--wait` | Wait until Desktop saves `.pbi/cache.abf`, then print the next step |
+| `-f`, `--force` | With `--out`: replace an existing ripbi stub and `.pbip`. A `.Report` that is not a ripbi stub is never replaced |
+| `-q`, `--quiet` | Print nothing; never opens Desktop |
 | `--no-color` | Never color output |
 
-Exit `0` when the stub is written; `2` for a missing or ambiguous model, an invalid
-`--name`, or an existing target without `--force`. A refusal writes nothing. The
-summary line goes to stdout, the next steps and a `.gitignore` tip to stderr.
+stdout is the absolute path of the `.pbip`, alone on one line. The next steps go to
+stderr, plus a `.gitignore` tip under `--out`. Exit `0` when the stub is written; `2`
+for a missing or ambiguous model, an invalid `--name`, an existing `--out` target
+without `--force`, or a temp folder on a different drive from the model (the hint
+suggests `--out`). A refusal writes nothing. A failed launch is only a note.
 
 A `.vpax` (issue #108) is the VertiPaq Analyzer export DAX Studio, Tabular Editor,
 and semantic-link-labs write from a live model. Only its `DaxModel.json` is read. Its

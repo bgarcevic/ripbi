@@ -15,7 +15,7 @@ fn repo() -> PathBuf {
 
 /// Writes `name`'s stub beside `model_folder` under `root`; returns the report folder.
 fn write_stub(root: &Path, name: &str, model_folder: &str) -> PathBuf {
-    for file in report_stub(name, model_folder) {
+    for file in report_stub(name, &format!("../{model_folder}")) {
         let path = root.join(&file.path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, file.contents).unwrap();
@@ -26,7 +26,7 @@ fn write_stub(root: &Path, name: &str, model_folder: &str) -> PathBuf {
 #[test]
 fn the_stub_matches_the_golden_fixture() {
     let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/stub");
-    let files = report_stub("Sales", "Sales.SemanticModel");
+    let files = report_stub("Sales", "../Sales.SemanticModel");
     for file in &files {
         let expected = fs::read_to_string(golden.join(&file.path))
             .unwrap_or_else(|error| panic!("{}: {error}", file.path.display()))

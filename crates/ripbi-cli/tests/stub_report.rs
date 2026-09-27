@@ -33,9 +33,12 @@ fn run_stub(args: &StubReportArgs, cwd: &Path) -> (i32, String, String) {
     )
 }
 
+/// `--out .`: the stub beside the model in the test's cwd. The temp-folder
+/// default has its own test.
 fn stub_args(path: Option<&str>) -> StubReportArgs {
     StubReportArgs {
         path: path.map(PathBuf::from),
+        out: Some(PathBuf::from(".")),
         ..StubReportArgs::default()
     }
 }
@@ -63,20 +66,68 @@ fn model_only(temp: &TempDir, stem: &str) -> PathBuf {
 }
 
 #[test]
+fn defaults_to_a_fresh_temp_folder_bound_back_to_the_model() {
+    let temp = TempDir::new("stub-temp");
+    let model = model_only(&temp, "Central");
+    let args = StubReportArgs {
+        path: Some(PathBuf::from("Central.SemanticModel")),
+        ..StubReportArgs::default()
+    };
+    let (code, stdout, stderr) = run_stub(&args, &temp.0);
+    assert_eq!(code, 0, "{stderr}");
+    let pbip = PathBuf::from(stdout.trim_end());
+    let out = pbip.parent().unwrap().to_path_buf();
+    let _cleanup = TempDir(out.clone());
+    assert!(pbip.is_file(), "{stdout}");
+    assert!(pbip.ends_with("Central.pbip"));
+    assert!(
+        fs::canonicalize(&out)
+            .unwrap()
+            .starts_with(fs::canonicalize(std::env::temp_dir()).unwrap()),
+        "{}",
+        out.display()
+    );
+    assert!(
+        !temp.0.join("Central.pbip").exists(),
+        "nothing lands beside the model"
+    );
+    assert!(!stderr.contains(".gitignore"), "{stderr}");
+    assert!(
+        stderr.contains("Open Central.pbip in Power BI Desktop"),
+        "{stderr}"
+    );
+
+    // The relative byPath from the temp folder resolves to the model.
+    let report = ingest::report(&out.join("Central.Report")).unwrap();
+    assert!(report.value.stub);
+    let ripbi_core::DatasetReference::ByPath { path } = report.value.dataset else {
+        panic!("a byPath reference");
+    };
+    assert!(!path.contains('\\'), "{path}");
+    let resolved = std::path::absolute(out.join("Central.Report").join(&path)).unwrap();
+    assert_eq!(
+        fs::canonicalize(resolved).unwrap(),
+        fs::canonicalize(model).unwrap()
+    );
+}
+
+#[test]
 fn writes_a_stub_beside_the_model_that_binds_it_and_nothing_else() {
     let temp = TempDir::new("stub-writes");
     model_only(&temp, "Central");
     let (code, stdout, stderr) = run_stub(&stub_args(Some("Central.SemanticModel")), &temp.0);
     assert_eq!(code, 0, "{stderr}");
-    assert!(
-        stdout.contains("Created Central.pbip and Central.Report"),
-        "{stdout}"
+    assert_eq!(
+        fs::canonicalize(stdout.trim_end()).unwrap(),
+        fs::canonicalize(temp.0.join("Central.pbip")).unwrap()
     );
     assert!(
         stderr.contains("Central.SemanticModel/.pbi/cache.abf"),
         "{stderr}"
     );
     assert!(stderr.contains(".gitignore"), "{stderr}");
+    let pbir = fs::read_to_string(temp.0.join("Central.Report/definition.pbir")).unwrap();
+    assert!(pbir.contains("\"../Central.SemanticModel\""), "{pbir}");
 
     let pbip = fs::read_to_string(temp.0.join("Central.pbip")).unwrap();
     assert!(pbip.contains("\"path\": \"Central.Report\""), "{pbip}");

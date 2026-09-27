@@ -181,13 +181,14 @@ pub struct DepsArgs {
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).
 const STUB_REPORT_EXAMPLES: &str = "Examples:
-  ripbi stub-report models/Central.SemanticModel  # writes Central.Report + Central.pbip beside it
+  ripbi stub-report models/Central.SemanticModel  # stub in a temp folder, opened in Desktop
   ripbi stub-report                                # the one .SemanticModel in the current directory
-  ripbi stub-report Central.SemanticModel --name Central-stats
+  ripbi stub-report Central.SemanticModel --wait   # then wait for Desktop to save cache.abf
+  ripbi stub-report Central.SemanticModel --out .  # write Central.Report + Central.pbip here
+  ripbi stub-report Central.SemanticModel --no-open  # print the .pbip path only
 
-Then open the .pbip in Power BI Desktop, refresh, and save: Desktop writes
-.pbi/cache.abf, which `ripbi scan` reads storage sizes from. The stub binds
-nothing, so scan results are unchanged.";
+Refresh and save in Power BI Desktop: Desktop writes .pbi/cache.abf into the
+model, which `ripbi scan` reads storage sizes from. The stub binds nothing.";
 
 /// `ripbi stub-report` arguments.
 #[derive(Args, Debug, Default)]
@@ -195,15 +196,27 @@ pub struct StubReportArgs {
     /// The model-only .SemanticModel folder; defaults to the only one in the current directory.
     pub path: Option<PathBuf>,
 
+    /// Write the stub into DIR instead of a fresh temp folder; must be on the model's drive.
+    #[arg(long, value_name = "DIR")]
+    pub out: Option<PathBuf>,
+
     /// File stem for the .Report folder and .pbip; defaults to the model's.
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
-    /// Replace an existing ripbi stub and .pbip; a real report is never replaced.
-    #[arg(short = 'f', long)]
+    /// With --out: replace an existing ripbi stub and .pbip; a real report is never replaced.
+    #[arg(short = 'f', long, requires = "out")]
     pub force: bool,
 
-    /// Print nothing; the exit code is the only output.
+    /// Do not open the .pbip in Power BI Desktop.
+    #[arg(long)]
+    pub no_open: bool,
+
+    /// Wait until Desktop saves the model's .pbi/cache.abf, then print the next step.
+    #[arg(long)]
+    pub wait: bool,
+
+    /// Print nothing; the exit code is the only output. Never opens Desktop.
     #[arg(short = 'q', long)]
     pub quiet: bool,
 

@@ -28,25 +28,25 @@ const PAGE_NAME: &str = "ripbiStub";
 /// One file of a report stub.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StubFile {
-    /// Path relative to the folder that holds the semantic-model folder, with
-    /// forward slashes (e.g. `Sales.Report/definition.pbir`).
+    /// Path relative to the output folder, with forward slashes (e.g.
+    /// `Sales.Report/definition.pbir`).
     pub path: PathBuf,
     /// UTF-8 contents, ending in a newline.
     pub contents: String,
 }
 
-/// The files of a report stub named `name`, bound by relative path to the
-/// sibling semantic-model folder `model_folder` (e.g. `Sales.SemanticModel`).
+/// The files of a report stub named `name`, bound to a semantic-model folder
+/// by `dataset_path`: the `datasetReference.byPath` path, relative to the
+/// `<name>.Report` folder with forward slashes (e.g. `../Sales.SemanticModel`).
 ///
-/// Returns `<name>.pbip` and the `<name>.Report/` item: `definition.pbir`
-/// (`datasetReference.byPath` = `../<model_folder>`), and a PBIR `definition/`
-/// with `version.json`, `report.json`, `pages/pages.json`, and one empty page.
-/// No `.platform` is written: its `logicalId` must be unique per workspace, and
-/// Desktop creates the file on first save.
+/// Returns `<name>.pbip` and the `<name>.Report/` item: `definition.pbir`, and a
+/// PBIR `definition/` with `version.json`, `report.json`, `pages/pages.json`,
+/// and one empty page. No `.platform` is written: its `logicalId` must be unique
+/// per workspace, and Desktop creates the file on first save.
 ///
 /// The output is deterministic, so it can be pinned as a golden fixture.
 #[must_use]
-pub fn report_stub(name: &str, model_folder: &str) -> Vec<StubFile> {
+pub fn report_stub(name: &str, dataset_path: &str) -> Vec<StubFile> {
     let report = format!("{name}.Report");
     let file = |path: String, value: &Value| StubFile {
         path: PathBuf::from(path),
@@ -67,7 +67,7 @@ pub fn report_stub(name: &str, model_folder: &str) -> Vec<StubFile> {
             &json!({
                 "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
                 "version": "4.0",
-                "datasetReference": { "byPath": { "path": format!("../{model_folder}") } }
+                "datasetReference": { "byPath": { "path": dataset_path } }
             }),
         ),
         file(
