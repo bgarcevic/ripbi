@@ -216,7 +216,7 @@ fabricated. Display name from `.platform`, as on the model side.
 
 | File | Maps to | Deliberately ignored |
 |---|---|---|
-| `report.json` (the anchor) | `filterConfig` → report filters | `themeCollection`, `settings`, `resourcePackages`, `slowDataSourceSettings`, `objects` (canvas formatting) |
+| `report.json` (the anchor) | `filterConfig` → report filters; an `annotations` entry named `ripbi.stub` → `ReportModel::stub` (issue #130; other annotations are ignored) | `themeCollection`, `settings`, `resourcePackages`, `slowDataSourceSettings`, `objects` (canvas formatting) |
 | `definition.pbir` | `DatasetReference` | `version` |
 | `reportExtensions.json` | `entities[].measures[]` → report measures (`name`, `expression`, `formatString`) | `dataType`, `hidden`, `dataCategory`, `displayFolder`, `measureTemplate`, `references`, … |
 | `pages/pages.json` | `pageOrder` only — one of the two authorities on which pages exist that a bookmark section must clear (with the `pages/` folders); page order and the active page themselves are display state | `activePageName`, `landingPageName` |

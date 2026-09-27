@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `--json`. A source with no rows in any Power Query table gets a note asking
   whether the model was refreshed before export.
 
+- **`ripbi stub-report`** (issue #130): writes a minimal report (one empty page,
+  no visuals) and `.pbip` beside a model-only `.SemanticModel`, so Power BI Desktop
+  can open, refresh, and save it — producing the `.pbi/cache.abf` that `scan` reads
+  storage sizes from. It never overwrites a real report. `scan` notes stub reports
+  and treats a model whose only reports are stubs as having no reports.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

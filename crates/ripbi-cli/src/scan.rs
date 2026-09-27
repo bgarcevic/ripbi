@@ -264,7 +264,36 @@ fn scan(
             ScanError::new(format!("cannot ingest report {}: {error}", path.display()))
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
+        if ingested.value.stub && !args.quiet {
+            writeln!(
+                streams.err,
+                "Note: {} is a ripbi stub (no bindings).",
+                report_name(path)
+            )
+            .map_err(ScanError::from)?;
+        }
         reports.push(ingested.value);
+    }
+    // A `stub-report` stub binds nothing (issue #130): alone, it would turn
+    // every object into a finding. It opens the project in Desktop; it is not
+    // a consumer, so a model with only stubs is a model with no reports.
+    if reports.iter().all(|report| report.stub) {
+        if args.allow_no_reports {
+            if !args.quiet {
+                writeln!(
+                    streams.err,
+                    "Skipped {}: no connected reports (only ripbi stubs)",
+                    paired.model.display()
+                )
+                .map_err(ScanError::from)?;
+            }
+            return Ok(EXIT_CLEAN);
+        }
+        return Err(ScanError::new(format!(
+            "nothing to scan against: {} has only ripbi stub reports, which bind nothing",
+            paired.model.display()
+        ))
+        .with_hint("pass the reports that consume the model with --report <path>"));
     }
     if let Some(scan) = &model_scan {
         // Unresolved dataset references and anchor-less `.Report` folders are

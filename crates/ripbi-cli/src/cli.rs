@@ -31,6 +31,10 @@ pub enum Command {
     #[command(after_help = DEPS_EXAMPLES)]
     Deps(DepsArgs),
 
+    /// Write an empty report bound to a model-only project so Desktop can open and save it.
+    #[command(after_help = STUB_REPORT_EXAMPLES)]
+    StubReport(StubReportArgs),
+
     /// Update ripbi to the latest GitHub release.
     #[command(after_help = UPDATE_EXAMPLES)]
     Update(UpdateArgs),
@@ -173,6 +177,39 @@ pub struct DepsArgs {
     /// Never prompt; fail where a picker would appear.
     #[arg(long)]
     pub no_input: bool,
+}
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const STUB_REPORT_EXAMPLES: &str = "Examples:
+  ripbi stub-report models/Central.SemanticModel  # writes Central.Report + Central.pbip beside it
+  ripbi stub-report                                # the one .SemanticModel in the current directory
+  ripbi stub-report Central.SemanticModel --name Central-stats
+
+Then open the .pbip in Power BI Desktop, refresh, and save: Desktop writes
+.pbi/cache.abf, which `ripbi scan` reads storage sizes from. The stub binds
+nothing, so scan results are unchanged.";
+
+/// `ripbi stub-report` arguments.
+#[derive(Args, Debug, Default)]
+pub struct StubReportArgs {
+    /// The model-only .SemanticModel folder; defaults to the only one in the current directory.
+    pub path: Option<PathBuf>,
+
+    /// File stem for the .Report folder and .pbip; defaults to the model's.
+    #[arg(long, value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Replace an existing ripbi stub and .pbip; a real report is never replaced.
+    #[arg(short = 'f', long)]
+    pub force: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
 }
 
 /// `ripbi update` arguments.

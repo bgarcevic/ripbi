@@ -15,6 +15,11 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   filters, bookmarks, and report-level measures. Its `bindings()` enumeration is the
   reachability-root surface; deleted-page bookmark sections stay in
   `Bookmark::stale_sections` for unused chains and never enumerate as roots.
+  `ReportModel::stub` flags a report written by `ripbi stub-report`.
+- **Report stub** (`src/stub.rs`): `report_stub` builds the files of the minimal
+  PBIR report `ripbi stub-report` writes (issue #130) — one empty page, no
+  bindings, marked with the `ripbi.stub` `report.json` annotation. Contents only;
+  the CLI writes them. Pinned by `tests/fixtures/stub/`.
 - **Ingestion** (`src/ingest/`): detect and parse the source formats —
   `.pbix`/`.pbit` (unzip in-memory, `DataModelSchema` or the ABF `DataModel` +
   `Report/Layout` or PBIR), `.abf` backups (`src/ingest/abf/`: XPress9 container

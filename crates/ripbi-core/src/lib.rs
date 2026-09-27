@@ -55,6 +55,7 @@ pub mod lookup;
 pub mod m;
 pub mod model;
 pub mod report;
+pub mod stub;
 
 pub use dax::{
     Binding, RawRef, Token, TokenKind, bind, quoted_names, references, tokenize, unescape_name,
@@ -83,6 +84,7 @@ pub use report::{
     DrillthroughParameter, FieldTarget, FieldWell, Filter, Page, PageBinding, PageBindingKind,
     Projection, ReportMeasure, ReportModel, Visual,
 };
+pub use stub::{STUB_ANNOTATION, StubFile, report_stub};
 
 use thiserror::Error;
 

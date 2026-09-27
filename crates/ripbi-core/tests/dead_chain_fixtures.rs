@@ -145,6 +145,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
             expression: "SUM('Sales'[Old Amount])".to_string(),
             format_string: None,
         }],
+        stub: false,
     };
     (db, report)
 }

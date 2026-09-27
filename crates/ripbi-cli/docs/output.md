@@ -58,7 +58,9 @@ beside `X.SemanticModel`), then by the dataset name in a `byConnection` `initial
 catalog`. A scan with no connected reports refuses with exit `2` and per-category
 counts — unless `--allow-no-reports` turns the refusal into a skip: a
 `Skipped …: no connected reports (…)` notice on stderr and exit `0`, with no stdout
-output.
+output. A report written by `ripbi stub-report` binds nothing, so scan prints
+`Note: X.Report is a ripbi stub (no bindings).` for it, and a model whose only
+reports are stubs gets the same refusal or skip (issue #130).
 
 With `--report` alone — no PATH, no `--model`, no config `target` — the model is
 derived from the named reports' pairing (the same tiers as a `.Report` PATH, so a
@@ -400,6 +402,35 @@ An explicit source that cannot be read, or has no storage catalog (a TMDL folder
 cache that cannot be read only prints `Note: cannot read stats from …; continuing
 without sizes.` Neither note is a skip notice, so `--strict` does not gate on them;
 `--quiet` silences them. `--json` names the source in `summary.stats_source`.
+
+#### Model-only projects: `ripbi stub-report`
+
+Desktop opens a `.pbip` only when it names a report, so a model-only project (a
+central model whose thin reports live elsewhere) never gets a `cache.abf`.
+`ripbi stub-report [PATH]` (issue #130) writes one:
+
+```text
+ripbi stub-report models/Central.SemanticModel
+```
+
+It writes `Central.Report/` (a PBIR report with one empty page and no visuals, bound
+by `byPath` and marked with a `ripbi.stub` `report.json` annotation) and `Central.pbip`
+beside the model. PATH is a `.SemanticModel` folder or its `definition/`; without it,
+the only `.SemanticModel` in the current directory. Then open `Central.pbip` in Power
+BI Desktop, refresh, and save: Desktop writes `Central.SemanticModel/.pbi/cache.abf`,
+which the auto-detection above reads. No `.platform` is written; Desktop adds one on
+save.
+
+| Flag | Meaning |
+|---|---|
+| `--name <NAME>` | File stem for the `.Report` folder and `.pbip`; defaults to the model's |
+| `-f`, `--force` | Replace an existing ripbi stub and `.pbip`. A `.Report` that is not a ripbi stub is never replaced |
+| `-q`, `--quiet` | Print nothing |
+| `--no-color` | Never color output |
+
+Exit `0` when the stub is written; `2` for a missing or ambiguous model, an invalid
+`--name`, or an existing target without `--force`. A refusal writes nothing. The
+summary line goes to stdout, the next steps and a `.gitignore` tip to stderr.
 
 A `.vpax` (issue #108) is the VertiPaq Analyzer export DAX Studio, Tabular Editor,
 and semantic-link-labs write from a live model. Only its `DaxModel.json` is read. Its
