@@ -14,6 +14,7 @@ pub mod notify;
 pub mod progress;
 pub mod render;
 pub mod report;
+pub mod sarif;
 pub mod scan;
 pub mod stub;
 pub mod style;

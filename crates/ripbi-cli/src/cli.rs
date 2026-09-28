@@ -52,6 +52,7 @@ Examples:
   ripbi scan --model models/Sales.SemanticModel --report reports/
   ripbi scan                       # discover a project in the current directory
   ripbi scan --json > findings.json
+  ripbi scan --sarif > ripbi.sarif # GitHub code scanning / Azure DevOps annotations
   ripbi scan --summary             # counts only, when the list would flood the terminal
   ripbi scan --type measure --type column  # only these unused object types
   ripbi scan -q                            # exit code only: 0 clean, 1 unused found, 2 error
@@ -347,8 +348,12 @@ pub struct ScanArgs {
     #[arg(long)]
     pub plain: bool,
 
+    /// SARIF 2.1.0 for code scanning and PR annotations (docs/output.md).
+    #[arg(long, conflicts_with_all = ["json", "plain"])]
+    pub sarif: bool,
+
     /// Counts only, when the list would flood the terminal.
-    #[arg(short = 's', long, conflicts_with_all = ["json", "plain"])]
+    #[arg(short = 's', long, conflicts_with_all = ["json", "plain", "sarif"])]
     pub summary: bool,
 
     /// Print nothing; the exit code is the only output.

@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::identity::fold_name;
-use crate::ingest::{SkipKind, SkipNotice};
+use crate::identity::{NameKey, ObjectId, fold_name};
+use crate::ingest::{SkipKind, SkipNotice, SourceLocation};
 use crate::m::refs::has_native_query_call;
 use crate::model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission, Function,
@@ -215,6 +215,132 @@ pub(super) fn load_database(
     }
 
     Ok(loader.finish(definition, skips))
+}
+
+/// Declaration sites of every object a `definition/` folder declares, in file
+/// order (issue #142). Reads the same files [`load_database`] reads and
+/// tokenizes them the same way, but keeps only each object header's line;
+/// drift is [`load_database`]'s to report, so notices are discarded here.
+pub(super) fn source_locations(definition: &Path) -> Result<Vec<SourceLocation>> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    for (file_name, path, is_dir) in sorted_entries(definition)? {
+        if is_dir {
+            if matches!(file_name.as_str(), "tables" | "roles") {
+                files.extend(
+                    sorted_entries(&path)?
+                        .into_iter()
+                        .filter(|(name, _, is_dir)| !is_dir && name.ends_with(".tmdl"))
+                        .map(|(_, path, _)| path),
+                );
+            }
+        } else if file_name.ends_with(".tmdl") {
+            files.push(path);
+        }
+    }
+
+    let mut locations = Locations::default();
+    let mut discarded = Vec::new();
+    for path in &files {
+        for root in &parse_file(path, &mut discarded)? {
+            locations.root(root, path, &mut discarded);
+        }
+    }
+    Ok(locations.found)
+}
+
+/// [`source_locations`]' accumulator: first declaration wins.
+#[derive(Default)]
+struct Locations {
+    found: Vec<SourceLocation>,
+    seen: HashSet<ObjectId>,
+}
+
+impl Locations {
+    fn add(&mut self, id: ObjectId, path: &Path, line: usize) {
+        if self.seen.insert(id.clone()) {
+            self.found.push(SourceLocation {
+                id,
+                path: path.to_path_buf(),
+                line,
+            });
+        }
+    }
+
+    fn root(&mut self, root: &Node, path: &Path, discarded: &mut Vec<SkipNotice>) {
+        let name = || NameKey::new(unquote(root.name.as_deref().unwrap_or_default()));
+        match root.key.as_str() {
+            "table" => self.table(root, path),
+            "relationship" => {
+                if let Some(relationship) = map_relationship(root, path, discarded) {
+                    let id = ObjectId::Relationship {
+                        from_table: NameKey::new(&relationship.from_table),
+                        from_column: NameKey::new(&relationship.from_column),
+                        to_table: NameKey::new(&relationship.to_table),
+                        to_column: NameKey::new(&relationship.to_column),
+                    };
+                    self.add(id, path, root.line);
+                }
+            }
+            "role" => self.add(ObjectId::Role { role: name() }, path, root.line),
+            "expression" => self.add(ObjectId::Expression { name: name() }, path, root.line),
+            "function" => self.add(ObjectId::Function { name: name() }, path, root.line),
+            _ => {}
+        }
+    }
+
+    fn table(&mut self, node: &Node, path: &Path) {
+        let table = NameKey::new(unquote(node.name.as_deref().unwrap_or_default()));
+        self.add(
+            ObjectId::Table {
+                table: table.clone(),
+            },
+            path,
+            node.line,
+        );
+        for child in &node.children {
+            let name = || NameKey::new(unquote(child.name.as_deref().unwrap_or_default()));
+            let table = table.clone();
+            let id = match child.key.as_str() {
+                "measure" => ObjectId::Measure {
+                    table,
+                    measure: name(),
+                },
+                "column" => ObjectId::Column {
+                    table,
+                    column: name(),
+                },
+                "hierarchy" => ObjectId::Hierarchy {
+                    table,
+                    hierarchy: name(),
+                },
+                "partition" => ObjectId::Partition {
+                    table,
+                    partition: name(),
+                },
+                "calculationGroup" => {
+                    for item in child
+                        .children
+                        .iter()
+                        .filter(|item| item.key == "calculationItem")
+                    {
+                        let item_name =
+                            NameKey::new(unquote(item.name.as_deref().unwrap_or_default()));
+                        self.add(
+                            ObjectId::CalculationItem {
+                                table: table.clone(),
+                                item: item_name,
+                            },
+                            path,
+                            item.line,
+                        );
+                    }
+                    continue;
+                }
+                _ => continue,
+            };
+            self.add(id, path, child.line);
+        }
+    }
 }
 
 /// Accumulates parsed objects across files and assembles the final ordering.

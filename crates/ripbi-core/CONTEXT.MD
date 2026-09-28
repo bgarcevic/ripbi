@@ -30,7 +30,9 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   and logged file sizes become display-only `StorageStats` on tables, columns, and
   relationships in `abf/metadata/storage.rs`, issue #122; `ingest::storage_source` + `TabularDatabase::attach_storage` copy them by identity onto a PBIP/TMDL model, issue #129; `ingest/vpax.rs` reads a VertiPaq Analyzer `.vpax` as another such source, issue #108), `.pbip` folders
   (`.Report/` PBIR + `.SemanticModel/` TMDL), standalone TMDL folders, and TMSL
-  `model.bim`. All normalize into `TabularDatabase` + `ReportModel`. The XPress9
+  `model.bim`. All normalize into `TabularDatabase` + `ReportModel`. Source positions
+  are not on the AST: `ingest::source_locations` is a separate pass that maps each TMDL
+  declaration to its file and header line (issue #142; empty for single-file formats). The XPress9
   codec lives in `crates/ripbi-xpress9`, the only crate allowed `unsafe` (FFI).
 - **DAX lexing** (`src/dax/`): tokenize DAX expressions to extract object references
   (fields, bare table uses, function calls) and resolve them against the model as data.

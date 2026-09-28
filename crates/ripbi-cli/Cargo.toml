@@ -37,6 +37,7 @@ tempfile.workspace = true
 rstest.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
+jsonschema.workspace = true
 
 [lints]
 workspace = true

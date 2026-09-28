@@ -487,7 +487,7 @@ fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput)
 
 /// The human phrase for one broken binding's reason: what the engine would
 /// render as an error state, said statically.
-fn reason_phrase(binding: &BrokenOut) -> String {
+pub(crate) fn reason_phrase(binding: &BrokenOut) -> String {
     match (binding.reason, binding.bound_artifact.as_deref()) {
         ("bound_artifact_broken", Some(artifact)) => {
             format!("bound artifact {artifact} has unresolvable references")

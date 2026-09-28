@@ -43,6 +43,15 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Key(String);
 
+impl Key {
+    /// The folded, separator-joined form — what `scan --sarif` hashes into its
+    /// `partialFingerprints`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Every finding one scan detected, keyed for comparison and ordered by key
 /// so anything listed from it is deterministic.
 pub type Detected = BTreeMap<Key, Entry>;
