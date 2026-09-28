@@ -177,7 +177,7 @@ struct Site {
     line: Option<usize>,
 }
 
-/// Resolves findings to [`Site`]s, keyed by fingerprint so the renderer can
+/// Resolves findings to source sites, keyed by fingerprint so the renderer can
 /// look them up from the presentation data alone.
 pub struct Locator {
     model: PathBuf,
