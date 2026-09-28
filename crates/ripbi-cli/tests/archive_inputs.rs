@@ -433,6 +433,11 @@ fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
         let entry = entry.unwrap();
         let target = to.join(entry.file_name());
         if entry.file_type().unwrap().is_dir() {
+            // A local Desktop save leaves a gitignored `.pbi/` in the sample;
+            // each test places its own cache.
+            if entry.file_name() == ".pbi" {
+                continue;
+            }
             copy_tree(&entry.path(), &target);
         } else {
             std::fs::copy(entry.path(), &target).unwrap();

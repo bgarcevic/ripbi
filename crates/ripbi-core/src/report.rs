@@ -47,6 +47,11 @@ pub struct ReportModel {
     /// Report-level measures (PBIR `reportExtensions.json`): DAX that lives in the
     /// report, not the model.
     pub measures: Vec<ReportMeasure>,
+    /// A ripbi-generated stub (issue #130): `report.json` carries the
+    /// [`STUB_ANNOTATION`](crate::stub::STUB_ANNOTATION) annotation. A stub
+    /// binds nothing; callers use the flag to name it instead of counting it
+    /// as a real consumer.
+    pub stub: bool,
 }
 
 /// How a report reaches its semantic model (PBIR `datasetReference`).

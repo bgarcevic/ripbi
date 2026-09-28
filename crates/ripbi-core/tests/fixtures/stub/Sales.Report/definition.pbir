@@ -1,0 +1,9 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+  "datasetReference": {
+    "byPath": {
+      "path": "../Sales.SemanticModel"
+    }
+  },
+  "version": "4.0"
+}

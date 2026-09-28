@@ -132,18 +132,14 @@ table Calculations
 		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
 
 	column 'Create Date'
-		dataType: dateTime
+		dataType: int64
 		isHidden
-		formatString: Short Date
+		formatString: 0
 		lineageTag: 62167b85-36b8-40ed-97e1-f563d75cde33
 		summarizeBy: none
 		sourceColumn: Create Date
 
-		changedProperty = DataType
-
 		annotation SummarizationSetBy = Automatic
-
-		annotation UnderlyingDateTimeDataType = Date
 
 	column 'Opportunity Days'
 		dataType: int64

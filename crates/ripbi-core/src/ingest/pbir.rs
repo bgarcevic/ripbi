@@ -35,6 +35,7 @@ use crate::report::{
     FieldTarget, FieldWell, Filter, Page, PageBinding, PageBindingKind, Projection, ReportMeasure,
     ReportModel, Visual,
 };
+use crate::stub::STUB_ANNOTATION;
 
 /// File access shared by folder PBIR and PBIR documents inside a ZIP archive.
 pub(super) enum Source<'a> {
@@ -175,11 +176,26 @@ pub(super) fn load_report_from_source(
         check_keys(&report, &REPORT_KEYS, &mut ctx, "");
         model.filters = filter_config(report.get("filterConfig"), &mut ctx, "/filterConfig");
     }
+    model.stub = is_stub(&report);
     model.measures = report_extensions(definition, skips, source);
     model.pages = pages(definition, skips, source)?;
     let live = live_sections(definition, &model.pages, skips, source);
     model.bookmarks = bookmarks(definition, &live, skips, source)?;
     Ok(model)
+}
+
+/// Whether `report.json` carries the ripbi stub annotation (issue #130). Any
+/// other annotation is author metadata and ignored; a malformed list is simply
+/// not a stub.
+fn is_stub(report: &Value) -> bool {
+    report
+        .get("annotations")
+        .and_then(Value::as_array)
+        .is_some_and(|annotations| {
+            annotations.iter().any(|annotation| {
+                annotation.get("name").and_then(Value::as_str) == Some(STUB_ANNOTATION)
+            })
+        })
 }
 
 // --- File-level parsers ------------------------------------------------------
@@ -1805,7 +1821,7 @@ fn check_keys(value: &Value, keys: &Keys, ctx: &mut Ctx, location: &str) {
 
 /// `report.json` (display objects, themes, and settings are canvas chrome).
 const REPORT_KEYS: Keys = Keys {
-    known: &["$schema", "filterConfig"],
+    known: &["$schema", "annotations", "filterConfig"],
     ignored: &[
         "objects",
         "publicCustomVisuals",

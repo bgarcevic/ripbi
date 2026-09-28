@@ -1,0 +1,14 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
+  "artifacts": [
+    {
+      "report": {
+        "path": "Sales.Report"
+      }
+    }
+  ],
+  "settings": {
+    "enableAutoRecovery": true
+  },
+  "version": "1.0"
+}
