@@ -36,8 +36,16 @@ use crate::model::{
     SharedExpression, StorageStats, Table, TablePermission, TabularDatabase, Variation,
 };
 
-/// `ObjectType` of a table in `Annotation` rows.
+/// `ObjectType` codes of the objects `Annotation` rows can hang off
+/// (`Microsoft.AnalysisServices.Tabular.ObjectType`).
 const OBJECT_TYPE_TABLE: i64 = 3;
+const OBJECT_TYPE_COLUMN: i64 = 4;
+const OBJECT_TYPE_RELATIONSHIP: i64 = 7;
+const OBJECT_TYPE_MEASURE: i64 = 8;
+const OBJECT_TYPE_HIERARCHY: i64 = 9;
+const OBJECT_TYPE_EXPRESSION: i64 = 41;
+const OBJECT_TYPE_CALCULATION_ITEM: i64 = 47;
+const OBJECT_TYPE_FUNCTION: i64 = 63;
 
 /// Maps the bytes of a `metadata.sqlitedb` into a [`TabularDatabase`].
 pub(super) fn load(
@@ -137,6 +145,9 @@ struct Catalog {
     expressions: Vec<Row>,
     functions: Vec<Row>,
     annotations: Vec<Row>,
+    /// `ripbi_keep` reasons by `(ObjectType, ObjectID)`, indexed once so a
+    /// model with an annotation on every column stays linear.
+    keeps: HashMap<(i64, i64), String>,
     variations: Vec<Row>,
     related_column_details: Vec<Row>,
     group_by_columns: Vec<Row>,
@@ -196,6 +207,18 @@ impl Catalog {
             result.sort_by_key(Row::id);
             Ok(result)
         };
+        let annotations = rows("Annotation")?;
+        let keeps = annotations
+            .iter()
+            .filter(|a| {
+                a.text("Name")
+                    .is_some_and(|name| crate::model::is_keep_annotation(&name))
+            })
+            .filter_map(|a| {
+                let key = (a.int("ObjectType")?, a.int("ObjectID")?);
+                Some((key, a.text("Value").unwrap_or_default()))
+            })
+            .collect();
         Ok(Self {
             tables: rows("Table")?,
             columns: rows("Column")?,
@@ -216,7 +239,8 @@ impl Catalog {
             refresh_policies: rows("RefreshPolicy")?,
             expressions: rows("Expression")?,
             functions: rows("Function")?,
-            annotations: rows("Annotation")?,
+            annotations,
+            keeps,
             variations: rows("Variation")?,
             related_column_details: rows("RelatedColumnDetails")?,
             group_by_columns: rows("GroupByColumn")?,
@@ -285,6 +309,7 @@ impl Catalog {
                     .int("DefaultDetailRowsDefinitionID")
                     .and_then(|id| expression_by_id(&self.detail_rows, id)),
                 storage: stats(&storage.tables, row.id()),
+                keep: self.keep(OBJECT_TYPE_TABLE, row.id()),
                 name,
                 ..Default::default()
             };
@@ -343,6 +368,7 @@ impl Catalog {
                     kind,
                     is_hidden: row.flag("IsHidden"),
                     storage: stats(&storage.columns, row.id()),
+                    keep: self.keep(OBJECT_TYPE_COLUMN, row.id()),
                     ..Default::default()
                 },
             ));
@@ -402,6 +428,7 @@ impl Catalog {
                 name,
                 levels,
                 is_hidden: row.flag("IsHidden"),
+                keep: self.keep(OBJECT_TYPE_HIERARCHY, row.id()),
             });
         }
 
@@ -431,6 +458,7 @@ impl Catalog {
                 to_column: to_column.clone(),
                 is_active: row.int("IsActive").is_none_or(|value| value != 0),
                 storage: stats(&storage.relationships, row.id()),
+                keep: self.keep(OBJECT_TYPE_RELATIONSHIP, row.id()),
             });
         }
 
@@ -519,6 +547,7 @@ impl Catalog {
                     .int("DetailRowsDefinitionID")
                     .and_then(|id| expression_by_id(&self.detail_rows, id)),
                 kpi,
+                keep: self.keep(OBJECT_TYPE_MEASURE, row.id()),
             });
         }
 
@@ -606,6 +635,7 @@ impl Catalog {
                         name: item.some_text("Name").unwrap_or_default(),
                         expression: item.text("Expression").unwrap_or_default(),
                         format_string_expression: format_string(item),
+                        keep: self.keep(OBJECT_TYPE_CALCULATION_ITEM, item.id()),
                     })
                     .collect(),
                 ..Default::default()
@@ -772,6 +802,7 @@ impl Catalog {
                 name,
                 expression: row.text("Expression").unwrap_or_default(),
                 parameter_values_column,
+                keep: self.keep(OBJECT_TYPE_EXPRESSION, row.id()),
             });
         }
         for row in &self.functions {
@@ -780,10 +811,17 @@ impl Catalog {
                     name,
                     expression: row.text("Expression").unwrap_or_default(),
                     is_hidden: row.flag("IsHidden"),
+                    keep: self.keep(OBJECT_TYPE_FUNCTION, row.id()),
                 });
             }
         }
         Ok(result)
+    }
+
+    /// The reason of the [`KEEP_ANNOTATION`](crate::model::KEEP_ANNOTATION)
+    /// on one object, when it carries one (issue #151).
+    fn keep(&self, object_type: i64, id: i64) -> Option<String> {
+        self.keeps.get(&(object_type, id)).cloned()
     }
 }
 

@@ -88,6 +88,7 @@ fn golden_database() -> TabularDatabase {
                         ..Default::default()
                     },
                     Measure {
+                        keep: None,
                         name: "Growth %".to_string(),
                         expression: "VAR prior = CALCULATE([Sales], DATEADD('Date'[Date], -1, YEAR))\nRETURN DIVIDE([Sales] - prior, prior)".to_string(),
                         is_hidden: true,
@@ -109,6 +110,7 @@ fn golden_database() -> TabularDatabase {
                     },
                 }],
                 hierarchies: vec![Hierarchy {
+                    keep: None,
                     name: "Fiscal".to_string(),
                     levels: vec![
                         HierarchyLevel {
@@ -171,11 +173,13 @@ fn golden_database() -> TabularDatabase {
                 calculation_group: Some(CalculationGroup {
                     items: vec![
                         CalculationItem {
+                            keep: None,
                             name: "Current".to_string(),
                             expression: "SELECTEDMEASURE()".to_string(),
                             format_string_expression: None,
                         },
                         CalculationItem {
+                            keep: None,
                             name: "YoY %".to_string(),
                             expression: "DIVIDE(SELECTEDMEASURE(), CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR('Date'[Date])))".to_string(),
                             format_string_expression: Some("\"0%;-0%;0%\"".to_string()),
@@ -203,6 +207,7 @@ fn golden_database() -> TabularDatabase {
         ],
         relationships: vec![
             Relationship {
+                keep: None,
                 name: Some("00000000-0000-0000-0000-000000000001".to_string()),
                 from_table: "Sales".to_string(),
                 from_column: "SalesOrderLineKey".to_string(),
@@ -212,6 +217,7 @@ fn golden_database() -> TabularDatabase {
                 storage: None,
             },
             Relationship {
+                keep: None,
                 name: Some("00000000-0000-0000-0000-000000000002".to_string()),
                 from_table: "Sales Order".to_string(),
                 from_column: "SalesOrder".to_string(),
@@ -225,6 +231,7 @@ fn golden_database() -> TabularDatabase {
                 storage: None,
             },
             Relationship {
+                keep: None,
                 name: Some("00000000-0000-0000-0000-000000000003".to_string()),
                 from_table: "Sales".to_string(),
                 from_column: "DueDateKey".to_string(),

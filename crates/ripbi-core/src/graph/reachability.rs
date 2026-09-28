@@ -3,10 +3,12 @@
 //! Two plain passes encode the relationship policy without any special-cased
 //! machinery (the policy itself is documented in [`super`]):
 //!
-//! 1. **Strong pass** — from the roots (report bindings and roles), over every
-//!    edge *except* relationship endpoints and the inactive-relationship
-//!    edges. Containment fires: a used column keeps its table alive, a used
-//!    table keeps its partitions and active relationships alive.
+//! 1. **Strong pass** — from the roots (report bindings, roles, and objects
+//!    kept by a `ripbi_keep` annotation — a kept table with its members),
+//!    over every edge *except* relationship endpoints and the
+//!    inactive-relationship edges. Containment fires: a used column keeps its
+//!    table alive, a used table keeps its partitions and active relationships
+//!    alive.
 //! 2. **Weak pass** — extends the strong set over every edge *except*
 //!    containment and the inactive-relationship edges. A live table pulls in
 //!    its relationships and both their key columns, but a key column that is
@@ -14,7 +16,9 @@
 //!    referenced by nothing but a relationship is still reported unused. An
 //!    inactive relationship joins only through a live `USERELATIONSHIP`
 //!    reference (an ordinary Dax edge); its table references never confer
-//!    liveness, so an unactivated one is a finding.
+//!    liveness, so an unactivated one is a finding. The key columns of a
+//!    relationship kept by annotation seed this pass directly: keeping it
+//!    counts as activating it.
 //!
 //! A consumer annotation therefore never lies: for any unused object, every
 //! referencing object is either itself unused, live only through a
@@ -38,7 +42,8 @@ impl Reachability {
         // alive key columns never drag their tables along — and inactive
         // relationships never confer liveness at all.
         let strong = graph.reach(graph.seed_indices(), Provenance::is_strong_pass_edge);
-        let live = graph.reach(strong.iter().copied(), Provenance::is_weak_pass_edge);
+        let weak_seeds = strong.iter().copied().chain(graph.weak_seed_indices());
+        let live = graph.reach(weak_seeds, Provenance::is_weak_pass_edge);
         Self {
             live: live
                 .into_iter()

@@ -1,0 +1,12 @@
+table Periods
+
+	calculationGroup
+
+		calculationItem YTD = SELECTEDMEASURE()
+			annotation ripbi_keep = Excel slicer
+
+		calculationItem MTD = SELECTEDMEASURE()
+
+	column Period
+		dataType: string
+		sourceColumn: Name

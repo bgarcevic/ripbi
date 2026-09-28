@@ -1,0 +1,95 @@
+{
+  "name": "Keep",
+  "compatibilityLevel": 1702,
+  "model": {
+    "culture": "en-US",
+    "tables": [
+      {
+        "name": "Sales",
+        "columns": [
+          { "name": "Amount", "dataType": "double", "sourceColumn": "Amount" },
+          { "name": "Cost", "dataType": "double", "sourceColumn": "Cost" },
+          {
+            "name": "Key",
+            "dataType": "int64",
+            "sourceColumn": "Key",
+            "annotations": [
+              { "name": "SummarizationSetBy", "value": "Automatic" },
+              { "name": "RIPBI_KEEP", "value": "Case does not matter" }
+            ]
+          }
+        ],
+        "measures": [
+          {
+            "name": "Excel Margin %",
+            "expression": "DIVIDE([Margin], SUM(Sales[Amount]))",
+            "annotations": [
+              { "name": "ripbi_keep", "value": "Used by the Finance Excel pivot (FIN-231)" }
+            ]
+          },
+          { "name": "Margin", "expression": "SUM(Sales[Amount]) - SUM(Sales[Cost])" }
+        ],
+        "hierarchies": [
+          {
+            "name": "Drill",
+            "levels": [{ "name": "Key", "column": "Key" }],
+            "annotations": [{ "name": "ripbi_keep", "value": "Kept for an upcoming report" }]
+          }
+        ],
+        "partitions": [
+          { "name": "Sales", "source": { "type": "m", "expression": "Raw" } }
+        ]
+      },
+      {
+        "name": "Archive",
+        "columns": [{ "name": "Id", "dataType": "int64", "sourceColumn": "Id" }],
+        "partitions": [
+          { "name": "Archive", "source": { "type": "m", "expression": "Raw" } }
+        ],
+        "annotations": [{ "name": "ripbi_keep", "value": "" }]
+      },
+      {
+        "name": "Periods",
+        "calculationGroup": {
+          "calculationItems": [
+            {
+              "name": "YTD",
+              "expression": "SELECTEDMEASURE()",
+              "annotations": [{ "name": "ripbi_keep", "value": "Excel slicer" }]
+            },
+            { "name": "MTD", "expression": "SELECTEDMEASURE()" }
+          ]
+        },
+        "columns": [{ "name": "Period", "dataType": "string", "sourceColumn": "Name" }]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "00000000-0000-0000-0000-000000000001",
+        "isActive": false,
+        "fromTable": "Sales",
+        "fromColumn": "Key",
+        "toTable": "Archive",
+        "toColumn": "Id",
+        "annotations": [
+          { "name": "ripbi_keep", "value": "USERELATIONSHIP in the Excel workbook" }
+        ]
+      }
+    ],
+    "expressions": [
+      {
+        "name": "Raw",
+        "kind": "m",
+        "expression": "let Source = 1 in Source",
+        "annotations": [{ "name": "ripbi_keep", "value": "Read by a dataflow" }]
+      }
+    ],
+    "functions": [
+      {
+        "name": "Double",
+        "expression": "(x) => x * 2",
+        "annotations": [{ "name": "ripbi_keep", "value": "Shared DAX library" }]
+      }
+    ]
+  }
+}

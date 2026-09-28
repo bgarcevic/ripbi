@@ -28,9 +28,9 @@ use crate::model::{
 };
 use crate::report::{BindingKind, Bookmark, FieldTarget, ReportModel};
 
-use super::DependencyGraph;
 use super::broken::{self, BrokenBinding, BrokenReason};
 use super::provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
+use super::{DependencyGraph, KeptObject};
 
 /// Assembles the graph for one model and every report sharing it. Never fails:
 /// resolution misses are data (an edge that cannot be created is skipped), and
@@ -46,6 +46,14 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
         m_named: HashMap::new(),
         broken: Vec::new(),
         broken_artifacts: broken::broken_artifacts(db, reports, &index),
+        kept: db
+            .kept_objects()
+            .into_iter()
+            .map(|(id, reason)| KeptObject {
+                id,
+                reason: reason.to_string(),
+            })
+            .collect(),
     };
 
     builder.add_model_objects(db, reports);
@@ -77,6 +85,9 @@ struct Builder {
     /// The artifacts whose own DAX binds a field reference to nothing. Key:
     /// the artifact. Value: its unresolved references, as written.
     broken_artifacts: HashMap<broken::ArtifactKey, Vec<String>>,
+    /// The objects a `ripbi_keep` annotation keeps: roots beside the report
+    /// bindings (issue #151).
+    kept: Vec<KeptObject>,
 }
 
 impl Builder {
@@ -141,6 +152,7 @@ impl Builder {
             self.m_named,
             broken,
             artifacts,
+            self.kept,
         )
     }
 

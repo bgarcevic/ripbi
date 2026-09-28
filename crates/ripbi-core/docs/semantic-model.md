@@ -20,11 +20,17 @@ every other format, and display-only: reachability never reads them (issue #122)
 Deliberately absent: data sources, perspectives, cultures and translations, role
 memberships, annotations, linguistic metadata. None of them *consume* model objects, so
 none can keep an object alive, so none affect reachability. Adding them later is additive
-and breaks nothing — but do not add them speculatively. The single exception proves the
-rule: the two engine annotations `__PBI_LocalDateTable` and `__PBI_TemplateDateTable` are
-consumed, because they *describe* an object (which tables are auto date/time machinery)
+and breaks nothing — but do not add them speculatively. Two exceptions prove the
+rule. The engine annotations `__PBI_LocalDateTable` and `__PBI_TemplateDateTable` are
+consumed because they *describe* an object (which tables are auto date/time machinery)
 and that description is load-bearing for the linter's verdict — not because they
-reference anything.
+reference anything. And the `ripbi_keep` annotation (`KEEP_ANNOTATION`, issue #151) is
+consumed because it *is* a consumer: the author's declaration that something ripbi
+cannot see — an Excel pivot, a thin report elsewhere — reads the object. It lands in the
+`keep` field of tables, columns, measures, hierarchies, calculation items,
+relationships, shared expressions, and functions (the reason, empty when none is
+given), and `TabularDatabase::kept_objects` enumerates it by graph identity for the
+graph to root.
 
 Also absent for the same reason: data types, display folders, source column names,
 calculation-item precedence. They describe objects; they never reference them.

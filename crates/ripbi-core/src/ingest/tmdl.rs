@@ -1112,6 +1112,16 @@ fn is_ignored(node: &Node) -> bool {
     IGNORED_KEYS.contains(&node.key.as_str())
 }
 
+/// The reason of a [`KEEP_ANNOTATION`](crate::model::KEEP_ANNOTATION) node
+/// (`annotation ripbi_keep = reason`), or `None` for any other node. A bare
+/// `annotation ripbi_keep` or an empty value still keeps: the reason is
+/// documentation, the annotation is the declaration.
+fn keep_reason(node: &Node) -> Option<String> {
+    let name = unquote(node.name.as_deref()?);
+    (node.key == "annotation" && crate::model::is_keep_annotation(&name))
+        .then(|| node.text().unwrap_or_default().trim().to_string())
+}
+
 /// Unquotes a TMDL identifier: `'Sales Order'` → `Sales Order`, `''` → `'`.
 /// Unquoted names pass through unchanged.
 fn unquote(name: &str) -> String {
@@ -1174,6 +1184,10 @@ fn map_table(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Table {
         // the auto date/time machinery and map straight onto Table flags — the
         // same facts VertiPaq Analyzer exposes as IsLocalDateTable and
         // IsTemplateDateTable.
+        if let Some(reason) = keep_reason(child) {
+            table.keep = Some(reason);
+            continue;
+        }
         if child.key == "annotation" {
             if let (Some(name), Some("true")) = (child.name.as_deref(), child.text()) {
                 match name {
@@ -1250,6 +1264,10 @@ fn map_measure(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Measure
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            measure.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -1318,6 +1336,10 @@ fn map_column(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Column {
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            column.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -1419,6 +1441,10 @@ fn map_hierarchy(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Hiera
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            hierarchy.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -1683,6 +1709,10 @@ fn map_calculation_item(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            item.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -1716,6 +1746,10 @@ fn map_relationship(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Op
     let mut from: Option<(Option<String>, String)> = None;
     let mut to: Option<(Option<String>, String)> = None;
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            relationship.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -2042,6 +2076,10 @@ fn map_expression(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Shar
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            expression.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }
@@ -2104,6 +2142,10 @@ fn map_function(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Functi
         ..Default::default()
     };
     for child in &node.children {
+        if let Some(reason) = keep_reason(child) {
+            function.keep = Some(reason);
+            continue;
+        }
         if is_ignored(child) {
             continue;
         }

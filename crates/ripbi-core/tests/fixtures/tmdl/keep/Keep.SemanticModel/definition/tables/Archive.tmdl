@@ -1,0 +1,10 @@
+table Archive
+	annotation ripbi_keep
+
+	column Id
+		dataType: int64
+		sourceColumn: Id
+
+	partition Archive = m
+		mode: import
+		source = Raw

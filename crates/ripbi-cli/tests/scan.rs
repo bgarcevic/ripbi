@@ -26,6 +26,43 @@ fn fixture_args(path: impl Into<PathBuf>) -> ScanArgs {
 mod output_modes {
     use super::*;
 
+    /// Issue #151: a measure kept by a `ripbi_keep` annotation is a root —
+    /// neither it nor the column it reads is a finding — and the JSON
+    /// summary counts it.
+    #[test]
+    fn a_kept_measure_and_its_input_are_not_findings() {
+        let temp = TempDir::new("kept");
+        project_into(&temp.0, "Mini");
+        let sales = temp
+            .0
+            .join("Mini.SemanticModel/definition/tables/Sales.tmdl");
+        let text = std::fs::read_to_string(&sales).expect("read Sales.tmdl");
+        // `[Legacy Total]`'s last line, without its (possibly CRLF) ending.
+        let anchor = "lineageTag: 99999999-9999-9999-9999-999999999903";
+        assert_eq!(text.matches(anchor).count(), 1);
+        let text = text.replace(
+            anchor,
+            &format!("{anchor}\n\t\tannotation ripbi_keep = Finance Excel pivot"),
+        );
+        std::fs::write(&sales, text).expect("write Sales.tmdl");
+
+        let (code, stdout, _) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 0, "{stdout}");
+        assert!(
+            stdout.contains("6 objects, 6 reachable from 1 roots, 0 unused"),
+            "{stdout}"
+        );
+
+        let args = ScanArgs {
+            json: true,
+            ..ScanArgs::default()
+        };
+        let (_, stdout, _) = run_scan(&args, &temp.0, "");
+        let json = json_payload(&stdout);
+        assert_eq!(json["summary"]["kept"], 1);
+        assert_eq!(json["summary"]["unused"], 0);
+    }
+
     #[test]
     fn human_output_summarizes_and_annotates_the_chain() {
         let temp = TempDir::new("human");
