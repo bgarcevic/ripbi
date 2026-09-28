@@ -187,7 +187,7 @@ bindings, each with its provenance. It is the deletion-planning view of the
 same graph `scan` uses for findings: the `used_by` annotation shows one hop,
 `deps --impact` shows the whole chain at once.
 
-![rib deps --impact for 'Sales'[Profit %]: no model object uses it, and three visuals on one report page bind it](docs/media/deps.svg)
+![rib deps --impact for the Profit % measure on Sales: no model object uses it, and three visuals on one report page bind it](docs/media/deps.svg)
 
 ```sh
 ripbi deps "'Sales'[Sales]" --model "samples/AdventureWorks Sales.SemanticModel"

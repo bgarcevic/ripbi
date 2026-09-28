@@ -20,7 +20,7 @@ formats, and exit codes.
 
 <!-- Maintainers: deps.rs and deps/render.rs implement this contract. -->
 
-![rib deps --impact for 'Sales'[Profit %]: no model object uses it, and three visuals on one report page bind it](../../../docs/media/deps.svg)
+![rib deps --impact for the Profit % measure on Sales: no model object uses it, and three visuals on one report page bind it](../../../docs/media/deps.svg)
 
 ## Command forms
 
