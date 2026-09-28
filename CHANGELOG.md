@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`scan --compare-root <DIR>`** (issue #141): reruns the same scan in another
+  checkout (the pull request's base branch, a previous release) and reports, and
+  exits `1` on, only the findings that did not exist there. A CI gate on an existing
+  model can start green and fail only on what a change introduces, with no file to
+  maintain: accepting a finding means merging it. Both sides compare every connected
+  report, so a report change that orphans a measure counts too. Findings match by
+  kind and display id, case-insensitively, never by path; findings gone since are
+  listed as fixed (a `Fixed since` section, `fixed:` records in `--plain`, a
+  `compare` object in `--json`). ripbi only compares folders; the pipeline provides
+  the other checkout (`git worktree add ../base origin/main`). Without the flag,
+  output is unchanged. When the scan's ingest dropped an object it could not
+  parse, the fixed list carries a caveat (`compare.fixed_uncertain` in `--json`).
+
+- **`CLICOLOR_FORCE`**: set to anything but `0`, it turns color on when output
+  is not a terminal, e.g. for CI logs that render ANSI. `NO_COLOR`, `TERM=dumb`,
+  and `--no-color` still win.
+- **Terminal recordings** of `scan`, `--compare-root`, and `deps` in the README
+  and the user guide, generated from real runs by `scripts/record_demos.py`.
+
+### Fixed
+
+- **A TMDL line indented with spaces no longer swallows the rest of its table.**
+  A hand-edited `    measure X = 1` read as tab depth 0, so it became a new root
+  and every following member of the table was dropped with it. An object line is
+  now placed under its nearest possible parent (a member under the open table),
+  and any other space-indented line is skipped alone. Both cases record a skip
+  notice naming the line.
+
 ## [0.6.1] - 2026-09-28
 
 ### Added

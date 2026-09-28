@@ -3,6 +3,7 @@
 //! `ripbi-core`, and the only crate that prints or sets exit codes.
 
 pub mod cli;
+pub mod compare;
 pub mod config;
 pub mod deps;
 pub mod discover;

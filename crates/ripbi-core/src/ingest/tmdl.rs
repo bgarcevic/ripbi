@@ -242,7 +242,7 @@ impl Loader {
     }
 
     fn load_database_tmdl(&mut self, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<()> {
-        for root in &parse_file(path)? {
+        for root in &parse_file(path, skips)? {
             match root.key.as_str() {
                 "database" => {
                     for child in &root.children {
@@ -273,7 +273,7 @@ impl Loader {
 
     fn load_model_tmdl(&mut self, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<()> {
         self.model_tmdl = Some(path.to_path_buf());
-        for root in &parse_file(path)? {
+        for root in &parse_file(path, skips)? {
             match root.key.as_str() {
                 "model" => {
                     for child in &root.children {
@@ -335,7 +335,7 @@ impl Loader {
     }
 
     fn load_relationships_tmdl(&mut self, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<()> {
-        for root in &parse_file(path)? {
+        for root in &parse_file(path, skips)? {
             match root.key.as_str() {
                 "relationship" => self.add_relationship(root, path, skips),
                 "annotation" | "extendedProperty" => {}
@@ -352,7 +352,7 @@ impl Loader {
     }
 
     fn load_expressions_tmdl(&mut self, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<()> {
-        for root in &parse_file(path)? {
+        for root in &parse_file(path, skips)? {
             match root.key.as_str() {
                 "expression" => self
                     .database
@@ -379,7 +379,7 @@ impl Loader {
         // A .tmdl file this crate does not know by name: known objects are
         // still mapped (TMDL allows any object in any file); anything else is
         // drift worth a notice.
-        for root in &parse_file(path)? {
+        for root in &parse_file(path, skips)? {
             match root.key.as_str() {
                 "table" => self.add_table(path, root.line, map_table(root, path, skips), skips),
                 "relationship" => self.add_relationship(root, path, skips),
@@ -427,7 +427,7 @@ impl Loader {
                 );
                 continue;
             }
-            for root in &parse_file(&path)? {
+            for root in &parse_file(&path, skips)? {
                 match root.key.as_str() {
                     "table" => {
                         self.add_table(&path, root.line, map_table(root, &path, skips), skips)
@@ -468,7 +468,7 @@ impl Loader {
                 );
                 continue;
             }
-            for root in &parse_file(&path)? {
+            for root in &parse_file(&path, skips)? {
                 match root.key.as_str() {
                     "role" => self.database.roles.push(map_role(root, &path, skips)),
                     "annotation" | "extendedProperty" => {}
@@ -559,9 +559,9 @@ fn sorted_entries(dir: &Path) -> Result<Vec<(String, PathBuf, bool)>> {
 }
 
 /// Reads and parses one `.tmdl` file into its root nodes.
-fn parse_file(path: &Path) -> Result<Vec<Node>> {
+fn parse_file(path: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Node>> {
     let text = fs::read_to_string(path)?;
-    let nodes = parse_document(&text, path)?;
+    let nodes = parse_document(&text, path, skips)?;
     validate(&nodes, path)?;
     Ok(nodes)
 }
@@ -614,8 +614,10 @@ enum NodeValue {
 /// Parses a TMDL document into its root nodes.
 ///
 /// Every non-blank, non-`///` line becomes a node; nesting follows tab depth.
-/// Fails only when a line cannot be tokenized at all.
-fn parse_document(text: &str, path: &Path) -> Result<Vec<Node>> {
+/// A line indented with spaces is placed by its descriptor or skipped, with a
+/// notice either way (see [`TreeBuilder::place_spaced`]). Fails only when a
+/// line cannot be tokenized at all.
+fn parse_document(text: &str, path: &Path, skips: &mut Vec<SkipNotice>) -> Result<Vec<Node>> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines: Vec<&str> = text
         .split('\n')
@@ -626,7 +628,7 @@ fn parse_document(text: &str, path: &Path) -> Result<Vec<Node>> {
         stack: Vec::new(),
         block: None,
     };
-    builder.run(&lines, path)?;
+    builder.run(&lines, path, skips)?;
     Ok(builder.roots)
 }
 
@@ -653,13 +655,23 @@ struct Block {
     fence: Option<usize>,
 }
 
+/// Where [`TreeBuilder::place_spaced`] puts a line indented with spaces.
+enum Placement {
+    /// Its tab depth is already where it belongs.
+    Unchanged,
+    /// Read it at this depth instead.
+    At(usize),
+    /// Skip it.
+    Unplaceable,
+}
+
 /// The TMDL verbatim-expression delimiter.
 const FENCE: &str = "```";
 
 impl TreeBuilder {
-    fn run(&mut self, lines: &[&str], path: &Path) -> Result<()> {
+    fn run(&mut self, lines: &[&str], path: &Path, skips: &mut Vec<SkipNotice>) -> Result<()> {
         for (index, raw) in lines.iter().enumerate() {
-            let depth = tab_depth(raw);
+            let mut depth = tab_depth(raw);
 
             let absorbed = match self.block.as_mut() {
                 // A fenced block takes every line verbatim up to its closing
@@ -721,6 +733,44 @@ impl TreeBuilder {
                 line: index + 1,
                 children: Vec::new(),
             };
+
+            // An indent that starts with a space makes the tab depth
+            // meaningless (spaces after the tabs are content, as before). Left
+            // as is, a hand-edited `    measure X = 1` would become a root
+            // that swallows the rest of its table.
+            if raw.starts_with(' ') {
+                match self.place_spaced(&node.key, depth) {
+                    Placement::Unchanged => {}
+                    Placement::At(placed) => {
+                        notice(
+                            skips,
+                            path,
+                            Some(index + 1),
+                            SkipKind::MalformedValue,
+                            format!(
+                                "'{}' is indented with spaces (TMDL indents with tabs); \
+                                 read at tab depth {placed}",
+                                node.key
+                            ),
+                        );
+                        depth = placed;
+                    }
+                    Placement::Unplaceable => {
+                        notice(
+                            skips,
+                            path,
+                            Some(index + 1),
+                            SkipKind::UnknownObject,
+                            format!(
+                                "'{}' is indented with spaces (TMDL indents with tabs) \
+                                 and could not be placed; line skipped",
+                                node.key
+                            ),
+                        );
+                        continue;
+                    }
+                }
+            }
 
             if line.equals_form {
                 let value = line.value.unwrap_or_default();
@@ -792,6 +842,59 @@ impl TreeBuilder {
             self.attach(node);
         }
         Ok(())
+    }
+
+    /// Where a line indented with spaces belongs. Its tab depth is untrustworthy,
+    /// so an object descriptor is placed by the schema instead: a root object
+    /// at depth 0, a table member one level under the nearest open table, and
+    /// so on. A line whose tab depth already matches that stays silent. Any
+    /// other line (a property, an unknown key, or a member with no open parent)
+    /// cannot be placed without guessing an indent width, so it is skipped
+    /// alone rather than being allowed to restructure the lines after it.
+    fn place_spaced(&self, key: &str, depth: usize) -> Placement {
+        const ROOTS: &[&str] = &[
+            "table",
+            "role",
+            "relationship",
+            "expression",
+            "function",
+            "model",
+            "database",
+        ];
+        let parents: &[&str] = match key {
+            _ if ROOTS.contains(&key) => {
+                return if depth == 0 {
+                    Placement::Unchanged
+                } else {
+                    Placement::At(0)
+                };
+            }
+            "measure" | "column" | "hierarchy" | "partition" | "calculationGroup" | "calendar"
+            | "refreshPolicy" => &["table"],
+            "level" => &["hierarchy"],
+            "calculationItem" => &["calculationGroup"],
+            "kpi" => &["measure"],
+            "variation" => &["column"],
+            "tablePermission" => &["role"],
+            "columnPermission" => &["tablePermission", "role"],
+            _ => {
+                return if self.stack.is_empty() && depth == 0 {
+                    Placement::Unchanged
+                } else {
+                    Placement::Unplaceable
+                };
+            }
+        };
+        match self
+            .stack
+            .iter()
+            .rev()
+            .find(|(_, open)| parents.contains(&open.key.as_str()))
+        {
+            Some((parent, _)) if parent + 1 == depth => Placement::Unchanged,
+            Some((parent, _)) => Placement::At(parent + 1),
+            None => Placement::Unplaceable,
+        }
     }
 
     /// Pushes a node at `depth`, closing everything at or above that depth.
@@ -2024,7 +2127,7 @@ mod tests {
     use rstest::rstest;
 
     fn parse(text: &str) -> Vec<Node> {
-        parse_document(text, Path::new("test.tmdl")).expect("valid document")
+        parse_document(text, Path::new("test.tmdl"), &mut Vec::new()).expect("valid document")
     }
 
     fn map_one(text: &str, key: &str) -> Node {
@@ -2059,6 +2162,68 @@ mod tests {
             assert_eq!(measure.value, NodeValue::Inline("1".to_string()));
             assert_eq!(measure.children[0].key, "isHidden");
             assert_eq!(measure.children[0].value, NodeValue::None);
+        }
+
+        fn parse_with_skips(text: &str) -> (Vec<Node>, Vec<SkipNotice>) {
+            let mut skips = Vec::new();
+            let roots =
+                parse_document(text, Path::new("test.tmdl"), &mut skips).expect("valid document");
+            (roots, skips)
+        }
+
+        /// A hand-edited member indented with spaces has tab depth 0. Read
+        /// literally it would become a root and swallow the rest of its table;
+        /// instead it is placed under the open table, with a notice.
+        #[test]
+        fn places_a_space_indented_member_under_its_table() {
+            let (roots, skips) = parse_with_skips(
+                "table Sales\n\tmeasure A = 1\n\t\tlineageTag: a\n    measure 'Try Me' = 1\n\t\tformatString: 0\n\tcolumn C\n",
+            );
+            assert_eq!(roots.len(), 1, "no stray root: {roots:?}");
+            let keys: Vec<(&str, Option<&str>)> = roots[0]
+                .children
+                .iter()
+                .map(|child| (child.key.as_str(), child.name.as_deref()))
+                .collect();
+            assert_eq!(
+                keys,
+                [
+                    ("measure", Some("A")),
+                    ("measure", Some("'Try Me'")),
+                    ("column", Some("C")),
+                ]
+            );
+            assert_eq!(roots[0].children[1].children[0].key, "formatString");
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+            assert_eq!(skips[0].location.as_deref(), Some("line 4"));
+            assert!(
+                skips[0].detail.contains("indented with spaces"),
+                "{skips:?}"
+            );
+        }
+
+        /// A property's parent is not knowable from its key: the line is
+        /// skipped alone, and the lines after it keep their structure.
+        #[test]
+        fn skips_an_unplaceable_space_indented_line_alone() {
+            let (roots, skips) =
+                parse_with_skips("table Sales\n\tmeasure A = 1\n    isHidden\n\tcolumn C\n");
+            assert_eq!(roots.len(), 1);
+            assert_eq!(roots[0].children.len(), 2, "{roots:?}");
+            assert!(roots[0].children[0].children.is_empty());
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::UnknownObject);
+        }
+
+        /// Spaces after the tabs were always content-level noise and stay
+        /// silent; a space-indented object already at its depth does too.
+        #[test]
+        fn leaves_tab_led_and_correctly_placed_lines_alone() {
+            let (roots, skips) = parse_with_skips("  table Sales\n\t  measure A = 1\n");
+            assert_eq!(roots.len(), 1);
+            assert_eq!(roots[0].children.len(), 1);
+            assert!(skips.is_empty(), "{skips:?}");
         }
 
         #[rstest]
@@ -2245,7 +2410,7 @@ mod tests {
 
         #[test]
         fn rejects_unparsable_lines() {
-            let error = parse_document("= broken\n", Path::new("test.tmdl"));
+            let error = parse_document("= broken\n", Path::new("test.tmdl"), &mut Vec::new());
             assert!(error.is_err());
         }
 

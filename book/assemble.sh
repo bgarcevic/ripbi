@@ -40,15 +40,20 @@ rm -rf "$SRC"
 mkdir -p "$SRC"
 
 cp "$MANUAL"/*.md "$SRC"/
+# Terminal recordings (scripts/record_demos.py). The canonical docs reach them
+# at ../../../docs/media/; the book serves them from media/.
+cp -R docs/media "$SRC"/media
 cp CHANGELOG.md "$SRC"/changelog.md
 
 # The canonical docs link repo files relatively — the cli doc's golden test
 # baselines and the core docs' source definitions ([`BindingRef`] et al).
 # The book ships without the repo, so repoint those links at GitHub.
-sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+sed -e "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+    -e "s|](\.\./\.\./\.\./docs/media/|](media/|g" \
   crates/ripbi-cli/docs/output.md > "$SRC"/output.md
 
-sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+sed -e "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+    -e "s|](\.\./\.\./\.\./docs/media/|](media/|g" \
   crates/ripbi-cli/docs/deps.md > "$SRC"/deps.md
 
 sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \

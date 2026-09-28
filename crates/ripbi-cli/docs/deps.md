@@ -20,6 +20,8 @@ formats, and exit codes.
 
 <!-- Maintainers: deps.rs and deps/render.rs implement this contract. -->
 
+![rib deps --impact for the Profit % measure on Sales: no model object uses it, and three visuals on one report page bind it](../../../docs/media/deps.svg)
+
 ## Command forms
 
 ```
@@ -166,7 +168,7 @@ Reports
 The projection rules: a node on the current path prints `↺ cycle`; a node expanded
 anywhere earlier prints `↩ already shown` instead of duplicating its subtree; children
 are identity-sorted. Meaning never depends on colour — the markers are characters, and
-the TTY/`NO_COLOR`/`TERM=dumb`/`--no-color` rules are scan's.
+the TTY/`CLICOLOR_FORCE`/`NO_COLOR`/`TERM=dumb`/`--no-color` rules are scan's.
 
 When the tree would flood the terminal, the human view stops expanding at a fixed
 budget, marks each cut branch with `… N additional branches`, and closes with the

@@ -1,6 +1,7 @@
 //! ANSI styling, gated in one place per `docs/cli-ux-guidelines.md`: color is
-//! on only when the target stream is a TTY and the user has not disabled it
-//! via `--no-color`, `NO_COLOR`, or `TERM=dumb`.
+//! on only when the target stream is a TTY (or `CLICOLOR_FORCE` asks for it
+//! anyway) and the user has not disabled it via `--no-color`, `NO_COLOR`, or
+//! `TERM=dumb`.
 //!
 //! The palette is "pruning shears" — the tree-shaker metaphor in four inks:
 //! rust for dead wood (unused findings), moss for living wood (a clean scan),
@@ -95,15 +96,18 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// Detects color for one stream: on only when the stream is a TTY and no
-    /// disable switch fired.
+    /// Detects color for one stream: on only when the stream is a TTY — or
+    /// `CLICOLOR_FORCE` is set to anything but `0`, for CI logs and recordings
+    /// that render ANSI — and no disable switch fired. The disable switches
+    /// always win over the force.
     #[must_use]
     pub fn detect(stream_is_tty: bool, no_color_flag: bool) -> Self {
         let env = |name: &str| std::env::var_os(name);
+        let forced = env("CLICOLOR_FORCE").is_some_and(|v| !v.is_empty() && v != "0");
         let no_color_env = env("NO_COLOR").is_some_and(|v| !v.is_empty());
         let dumb_term = env("TERM").is_some_and(|v| v == "dumb");
         Self::resolve(
-            stream_is_tty,
+            stream_is_tty || forced,
             no_color_flag,
             no_color_env,
             dumb_term,

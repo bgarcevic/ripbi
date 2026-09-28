@@ -15,6 +15,8 @@ reports), TMSL `model.bim` files, `.pbit` templates, `.pbix` files (including
 the embedded model, whose metadata is decoded from the compressed `DataModel`),
 and standalone `.abf` backups.
 
+![ripbi scan --summary on the AdventureWorks sample: 130 objects, 74 reachable, 56 unused, with per-type counts and the worst tables](media/scan.svg)
+
 > This book is built from
 > [`main`](https://github.com/bgarcevic/ripbi/commits/main) and may document
 > changes that have not shipped in a release yet.

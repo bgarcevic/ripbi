@@ -87,6 +87,18 @@ Install the mdBook version pinned in `.github/workflows/pages.yml` — mdBook
 with "Unable to parse RenderContext". The Pages workflow builds the book on
 every PR that touches docs, and a broken internal link fails that build.
 
+The terminal recordings in `docs/media/` (used by the README and the user
+guide) are animated SVGs generated from real runs against the samples. When a
+change alters a recorded command's output, regenerate them:
+
+```sh
+python scripts/record_demos.py
+```
+
+It builds a release binary, replays each demo in a throwaway git repository,
+and rewrites the SVGs; the output is byte-stable, so an unchanged recording
+produces no diff.
+
 ## Contribution norms
 
 **Tests for behavior changes.** Unit tests live inline as `#[cfg(test)]`
