@@ -53,7 +53,7 @@ pub fn run_in(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> i
         Ok(()) => EXIT_CLEAN,
         Err(error) => {
             if !args.quiet {
-                let _ = writeln!(streams.err, "{} {}", palette.red("error:"), error.message);
+                let _ = writeln!(streams.err, "{} {}", palette.alert("error:"), error.message);
                 if let Some(hint) = &error.hint {
                     let _ = writeln!(streams.err, "hint: {hint}");
                 }

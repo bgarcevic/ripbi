@@ -366,7 +366,7 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
     writeln!(
         out,
         "{}",
-        palette.green(&format!(
+        palette.ok(&format!(
             "Fixed since {} ({})",
             compare.root,
             compare.fixed.len()
@@ -381,7 +381,7 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
         )?;
     }
     if fixed_uncertain(report) {
-        writeln!(out, "  {}", palette.yellow(FIXED_CAVEAT))?;
+        writeln!(out, "  {}", palette.warn(FIXED_CAVEAT))?;
     }
     writeln!(out)
 }
@@ -431,7 +431,7 @@ fn write_broken_artifacts(
     writeln!(
         out,
         "{}",
-        palette.red(&format!(
+        palette.alert(&format!(
             "Broken artifacts ({})",
             report.broken_artifacts.len()
         ))
@@ -464,7 +464,7 @@ fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput)
     writeln!(
         out,
         "{}",
-        palette.red(&format!("Broken visual bindings ({})", report.broken.len()))
+        palette.alert(&format!("Broken visual bindings ({})", report.broken.len()))
     )?;
     for binding in &report.broken {
         writeln!(out, "  {}", binding.target)?;
@@ -527,7 +527,7 @@ fn write_auto_date_time(
         out,
         "{}",
         if actionable {
-            palette.yellow(&header)
+            palette.warn(&header)
         } else {
             palette.bold(&header)
         }
@@ -653,7 +653,7 @@ pub fn human_summary(
         writeln!(
             out,
             "{}: {}",
-            palette.red("Broken visual bindings"),
+            palette.alert("Broken visual bindings"),
             report.broken.len()
         )?;
     }
@@ -661,7 +661,7 @@ pub fn human_summary(
         writeln!(
             out,
             "{}: {}",
-            palette.red("Broken artifacts"),
+            palette.alert("Broken artifacts"),
             report.broken_artifacts.len()
         )?;
     }
@@ -669,11 +669,11 @@ pub fn human_summary(
         writeln!(
             out,
             "{}: {}",
-            palette.green(&format!("Fixed since {}", compare.root)),
+            palette.ok(&format!("Fixed since {}", compare.root)),
             compare.fixed.len()
         )?;
         if fixed_uncertain(report) {
-            writeln!(out, "  {}", palette.yellow(FIXED_CAVEAT))?;
+            writeln!(out, "  {}", palette.warn(FIXED_CAVEAT))?;
         }
     }
     if report.auto_date_time.is_empty() {
@@ -732,9 +732,9 @@ fn write_summary(
     report: &ScanOutput,
 ) -> io::Result<()> {
     let unused_text = if report.findings.is_empty() {
-        palette.green("0 unused")
+        palette.ok("0 unused")
     } else {
-        palette.yellow(&format!("{} unused", report.findings.len()))
+        palette.warn(&format!("{} unused", report.findings.len()))
     };
     writeln!(
         out,
@@ -768,63 +768,59 @@ fn write_summary(
             storage.objects,
         )?;
     }
+    let mut notes = Vec::new();
     if let Some(compare) = &report.compare {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} findings already in {})",
             compare.existing, compare.root
-        )?;
+        ));
     }
     if report.ignored > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} findings suppressed by [scan].ignore)",
             report.ignored
-        )?;
+        ));
     }
     if report.filtered_out > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} unused hidden by type filters)",
             report.filtered_out
-        )?;
+        ));
     }
     if report.broken_hidden > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} broken-visual bindings hidden by type filters)",
             report.broken_hidden
-        )?;
+        ));
     }
     if report.broken_artifacts_hidden > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} broken artifacts hidden by type filters)",
             report.broken_artifacts_hidden
-        )?;
+        ));
     }
     if report.broken_suppressed > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} possible broken-visual bindings suppressed — the model ingest \
              reported skips, listed on stderr; --strict fails on those skips)",
             report.broken_suppressed
-        )?;
+        ));
     }
     if report.broken_artifacts_suppressed > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} possible broken artifacts suppressed — the model ingest reported skips, \
              listed on stderr; --strict fails on those skips)",
             report.broken_artifacts_suppressed
-        )?;
+        ));
     }
     if report.machinery_members > 0 {
-        writeln!(
-            out,
+        notes.push(format!(
             "({} unused auto date/time members covered by their tables' verdicts)",
             report.machinery_members
-        )?;
+        ));
+    }
+    for note in &notes {
+        writeln!(out, "{}", palette.muted(note))?;
     }
     writeln!(out)
 }

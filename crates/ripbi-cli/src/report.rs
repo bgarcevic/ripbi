@@ -20,6 +20,7 @@ use crate::config;
 use crate::discover;
 use crate::error::ScanError;
 use crate::glob;
+use crate::progress::{self, Progress, item_label};
 use crate::render::SkipNoticeOut;
 use crate::report::render::{
     FieldNode, FilterNode, Inventory, PageNode, ReportNode, UnresolvedNode, UsedRow, VisualNode,
@@ -64,7 +65,7 @@ pub fn run_in(args: &ReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
                 let _ = writeln!(
                     streams.err,
                     "{} {}",
-                    palette_err.red("error:"),
+                    palette_err.alert("error:"),
                     error.message
                 );
                 if let Some(hint) = &error.hint {
@@ -83,6 +84,24 @@ fn inventory(
     palette_err: &Palette,
 ) -> Result<i32, ScanError> {
     let palette_out = Palette::detect(streams.stdout_is_tty, args.no_color);
+    // The stage ticker (human mode on a terminal only), started before
+    // target resolution so a slow discovery walk has motion too. For the
+    // whole run stderr is the ticker-aware writer: it erases the transient
+    // line before every write, so no note lands on top of it.
+    let progress = Progress::start(
+        Progress::wanted(streams, palette_err, args.quiet, args.json || args.plain),
+        *palette_err,
+        progress::REPORT,
+    );
+    let mut err = progress.writer(streams.err);
+    let streams = &mut Streams {
+        out: &mut *streams.out,
+        err: &mut err,
+        input: &mut *streams.input,
+        stdin_is_tty: streams.stdin_is_tty,
+        stdout_is_tty: streams.stdout_is_tty,
+        stderr_is_tty: streams.stderr_is_tty,
+    };
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 
@@ -115,6 +134,7 @@ fn inventory(
         streams,
         palette_err,
     );
+    progress.stage(1);
     let (model_item, report_paths, announce) = match resolved {
         Ok((paired, walk, announce)) => {
             let report_paths = dedupe(paired.reports);
@@ -218,6 +238,7 @@ fn inventory(
         })?),
         None => None,
     };
+    progress.stage(2);
     let mut skips: Vec<SkipNoticeOut> = Vec::new();
     if let Some(ingested) = &model {
         skips.extend(ingested.skips.iter().map(skip_notice_out));
@@ -231,6 +252,7 @@ fn inventory(
         reports.push(ingested.value);
     }
 
+    progress.stage(3);
     let (graph, hides_a_name) = match &model {
         Some(ingested) => {
             // Issue #60's precision bar, shared with `scan`: model-side
@@ -249,6 +271,7 @@ fn inventory(
         None => (None, false),
     };
 
+    progress.stage(4);
     let mut nodes = Vec::new();
     for (path, report) in report_paths.iter().zip(&reports) {
         // The report's broken *live* bindings. Attribution joins on the
@@ -282,6 +305,14 @@ fn inventory(
         let graph = graph.as_ref().expect("--used is refused without a model");
         output.used = used_rows(graph, args);
     }
+    let inventoried = match (&model_item, report_paths.as_slice()) {
+        (Some(model), _) => item_label(model),
+        (None, [only]) => item_label(only),
+        (None, paths) => format!("{} reports", paths.len()),
+    };
+    progress
+        .finish(streams.err, Some(&inventoried))
+        .map_err(ScanError::from)?;
 
     if !args.quiet {
         if args.json {

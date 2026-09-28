@@ -142,7 +142,7 @@ pub fn run(args: &UpdateArgs, streams: &mut Streams<'_>) -> i32 {
                 let _ = writeln!(
                     streams.err,
                     "{} cannot determine the running executable: {error}",
-                    palette.red("error:")
+                    palette.alert("error:")
                 );
             }
             return EXIT_ERROR;
@@ -180,7 +180,7 @@ pub fn run_in_with_home(
         Ok(code) => code,
         Err(error) => {
             if !args.quiet {
-                let _ = writeln!(streams.err, "{} {}", palette.red("error:"), error.message);
+                let _ = writeln!(streams.err, "{} {}", palette.alert("error:"), error.message);
                 if let Some(hint) = &error.hint {
                     let _ = writeln!(streams.err, "hint: {hint}");
                 }

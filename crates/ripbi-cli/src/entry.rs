@@ -31,7 +31,9 @@ pub fn run() -> std::process::ExitCode {
         Command::__UpdateCheck(_) => true,
     };
     let mut stdout = io::stdout().lock();
-    let mut stderr = io::stderr().lock();
+    // Unlocked: the scan's stage ticker (`progress.rs`) draws from its own
+    // thread, and a lock held for the whole run would block it forever.
+    let mut stderr = io::stderr();
     let mut stdin = io::stdin().lock();
     let mut streams = Streams {
         out: &mut stdout,

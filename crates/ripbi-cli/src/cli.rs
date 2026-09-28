@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
 #[derive(Parser)]
-#[command(name = "ripbi", version)]
+#[command(name = "ripbi", version, styles = crate::style::help_styles())]
 pub struct Cli {
     /// The subcommand to run.
     #[command(subcommand)]
