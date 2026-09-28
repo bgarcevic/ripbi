@@ -326,7 +326,7 @@ pub struct ReportArgs {
 }
 
 /// `ripbi scan` arguments.
-#[derive(Args, Debug, Default)]
+#[derive(Args, Debug, Default, Clone)]
 pub struct ScanArgs {
     /// A .pbip, .pbix, .pbit, .abf, model.bim, project folder, .SemanticModel, or .Report.
     pub path: Option<PathBuf>,
@@ -395,6 +395,10 @@ pub struct ScanArgs {
     /// Storage stats from an .abf, .pbix, or .vpax export; `none` skips .pbi/cache.abf.
     #[arg(long, value_name = "PATH")]
     pub stats_from: Option<PathBuf>,
+
+    /// Rerun this scan in another checkout; report and gate only on findings new since it.
+    #[arg(long, value_name = "DIR")]
+    pub compare_root: Option<PathBuf>,
 }
 
 /// How `scan` orders its unused findings.

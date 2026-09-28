@@ -9,6 +9,7 @@ use std::io;
 use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
 use serde::Serialize;
 
+use crate::compare::Entry;
 use crate::style::Palette;
 
 /// Everything a scan wants to say on stdout, as presentation-ready data.
@@ -84,6 +85,20 @@ pub struct ScanOutput {
     /// Where the storage statistics came from when the model has no catalog of
     /// its own: `--stats-from`, `[scan].stats_from`, or `.pbi/cache.abf` (issue #129).
     pub stats_source: Option<String>,
+    /// The `--compare-root` comparison (issue #141); `None` without the flag.
+    pub compare: Option<CompareOut>,
+}
+
+/// How a scan compared against the same scan in another checkout (issue #141).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompareOut {
+    /// The other checkout, as given.
+    pub root: String,
+    /// Reportable findings that already existed there: left out of every
+    /// list and of the exit code.
+    pub existing: usize,
+    /// Findings of the other checkout this scan no longer detects at all.
+    pub fixed: Vec<Entry>,
 }
 
 /// The on-disk cost of the reported findings (issue #122).
@@ -335,7 +350,37 @@ pub fn human(
     }
     write_broken_artifacts(out, palette, report)?;
     write_broken(out, palette, report)?;
-    write_auto_date_time(out, palette, report, show_power_query)
+    write_auto_date_time(out, palette, report, show_power_query)?;
+    write_fixed(out, palette, report)
+}
+
+/// The `Fixed since <root>` section: findings of the other checkout that are
+/// gone here.
+fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
+    let Some(compare) = &report.compare else {
+        return Ok(());
+    };
+    if compare.fixed.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{}",
+        palette.green(&format!(
+            "Fixed since {} ({})",
+            compare.root,
+            compare.fixed.len()
+        ))
+    )?;
+    for entry in &compare.fixed {
+        writeln!(
+            out,
+            "  {}  {}",
+            entry.id,
+            palette.dim(&entry.kind.replace('_', " "))
+        )?;
+    }
+    writeln!(out)
 }
 
 /// The placeholder line for an empty findings list. Under a lone `--broken`
@@ -597,6 +642,14 @@ pub fn human_summary(
             report.broken_artifacts.len()
         )?;
     }
+    if let Some(compare) = report.compare.as_ref().filter(|c| !c.fixed.is_empty()) {
+        writeln!(
+            out,
+            "{}: {}",
+            palette.green(&format!("Fixed since {}", compare.root)),
+            compare.fixed.len()
+        )?;
+    }
     if report.auto_date_time.is_empty() {
         return Ok(());
     }
@@ -687,6 +740,13 @@ fn write_summary(
             "Unused storage: {approx} {}{of} {place} ({} objects with size data{note})",
             palette.bold(&format_bytes(storage.bytes)),
             storage.objects,
+        )?;
+    }
+    if let Some(compare) = &report.compare {
+        writeln!(
+            out,
+            "({} findings already in {})",
+            compare.existing, compare.root
         )?;
     }
     if report.ignored > 0 {
@@ -853,6 +913,11 @@ pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     for row in &report.auto_date_time {
         writeln!(out, "auto_date_time:{}\t{}", row.verdict, row.id)?;
     }
+    if let Some(compare) = &report.compare {
+        for entry in &compare.fixed {
+            writeln!(out, "fixed:{}\t{}", entry.kind, entry.id)?;
+        }
+    }
     Ok(())
 }
 
@@ -936,6 +1001,11 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 })
                 .collect(),
         },
+        compare: report.compare.as_ref().map(|compare| JsonCompare {
+            root: compare.root.clone(),
+            existing: compare.existing,
+            fixed: compare.fixed.clone(),
+        }),
     };
     serde_json::to_writer_pretty(&mut *out, &payload)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
@@ -955,6 +1025,19 @@ struct JsonReport {
     broken_artifacts: Vec<JsonBrokenArtifact>,
     auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
+    /// The `--compare-root` comparison (issue #141); absent without the flag,
+    /// so other scans' output is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compare: Option<JsonCompare>,
+}
+
+#[derive(Serialize)]
+struct JsonCompare {
+    root: String,
+    /// Findings that already existed there, left out of every array above.
+    existing: usize,
+    /// Findings of the other checkout this scan no longer detects.
+    fixed: Vec<Entry>,
 }
 
 #[derive(Serialize)]
@@ -1315,6 +1398,7 @@ mod tests {
             model_bytes: None,
             unused_storage: None,
             stats_source: None,
+            compare: None,
         }
     }
 

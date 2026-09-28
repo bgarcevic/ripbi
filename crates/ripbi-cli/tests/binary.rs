@@ -418,3 +418,47 @@ fn the_update_check_child_is_hidden_from_help() {
         .success()
         .stdout(predicate::str::contains("__update-check").not());
 }
+
+/// `--compare-root` (issue #141) as CI runs it: relative PATH and root, from
+/// the checkout's own folder. The PATH must be rebased onto the root for the
+/// "before" pass — scanning the same checkout twice would find nothing new.
+#[test]
+fn compare_root_rebases_a_relative_path_onto_the_other_checkout() {
+    fn copy(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).expect("mkdir");
+        for entry in std::fs::read_dir(from).expect("read fixture") {
+            let entry = entry.expect("entry");
+            let target = to.join(entry.file_name());
+            if entry.path().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).expect("copy");
+            }
+        }
+    }
+    let fixture =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini-pbip");
+    let root = std::env::temp_dir().join(format!("ripbi-bin-compare-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    copy(&fixture, &root.join("base"));
+    copy(&fixture, &root.join("head"));
+    let sales = root.join("head/Mini.SemanticModel/definition/tables/Sales.tmdl");
+    let text = std::fs::read_to_string(&sales).expect("read");
+    std::fs::write(
+        &sales,
+        text.replace(
+            "\tcolumn Amount",
+            "\tmeasure 'Draft KPI' = 1\n\n\tcolumn Amount",
+        ),
+    )
+    .expect("write");
+
+    let assert = ripbi()
+        .current_dir(root.join("head"))
+        .args(["scan", "Mini.pbip", "--compare-root", "../base", "--plain"])
+        .assert();
+    let _ = std::fs::remove_dir_all(&root);
+    assert
+        .code(1)
+        .stdout(predicate::eq("measure\t'Sales'[Draft KPI]\n"));
+}

@@ -132,6 +132,10 @@ Ignored 1 report(s) bound to other models: HR.Report
 | `1` | Unused objects found, auto date/time machinery no report binds — or, under `--broken`, broken visual bindings or DAX artifacts found |
 | `2` | Error: usage, bad PATH, model-only input, a `--model` search with no connected reports (unless `--allow-no-reports` skips it), unsupported archive, ingestion failure, ambiguous discovery off-TTY — or any skip notice under `--strict` |
 
+Under `--compare-root`, findings that already existed in the other checkout are not
+reported, so they cannot fail the run either (see
+[Comparing against another checkout](#comparing-against-another-checkout)).
+
 The exit code describes what was *reported*: findings hidden by type selection, and an
 Auto date/time section hidden because `--type table` was not selected, cannot fail the
 run. Broken visual bindings and DAX artifacts (issues #60/#84) are advisory kinds: they are
@@ -155,6 +159,7 @@ unaffected.
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
 | `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
+| `--compare-root <DIR>` | Rerun the same scan in another checkout (the base branch, a previous release) and report and gate on only the findings that did not exist there; findings gone since are listed as fixed. Exit `2` when `DIR` is not a folder. See [Comparing against another checkout](#comparing-against-another-checkout) |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -327,6 +332,83 @@ Columns (28)
   trade-off: the recipe also hides the
   `in use` tables' advice, which is the part worth reading when you plan the migration
   to a real date table.
+
+## Comparing against another checkout
+
+The first scan of a long-lived model can report hundreds of findings, which makes a
+CI gate on it red from day one. `--compare-root` gates on what a change *introduces*
+instead (issue #141): ripbi reruns the same scan in another checkout of the project,
+such as the pull request's base branch, and reports only the findings that did not
+exist there.
+
+```sh
+git worktree add ../base origin/main
+ripbi scan --compare-root ../base
+```
+
+- **The same scan, twice.** The other side gets the same PATH, `--model`, `--report`,
+  and flags. Relative paths are rebased onto `DIR`, so `ripbi scan Sales.pbip
+  --compare-root ../base` compares `Sales.pbip` with `../base/Sales.pbip`. Absolute
+  paths are used unchanged on both sides, for example a shared report folder outside
+  the repository. Discovery runs in `DIR`, and `DIR`'s own `ripbi.toml` applies there.
+  Every connected report is compared on both sides, so a change that removes a
+  report's last binding to a measure makes that measure a new finding.
+- **Git is not required.** ripbi compares two folders. How the other checkout gets
+  there is up to the pipeline: `git worktree`, a second clone, or a previous
+  release's `.pbix` stored at the same relative path.
+- **Matching.** A finding matches by kind and display id, compared
+  case-insensitively like the engine compares names. A broken binding also matches on
+  its reason and binding site, a report-level broken artifact on its report item's
+  name, and an auto date/time table on its verdict. File paths are never compared,
+  so the two checkouts can live anywhere. A renamed object reads as one new finding
+  plus one fixed.
+- **Existing findings** count every finding the other checkout's scan *detected*,
+  including ones its `[scan].ignore` or `--type` hid. So a finding is new only when it
+  truly did not exist there, and this checkout's own filters decide what is reported.
+  Existing findings are left out of every output mode and the exit code, like
+  `[scan].ignore` suppressions. The human modes count them under the summary line:
+  `(412 findings already in ../base)`. A dead auto date/time table's own finding goes
+  with its row.
+- **Fixed findings** are the other checkout's findings this scan no longer detects at
+  all, whether reported, ignored, filtered, or suppressed. A finding hidden by `--type`
+  is still detected, so it is not fixed. Human output lists them in a
+  `Fixed since <DIR> (N)` section at the end, `--summary` counts them, `--plain`
+  prints one `fixed:<type>\t<id>` record each, and `--json` lists them under
+  `compare.fixed`. Fixed findings never fail the run.
+- **Nothing to compare.** When the scan cannot run in `DIR` (a model this change
+  adds, say), a `Note: nothing to compare in …` on stderr says why, and every
+  finding is new. A `DIR` that is not a folder is exit `2`.
+
+### In CI
+
+GitHub Actions, on pull requests:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- run: curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | sh
+- run: git worktree add ../base "origin/${{ github.base_ref }}"
+- run: rib scan --compare-root ../base
+```
+
+Azure DevOps, on pull requests:
+
+```yaml
+steps:
+  - checkout: self
+    fetchDepth: 0
+  - script: |
+      curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | sh
+      echo "##vso[task.prependpath]$HOME/.local/bin"
+  - script: |
+      git worktree add ../base "origin/${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
+      rib scan --compare-root ../base
+```
+
+Accepting a finding means merging the change: once it is on the base branch, the next
+pull request compares against it. A finding meant to stay unused permanently belongs
+in `[scan].ignore`.
 
 ## Storage sizes
 
@@ -518,6 +600,10 @@ auto_date_time:dead	table 'DateTableTemplate_0039983e-…'
 For PBIX and `.abf` models, an unused finding with a size gains a third field, its
 bytes on disk (`column	'Opportunity'[Name]	25887`); the first two fields never change.
 
+Under `--compare-root`, one `fixed:<type>\t<id>` record follows per finding of the
+other checkout that is gone here (see
+[Comparing against another checkout](#comparing-against-another-checkout)).
+
 ## `--json`
 
 Pretty-printed JSON, stable field order, additive schema:
@@ -679,6 +765,15 @@ Pretty-printed JSON, stable field order, additive schema:
   `summary.model_bytes` is every data file in the model (in the storage source, when
   one is attached); `summary.stats_source` is that source's path (issue #129),
   absent for a PBIX or `.abf` model's own catalog.
+- `compare` (issue #141) is present only under `--compare-root`:
+  `{"root", "existing", "fixed"}`. `root` is the other checkout as given; `existing`
+  counts the reportable findings that already existed there, which are absent from
+  every array above and from the summary counts that mirror them; `fixed` lists the
+  other checkout's findings this scan no longer detects, as `{type, id}` plus
+  `reason`/`provenance` (broken bindings), `report` (report-level broken artifacts), or
+  `verdict` (auto date/time tables) where they apply (see
+  [Comparing against another checkout](#comparing-against-another-checkout)). Without
+  the flag the key is omitted, so other scans' output is unchanged.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
   `stale_state`, `opaque_source` (an M partition calls `Value.NativeQuery` or

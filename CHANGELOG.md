@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`scan --compare-root <DIR>`** (issue #141): reruns the same scan in another
+  checkout (the pull request's base branch, a previous release) and reports, and
+  exits `1` on, only the findings that did not exist there. A CI gate on an existing
+  model can start green and fail only on what a change introduces, with no file to
+  maintain: accepting a finding means merging it. Both sides compare every connected
+  report, so a report change that orphans a measure counts too. Findings match by
+  kind and display id, case-insensitively, never by path; findings gone since are
+  listed as fixed (a `Fixed since` section, `fixed:` records in `--plain`, a
+  `compare` object in `--json`). ripbi only compares folders; the pipeline provides
+  the other checkout (`git worktree add ../base origin/main`). Without the flag,
+  output is unchanged.
+
 ## [0.6.1] - 2026-09-28
 
 ### Added

@@ -12,13 +12,14 @@ use ripbi_core::ingest::{self, SkipKind, SkipNotice};
 use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
 use crate::cli::{ScanArgs, SortKey};
+use crate::compare::{self, Detected, Entry};
 use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
 use crate::render::{
-    self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, Finding, ScanOutput, SkipNoticeOut,
-    UnusedStorage, UsedByOut,
+    self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
+    SkipNoticeOut, UnusedStorage, UsedByOut,
 };
 use crate::style::Palette;
 
@@ -70,7 +71,7 @@ pub fn run(args: &ScanArgs, streams: &mut Streams<'_>) -> i32 {
 #[must_use = "the return value is the process exit code"]
 pub fn run_in(args: &ScanArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
     let palette_err = Palette::detect(streams.stderr_is_tty, args.no_color);
-    match scan(args, cwd, streams, &palette_err) {
+    match scan(args, cwd, streams, &palette_err, None) {
         Ok(code) => code,
         Err(error) => {
             if !args.quiet {
@@ -89,15 +90,24 @@ pub fn run_in(args: &ScanArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
     }
 }
 
+/// One scan. With `probe`, this is the silent "before" pass of
+/// `--compare-root` (issue #141): nothing is rendered, and every finding the
+/// scan detects is written to `probe` instead.
 fn scan(
     args: &ScanArgs,
     cwd: &Path,
     streams: &mut Streams<'_>,
     palette_err: &Palette,
+    probe: Option<&mut Detected>,
 ) -> Result<i32, ScanError> {
     let palette_out = Palette::detect(streams.stdout_is_tty, args.no_color);
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
+    // The comparison runs first, so a mistyped root fails before a long scan.
+    let before = match &args.compare_root {
+        Some(root) => Some(scan_before(args, &cwd.join(root), streams.err)?),
+        None => None,
+    };
 
     // Report roots: --report flags replace the config's `reports`; a plain
     // folder among them becomes a search root in model mode, or when an
@@ -400,16 +410,44 @@ fn scan(
     // suppress; a dead table's own finding is filed under its row so the
     // verdict and the dead-chain note read together. Filed by object identity —
     // display ids are rendering, not keys.
+    //
+    // `--compare-root` bookkeeping (issue #141) runs alongside every bucket
+    // below: `detected` fingerprints everything the scan found, before any
+    // filter, so a finding of the other checkout is "fixed" only when it is
+    // truly gone here; and a reportable finding that already existed there is
+    // counted in `existing` and dropped, exactly like an ignored one.
+    let mut detected = Detected::new();
+    let mut existing = 0;
+    let existed = |entry: &Entry| {
+        before
+            .as_ref()
+            .is_some_and(|before| before.contains_key(&entry.key()))
+    };
     let mut auto_date_time: Vec<AutoDateTimeRow> = Vec::new();
     let mut row_by_table: HashMap<&ObjectId, usize> = HashMap::new();
+    // Tables whose row already existed: their own dead-table finding goes
+    // with the row, never back into the generic list.
+    let mut existing_tables: HashSet<&ObjectId> = HashSet::new();
     for verdict in &verdicts {
+        let label = render::verdict_of(verdict.verdict);
+        let id = verdict.id.to_string();
+        // An in-use table is advice, not a finding: nothing to accept.
+        let entry = (label != "in_use").then(|| Entry::auto_date_time(&id, label));
+        if let Some(entry) = &entry {
+            compare::insert(&mut detected, entry);
+        }
         if !section_visible || is_ignored(&verdict.id, patterns) {
+            continue;
+        }
+        if entry.as_ref().is_some_and(existed) {
+            existing += 1;
+            existing_tables.insert(&verdict.id);
             continue;
         }
         row_by_table.insert(&verdict.id, auto_date_time.len());
         auto_date_time.push(AutoDateTimeRow {
-            verdict: render::verdict_of(verdict.verdict),
-            id: verdict.id.to_string(),
+            verdict: label,
+            id,
             source_column: verdict.source_column.as_ref().map(ToString::to_string),
             finding: None,
         });
@@ -428,22 +466,35 @@ fn scan(
             machinery_members += 1;
             continue;
         }
+        if existing_tables.contains(&finding.id) {
+            continue;
+        }
+        let kind = render::kind_of(&finding.id);
+        let display = finding.id.to_string();
+        let section_row = row_by_table.get(&finding.id).copied();
+        // A dead auto date/time table's own finding is fingerprinted by its row.
+        let entry = section_row.is_none().then(|| Entry::unused(kind, &display));
+        if let Some(entry) = &entry {
+            compare::insert(&mut detected, entry);
+        }
         if is_ignored(&finding.id, patterns) {
             ignored += 1;
             continue;
         }
-        let kind = render::kind_of(&finding.id);
         if let Some(kinds) = &selected
             && !kinds.contains(kind)
         {
             filtered_out += 1;
             continue;
         }
-        let section_row = row_by_table.get(&finding.id).copied();
+        if entry.as_ref().is_some_and(existed) {
+            existing += 1;
+            continue;
+        }
         let id = &finding.id;
         let finding = Finding {
             kind,
-            id: finding.id.to_string(),
+            id: display,
             table: if want_table {
                 finding.id.owning_table().cloned()
             } else {
@@ -496,7 +547,11 @@ fn scan(
     let mut broken_hidden = 0;
     let mut broken_suppressed = 0;
     for binding in graph.broken_bindings() {
-        if is_ignored_display(&binding.target.to_string(), patterns) {
+        let target = binding.target.to_string();
+        let provenance = binding.edge.to_string();
+        let entry = Entry::broken_visual(&target, reason_code(&binding.reason), &provenance);
+        compare::insert(&mut detected, &entry);
+        if is_ignored_display(&target, patterns) {
             ignored += 1;
             continue;
         }
@@ -508,27 +563,27 @@ fn scan(
             broken_hidden += 1;
             continue;
         }
-        let (reason, bound_artifact, bound_artifact_report) = match &binding.reason {
+        if existed(&entry) {
+            existing += 1;
+            continue;
+        }
+        let reason = reason_code(&binding.reason);
+        let (bound_artifact, bound_artifact_report) = match &binding.reason {
             BrokenReason::BoundArtifactBroken {
                 artifact,
                 report_index,
             } => (
-                "bound_artifact_broken",
                 Some(artifact.to_string()),
                 report_index.map(|index| report_paths[index].display().to_string()),
             ),
-            BrokenReason::TableNotFound => ("table_not_found", None, None),
-            BrokenReason::FieldNotFound => ("field_not_found", None, None),
-            BrokenReason::MeasureNotFound => ("measure_not_found", None, None),
-            BrokenReason::HierarchyNotFound => ("hierarchy_not_found", None, None),
-            BrokenReason::LevelNotFound => ("level_not_found", None, None),
+            _ => (None, None),
         };
         broken.push(BrokenOut {
-            target: binding.target.to_string(),
+            target,
             reason,
             bound_artifact,
             bound_artifact_report,
-            provenance: binding.edge.to_string(),
+            provenance,
         });
     }
 
@@ -536,6 +591,16 @@ fn scan(
     let mut broken_artifacts_hidden = 0;
     let mut broken_artifacts_suppressed = 0;
     for artifact in graph.broken_artifacts() {
+        let id = artifact.id.to_string();
+        // The report *name*, never its path: two checkouts live in different
+        // folders.
+        let entry = Entry::broken_artifact(
+            &id,
+            artifact
+                .report_index
+                .map(|index| report_name(&report_paths[index])),
+        );
+        compare::insert(&mut detected, &entry);
         if is_ignored(&artifact.id, patterns) {
             ignored += 1;
             continue;
@@ -548,14 +613,23 @@ fn scan(
             broken_artifacts_hidden += 1;
             continue;
         }
+        if existed(&entry) {
+            existing += 1;
+            continue;
+        }
         broken_artifacts.push(BrokenArtifactOut {
-            id: artifact.id.to_string(),
+            id,
             kind: render::kind_of(&artifact.id),
             report: artifact
                 .report_index
                 .map(|index| report_paths[index].display().to_string()),
             unresolved_references: artifact.unresolved_references.clone(),
         });
+    }
+
+    if let Some(probe) = probe {
+        *probe = detected;
+        return Ok(EXIT_CLEAN);
     }
 
     let output = ScanOutput {
@@ -585,6 +659,14 @@ fn scan(
         model_bytes: model.value.storage_bytes,
         unused_storage,
         stats_source: stats_source.map(|path| path.display().to_string()),
+        compare: before
+            .as_ref()
+            .zip(args.compare_root.as_ref())
+            .map(|(before, root)| CompareOut {
+                root: root.display().to_string(),
+                existing,
+                fixed: compare::fixed(before, &detected),
+            }),
     };
 
     if !args.quiet {
@@ -1437,6 +1519,87 @@ fn unused_storage(
         }
     }
     total
+}
+
+/// The "before" pass of `--compare-root` (issue #141): the same scan, rerun
+/// silently in `root` — its own `ripbi.toml`, discovery, and pairing, with
+/// relative flag paths rebased onto it — returning every finding it detects.
+/// A checkout where the scan cannot run (a model this change adds, say) has
+/// nothing to compare against: that is a note, and every finding is new.
+fn scan_before(
+    args: &ScanArgs,
+    root: &Path,
+    err: &mut dyn io::Write,
+) -> Result<Detected, ScanError> {
+    if !root.is_dir() {
+        return Err(
+            ScanError::new(format!("--compare-root {} is not a folder", root.display())).with_hint(
+                "check out the base revision first, e.g. `git worktree add ../base origin/main`",
+            ),
+        );
+    }
+    let rebase = |path: &PathBuf| {
+        if path.is_absolute() {
+            path.clone()
+        } else {
+            root.join(path)
+        }
+    };
+    let before_args = ScanArgs {
+        path: args.path.as_ref().map(rebase),
+        model: args.model.as_ref().map(rebase),
+        reports: args.reports.iter().map(rebase).collect(),
+        quiet: true,
+        no_input: true,
+        compare_root: None,
+        // Sizes never change a verdict; skip the storage source entirely.
+        stats_from: Some(PathBuf::from("none")),
+        ..args.clone()
+    };
+    let mut sink = io::sink();
+    let mut sink_err = io::sink();
+    let mut input = io::empty();
+    let mut streams = Streams {
+        out: &mut sink,
+        err: &mut sink_err,
+        input: &mut input,
+        stdin_is_tty: false,
+        stdout_is_tty: false,
+        stderr_is_tty: false,
+    };
+    let mut detected = Detected::new();
+    let result = scan(
+        &before_args,
+        root,
+        &mut streams,
+        &Palette::plain(),
+        Some(&mut detected),
+    );
+    if let Err(error) = result {
+        if !args.quiet {
+            writeln!(
+                err,
+                "Note: nothing to compare in {}: {}; every finding counts as new.",
+                root.display(),
+                error.message
+            )
+            .map_err(ScanError::from)?;
+        }
+        return Ok(Detected::new());
+    }
+    Ok(detected)
+}
+
+/// A broken binding's reason, as the snake_case code `--plain`/`--json` emit.
+fn reason_code(reason: &BrokenReason) -> &'static str {
+    match reason {
+        BrokenReason::BoundArtifactBroken { .. } => "bound_artifact_broken",
+        BrokenReason::TableNotFound => "table_not_found",
+        BrokenReason::FieldNotFound => "field_not_found",
+        BrokenReason::MeasureNotFound => "measure_not_found",
+        BrokenReason::HierarchyNotFound => "hierarchy_not_found",
+        BrokenReason::LevelNotFound => "level_not_found",
+    }
 }
 
 fn is_machinery_member(id: &ObjectId, machinery: &HashSet<NameKey>) -> bool {
