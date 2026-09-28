@@ -16,6 +16,7 @@ use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
+use crate::progress::{self, Progress};
 use crate::render::{
     self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, Finding, ScanOutput, SkipNoticeOut,
     UnusedStorage, UsedByOut,
@@ -77,7 +78,7 @@ pub fn run_in(args: &ScanArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
                 let _ = writeln!(
                     streams.err,
                     "{} {}",
-                    palette_err.red("error:"),
+                    palette_err.alert("error:"),
                     error.message
                 );
                 if let Some(hint) = &error.hint {
@@ -96,6 +97,24 @@ fn scan(
     palette_err: &Palette,
 ) -> Result<i32, ScanError> {
     let palette_out = Palette::detect(streams.stdout_is_tty, args.no_color);
+    // The stage ticker (human mode on a terminal only), started before
+    // target resolution so a slow discovery walk has motion too. For the
+    // whole run stderr is the ticker-aware writer: it erases the transient
+    // line before every write, so no note lands on top of it.
+    let progress = Progress::start(
+        Progress::wanted(streams, palette_err, args.quiet, args.json || args.plain),
+        *palette_err,
+        progress::SCAN,
+    );
+    let mut err = progress.writer(streams.err);
+    let streams = &mut Streams {
+        out: &mut *streams.out,
+        err: &mut err,
+        input: &mut *streams.input,
+        stdin_is_tty: streams.stdin_is_tty,
+        stdout_is_tty: streams.stdout_is_tty,
+        stderr_is_tty: streams.stderr_is_tty,
+    };
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
 
@@ -126,6 +145,7 @@ fn scan(
         streams,
         palette_err,
     )?;
+    progress.stage(1);
     let report_paths = dedupe(paired.reports);
 
     if report_paths.is_empty() {
@@ -257,6 +277,7 @@ fn scan(
         args.quiet,
         streams.err,
     )?;
+    progress.stage(2);
     let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
     let mut reports = Vec::new();
     for path in &report_paths {
@@ -322,6 +343,7 @@ fn scan(
     dedupe_opaque_skips(&mut skips);
 
     // Analysis: entirely core's job.
+    progress.stage(3);
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
     let graph = DependencyGraph::build(&model.value, &report_refs);
     let unused = graph.unused_objects();
@@ -339,6 +361,7 @@ fn scan(
     // table — verdict, the date column it serves, and the dead table's own
     // chain — is the deliberate surface; a table only ever goes away with its
     // members.
+    progress.stage(4);
     let machinery: HashSet<NameKey> = model
         .value
         .tables
@@ -586,6 +609,11 @@ fn scan(
         unused_storage,
         stats_source: stats_source.map(|path| path.display().to_string()),
     };
+
+    let scanned = progress::item_label(&paired.model);
+    progress
+        .finish(streams.err, Some(&scanned))
+        .map_err(ScanError::from)?;
 
     if !args.quiet {
         if args.json {

@@ -158,7 +158,7 @@ unaffected.
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
-| `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
+| `--no-color` | Never color, and no progress ticker (both are also off off-TTY, under `NO_COLOR`, or `TERM=dumb`; the ticker also needs a TTY stdout and human mode) |
 | `--no-input` | Never prompt; fail where a picker would appear |
 
 ## Human output (default)

@@ -362,12 +362,12 @@ fn write_unresolved(
 ) -> io::Result<()> {
     let mut line = format!(
         "{prefix}{}",
-        palette.red(&format!("{:<width$}", "unresolved"))
+        palette.alert(&format!("{:<width$}", "unresolved"))
     );
     line.push(' ');
     line.push_str(&unresolved.target);
     line.push(' ');
-    line.push_str(&palette.red(&format!("({})", reason_phrase(unresolved))));
+    line.push_str(&palette.alert(&format!("({})", reason_phrase(unresolved))));
     if let Some(artifact) = &unresolved.artifact {
         line.push_str(&format!(" {}", palette.dim(&format!("via {artifact}"))));
     }
