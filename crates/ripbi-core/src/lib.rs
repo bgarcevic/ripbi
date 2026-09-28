@@ -66,7 +66,7 @@ pub use graph::{
     StructuralEdge, UnusedObject, UsedBy,
 };
 pub use identity::{FieldRef, NameKey, ObjectId};
-pub use ingest::{Ingested, SkipKind, SkipNotice};
+pub use ingest::{Ingested, SkipKind, SkipNotice, SourceLocation};
 pub use lookup::ReferenceError;
 pub use model::index::{
     ColumnHandle, ExpressionHandle, FunctionHandle, HierarchyHandle, MeasureHandle, ModelIndex,

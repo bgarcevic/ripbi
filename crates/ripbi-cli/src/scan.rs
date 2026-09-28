@@ -22,7 +22,9 @@ use crate::render::{
     self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
     SkipNoticeOut, UnusedStorage, UsedByOut,
 };
+use crate::sarif::{self, Locator};
 use crate::style::Palette;
+use crate::vso;
 
 /// Exit code: no unused objects.
 pub const EXIT_CLEAN: i32 = 0;
@@ -107,7 +109,12 @@ fn scan(
     // whole run stderr is the ticker-aware writer: it erases the transient
     // line before every write, so no note lands on top of it.
     let progress = Progress::start(
-        Progress::wanted(streams, palette_err, args.quiet, args.json || args.plain),
+        Progress::wanted(
+            streams,
+            palette_err,
+            args.quiet,
+            args.json || args.plain || args.sarif || args.azure_devops,
+        ),
         *palette_err,
         progress::SCAN,
     );
@@ -441,6 +448,22 @@ fn scan(
     // counted in `existing` and dropped, exactly like an ignored one.
     let mut detected = Detected::new();
     let mut existing = 0;
+    // `--sarif` keeps what already existed as suppressed results (issue
+    // #142); it and `--azure-devops` need every finding's source file. Both
+    // only when rendering.
+    let sarif_mode = args.sarif && probe.is_none();
+    let mut kept_existing = sarif::Existing::default();
+    let mut locator = if (args.sarif || args.azure_devops) && probe.is_none() {
+        let declared = ingest::source_locations(&paired.model).map_err(|error| {
+            ScanError::new(format!(
+                "cannot read source positions of {}: {error}",
+                paired.model.display()
+            ))
+        })?;
+        Some(Locator::new(&paired.model, declared, &report_paths))
+    } else {
+        None
+    };
     let existed = |entry: &Entry| {
         before
             .as_ref()
@@ -462,18 +485,25 @@ fn scan(
         if !section_visible || is_ignored(&verdict.id, patterns) {
             continue;
         }
-        if entry.as_ref().is_some_and(existed) {
-            existing += 1;
-            existing_tables.insert(&verdict.id);
-            continue;
+        if let (Some(locator), Some(entry)) = (&mut locator, &entry) {
+            locator.object(entry, &verdict.id, None);
         }
-        row_by_table.insert(&verdict.id, auto_date_time.len());
-        auto_date_time.push(AutoDateTimeRow {
+        let row = AutoDateTimeRow {
             verdict: label,
             id,
             source_column: verdict.source_column.as_ref().map(ToString::to_string),
             finding: None,
-        });
+        };
+        if entry.as_ref().is_some_and(existed) {
+            existing += 1;
+            existing_tables.insert(&verdict.id);
+            if sarif_mode {
+                kept_existing.auto_date_time.push(row);
+            }
+            continue;
+        }
+        row_by_table.insert(&verdict.id, auto_date_time.len());
+        auto_date_time.push(row);
     }
 
     // The model table travels with a finding only where a mode reads it: `--json`
@@ -510,9 +540,15 @@ fn scan(
             filtered_out += 1;
             continue;
         }
-        if entry.as_ref().is_some_and(existed) {
+        let is_existing = entry.as_ref().is_some_and(existed);
+        if is_existing {
             existing += 1;
-            continue;
+            if !sarif_mode {
+                continue;
+            }
+        }
+        if let (Some(locator), Some(entry)) = (&mut locator, &entry) {
+            locator.object(entry, &finding.id, None);
         }
         let id = &finding.id;
         let finding = Finding {
@@ -536,6 +572,7 @@ fn scan(
             storage: storage.get(&finding.id).copied(),
         };
         match section_row {
+            _ if is_existing => kept_existing.findings.push(finding),
             Some(position) => auto_date_time[position].finding = Some(finding),
             None => {
                 reported.push(id);
@@ -586,9 +623,15 @@ fn scan(
             broken_hidden += 1;
             continue;
         }
-        if existed(&entry) {
+        let is_existing = existed(&entry);
+        if is_existing {
             existing += 1;
-            continue;
+            if !sarif_mode {
+                continue;
+            }
+        }
+        if let Some(locator) = &mut locator {
+            locator.binding(&entry, binding.edge.report.as_ref());
         }
         let reason = reason_code(&binding.reason);
         let (bound_artifact, bound_artifact_report) = match &binding.reason {
@@ -601,13 +644,18 @@ fn scan(
             ),
             _ => (None, None),
         };
-        broken.push(BrokenOut {
+        let out = BrokenOut {
             target,
             reason,
             bound_artifact,
             bound_artifact_report,
             provenance,
-        });
+        };
+        if is_existing {
+            kept_existing.broken.push(out);
+        } else {
+            broken.push(out);
+        }
     }
 
     let mut broken_artifacts = Vec::new();
@@ -636,18 +684,29 @@ fn scan(
             broken_artifacts_hidden += 1;
             continue;
         }
-        if existed(&entry) {
+        let is_existing = existed(&entry);
+        if is_existing {
             existing += 1;
-            continue;
+            if !sarif_mode {
+                continue;
+            }
         }
-        broken_artifacts.push(BrokenArtifactOut {
+        if let Some(locator) = &mut locator {
+            locator.object(&entry, &artifact.id, artifact.report_index);
+        }
+        let out = BrokenArtifactOut {
             id,
             kind: render::kind_of(&artifact.id),
             report: artifact
                 .report_index
                 .map(|index| report_paths[index].display().to_string()),
             unresolved_references: artifact.unresolved_references.clone(),
-        });
+        };
+        if is_existing {
+            kept_existing.broken_artifacts.push(out);
+        } else {
+            broken_artifacts.push(out);
+        }
     }
 
     if let Some(probe) = probe {
@@ -701,6 +760,13 @@ fn scan(
     if !args.quiet {
         if args.json {
             render::json(streams.out, &output).map_err(ScanError::from)?;
+        } else if let Some(locator) = &locator {
+            if args.azure_devops {
+                vso::write(streams.out, &output, locator, cwd)
+            } else {
+                sarif::write(streams.out, &output, &kept_existing, locator, cwd)
+            }
+            .map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else if args.summary {

@@ -14,10 +14,12 @@ pub mod notify;
 pub mod progress;
 pub mod render;
 pub mod report;
+pub mod sarif;
 pub mod scan;
 pub mod stub;
 pub mod style;
 pub mod update;
+pub mod vso;
 
 #[cfg(test)]
 pub(crate) mod test_support;

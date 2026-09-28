@@ -482,3 +482,88 @@ fn unknown_refresh_policy_key_parses_and_is_noticed_once() {
         skip.detail
     );
 }
+
+/// Issue #142: every declared object maps to its file and header line — the
+/// positions `scan --sarif` points annotations at.
+#[test]
+fn source_locations_point_at_declaration_headers() {
+    let model = fixture(&["golden", "Mini.SemanticModel"]);
+    let locations = ripbi_core::ingest::source_locations(&model).expect("locations");
+    let at = |id: ObjectId| {
+        let location = locations
+            .iter()
+            .find(|location| location.id == id)
+            .unwrap_or_else(|| panic!("no location for {id}"));
+        let file = location
+            .path
+            .file_name()
+            .expect("file")
+            .to_string_lossy()
+            .into_owned();
+        (file, location.line)
+    };
+    let key = NameKey::new;
+    assert_eq!(
+        at(ObjectId::Table {
+            table: key("Sales")
+        }),
+        ("Sales.tmdl".into(), 2)
+    );
+    assert_eq!(
+        at(ObjectId::Measure {
+            table: key("Sales"),
+            measure: key("Growth %")
+        }),
+        ("Sales.tmdl".into(), 12)
+    );
+    assert_eq!(
+        at(ObjectId::Column {
+            table: key("Sales Order"),
+            column: key("It's quoted")
+        }),
+        ("Sales Order.tmdl".into(), 21)
+    );
+    assert_eq!(
+        at(ObjectId::Hierarchy {
+            table: key("Sales"),
+            hierarchy: key("Fiscal")
+        }),
+        ("Sales.tmdl".into(), 74)
+    );
+    assert_eq!(
+        at(ObjectId::CalculationItem {
+            table: key("Time Intelligence"),
+            item: key("YoY %")
+        }),
+        ("Time Intelligence.tmdl".into(), 9)
+    );
+    assert_eq!(
+        at(ObjectId::Expression {
+            name: key("Calendar")
+        }),
+        ("expressions.tmdl".into(), 4)
+    );
+    assert_eq!(
+        at(ObjectId::Role {
+            role: key("Administrators")
+        }),
+        ("Admin.tmdl".into(), 1)
+    );
+    let relationships: Vec<_> = locations
+        .iter()
+        .filter(|location| matches!(location.id, ObjectId::Relationship { .. }))
+        .map(|location| location.line)
+        .collect();
+    assert_eq!(relationships, [1, 5, 12]);
+}
+
+#[test]
+fn single_file_models_record_no_source_locations() {
+    let bim =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tmsl/golden/model.bim");
+    assert!(
+        ripbi_core::ingest::source_locations(&bim)
+            .expect("bim")
+            .is_empty()
+    );
+}

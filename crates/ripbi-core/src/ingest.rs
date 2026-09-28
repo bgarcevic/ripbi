@@ -26,6 +26,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::identity::ObjectId;
 use crate::model::TabularDatabase;
 use crate::report::{DatasetReference, ReportModel};
 use crate::{Error, Result};
@@ -179,6 +180,38 @@ pub fn semantic_model(path: &Path) -> Result<Ingested<TabularDatabase>> {
     let mut skips = Vec::new();
     let value = tmdl::load_database(&definition, name, &mut skips)?;
     Ok(Ingested { value, skips })
+}
+
+/// Where a model object is declared in its source: the file, and the 1-based
+/// line its declaration starts on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLocation {
+    /// The declared object.
+    pub id: ObjectId,
+    /// The file declaring it, built on the path the caller passed.
+    pub path: PathBuf,
+    /// 1-based line of the declaration header.
+    pub line: usize,
+}
+
+/// Declaration sites of a TMDL model's objects (issue #142), for tools that
+/// point at source — SARIF results, an editor's go-to-definition.
+///
+/// `path` is resolved like [`semantic_model`]'s folder forms. Single-file
+/// formats (`model.bim`, `.abf`, PBIX/PBIT) record no per-object positions and
+/// yield an empty list, as does a declaration no object came from. This is a
+/// separate pass over the files rather than a field on the AST: positions are
+/// presentation, and only the callers that point at source pay for them. The
+/// first declaration of a duplicated object wins, like the ingest.
+///
+/// # Errors
+/// Fails when the `definition/` folder or a `.tmdl` file cannot be read or
+/// tokenized, exactly as [`semantic_model`] would.
+pub fn source_locations(path: &Path) -> Result<Vec<SourceLocation>> {
+    if path.is_file() {
+        return Ok(Vec::new());
+    }
+    tmdl::source_locations(&locate_definition(path)?)
 }
 
 /// Parses a PBIR folder or an archive report into a [`ReportModel`].

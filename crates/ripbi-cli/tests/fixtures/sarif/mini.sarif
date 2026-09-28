@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "columnKind": "unicodeCodePoints",
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "'Sales'[Legacy]",
+                  "kind": "column"
+                }
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Mini.SemanticModel/definition/tables/Sales.tmdl",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unused column 'Sales'[Legacy]: no report reaches it. Referenced only by 'Sales'[Legacy Total] (also unused)."
+          },
+          "partialFingerprints": {
+            "ripbiFinding/v1": "02f710d1173fca90d0a4ea2d848af7d599782f55d1687c7cf29b25ade2816e0d"
+          },
+          "ruleId": "RIPBI-UNUSED-COLUMN",
+          "ruleIndex": 1
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "'Sales'[Legacy Total]",
+                  "kind": "measure"
+                }
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Mini.SemanticModel/definition/tables/Sales.tmdl",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Unused measure 'Sales'[Legacy Total]: no report reaches it."
+          },
+          "partialFingerprints": {
+            "ripbiFinding/v1": "c94076966672d48ba077ed15da525992c66ab9dd477187a25bae4653ec8684ca"
+          },
+          "ruleId": "RIPBI-UNUSED-MEASURE",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://bgarcevic.github.io/ripbi/",
+          "name": "ripbi",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-MEASURE",
+              "name": "UnusedMeasure",
+              "shortDescription": {
+                "text": "Measure no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-COLUMN",
+              "name": "UnusedColumn",
+              "shortDescription": {
+                "text": "Column no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-HIERARCHY",
+              "name": "UnusedHierarchy",
+              "shortDescription": {
+                "text": "Hierarchy no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-TABLE",
+              "name": "UnusedTable",
+              "shortDescription": {
+                "text": "Table no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-PARTITION",
+              "name": "UnusedPartition",
+              "shortDescription": {
+                "text": "Partition no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-RELATIONSHIP",
+              "name": "UnusedRelationship",
+              "shortDescription": {
+                "text": "Relationship no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-ROLE",
+              "name": "UnusedRole",
+              "shortDescription": {
+                "text": "Role no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-CALCULATION-ITEM",
+              "name": "UnusedCalculationItem",
+              "shortDescription": {
+                "text": "Calculation item no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-EXPRESSION",
+              "name": "UnusedExpression",
+              "shortDescription": {
+                "text": "Shared Power Query expression no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-FUNCTION",
+              "name": "UnusedFunction",
+              "shortDescription": {
+                "text": "DAX function no report reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-UNUSED-REPORT-MEASURE",
+              "name": "UnusedReportMeasure",
+              "shortDescription": {
+                "text": "Report-level measure no visual reaches"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-STALE-BOOKMARK",
+              "name": "StaleBookmark",
+              "shortDescription": {
+                "text": "Bookmark whose saved pages were all deleted"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-BROKEN-VISUAL",
+              "name": "BrokenVisualBinding",
+              "shortDescription": {
+                "text": "Visual binding to a field the model no longer has"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-BROKEN-ARTIFACT",
+              "name": "BrokenArtifact",
+              "shortDescription": {
+                "text": "DAX expression with references that no longer resolve"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "id": "RIPBI-AUTO-DATE-TIME",
+              "name": "AutoDateTime",
+              "shortDescription": {
+                "text": "Auto date/time table no report needs"
+              }
+            }
+          ],
+          "version": "<version>"
+        }
+      }
+    }
+  ]
+}
