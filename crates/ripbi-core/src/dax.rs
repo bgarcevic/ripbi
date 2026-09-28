@@ -239,6 +239,7 @@ mod tests {
                 },
             ],
             functions: vec![Function {
+                keep: None,
                 name: "MyFunc".to_string(),
                 expression: "1".to_string(),
                 is_hidden: false,

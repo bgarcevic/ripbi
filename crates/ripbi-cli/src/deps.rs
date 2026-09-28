@@ -9,7 +9,7 @@ use std::path::Path;
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest;
 use ripbi_core::lookup::ReferenceError;
-use ripbi_core::{DepSlice, ObjectId, Provenance, ReportModel};
+use ripbi_core::{DepSlice, KeptObject, ObjectId, Provenance, ReportModel};
 
 use crate::cli::DepsArgs;
 use crate::config;
@@ -329,6 +329,11 @@ fn selection_view(
     });
     let mut impact = None;
     let mut bindings = Vec::new();
+    let mut kept = Vec::new();
+    // A `ripbi_keep` annotation stands in for a consumer ripbi cannot see
+    // (issue #151): not a visual, not a model object, in no report — so any
+    // consumer or report filter leaves it out.
+    let show_kept = !filtering;
     let mut model_hidden = false;
     if show_impact {
         let mut slices = Vec::new();
@@ -373,6 +378,15 @@ fn selection_view(
                         .is_none_or(|name| edge.page.as_ref().is_some_and(|p| p.folded() == name))
             });
             bindings.push(per_root);
+            kept.push(if show_kept {
+                slice
+                    .nodes
+                    .iter()
+                    .filter_map(|id| graph.kept_by(id).map(|by| (id.clone(), by.clone())))
+                    .collect::<Vec<(ObjectId, KeptObject)>>()
+            } else {
+                Vec::new()
+            });
             slices.push(slice);
         }
         impact = Some(slices);
@@ -383,6 +397,7 @@ fn selection_view(
         dependencies,
         impact,
         bindings,
+        kept,
         model_hidden,
     })))
 }

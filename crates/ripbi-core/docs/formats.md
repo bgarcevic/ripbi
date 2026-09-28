@@ -76,6 +76,11 @@ still loads. Unknown enum values, nameless objects, and foreign keys that
 point nowhere become skip notices located as `Table#ID`. A catalog without
 `Model`, `Table`, or `Column` tables, or one SQLite cannot read, fails. In a
 PBIX, empty M expressions are recovered from `DataMashup` exactly as for PBIT.
+The `Annotation` table is read for two things only: the `__PBI_*DateTable`
+markers on tables, and the `ripbi_keep` annotation (issue #151) on tables,
+columns, measures, hierarchies, calculation items, relationships, shared
+expressions, and functions — matched by `ObjectType` (3, 4, 8, 9, 47, 7, 41,
+63) and `ObjectID`, its `Value` becoming the object's `keep` reason.
 
 The storage tables and the backup log's file sizes become `StorageStats`
 (issue #122) — display-only, never liveness. Each `StorageFile` is
@@ -322,7 +327,13 @@ unknown property not on a list, a modeled value that fails to parse
 ### The ignore list
 
 Universal metadata: `lineageTag`, `sourceLineageTag`, `changedProperty`,
-`description`, `annotation`, `extendedProperty`. Extended properties carry no
+`description`, `annotation`, `extendedProperty`. Two annotation names are the
+exception and are read: the `__PBI_*DateTable` markers on tables (below), and
+`ripbi_keep` (case-insensitive) on a table, column, measure, hierarchy,
+calculation item, relationship, shared expression, or function, whose value —
+empty for a bare `annotation ripbi_keep` — becomes the object's `keep` reason
+(issue #151). TMSL reads the same name from each object's `annotations` array,
+joining an array `value` with newlines. Extended properties carry no
 liveness of their own: the dynamic M parameter binding marker on a column
 (`ParameterMetadata` with `"kind": 1`) is the anonymous half of that binding —
 the authoritative half is the parameter expression's `parameterValuesColumn`

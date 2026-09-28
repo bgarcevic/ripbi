@@ -27,6 +27,18 @@ use crate::model::index::{
     TableHandle,
 };
 
+/// The TOM annotation that marks an object as deliberately kept (issue #151):
+/// `annotation ripbi_keep = Used by the Finance Excel pivot`. Its value is the
+/// free-text reason; the object becomes a reachability root. Every ingest
+/// format reads it into the object's `keep` field.
+pub const KEEP_ANNOTATION: &str = "ripbi_keep";
+
+/// Whether an annotation name is [`KEEP_ANNOTATION`]. Object names in a
+/// tabular model compare case-insensitively, so this one does too.
+pub(crate) fn is_keep_annotation(name: &str) -> bool {
+    name.eq_ignore_ascii_case(KEEP_ANNOTATION)
+}
+
 /// Normalized semantic model, regardless of source format (TMDL, model.bim,
 /// .pbix DataModelSchema or DataModel, .abf). Downstream code never branches on
 /// source format.
@@ -97,6 +109,12 @@ pub struct Table {
     /// relationships whose "from" side it is. Display-only; `None` for formats
     /// without a storage catalog.
     pub storage: Option<StorageStats>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 impl Table {
@@ -161,6 +179,12 @@ pub struct Column {
     /// Storage statistics: dictionary, segments, and attribute hierarchy.
     /// Display-only; `None` for formats without a storage catalog.
     pub storage: Option<StorageStats>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// What a model object costs in storage, read from the engine's storage
@@ -257,6 +281,12 @@ pub struct Measure {
     pub detail_rows_expression: Option<String>,
     /// KPI attached to this measure.
     pub kpi: Option<Kpi>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// KPI expressions are DAX and can be the sole reference keeping an object alive.
@@ -355,6 +385,12 @@ pub struct Relationship {
     /// Storage statistics: the relationship's index. Display-only; `None` for
     /// formats without a storage catalog.
     pub storage: Option<StorageStats>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 impl Default for Relationship {
@@ -370,6 +406,7 @@ impl Default for Relationship {
             to_column: String::new(),
             is_active: true,
             storage: None,
+            keep: None,
         }
     }
 }
@@ -383,6 +420,12 @@ pub struct Hierarchy {
     pub levels: Vec<HierarchyLevel>,
     /// Hidden from report authors; hidden objects are still live if referenced.
     pub is_hidden: bool,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// One level of a hierarchy.
@@ -459,6 +502,12 @@ pub struct CalculationItem {
     pub expression: String,
     /// Dynamic format string (DAX) applied when this item is selected.
     pub format_string_expression: Option<String>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// A model-level shared M expression: a Power Query parameter or shared query.
@@ -475,6 +524,12 @@ pub struct SharedExpression {
     /// extended property, so this property is the binding's authoritative
     /// half; `None` for parameters and shared queries without a binding.
     pub parameter_values_column: Option<ParameterValuesColumn>,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// The `Table.Column` a dynamic M query parameter binds its view-time values
@@ -498,6 +553,12 @@ pub struct Function {
     pub expression: String,
     /// Hidden from report authors; hidden objects are still live if referenced.
     pub is_hidden: bool,
+    /// The reason given by a `ripbi_keep` annotation: the author declared
+    /// the object deliberately kept for a consumer ripbi cannot see (an
+    /// Excel pivot, a thin report elsewhere). A reachability root — the
+    /// object and everything it references stay live (issue #151). `Some`
+    /// with an empty string when the annotation gives no reason.
+    pub keep: Option<String>,
 }
 
 /// A calendar (TOM calendar) defined on a table, binding groups of its columns.
@@ -511,6 +572,105 @@ pub struct Calendar {
     pub name: String,
     /// Names of the columns (in the owning table) the calendar binds.
     pub columns: Vec<String>,
+}
+
+/// Kept-object lookup by graph identity.
+impl TabularDatabase {
+    /// Every object carrying a [`KEEP_ANNOTATION`], with its reason, keyed by
+    /// the [`ObjectId`] the graph knows it under — in source order: tables
+    /// with their members, then relationships, shared expressions, functions
+    /// (issue #151).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ripbi_core::{Measure, NameKey, ObjectId, Table, TabularDatabase};
+    ///
+    /// let model = TabularDatabase {
+    ///     tables: vec![Table {
+    ///         name: "Sales".to_string(),
+    ///         measures: vec![Measure {
+    ///             name: "Excel Margin %".to_string(),
+    ///             keep: Some("Finance Excel pivot".to_string()),
+    ///             ..Default::default()
+    ///         }],
+    ///         ..Default::default()
+    ///     }],
+    ///     ..Default::default()
+    /// };
+    /// let kept = model.kept_objects();
+    /// assert_eq!(kept.len(), 1);
+    /// assert_eq!(
+    ///     kept[0].0,
+    ///     ObjectId::Measure {
+    ///         table: NameKey::new("Sales"),
+    ///         measure: NameKey::new("Excel Margin %"),
+    ///     }
+    /// );
+    /// assert_eq!(kept[0].1, "Finance Excel pivot");
+    /// ```
+    #[must_use]
+    pub fn kept_objects(&self) -> Vec<(ObjectId, &str)> {
+        let mut out = Vec::new();
+        for table in &self.tables {
+            let key = NameKey::new(&table.name);
+            if let Some(reason) = &table.keep {
+                out.push((ObjectId::Table { table: key.clone() }, reason.as_str()));
+            }
+            for column in &table.columns {
+                if let Some(reason) = &column.keep {
+                    let column = NameKey::new(&column.name);
+                    let table = key.clone();
+                    out.push((ObjectId::Column { table, column }, reason.as_str()));
+                }
+            }
+            for measure in &table.measures {
+                if let Some(reason) = &measure.keep {
+                    let measure = NameKey::new(&measure.name);
+                    let table = key.clone();
+                    out.push((ObjectId::Measure { table, measure }, reason.as_str()));
+                }
+            }
+            for hierarchy in &table.hierarchies {
+                if let Some(reason) = &hierarchy.keep {
+                    let hierarchy = NameKey::new(&hierarchy.name);
+                    let table = key.clone();
+                    out.push((ObjectId::Hierarchy { table, hierarchy }, reason.as_str()));
+                }
+            }
+            for item in table.calculation_group.iter().flat_map(|g| &g.items) {
+                if let Some(reason) = &item.keep {
+                    let item = NameKey::new(&item.name);
+                    let table = key.clone();
+                    out.push((ObjectId::CalculationItem { table, item }, reason.as_str()));
+                }
+            }
+        }
+        for relationship in &self.relationships {
+            if let Some(reason) = &relationship.keep {
+                let id = ObjectId::Relationship {
+                    from_table: NameKey::new(&relationship.from_table),
+                    from_column: NameKey::new(&relationship.from_column),
+                    to_table: NameKey::new(&relationship.to_table),
+                    to_column: NameKey::new(&relationship.to_column),
+                };
+                out.push((id, reason.as_str()));
+            }
+        }
+        for expression in &self.expressions {
+            if let Some(reason) = &expression.keep {
+                let name = NameKey::new(&expression.name);
+                out.push((ObjectId::Expression { name }, reason.as_str()));
+            }
+        }
+        for function in &self.functions {
+            if let Some(reason) = &function.keep {
+                let name = NameKey::new(&function.name);
+                out.push((ObjectId::Function { name }, reason.as_str()));
+            }
+        }
+        out
+    }
 }
 
 /// Storage lookup by graph identity.
@@ -1326,6 +1486,7 @@ mod tests {
                         },
                     ],
                     measures: vec![Measure {
+                        keep: None,
                         name: "Total Sales".to_string(),
                         expression: "SUM('Sales'[Amount])".to_string(),
                         is_hidden: false,
@@ -1371,6 +1532,7 @@ mod tests {
                     name: "Time Intelligence".to_string(),
                     calculation_group: Some(CalculationGroup {
                         items: vec![CalculationItem {
+                            keep: None,
                             name: "YTD".to_string(),
                             expression: "TOTALYTD(SELECTEDMEASURE(), 'Date'[Date])".to_string(),
                             format_string_expression: Some("\"#,##0;;\"".to_string()),
@@ -1390,6 +1552,7 @@ mod tests {
                 },
             ],
             functions: vec![Function {
+                keep: None,
                 name: "Sales.NetPrice".to_string(),
                 expression: "(price: SCALAR) => price * (1 - [Discount Pct])".to_string(),
                 is_hidden: false,
@@ -1559,6 +1722,7 @@ mod tests {
             assert_eq!(
                 Relationship::default(),
                 Relationship {
+                    keep: None,
                     name: None,
                     from_table: String::new(),
                     from_column: String::new(),

@@ -1,0 +1,31 @@
+table Sales
+
+	/// Kept for the Finance workbook; its inputs stay live through it.
+	measure 'Excel Margin %' = DIVIDE([Margin], SUM(Sales[Amount]))
+		annotation ripbi_keep = Used by the Finance Excel pivot (FIN-231)
+
+	measure Margin = SUM(Sales[Amount]) - SUM(Sales[Cost])
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+
+	column Cost
+		dataType: double
+		sourceColumn: Cost
+
+	column Key
+		dataType: int64
+		sourceColumn: Key
+		annotation SummarizationSetBy = Automatic
+		annotation RIPBI_KEEP = Case does not matter
+
+	hierarchy Drill
+		annotation ripbi_keep = Kept for an upcoming report
+
+		level Key
+			column: Key
+
+	partition Sales = m
+		mode: import
+		source = Raw

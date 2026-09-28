@@ -414,8 +414,46 @@ steps:
 ```
 
 Accepting a finding means merging the change: once it is on the base branch, the next
-pull request compares against it. A finding meant to stay unused permanently belongs
-in `[scan].ignore`.
+pull request compares against it. An object meant to stay unused on purpose — a measure
+only an Excel pivot reads — gets a `ripbi_keep` annotation instead; see
+[Keeping objects on purpose](#keeping-objects-on-purpose).
+
+## Keeping objects on purpose
+
+Some objects are unused *by the reports ripbi can see* on purpose: a measure only an
+Excel pivot or a thin report in another workspace reads, or a column kept for an
+upcoming report. Mark them in the model itself with a `ripbi_keep` annotation
+(issue #151). Its value is the reason:
+
+```tmdl
+measure 'Excel Margin %' = DIVIDE([Margin], [Revenue])
+    annotation ripbi_keep = Used by the Finance Excel pivot (FIN-231)
+```
+
+- **A kept object is a reachability root**, like a report binding: it is live, and so
+  is everything it references — `[Margin]`, `[Revenue]`, and the columns behind them,
+  which the Excel pivot needs too. None of them is a finding, and none gates.
+- **Any object can carry it:** a table, column, measure, hierarchy, calculation item,
+  relationship, shared expression, or function. A kept table keeps its members. A
+  kept relationship counts as activated, so its key columns stay live even when it
+  is inactive; like every relationship, it does not keep its tables alive.
+- **Every model format reads it:** TMDL, `model.bim`, and the model inside a PBIX,
+  PBIT, or `.abf`. The name is case-insensitive. Add it in Power BI Desktop's
+  TMDL view, Tabular Editor, or the TMDL file; these tools and deployment pipelines
+  carry annotations along, and a rename carries the annotation with the object.
+  ripbi never writes it.
+- **Write the reason.** An empty value (`annotation ripbi_keep =`) still keeps the
+  object, but the next reader will not know why.
+- **Output.** Kept objects are not listed by `scan`. `--json` counts them in
+  `summary.kept`. `ripbi deps --impact` shows the annotation's reason in a `Kept`
+  section, so "why is this alive?" answers with the reason (see
+  [deps.md](deps.md)).
+
+Prefer the annotation over a `[scan].ignore` pattern for an intentionally unused
+object: the reason sits beside the object, it survives renames, and it keeps the
+object's inputs alive where an ignore pattern would leave them reported as dead.
+`[scan].ignore` remains the tool for findings you want silenced without a model
+edit, such as whole families of generated objects.
 
 ## Storage sizes
 
@@ -627,6 +665,7 @@ Pretty-printed JSON, stable field order, additive schema:
     "unused": 56,
     "unused_total": 56,
     "ignored": 0,
+    "kept": 0,
     "broken": 2,
     "broken_total": 2,
     "broken_artifacts": 1,
@@ -699,7 +738,9 @@ Pretty-printed JSON, stable field order, additive schema:
   suppression, filter, or section move, so `reachable = objects − unused_total` always
   holds and a consumer can tell a filtered-away finding from an absent one.
   `summary.ignored` counts findings suppressed by `[scan].ignore` — unused objects,
-  broken artifacts, and broken bindings alike. On a model with
+  broken artifacts, and broken bindings alike. `summary.kept` counts the objects a
+  `ripbi_keep` model annotation keeps (a kept table counts once) — roots, so never in
+  `unused` (see [Keeping objects on purpose](#keeping-objects-on-purpose)). On a model with
   auto date/time machinery, the remaining gap between `unused` and `unused_total` is
   the machinery: `summary.auto_date_time.member_findings` counts its unused members
   and the `dead` verdict count its nested own findings.
@@ -912,7 +953,8 @@ which static analysis deliberately ignores.
   `model.bim`.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
   (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; scan prints this
-  caveat on every run.
+  caveat on every run. Mark what they read with a `ripbi_keep` annotation
+  ([Keeping objects on purpose](#keeping-objects-on-purpose)).
 - A model-only scan is refused: with no report bindings (and no RLS roles) everything
   is formally unused, which is never the answer the user wants. Pass `--report`. When
   search folders are walked, the same refusal lists how many report items were bound to

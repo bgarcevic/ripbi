@@ -62,8 +62,8 @@ pub use dax::{
 };
 pub use graph::{
     AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, BrokenArtifact,
-    BrokenBinding, BrokenReason, DepEdge, DepSlice, DependencyGraph, Provenance, StructuralEdge,
-    UnusedObject, UsedBy,
+    BrokenBinding, BrokenReason, DepEdge, DepSlice, DependencyGraph, KeptObject, Provenance,
+    StructuralEdge, UnusedObject, UsedBy,
 };
 pub use identity::{FieldRef, NameKey, ObjectId};
 pub use ingest::{Ingested, SkipKind, SkipNotice};
@@ -75,9 +75,9 @@ pub use model::index::{
 pub use model::{
     CalculationGroup, CalculationItem, Calendar, Column, ColumnKind, ColumnPermission,
     DaxExpressionKind, DaxExpressionRef, ExpressionOwner, Function, Hierarchy, HierarchyLevel,
-    HierarchyRef, Kpi, MExpressionRef, Measure, MetadataPermission, Partition, PartitionSource,
-    Relationship, Role, SharedExpression, SizeBasis, StorageCoverage, StorageStats, Table,
-    TablePermission, TabularDatabase, Variation,
+    HierarchyRef, KEEP_ANNOTATION, Kpi, MExpressionRef, Measure, MetadataPermission, Partition,
+    PartitionSource, Relationship, Role, SharedExpression, SizeBasis, StorageCoverage,
+    StorageStats, Table, TablePermission, TabularDatabase, Variation,
 };
 pub use report::{
     BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, DatasetReference,

@@ -1,0 +1,5 @@
+relationship 00000000-0000-0000-0000-000000000001
+	isActive: false
+	fromColumn: Sales.Key
+	toColumn: Archive.Id
+	annotation ripbi_keep = USERELATIONSHIP in the Excel workbook

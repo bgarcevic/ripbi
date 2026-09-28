@@ -8,7 +8,7 @@ use std::io;
 
 use serde::Serialize;
 
-use ripbi_core::{BindingEdge, BindingSite, DepSlice, ObjectId};
+use ripbi_core::{BindingEdge, BindingSite, DepSlice, KeptObject, ObjectId};
 
 use super::tree::{Node, Orientation, TreeBuilder};
 use crate::error::ScanError;
@@ -85,6 +85,10 @@ pub(crate) struct FocusedOut {
     /// The report bindings riding on each root's impact slice, as
     /// `(target object, binding)` pairs in slice order, one entry per root.
     pub bindings: Vec<Vec<(ObjectId, BindingEdge)>>,
+    /// The objects on each root's impact slice that a `ripbi_keep` model
+    /// annotation keeps (issue #151), with the annotation keeping them — the
+    /// object's own, or its kept table's. One entry per root, in slice order.
+    pub kept: Vec<Vec<(ObjectId, KeptObject)>>,
     /// True for a `--consumer visual` run: the Impact view belongs to the
     /// report bindings, so the Model section stays out entirely.
     pub model_hidden: bool,
@@ -190,12 +194,13 @@ fn write_focused(
         if let Some(slices) = &focused.impact {
             let slice = &slices[index];
             let bindings = &focused.bindings[index];
+            let kept = &focused.kept[index];
             writeln!(out)?;
             writeln!(out, "{}", palette.bold("Impact"))?;
             let mut builder = TreeBuilder::new(Orientation::Impact);
             let tree = builder.build(slice, root, label);
             let model_hidden = focused.model_hidden || tree.children.is_empty();
-            if model_hidden && bindings.is_empty() {
+            if model_hidden && bindings.is_empty() && kept.is_empty() {
                 writeln!(out, "└─ nothing")?;
             } else {
                 if !focused.model_hidden {
@@ -208,6 +213,11 @@ fn write_focused(
                     writeln!(out)?;
                     writeln!(out, "{}", palette.bold("Reports"))?;
                     write_children(out, &report_forest(root, bindings), "")?;
+                }
+                if !kept.is_empty() {
+                    writeln!(out)?;
+                    writeln!(out, "{}", palette.bold("Kept"))?;
+                    write_children(out, &kept_nodes(root, kept), "")?;
                 }
             }
         }
@@ -264,6 +274,37 @@ fn write_children(out: &mut dyn io::Write, children: &[Node], prefix: &str) -> i
         }
     }
     Ok(())
+}
+
+/// The kept objects of one root's impact slice, one leaf each:
+/// `kept: <reason>` — prefixed with the object when it is not the root, and
+/// naming the kept table when the annotation sits on the table instead.
+fn kept_nodes(root: &ObjectId, kept: &[(ObjectId, KeptObject)]) -> Vec<Node> {
+    kept.iter()
+        .map(|(id, by)| {
+            let mut label = String::new();
+            if id != root {
+                label.push_str(&format!("{id}  "));
+            }
+            label.push_str(&kept_phrase(id, by));
+            Node::leaf(label)
+        })
+        .collect()
+}
+
+/// `kept: <reason>`, or `kept by table 'T': <reason>` for a member a kept
+/// table carries; an empty reason reads `kept (no reason given)`.
+fn kept_phrase(id: &ObjectId, by: &KeptObject) -> String {
+    let mut phrase = String::from("kept");
+    if &by.id != id {
+        phrase.push_str(&format!(" by {}", by.id));
+    }
+    if by.reason.is_empty() {
+        phrase.push_str(" (no reason given)");
+    } else {
+        phrase.push_str(&format!(": {}", by.reason));
+    }
+    phrase
 }
 
 /// The report bindings of one root's impact slice as deterministic tries:
@@ -430,6 +471,15 @@ pub fn plain(out: &mut dyn io::Write, output: &DepsOutput) -> io::Result<()> {
                         }
                     }
                 }
+                let mut seen: HashSet<&ObjectId> = HashSet::new();
+                for (id, by) in focused.kept.iter().flatten() {
+                    if seen.insert(id) {
+                        // The reason is free text: one record per line, so
+                        // tabs and line breaks inside it become spaces.
+                        let reason = by.reason.replace(['\t', '\n', '\r'], " ");
+                        writeln!(out, "kept\t{}\t{}\t{reason}", id, by.id)?;
+                    }
+                }
                 for bindings in &focused.bindings {
                     for (id, edge) in bindings {
                         writeln!(
@@ -559,6 +609,18 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                 })
                 .collect();
 
+            let mut kept: Vec<JsonKept> = Vec::new();
+            let mut seen: HashSet<&ObjectId> = HashSet::new();
+            for (id, by) in focused.kept.iter().flatten() {
+                if seen.insert(id) {
+                    kept.push(JsonKept {
+                        object: id.to_string(),
+                        annotated: by.id.to_string(),
+                        reason: by.reason.clone(),
+                    });
+                }
+            }
+
             let root = single_root.then(|| {
                 let id = &focused.roots[0];
                 JsonRoot {
@@ -574,6 +636,7 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                     nodes,
                     edges,
                     bindings,
+                    kept,
                 },
             )
         }
@@ -596,6 +659,16 @@ struct JsonFocused {
     nodes: Vec<JsonNode>,
     edges: Vec<JsonEdge>,
     bindings: Vec<JsonBinding>,
+    kept: Vec<JsonKept>,
+}
+
+/// One object on an impact slice a `ripbi_keep` annotation keeps.
+#[derive(Serialize)]
+struct JsonKept {
+    object: String,
+    /// The annotated object: `object` itself, or its kept table.
+    annotated: String,
+    reason: String,
 }
 
 #[derive(Serialize)]

@@ -37,6 +37,99 @@ fn object(object: &str) -> (i32, String, String) {
     object_in(object, |_| {})
 }
 
+/// Issue #151: a `ripbi_keep` annotation is the answer to "why is this
+/// alive?" — the Impact view names the kept object and its reason.
+mod kept {
+    use super::*;
+
+    const SALES: &str = "Mini.SemanticModel/definition/tables/Sales.tmdl";
+    /// `[Legacy Total]`'s last line, without its line ending: checkouts may
+    /// convert the fixture to CRLF.
+    const LEGACY_TOTAL: &str = "lineageTag: 99999999-9999-9999-9999-999999999903";
+
+    /// The mini project with `[Legacy Total]` (and so its input `[Legacy]`)
+    /// kept by annotation.
+    fn kept_project(annotation: &str) -> TempDir {
+        let dir = mini_project();
+        let path = dir.0.join(SALES);
+        let text = std::fs::read_to_string(&path).expect("read Sales.tmdl");
+        assert_eq!(text.matches(LEGACY_TOTAL).count(), 1);
+        let text = text.replace(LEGACY_TOTAL, &format!("{LEGACY_TOTAL}\n\t\t{annotation}"));
+        std::fs::write(&path, text).expect("write Sales.tmdl");
+        dir
+    }
+
+    fn run(dir: &TempDir, object: &str, configure: impl FnOnce(&mut DepsArgs)) -> String {
+        let mut args = DepsArgs {
+            object: Some(object.to_string()),
+            ..DepsArgs::default()
+        };
+        configure(&mut args);
+        let (code, out, err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0, "{err}");
+        out
+    }
+
+    #[test]
+    fn an_input_of_a_kept_measure_names_it_with_its_reason() {
+        let dir = kept_project("annotation ripbi_keep = Used by the Finance Excel pivot");
+        let out = run(&dir, "'Sales'[Legacy]", |args| args.impact = true);
+        assert_eq!(
+            out,
+            "'Sales'[Legacy]  column
+
+Impact
+
+Model
+└─ 'Sales'[Legacy Total]  measure
+
+Kept
+└─ 'Sales'[Legacy Total]  kept: Used by the Finance Excel pivot
+"
+        );
+    }
+
+    #[test]
+    fn the_kept_object_itself_shows_its_reason_and_empty_reasons_say_so() {
+        let dir = kept_project("annotation ripbi_keep =");
+        let out = run(&dir, "'Sales'[Legacy Total]", |args| args.impact = true);
+        assert!(
+            out.ends_with("\nKept\n└─ kept (no reason given)\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn plain_and_json_carry_the_kept_record() {
+        let dir = kept_project("annotation ripbi_keep = Excel");
+        let plain = run(&dir, "'Sales'[Legacy]", |args| args.plain = true);
+        assert!(
+            plain.contains("kept\t'Sales'[Legacy Total]\t'Sales'[Legacy Total]\tExcel\n"),
+            "{plain}"
+        );
+        let json = json_payload(&run(&dir, "'Sales'[Legacy]", |args| args.json = true));
+        assert_eq!(
+            json["kept"],
+            serde_json::json!([{
+                "object": "'Sales'[Legacy Total]",
+                "annotated": "'Sales'[Legacy Total]",
+                "reason": "Excel",
+            }])
+        );
+    }
+
+    /// A consumer or report filter asks about consumers of that kind; a kept
+    /// annotation is neither, so it steps aside.
+    #[test]
+    fn consumer_filters_leave_kept_out() {
+        let dir = kept_project("annotation ripbi_keep = Excel");
+        let out = run(&dir, "'Sales'[Legacy]", |args| {
+            args.consumer = Some("visual".to_string());
+        });
+        assert!(!out.contains("Kept"), "{out}");
+    }
+}
+
 mod focused {
     use super::*;
 

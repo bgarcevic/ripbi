@@ -12,7 +12,8 @@ that ripbi analyzed; it is a starting point for review, not a deletion command.
 
 Before removing an object, check [the scan's known boundaries](https://bgarcevic.github.io/ripbi/output.html#known-boundaries).
 Thin reports, Excel, XMLA clients, and other external consumers are invisible
-unless their bindings were included. A model with no connected reports is
+unless their bindings were included — or the model marks what they read with a
+`ripbi_keep` annotation, which makes the object a root like a report binding. A model with no connected reports is
 refused by default, because a scan without report roots cannot give a useful
 unused verdict. Use `ripbi deps` to inspect what a finding relies on and what
 else relies on it.
@@ -139,6 +140,19 @@ table kept alive by one explicitly named item) deliberately does not spread to t
 unselected items. DAX that references the column without naming an item
 (`'Date Role'[Date Role] = "By Ship Date"`) currently keeps only the column alive —
 the string is data, not a reference the lexer can bind.
+
+**Kept objects (issue #151).** An object carrying the `ripbi_keep` annotation
+(`TabularDatabase::kept_objects`) is a root beside the report bindings — the model's
+own declaration that a consumer ripbi cannot see reads it. It is live, and so is
+everything it references: the inputs of a measure Excel reads are needed too, which is
+why the annotation roots instead of suppressing a finding. A kept table seeds every
+member (columns, measures, hierarchies, calculation items, partitions), not just
+itself, since containment only flows member → table. A kept relationship counts as
+activated: its key columns seed the weak pass directly, so they stay live even when
+it is inactive, but — like every relationship — it never keeps its tables alive.
+Kept objects live in `DependencyGraph::kept`, not in `roots`, so `roots()` stays the
+report bindings and the scan summary's root count is unchanged; `kept_by` answers
+which annotation keeps an object (its own, or its kept table's).
 
 **Report measures are nodes, not roots.** An unused report measure is dead — it is
 exactly the accumulated bloat this tool looks for. Its body's references stay alive

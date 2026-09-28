@@ -47,6 +47,7 @@ pub(super) fn load(
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
             storage: None,
+            keep: keep(item),
         });
     }
     for item in array(model, "roles") {
@@ -86,6 +87,7 @@ pub(super) fn load(
                 name,
                 expression: expression(item, "expression").unwrap_or_default(),
                 parameter_values_column,
+                keep: keep(item),
             });
         }
     }
@@ -95,6 +97,7 @@ pub(super) fn load(
                 name,
                 expression: expression(item, "expression").unwrap_or_default(),
                 is_hidden: bool_value(item, "isHidden"),
+                keep: keep(item),
             });
         }
     }
@@ -121,6 +124,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
         detail_rows_expression: item
             .get("defaultDetailRowsDefinition")
             .and_then(|v| expression(v, "expression")),
+        keep: keep(item),
         name,
         ..Default::default()
     };
@@ -155,6 +159,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
                         default_hierarchy: v.get("defaultHierarchy").and_then(parse_hierarchy_ref),
                     })
                     .collect(),
+                keep: keep(column),
             });
         }
     }
@@ -175,6 +180,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
                     status_expression: expression(v, "statusExpression"),
                     trend_expression: expression(v, "trendExpression"),
                 }),
+                keep: keep(measure),
             });
         }
     }
@@ -209,6 +215,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
                         column: string(level, "column").unwrap_or_default(),
                     })
                     .collect(),
+                keep: keep(hierarchy),
             });
         }
     }
@@ -222,6 +229,7 @@ fn table(item: &Value, path: &Path, skips: &mut Vec<SkipNotice>, index: usize) -
                     format_string_expression: v
                         .get("formatStringDefinition")
                         .and_then(|v| expression(v, "expression")),
+                    keep: keep(v),
                 })
                 .collect(),
             no_selection_expression: group
@@ -304,6 +312,18 @@ fn has_annotation(value: &Value, name: &str) -> bool {
     array(value, "annotations")
         .iter()
         .any(|v| v.get("name").and_then(Value::as_str) == Some(name))
+}
+
+/// The reason of a [`KEEP_ANNOTATION`](crate::model::KEEP_ANNOTATION) on the object,
+/// when it carries one. TMSL writes an annotation value as a string or, when
+/// it spans lines, as an array of them.
+fn keep(value: &Value) -> Option<String> {
+    let annotation = array(value, "annotations").iter().find(|v| {
+        v.get("name")
+            .and_then(Value::as_str)
+            .is_some_and(crate::model::is_keep_annotation)
+    })?;
+    Some(expression(annotation, "value").unwrap_or_default())
 }
 
 fn metadata_permission(value: &Value) -> Option<MetadataPermission> {

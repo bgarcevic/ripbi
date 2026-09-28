@@ -189,6 +189,10 @@ pub struct DependencyGraph {
     broken: Vec<BrokenBinding>,
     /// Broken DAX owners, independently of report bindings (issue #84).
     broken_artifacts: Vec<BrokenArtifact>,
+    /// The objects the model itself declares deliberately kept — the
+    /// `ripbi_keep` annotation, in model order (issue #151). Roots beside the
+    /// report bindings, standing in for a consumer ripbi cannot see.
+    kept: Vec<KeptObject>,
 }
 
 impl DependencyGraph {
@@ -209,6 +213,7 @@ impl DependencyGraph {
         m_named: HashMap<ObjectId, Vec<ObjectId>>,
         broken: Vec<BrokenBinding>,
         broken_artifacts: Vec<BrokenArtifact>,
+        kept: Vec<KeptObject>,
     ) -> Self {
         Self {
             graph,
@@ -217,6 +222,7 @@ impl DependencyGraph {
             m_named,
             broken,
             broken_artifacts,
+            kept,
         }
     }
 
@@ -252,6 +258,28 @@ impl DependencyGraph {
             .filter(|(target, _)| target == id)
             .map(|(_, provenance)| provenance)
             .collect()
+    }
+
+    /// Every object the model declares deliberately kept with a `ripbi_keep`
+    /// annotation, in model order (issue #151). Each is a reachability root:
+    /// it stays live, and so does everything it references. A kept table
+    /// keeps its members too; a kept relationship counts as activated, so its
+    /// key columns stay live even when it is inactive — but, like any
+    /// relationship, it never keeps its tables alive.
+    pub fn kept(&self) -> &[KeptObject] {
+        &self.kept
+    }
+
+    /// Why `id` is kept by annotation: its own [`KeptObject`], or its table's
+    /// when a kept table carries it along as a member. `None` when no
+    /// annotation keeps it — it may still be live through other roots.
+    pub fn kept_by(&self, id: &ObjectId) -> Option<&KeptObject> {
+        self.kept.iter().find(|kept| &kept.id == id).or_else(|| {
+            let table = table_member_of(id)?;
+            self.kept.iter().find(|kept| {
+                matches!(&kept.id, ObjectId::Table { table: kept_table } if kept_table == table)
+            })
+        })
     }
 
     /// Every report binding whose written field reference resolves to nothing
@@ -406,21 +434,54 @@ impl DependencyGraph {
             .collect()
     }
 
-    /// The petgraph indices reachability starts from: every root target and
-    /// every role.
+    /// The petgraph indices reachability starts from: every root target,
+    /// every role, and every kept object — a kept table with its members.
     pub(super) fn seed_indices(&self) -> Vec<NodeIndex> {
         let mut seeds: Vec<NodeIndex> = self
             .roots
             .iter()
             .filter_map(|(id, _)| self.nodes.get(id).copied())
             .collect();
+        let kept = !self.kept.is_empty();
         seeds.extend(
             self.nodes
                 .iter()
-                .filter(|(id, _)| matches!(id, ObjectId::Role { .. }))
+                .filter(|(id, _)| {
+                    matches!(id, ObjectId::Role { .. }) || (kept && self.kept_by(id).is_some())
+                })
                 .map(|(_, &index)| index),
         );
         seeds
+    }
+
+    /// The petgraph indices the weak pass starts from on its own: the key
+    /// columns of every kept relationship. Keeping a relationship counts as
+    /// activating it, so its keys stay live even when it is inactive — weakly,
+    /// because a relationship never keeps its tables alive.
+    pub(super) fn weak_seed_indices(&self) -> Vec<NodeIndex> {
+        self.kept
+            .iter()
+            .filter_map(|kept| match &kept.id {
+                ObjectId::Relationship {
+                    from_table,
+                    from_column,
+                    to_table,
+                    to_column,
+                } => Some([
+                    ObjectId::Column {
+                        table: from_table.clone(),
+                        column: from_column.clone(),
+                    },
+                    ObjectId::Column {
+                        table: to_table.clone(),
+                        column: to_column.clone(),
+                    },
+                ]),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|id| self.nodes.get(&id).copied())
+            .collect()
     }
 
     /// The set of nodes reachable from `seeds` over the edges `allowed`.
@@ -447,6 +508,29 @@ impl DependencyGraph {
     /// The node key at a petgraph index.
     pub(super) fn object_at(&self, index: NodeIndex) -> &ObjectId {
         &self.graph[index]
+    }
+}
+
+/// One object the model declares deliberately kept: a `ripbi_keep` annotation
+/// on it (issue #151).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptObject {
+    /// The annotated object.
+    pub id: ObjectId,
+    /// The annotation's free-text reason; empty when it gives none.
+    pub reason: String,
+}
+
+/// The table `id` is a member of, for the kinds a kept table carries along:
+/// columns, measures, hierarchies, calculation items, and partitions.
+fn table_member_of(id: &ObjectId) -> Option<&NameKey> {
+    match id {
+        ObjectId::Column { table, .. }
+        | ObjectId::Measure { table, .. }
+        | ObjectId::Hierarchy { table, .. }
+        | ObjectId::CalculationItem { table, .. }
+        | ObjectId::Partition { table, .. } => Some(table),
+        _ => None,
     }
 }
 
@@ -672,6 +756,7 @@ mod tests {
                     ..Default::default()
                 }],
                 functions: vec![Function {
+                    keep: None,
                     name: "MyFunc".to_string(),
                     expression: "1".to_string(),
                     is_hidden: false,
@@ -824,6 +909,7 @@ mod tests {
                     },
                 ],
                 relationships: vec![Relationship {
+                    keep: None,
                     name: None,
                     from_table: "Sales".to_string(),
                     from_column: "Key".to_string(),
@@ -914,6 +1000,7 @@ mod tests {
                     },
                 ],
                 relationships: vec![Relationship {
+                    keep: None,
                     name: None,
                     from_table: "Sales".to_string(),
                     from_column: "Key".to_string(),
@@ -998,6 +1085,7 @@ mod tests {
                     },
                 ],
                 relationships: vec![Relationship {
+                    keep: None,
                     name: None,
                     from_table: "Sales".to_string(),
                     from_column: "Key".to_string(),
@@ -1361,6 +1449,7 @@ mod tests {
                     name: "Date".to_string(),
                     columns: vec![column("Year")],
                     hierarchies: vec![crate::model::Hierarchy {
+                        keep: None,
                         name: "Calendar".to_string(),
                         levels: vec![crate::model::HierarchyLevel {
                             name: "Year".to_string(),
@@ -1404,6 +1493,7 @@ mod tests {
                     name: "Date".to_string(),
                     columns: vec![column("Year")],
                     hierarchies: vec![crate::model::Hierarchy {
+                        keep: None,
                         name: "Calendar".to_string(),
                         levels: vec![crate::model::HierarchyLevel {
                             name: "Year".to_string(),
@@ -1444,11 +1534,13 @@ mod tests {
                         calculation_group: Some(crate::model::CalculationGroup {
                             items: vec![
                                 crate::model::CalculationItem {
+                                    keep: None,
                                     name: "By Ship Date".to_string(),
                                     expression: "SELECTEDMEASURE()".to_string(),
                                     format_string_expression: None,
                                 },
                                 crate::model::CalculationItem {
+                                    keep: None,
                                     name: "By Due Date".to_string(),
                                     expression: "SELECTEDMEASURE()".to_string(),
                                     format_string_expression: None,
@@ -1508,11 +1600,13 @@ mod tests {
                         calculation_group: Some(crate::model::CalculationGroup {
                             items: vec![
                                 crate::model::CalculationItem {
+                                    keep: None,
                                     name: "YTD".to_string(),
                                     expression: "SELECTEDMEASURE()".to_string(),
                                     format_string_expression: None,
                                 },
                                 crate::model::CalculationItem {
+                                    keep: None,
                                     name: "MTD".to_string(),
                                     expression: "SELECTEDMEASURE()".to_string(),
                                     format_string_expression: None,
@@ -1674,6 +1768,7 @@ mod tests {
                     },
                 ],
                 expressions: vec![SharedExpression {
+                    keep: None,
                     name: "MinDays".to_string(),
                     expression: "15".to_string(),
                     parameter_values_column: Some(ParameterValuesColumn {
@@ -1732,6 +1827,7 @@ mod tests {
                 ],
                 expressions: vec![
                     SharedExpression {
+                        keep: None,
                         name: "Unconsumed".to_string(),
                         expression: "15".to_string(),
                         parameter_values_column: Some(ParameterValuesColumn {
@@ -1740,6 +1836,7 @@ mod tests {
                         }),
                     },
                     SharedExpression {
+                        keep: None,
                         name: "Dangling".to_string(),
                         expression: "1".to_string(),
                         parameter_values_column: Some(ParameterValuesColumn {
@@ -2388,6 +2485,186 @@ mod tests {
         }
     }
 
+    /// The `ripbi_keep` annotation (issue #151): a kept object is a root.
+    mod kept {
+        use super::*;
+
+        fn kept(reason: &str) -> Option<String> {
+            Some(reason.to_string())
+        }
+
+        /// `Sales` with an unbound `[Excel Margin %]` over `[Margin]` over
+        /// `Amt`, and an unrelated `[Other]`.
+        fn sales(keep_measure: Option<String>) -> Table {
+            let mut margin = measure("Excel Margin %", "DIVIDE([Margin], 2)");
+            margin.keep = keep_measure;
+            Table {
+                name: "Sales".to_string(),
+                columns: vec![column("Amt"), column("Unused")],
+                measures: vec![
+                    margin,
+                    measure("Margin", "SUM('Sales'[Amt])"),
+                    measure("Other", "1"),
+                ],
+                ..Default::default()
+            }
+        }
+
+        #[test]
+        fn a_kept_measure_is_live_and_so_is_everything_it_references() {
+            let db = TabularDatabase {
+                tables: vec![sales(kept("Finance Excel pivot (FIN-231)"))],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            for id in [
+                measure_id("Sales", "Excel Margin %"),
+                measure_id("Sales", "Margin"),
+                column_id("Sales", "Amt"),
+                table_id("Sales"),
+            ] {
+                not_unused(&unused, &id);
+            }
+            find(&unused, &measure_id("Sales", "Other"));
+            find(&unused, &column_id("Sales", "Unused"));
+
+            let kept = graph
+                .kept_by(&measure_id("Sales", "Excel Margin %"))
+                .expect("the annotated measure is kept");
+            assert_eq!(kept.reason, "Finance Excel pivot (FIN-231)");
+            assert!(
+                graph.kept_by(&measure_id("Sales", "Margin")).is_none(),
+                "an input is live through the kept measure, not kept itself"
+            );
+            assert!(graph.roots().is_empty(), "kept objects are not bindings");
+        }
+
+        #[test]
+        fn without_the_annotation_the_chain_is_dead() {
+            let db = TabularDatabase {
+                tables: vec![sales(None)],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+            find(&unused, &measure_id("Sales", "Excel Margin %"));
+            find(&unused, &column_id("Sales", "Amt"));
+            assert!(graph.kept().is_empty());
+        }
+
+        #[test]
+        fn a_kept_table_keeps_its_members() {
+            let mut table = sales(None);
+            table.keep = kept("");
+            table.hierarchies.push(Hierarchy {
+                name: "H".to_string(),
+                levels: vec![HierarchyLevel {
+                    name: "L".to_string(),
+                    column: "Amt".to_string(),
+                }],
+                ..Default::default()
+            });
+            let db = TabularDatabase {
+                tables: vec![table, self::table("Other")],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            for id in [
+                table_id("Sales"),
+                column_id("Sales", "Unused"),
+                measure_id("Sales", "Other"),
+                ObjectId::Hierarchy {
+                    table: NameKey::new("Sales"),
+                    hierarchy: NameKey::new("H"),
+                },
+            ] {
+                not_unused(&unused, &id);
+                let kept = graph.kept_by(&id).expect("carried by the kept table");
+                assert_eq!(kept.id, table_id("Sales"));
+                assert_eq!(kept.reason, "");
+            }
+            find(&unused, &table_id("Other"));
+        }
+
+        /// Keeping an inactive relationship counts as activating it: its keys
+        /// stay live, but — like any relationship — it never keeps a table.
+        #[test]
+        fn a_kept_inactive_relationship_keeps_its_keys_but_not_its_tables() {
+            let relationship_id = ObjectId::Relationship {
+                from_table: NameKey::new("Sales"),
+                from_column: NameKey::new("Key"),
+                to_table: NameKey::new("DimOld"),
+                to_column: NameKey::new("Key"),
+            };
+            let db = TabularDatabase {
+                tables: vec![
+                    Table {
+                        name: "Sales".to_string(),
+                        columns: vec![column("Key")],
+                        ..Default::default()
+                    },
+                    Table {
+                        name: "DimOld".to_string(),
+                        columns: vec![column("Key")],
+                        ..Default::default()
+                    },
+                ],
+                relationships: vec![Relationship {
+                    from_table: "Sales".to_string(),
+                    from_column: "Key".to_string(),
+                    to_table: "DimOld".to_string(),
+                    to_column: "Key".to_string(),
+                    is_active: false,
+                    keep: kept("USERELATIONSHIP in the Excel workbook"),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+
+            not_unused(&unused, &relationship_id);
+            not_unused(&unused, &column_id("Sales", "Key"));
+            not_unused(&unused, &column_id("DimOld", "Key"));
+            find(&unused, &table_id("Sales"));
+            find(&unused, &table_id("DimOld"));
+        }
+
+        #[test]
+        fn kept_expressions_and_functions_are_live() {
+            let db = TabularDatabase {
+                expressions: vec![
+                    SharedExpression {
+                        name: "Kept".to_string(),
+                        expression: "Staging".to_string(),
+                        keep: kept("Dataflow export"),
+                        ..Default::default()
+                    },
+                    SharedExpression {
+                        name: "Staging".to_string(),
+                        expression: "1".to_string(),
+                        ..Default::default()
+                    },
+                ],
+                functions: vec![Function {
+                    name: "Fx".to_string(),
+                    expression: "1".to_string(),
+                    keep: kept("Shared library"),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let graph = DependencyGraph::build(&db, &[]);
+            let unused = graph.unused_objects();
+            assert!(unused.is_empty(), "{unused:?}");
+            assert_eq!(graph.kept().len(), 2);
+        }
+    }
+
     mod queries {
         use super::*;
 
@@ -2910,6 +3187,7 @@ mod tests {
                     name: "Date".to_string(),
                     columns: vec![column("Year")],
                     hierarchies: vec![Hierarchy {
+                        keep: None,
                         name: "Calendar".to_string(),
                         levels: vec![HierarchyLevel {
                             name: "Year".to_string(),

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ripbi_keep` model annotation** (issue #151): mark an object that is unused
+  on purpose — a measure only an Excel pivot reads, a column kept for an
+  upcoming report — in the model itself, with the reason as the value
+  (`annotation ripbi_keep = Used by the Finance Excel pivot`). A kept object is
+  a reachability root, like a report binding: it and everything it references
+  stay live, so neither it nor its inputs is a finding and none gates, with or
+  without `--compare-root`. Tables (with their members), columns, measures,
+  hierarchies, calculation items, relationships, shared expressions, and
+  functions can carry it, and TMDL, `model.bim`, PBIX, PBIT, and `.abf` models
+  all read it. `--json` counts kept objects in `summary.kept`; `ripbi deps
+  --impact` shows the reason in a `Kept` section (`kept` records in `--plain`,
+  a `kept` array in `--json`). Unlike a `[scan].ignore` pattern, the reason
+  sits beside the object and survives renames.
+
 ## [0.7.0] - 2026-09-28
 
 ### Added

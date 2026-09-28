@@ -1,0 +1,6 @@
+model Keep
+	culture: en-US
+
+ref table Sales
+ref table Archive
+ref table Periods

@@ -550,6 +550,7 @@ mod tests {
                         ..Default::default()
                     }],
                     hierarchies: vec![crate::model::Hierarchy {
+                        keep: None,
                         name: "Calendar".to_string(),
                         levels: vec![crate::model::HierarchyLevel {
                             name: "Year".to_string(),

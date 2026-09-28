@@ -666,6 +666,7 @@ fn scan(
         roots,
         unused_raw: objects - reachable,
         ignored,
+        kept: graph.kept().len(),
         filtered_out,
         machinery_members,
         broken,

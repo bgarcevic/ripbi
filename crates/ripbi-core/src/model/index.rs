@@ -512,6 +512,7 @@ mod tests {
                 },
             ],
             functions: vec![Function {
+                keep: None,
                 name: "Sales.NetPrice".to_string(),
                 expression: "(price: SCALAR) => price * 0.75".to_string(),
                 is_hidden: false,

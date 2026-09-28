@@ -9,7 +9,10 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
 - **Semantic model** (`src/model.rs`, `src/identity.rs`): the normalized `TabularDatabase`
   AST and the case-insensitive object identity every other layer refers to objects by.
   Columns carry their `variations` (the date-variation declarations report bindings
-  resolve through); tables carry the auto date/time identity flags. Pure data — no
+  resolve through); tables carry the auto date/time identity flags. Tables, columns,
+  measures, hierarchies, calculation items, relationships, shared expressions, and
+  functions carry `keep` — the `ripbi_keep` annotation's reason (issue #151), read by
+  every ingest format; `kept_objects` enumerates them by graph identity. Pure data — no
   parsing, no I/O.
 - **Report** (`src/report.rs`): the normalized `ReportModel` AST — pages, visuals,
   filters, bookmarks, and report-level measures. Its `bindings()` enumeration is the
@@ -39,7 +42,8 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   because deleting them deletes a query another expression reads (issue #39). Same
   zero-copy, total-lexer, conservatism-first design as the DAX side.
 - **Graph** (`src/graph/`): build a DAG with `petgraph`, BFS reachability from report
-  roots (visuals, filters, slicers) to isolate dead objects, plus the provenance-based
+  roots (visuals, filters, slicers — and objects the model keeps with a `ripbi_keep`
+  annotation, `DependencyGraph::kept`, issue #151) to isolate dead objects, plus the provenance-based
   auto-date/time verdict (`DependencyGraph::auto_date_time_tables`) read off the same
   graph, the broken-binding records (`DependencyGraph::broken_bindings`) and
   DAX-owner findings (`DependencyGraph::broken_artifacts`, `graph/broken.rs`) — written

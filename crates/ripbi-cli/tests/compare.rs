@@ -100,6 +100,23 @@ fn a_new_dead_measure_is_the_only_finding_and_gates() {
     assert!(!stdout.contains("'Sales'[Legacy Total]"), "{stdout}");
 }
 
+/// Issue #151: the same new measure, annotated as deliberately kept, is a
+/// root rather than a finding — the PR passes the gate.
+#[test]
+fn a_new_measure_kept_by_annotation_passes_the_gate() {
+    let checkouts = Checkouts::of("compare-kept", &mini_pbip());
+    let kept = DEAD_MEASURE.replace(
+        "\n\n\tcolumn Amount",
+        "\n\t\tannotation ripbi_keep = Used by the Finance Excel pivot\n\n\tcolumn Amount",
+    );
+    checkouts.edit("head", SALES, "\tcolumn Amount", &kept);
+
+    let (code, stdout, _) = checkouts.scan(ScanArgs::default());
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains(", 0 unused"), "{stdout}");
+    assert!(!stdout.contains("Draft KPI"), "{stdout}");
+}
+
 /// Report changes count too: rebinding the card from `Total` to `Legacy
 /// Total` kills `Total` and `Amount` (new) and revives the legacy pair (fixed).
 #[test]

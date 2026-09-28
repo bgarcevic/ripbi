@@ -105,8 +105,30 @@ hint: object names are case-insensitive; quote the table: 'Table'[Name]
 
 `--dependencies` shows what the object relies on; `--impact` shows what relies on it.
 Neither flag — or both — shows the default view with both sections. Impact splits into
-`Model` (consuming model objects) and `Reports` (the bindings riding on the impact
-slice); an impact with neither prints `└─ nothing` and still exits `0`.
+`Model` (consuming model objects), `Reports` (the bindings riding on the impact
+slice), and `Kept` (the objects on the impact slice a `ripbi_keep` model annotation
+keeps, issue #151); an impact with none of them prints `└─ nothing` and still exits
+`0`.
+
+`Kept` answers "why is this alive?" when no report is the reason. Each kept object
+prints the annotation's reason — prefixed with the object unless it is the one asked
+about, naming the kept table when the annotation sits on the table:
+
+```text
+'Sales'[Legacy]  column
+
+Impact
+
+Model
+└─ 'Sales'[Legacy Total]  measure
+
+Kept
+└─ 'Sales'[Legacy Total]  kept: Used by the Finance Excel pivot (FIN-231)
+```
+
+An empty reason reads `kept (no reason given)`; a member of a kept table reads
+`kept by table 'Archive': …`. The consumer and report filters leave `Kept` out: an
+annotation is neither a visual, a model object, nor in a report.
 
 ## Depth
 
@@ -212,6 +234,7 @@ One typed record per line, tab-separated, for `grep`/`cut`/`awk`. Never truncate
 dependency	'Sales'[Total]	'Sales'[Amount]	measure_expression
 impact	'Sales'[Total]	'Sales'[Margin Color]	measure_expression
 binding	'Sales'[Total]	Mini	P1	V1	Values
+kept	'Sales'[Legacy Total]	'Sales'[Legacy Total]	Used by the Finance Excel pivot
 ```
 
 - `dependency` — graph orientation: consumer, what it uses, provenance key.
@@ -219,6 +242,9 @@ binding	'Sales'[Total]	Mini	P1	V1	Values
 - `binding` — object, report, page, visual, and the binding role (`Values`) or machine
   kind (`filter`, `sort`, `drillthrough`, `conditional_formatting`, `alt_text`); `-`
   for an absent level.
+- `kept` — the kept object on the impact slice, the annotated object (itself, or its
+  kept table), and the reason, with tabs and line breaks inside it turned into
+  spaces.
 
 Selector runs merge their roots' slices and drop duplicate records. The overview prints
 count records instead (`objects`, `edges`, `bindings`, then one `type	count` line per
@@ -258,7 +284,8 @@ trailing newline. Never truncated.
       "binding": "Values",
       "kind": "visual_binding"
     }
-  ]
+  ],
+  "kept": []
 }
 ```
 
@@ -272,6 +299,9 @@ trailing newline. Never truncated.
 - `bindings` keep the full site identity: report, page, visual, bookmark, the
   phone-layout marker, the role, and the machine kind. Selector runs — several roots —
   set `root` to `null`.
+- `kept` lists each object on the impact slices a `ripbi_keep` annotation keeps:
+  `object`, `annotated` (the object itself, or its kept table), and `reason` (empty
+  when the annotation gives none). Empty unless `--impact` is in the view.
 - The overview prints its counts shape: `objects`, `edges`, `bindings`, and a
   `by_type` object.
 
