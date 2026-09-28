@@ -19,7 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed as fixed (a `Fixed since` section, `fixed:` records in `--plain`, a
   `compare` object in `--json`). ripbi only compares folders; the pipeline provides
   the other checkout (`git worktree add ../base origin/main`). Without the flag,
-  output is unchanged.
+  output is unchanged. When the scan's ingest dropped an object it could not
+  parse, the fixed list carries a caveat (`compare.fixed_uncertain` in `--json`).
+
+### Fixed
+
+- **A TMDL line indented with spaces no longer swallows the rest of its table.**
+  A hand-edited `    measure X = 1` read as tab depth 0, so it became a new root
+  and every following member of the table was dropped with it. An object line is
+  now placed under its nearest possible parent (a member under the open table),
+  and any other space-indented line is skipped alone. Both cases record a skip
+  notice naming the line.
 
 ## [0.6.1] - 2026-09-28
 

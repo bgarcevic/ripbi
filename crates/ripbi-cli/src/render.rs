@@ -380,7 +380,30 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
             palette.dim(&entry.kind.replace('_', " "))
         )?;
     }
+    if fixed_uncertain(report) {
+        writeln!(out, "  {}", palette.yellow(FIXED_CAVEAT))?;
+    }
     writeln!(out)
+}
+
+/// The caveat a `Fixed since` list carries when this scan's ingest skipped
+/// objects: a finding that vanished may have been lost to the parse, not
+/// removed (issue #141).
+const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
+                            of these may be parse damage, not removals; see the notices below)";
+
+/// Whether a `Fixed since` list may be parse damage: some finding vanished,
+/// and this scan's ingest recorded an `unknown_object` skip — the one kind
+/// that can drop an object (the same bar issue #60 holds breakage claims to).
+fn fixed_uncertain(report: &ScanOutput) -> bool {
+    report
+        .compare
+        .as_ref()
+        .is_some_and(|compare| !compare.fixed.is_empty())
+        && report
+            .skips
+            .iter()
+            .any(|skip| skip.kind == "unknown_object")
 }
 
 /// The placeholder line for an empty findings list. Under a lone `--broken`
@@ -649,6 +672,9 @@ pub fn human_summary(
             palette.green(&format!("Fixed since {}", compare.root)),
             compare.fixed.len()
         )?;
+        if fixed_uncertain(report) {
+            writeln!(out, "  {}", palette.yellow(FIXED_CAVEAT))?;
+        }
     }
     if report.auto_date_time.is_empty() {
         return Ok(());
@@ -1005,6 +1031,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             root: compare.root.clone(),
             existing: compare.existing,
             fixed: compare.fixed.clone(),
+            fixed_uncertain: fixed_uncertain(report),
         }),
     };
     serde_json::to_writer_pretty(&mut *out, &payload)
@@ -1038,6 +1065,9 @@ struct JsonCompare {
     existing: usize,
     /// Findings of the other checkout this scan no longer detects.
     fixed: Vec<Entry>,
+    /// `true` when `fixed` is non-empty and this scan's ingest recorded an
+    /// `unknown_object` skip, so a "fixed" finding may be parse damage.
+    fixed_uncertain: bool,
 }
 
 #[derive(Serialize)]

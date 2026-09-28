@@ -263,3 +263,56 @@ fn unchanged_auto_date_time_rows_do_not_gate() {
         "only informational rows remain:\n{stdout}"
     );
 }
+
+/// The hand-edit that first exposed this: a measure indented with spaces. It
+/// must cost nothing else in its table, so the comparison reports exactly the
+/// new measure — never the rest of the table as "fixed".
+#[test]
+fn a_space_indented_measure_is_new_and_breaks_nothing_else() {
+    let checkouts = Checkouts::of("compare-spaces", &mini_pbip());
+    checkouts.edit(
+        "head",
+        SALES,
+        "\tcolumn Amount",
+        "    measure 'Try Me' = 1\n\n\tcolumn Amount",
+    );
+
+    let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains(", 1 unused"), "{stdout}");
+    assert!(stdout.contains("'Sales'[Try Me]"), "{stdout}");
+    assert!(!stdout.contains("Fixed since"), "{stdout}");
+    assert!(stderr.contains("indented with spaces"), "{stderr}");
+}
+
+/// A skip that drops an object makes every "fixed" claim suspect: the list
+/// carries a caveat, and JSON says so.
+#[test]
+fn fixed_findings_carry_a_caveat_when_the_parse_dropped_objects() {
+    let checkouts = Checkouts::of("compare-damage", &mini_pbip());
+    checkouts.edit("base", SALES, "\tcolumn Amount", DEAD_MEASURE);
+    checkouts.edit(
+        "head",
+        SALES,
+        "\tcolumn Amount",
+        "    isHidden\n\tcolumn Amount",
+    );
+
+    let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("'Sales'[Draft KPI]  measure"), "{stdout}");
+    assert!(stdout.contains("may be parse damage"), "{stdout}");
+    assert!(stderr.contains("could not be placed"), "{stderr}");
+
+    let (_, json, _) = checkouts.scan(ScanArgs {
+        json: true,
+        ..ScanArgs::default()
+    });
+    assert_eq!(json_payload(&json)["compare"]["fixed_uncertain"], true);
+
+    let (_, clean, _) = Checkouts::of("compare-damage-clean", &mini_pbip()).scan(ScanArgs {
+        json: true,
+        ..ScanArgs::default()
+    });
+    assert_eq!(json_payload(&clean)["compare"]["fixed_uncertain"], false);
+}

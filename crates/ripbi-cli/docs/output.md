@@ -374,7 +374,10 @@ ripbi scan --compare-root ../base
   is still detected, so it is not fixed. Human output lists them in a
   `Fixed since <DIR> (N)` section at the end, `--summary` counts them, `--plain`
   prints one `fixed:<type>\t<id>` record each, and `--json` lists them under
-  `compare.fixed`. Fixed findings never fail the run.
+  `compare.fixed`. Fixed findings never fail the run. When this scan's ingest
+  recorded an `unknown_object` skip notice, a finding may have vanished because its
+  object failed to parse rather than because it was removed: the list then carries a
+  caveat, and `compare.fixed_uncertain` is `true`.
 - **Nothing to compare.** When the scan cannot run in `DIR` (a model this change
   adds, say), a `Note: nothing to compare in …` on stderr says why, and every
   finding is new. A `DIR` that is not a folder is exit `2`.
@@ -766,12 +769,13 @@ Pretty-printed JSON, stable field order, additive schema:
   one is attached); `summary.stats_source` is that source's path (issue #129),
   absent for a PBIX or `.abf` model's own catalog.
 - `compare` (issue #141) is present only under `--compare-root`:
-  `{"root", "existing", "fixed"}`. `root` is the other checkout as given; `existing`
+  `{"root", "existing", "fixed", "fixed_uncertain"}`. `root` is the other checkout as given; `existing`
   counts the reportable findings that already existed there, which are absent from
   every array above and from the summary counts that mirror them; `fixed` lists the
   other checkout's findings this scan no longer detects, as `{type, id}` plus
   `reason`/`provenance` (broken bindings), `report` (report-level broken artifacts), or
-  `verdict` (auto date/time tables) where they apply (see
+  `verdict` (auto date/time tables) where they apply; `fixed_uncertain` is `true` when
+  `fixed` is non-empty and this scan recorded an `unknown_object` skip notice (see
   [Comparing against another checkout](#comparing-against-another-checkout)). Without
   the flag the key is omitted, so other scans' output is unchanged.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
