@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-28
+
 ### Added
 
 - **Storage sizes for PBIP and TMDL models** (issue #129): a PBIP saved with its
@@ -645,7 +647,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/bgarcevic/ripbi/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/bgarcevic/ripbi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bgarcevic/ripbi/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/bgarcevic/ripbi/compare/v0.4.0...v0.4.1
