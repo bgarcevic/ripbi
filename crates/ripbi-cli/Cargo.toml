@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "../../README.md"
+# `cargo run` picks `ripbi` over the `rib` alias.
+default-run = "ripbi"
 description = "Static analysis, linting, and tree-shaking for Power BI semantic models and DAX"
 keywords = ["powerbi", "dax", "linter", "static-analysis", "tree-shaking"]
 categories = ["development-tools", "command-line-utilities", "parser-implementations"]
