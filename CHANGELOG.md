@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output is unchanged. When the scan's ingest dropped an object it could not
   parse, the fixed list carries a caveat (`compare.fixed_uncertain` in `--json`).
 
+- **`CLICOLOR_FORCE`**: set to anything but `0`, it turns color on when output
+  is not a terminal, e.g. for CI logs that render ANSI. `NO_COLOR`, `TERM=dumb`,
+  and `--no-color` still win.
+- **Terminal recordings** of `scan`, `--compare-root`, and `deps` in the README
+  and the user guide, generated from real runs by `scripts/record_demos.py`.
+
 ### Fixed
 
 - **A TMDL line indented with spaces no longer swallows the rest of its table.**

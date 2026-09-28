@@ -44,7 +44,8 @@ Tashian, Parish). These govern `ripbi-cli` design decisions.
 - Any action crossing the program boundary (network calls, touching files not passed as
   args) should be explicit.
 - Color: use sparingly and intentionally. Disable when the stream is not a TTY, when
-  `NO_COLOR` is set, `TERM=dumb`, or `--no-color` is passed. No animations when `stdout`
+  `NO_COLOR` is set, `TERM=dumb`, or `--no-color` is passed. `CLICOLOR_FORCE` (not `0`)
+  enables it off-TTY, for CI logs and recordings; the disable switches still win. No animations when `stdout`
   isn't a TTY (keeps CI logs clean).
 - Don't print developer-only diagnostics or log-level labels by default — verbose mode only.
 - Page long output through `less -FIRX` only when interactive.

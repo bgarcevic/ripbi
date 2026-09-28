@@ -1,6 +1,7 @@
 //! ANSI styling, gated in one place per `docs/cli-ux-guidelines.md`: color is
-//! on only when the target stream is a TTY and the user has not disabled it
-//! via `--no-color`, `NO_COLOR`, or `TERM=dumb`.
+//! on only when the target stream is a TTY (or `CLICOLOR_FORCE` asks for it
+//! anyway) and the user has not disabled it via `--no-color`, `NO_COLOR`, or
+//! `TERM=dumb`.
 
 /// The handful of styles `scan` uses. Detection happens once per stream; a
 /// disabled palette returns its input untouched.
@@ -10,13 +11,21 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// Detects color for one stream: on only when the stream is a TTY and no
-    /// disable switch fired.
+    /// Detects color for one stream: on only when the stream is a TTY — or
+    /// `CLICOLOR_FORCE` is set to anything but `0`, for CI logs and recordings
+    /// that render ANSI — and no disable switch fired. The disable switches
+    /// always win over the force.
     #[must_use]
     pub fn detect(stream_is_tty: bool, no_color_flag: bool) -> Self {
+        let forced = std::env::var_os("CLICOLOR_FORCE").is_some_and(|v| !v.is_empty() && v != "0");
         let no_color_env = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
         let dumb_term = std::env::var_os("TERM").is_some_and(|v| v == "dumb");
-        Self::resolve(stream_is_tty, no_color_flag, no_color_env, dumb_term)
+        Self::resolve(
+            stream_is_tty || forced,
+            no_color_flag,
+            no_color_env,
+            dumb_term,
+        )
     }
 
     /// The pure gating rule, split out so tests never touch process

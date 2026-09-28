@@ -7,6 +7,8 @@ Static analysis, linting, and tree-shaking for Power BI semantic models and DAX.
 
 Docs: [bgarcevic.github.io/ripbi](https://bgarcevic.github.io/ripbi/).
 
+![ripbi scan --summary on the AdventureWorks sample: 130 objects, 74 reachable, 56 unused, with per-type counts and the worst tables](docs/media/scan.svg)
+
 I created ripbi because I liked Measure Killer, but I was looking for an
 agent-friendly, free, fast tool to scan semantic models and the connected
 reports to identify potentially unused semantic model objects. I tested it on a
@@ -111,7 +113,27 @@ reports are scanned:
 ripbi scan --report "samples/AdventureWorks Sales.Report"
 ```
 
-Exit codes:
+## Gate pull requests on new findings
+
+A long-lived model can have hundreds of findings, so a gate on "anything
+unused" is red from day one. `--compare-root` reruns the same scan in another
+checkout, such as the pull request's base branch, and reports and fails only
+on what the change introduces:
+
+![A branch adds a Sales Target measure; rib scan --compare-root ../base reports only that measure as unused, with 56 findings already in the base](docs/media/compare-root.svg)
+
+```sh
+git worktree add ../base origin/main
+ripbi scan --compare-root ../base
+```
+
+Every connected report is compared on both sides, so a report change that
+orphans a measure counts too. Findings gone since the base are listed as fixed.
+ripbi only compares folders; the pipeline supplies the other checkout. The
+user guide has
+[GitHub Actions and Azure DevOps examples](https://bgarcevic.github.io/ripbi/output.html#comparing-against-another-checkout).
+
+## Exit codes
 
 | Code | Meaning |
 |------|---------|
@@ -164,6 +186,8 @@ user guide's [report chapter](https://bgarcevic.github.io/ripbi/report.html).
 bindings, each with its provenance. It is the deletion-planning view of the
 same graph `scan` uses for findings: the `used_by` annotation shows one hop,
 `deps --impact` shows the whole chain at once.
+
+![rib deps --impact for 'Sales'[Profit %]: no model object uses it, and three visuals on one report page bind it](docs/media/deps.svg)
 
 ```sh
 ripbi deps "'Sales'[Sales]" --model "samples/AdventureWorks Sales.SemanticModel"

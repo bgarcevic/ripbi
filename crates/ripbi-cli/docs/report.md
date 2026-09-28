@@ -87,7 +87,7 @@ reads `(no semantic model)` in that mode.
 | `--broken` | Only broken visual bindings (unresolved references) |
 | `--allow-no-model` | Inventory the reports even when no semantic model pairs with them, instead of refusing (exit 2). Bindings are listed as written; `--used` and `--broken` are refused |
 | `-q`, `--quiet` | No output; exit code only |
-| `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
+| `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`; `CLICOLOR_FORCE=1` turns it on off-TTY, e.g. for CI logs) |
 | `--no-input` | Never prompt; fail where a picker would appear |
 
 ## Views (`--pages`, `--visuals`, `--fields`, `--used`)

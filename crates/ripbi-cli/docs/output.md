@@ -163,10 +163,12 @@ unaffected.
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
-| `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`) |
+| `--no-color` | Never color (color is also off off-TTY, under `NO_COLOR`, or `TERM=dumb`; `CLICOLOR_FORCE=1` turns it on off-TTY, e.g. for CI logs) |
 | `--no-input` | Never prompt; fail where a picker would appear |
 
 ## Human output (default)
+
+![rib scan --type measure on the AdventureWorks sample: 11 unused measures, each with the reason it is dead](../../../docs/media/scan-findings.svg)
 
 ```text
 130 objects, 74 reachable from 51 roots, 56 unused
@@ -345,6 +347,8 @@ exist there.
 git worktree add ../base origin/main
 ripbi scan --compare-root ../base
 ```
+
+![A branch adds a Sales Target measure; rib scan --compare-root ../base reports only that measure as unused, with 56 findings already in the base](../../../docs/media/compare-root.svg)
 
 - **The same scan, twice.** The other side gets the same PATH, `--model`, `--report`,
   and flags. Relative paths are rebased onto `DIR`, so `ripbi scan Sales.pbip
