@@ -51,16 +51,16 @@ AFTER_STEP_MS = 1300
 HOLD_MS = 5000  # final frame before the loop restarts
 
 THEME = {
-    "bg": "#0d1117",
-    "bar": "#161b22",
-    "border": "#30363d",
-    "fg": "#c9d1d9",
-    "bold": "#f0f6fc",
-    "dim": "#8b949e",
+    "bg": "#1c1a17",
+    "bar": "#26231f",
+    "border": "#3a3630",
+    "fg": "#d8d2c8",
+    "bold": "#f2ede4",
+    "dim": "#8a8378",
     "red": "#ff7b72",
     "green": "#7ee787",
     "yellow": "#e3b341",
-    "prompt": "#79c0ff",
+    "prompt": "#8a9a5b",
 }
 SGR_COLORS = {"31": "red", "32": "green", "33": "yellow"}
 ANSI = re.compile(r"\x1b\[([0-9;]*)m")
@@ -95,7 +95,10 @@ def parse_ansi(text: str) -> list[list[Span]]:
                 lines[-1].append(Span(part, color, bold, dim))
         if match is None:
             break
-        for code in (match.group(1) or "0").split(";"):
+        codes = (match.group(1) or "0").split(";")
+        i = 0
+        while i < len(codes):
+            code = codes[i]
             if code in ("", "0"):
                 color, bold, dim = None, False, False
             elif code == "1":
@@ -104,10 +107,31 @@ def parse_ansi(text: str) -> list[list[Span]]:
                 dim = True
             elif code in SGR_COLORS:
                 color = SGR_COLORS[code]
+            elif code == "38" and codes[i + 1 : i + 2] == ["2"]:
+                r, g, b = (int(v) for v in codes[i + 2 : i + 5])
+                color = f"#{r:02x}{g:02x}{b:02x}"
+                i += 4
+            elif code == "38" and codes[i + 1 : i + 2] == ["5"]:
+                color = xterm_hex(int(codes[i + 2]))
+                i += 2
+            i += 1
         pos = match.end()
     while lines and not lines[-1]:
         lines.pop()
     return [wrapped for line in lines for wrapped in wrap(line)]
+
+
+def xterm_hex(index: int) -> str:
+    """The standard xterm-256 color for an index (cube and grey ramp)."""
+    if index >= 232:
+        level = 8 + (index - 232) * 10
+        return f"#{level:02x}{level:02x}{level:02x}"
+    if index >= 16:
+        index -= 16
+        steps = [0, 95, 135, 175, 215, 255]
+        r, g, b = steps[index // 36], steps[index // 6 % 6], steps[index % 6]
+        return f"#{r:02x}{g:02x}{b:02x}"
+    return THEME["fg"]
 
 
 def wrap(line: list[Span]) -> list[list[Span]]:
@@ -128,7 +152,10 @@ def wrap(line: list[Span]) -> list[list[Span]]:
 
 
 def span_svg(span: Span) -> str:
-    fill = THEME[span.color] if span.color else THEME["bold"] if span.bold else THEME["fg"]
+    if span.color and span.color.startswith("#"):
+        fill = span.color
+    else:
+        fill = THEME[span.color] if span.color else THEME["bold"] if span.bold else THEME["fg"]
     if span.dim and not span.color:
         fill = THEME["dim"]
     attrs = f' fill="{fill}"'
@@ -236,6 +263,8 @@ class Recorder:
             **os.environ,
             **GIT_ENV,
             "CLICOLOR_FORCE": "1",
+            # The palette's exact 24-bit inks, not the xterm-256 fallback.
+            "COLORTERM": "truecolor",
             "RIPBI_NO_UPDATE_CHECK": "1",
         }
         self.env.pop("NO_COLOR", None)
