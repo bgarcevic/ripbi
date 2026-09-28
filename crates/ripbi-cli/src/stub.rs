@@ -176,7 +176,8 @@ fn stub(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> Result<
                 .map_or_else(|| folder_name.clone(), |path| path.display().to_string());
             writeln!(
                 streams.err,
-                "Saved {} ({}).\nNext: ripbi scan --model \"{typed}\" --report <reports>",
+                "Saved {} ({}).\nNext: ripbi scan --model \"{typed}\"  \
+                 (add --report <path> for reports kept elsewhere)",
                 cache.display(),
                 format_bytes(bytes)
             )?;
