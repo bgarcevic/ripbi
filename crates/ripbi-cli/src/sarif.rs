@@ -3,7 +3,8 @@
 //! alerts. Another render mode over the same [`ScanOutput`] — plus, under
 //! `--compare-root`, the findings that already existed in the other checkout,
 //! which SARIF keeps as suppressed results instead of dropping. The contract
-//! lives in `docs/output.md` under "SARIF".
+//! lives in `docs/output.md` under "SARIF". `scan --azure-devops` (`vso.rs`)
+//! renders the same rules, messages, and sites as `##vso` logging commands.
 
 use std::collections::HashMap;
 use std::io;
@@ -172,9 +173,9 @@ pub struct Existing {
 /// when it lies beneath it, and the declaration line when the source records
 /// one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Site {
-    path: PathBuf,
-    line: Option<usize>,
+pub(crate) struct Site {
+    pub(crate) path: PathBuf,
+    pub(crate) line: Option<usize>,
 }
 
 /// Resolves findings to source sites, keyed by fingerprint so the renderer can
@@ -271,6 +272,64 @@ impl Locator {
     }
 }
 
+/// One result, format-neutral: the SARIF log and the Azure DevOps `##vso`
+/// lines both render it.
+pub(crate) struct Issue<'a> {
+    pub(crate) rule: usize,
+    pub(crate) message: String,
+    pub(crate) name: &'a str,
+    pub(crate) site: Option<&'a Site>,
+    pub(crate) fingerprint: String,
+    /// Already in the `--compare-root` checkout.
+    pub(crate) existing: bool,
+}
+
+impl Issue<'_> {
+    pub(crate) fn rule_id(&self) -> &'static str {
+        RULES[self.rule].id
+    }
+
+    pub(crate) fn level(&self) -> &'static str {
+        RULES[self.rule].level
+    }
+}
+
+/// Every result of one scan: the reported findings, then the `existing` ones.
+pub(crate) fn issues<'a>(
+    report: &'a ScanOutput,
+    existing: &'a Existing,
+    locator: &'a Locator,
+) -> Vec<Issue<'a>> {
+    let mut issues = Vec::new();
+    for (group, is_existing) in [
+        (Group::of(report), false),
+        (Group::of_existing(existing), true),
+    ] {
+        let context = Context {
+            locator,
+            existing: is_existing,
+        };
+        for finding in group.findings {
+            issues.push(context.finding(finding));
+        }
+        // An in-use table is advice, not a finding: nothing to annotate.
+        for row in group
+            .auto_date_time
+            .iter()
+            .filter(|row| row.verdict != "in_use")
+        {
+            issues.push(context.auto_date_time(row));
+        }
+        for binding in group.broken {
+            issues.push(context.broken(binding));
+        }
+        for artifact in group.broken_artifacts {
+            issues.push(context.artifact(artifact));
+        }
+    }
+    issues
+}
+
 /// Writes the SARIF 2.1.0 log for one scan. `cwd` anchors the relative
 /// artifact URIs; `existing` holds the `--compare-root` findings to emit as
 /// suppressed.
@@ -290,30 +349,10 @@ pub fn write(
             "justification": format!("already in {}", compare.root),
         }])
     });
-    let mut results = Vec::new();
-    let context = Context { locator, cwd };
-    for (group, suppressed) in [
-        (Group::of(report), None),
-        (Group::of_existing(existing), suppression.as_ref()),
-    ] {
-        for finding in group.findings {
-            results.push(context.finding(finding, suppressed));
-        }
-        // An in-use table is advice, not a finding: nothing to annotate.
-        for row in group
-            .auto_date_time
-            .iter()
-            .filter(|row| row.verdict != "in_use")
-        {
-            results.push(context.auto_date_time(row, suppressed));
-        }
-        for binding in group.broken {
-            results.push(context.broken(binding, suppressed));
-        }
-        for artifact in group.broken_artifacts {
-            results.push(context.artifact(artifact, suppressed));
-        }
-    }
+    let results: Vec<Value> = issues(report, existing, locator)
+        .iter()
+        .map(|issue| sarif_result(issue, cwd, suppression.as_ref()))
+        .collect();
 
     let rules: Vec<Value> = RULES
         .iter()
@@ -385,11 +424,11 @@ impl<'a> Group<'a> {
 
 struct Context<'a> {
     locator: &'a Locator,
-    cwd: &'a Path,
+    existing: bool,
 }
 
-impl Context<'_> {
-    fn finding(&self, finding: &Finding, suppressed: Option<&Value>) -> Value {
+impl<'a> Context<'a> {
+    fn finding(&self, finding: &'a Finding) -> Issue<'a> {
         let entry = Entry::unused(finding.kind, &finding.id);
         let label = finding.kind.replace('_', " ");
         let mut message = if finding.kind == "bookmark" {
@@ -402,10 +441,10 @@ impl Context<'_> {
         };
         append_size(&mut message, finding);
         append_used_by(&mut message, finding);
-        self.result(&entry, finding.kind, message, &finding.id, suppressed)
+        self.issue(&entry, finding.kind, message, &finding.id)
     }
 
-    fn auto_date_time(&self, row: &AutoDateTimeRow, suppressed: Option<&Value>) -> Value {
+    fn auto_date_time(&self, row: &'a AutoDateTimeRow) -> Issue<'a> {
         let entry = Entry::auto_date_time(&row.id, row.verdict);
         let source = row
             .source_column
@@ -421,10 +460,10 @@ impl Context<'_> {
         if let Some(finding) = &row.finding {
             append_size(&mut message, finding);
         }
-        self.result(&entry, "auto_date_time", message, &row.id, suppressed)
+        self.issue(&entry, "auto_date_time", message, &row.id)
     }
 
-    fn broken(&self, binding: &BrokenOut, suppressed: Option<&Value>) -> Value {
+    fn broken(&self, binding: &'a BrokenOut) -> Issue<'a> {
         let entry = Entry::broken_visual(&binding.target, binding.reason, &binding.provenance);
         let message = format!(
             "Broken visual binding {}: {} ({}).",
@@ -432,16 +471,10 @@ impl Context<'_> {
             crate::render::reason_phrase(binding),
             binding.provenance
         );
-        self.result(
-            &entry,
-            "broken_visual",
-            message,
-            &binding.target,
-            suppressed,
-        )
+        self.issue(&entry, "broken_visual", message, &binding.target)
     }
 
-    fn artifact(&self, artifact: &BrokenArtifactOut, suppressed: Option<&Value>) -> Value {
+    fn artifact(&self, artifact: &'a BrokenArtifactOut) -> Issue<'a> {
         let entry = Entry::broken_artifact(
             &artifact.id,
             artifact
@@ -454,53 +487,58 @@ impl Context<'_> {
             artifact.id,
             artifact.unresolved_references.join(", ")
         );
-        self.result(&entry, "broken_artifact", message, &artifact.id, suppressed)
+        self.issue(&entry, "broken_artifact", message, &artifact.id)
     }
 
-    fn result(
-        &self,
-        entry: &Entry,
-        kind: &str,
-        message: String,
-        name: &str,
-        suppressed: Option<&Value>,
-    ) -> Value {
-        let index = rule_index(kind);
-        let mut location = json!({
-            "logicalLocations": [{
-                "fullyQualifiedName": name,
-                "kind": kind,
-            }],
-        });
-        if let Some(site) = self.locator.site(entry) {
-            let mut physical = json!({});
-            let mut artifact = json!({});
-            match relative_uri(&site.path, self.cwd) {
-                Some(uri) => {
-                    artifact["uri"] = json!(uri);
-                    artifact["uriBaseId"] = json!(SRCROOT);
-                }
-                None => artifact["uri"] = json!(absolute_uri(&site.path, self.cwd)),
-            }
-            physical["artifactLocation"] = artifact;
-            if let Some(line) = site.line {
-                physical["region"] = json!({ "startLine": line });
-            }
-            location["physicalLocation"] = physical;
+    fn issue(&self, entry: &Entry, kind: &str, message: String, name: &'a str) -> Issue<'a> {
+        Issue {
+            rule: rule_index(kind),
+            message,
+            name,
+            site: self.locator.site(entry),
+            fingerprint: fingerprint(entry),
+            existing: self.existing,
         }
-        let mut result = json!({
-            "ruleId": RULES[index].id,
-            "ruleIndex": index,
-            "level": RULES[index].level,
-            "message": { "text": message },
-            "locations": [location],
-            "partialFingerprints": { FINGERPRINT: fingerprint(entry) },
-        });
-        if let Some(suppressions) = suppressed {
-            result["suppressions"] = suppressions.clone();
-        }
-        result
     }
+}
+
+fn sarif_result(issue: &Issue, cwd: &Path, suppression: Option<&Value>) -> Value {
+    let mut location = json!({
+        "logicalLocations": [{
+            "fullyQualifiedName": issue.name,
+            "kind": RULES[issue.rule].kind,
+        }],
+    });
+    if let Some(site) = issue.site {
+        let mut physical = json!({});
+        let mut artifact = json!({});
+        match relative_uri(&site.path, cwd) {
+            Some(uri) => {
+                artifact["uri"] = json!(uri);
+                artifact["uriBaseId"] = json!(SRCROOT);
+            }
+            None => artifact["uri"] = json!(absolute_uri(&site.path, cwd)),
+        }
+        physical["artifactLocation"] = artifact;
+        if let Some(line) = site.line {
+            physical["region"] = json!({ "startLine": line });
+        }
+        location["physicalLocation"] = physical;
+    }
+    let mut result = json!({
+        "ruleId": issue.rule_id(),
+        "ruleIndex": issue.rule,
+        "level": issue.level(),
+        "message": { "text": issue.message },
+        "locations": [location],
+        "partialFingerprints": { FINGERPRINT: issue.fingerprint },
+    });
+    if issue.existing
+        && let Some(suppressions) = suppression
+    {
+        result["suppressions"] = suppressions.clone();
+    }
+    result
 }
 
 /// An id without the kind word the human modes prefix (`table 'Sales'` →
@@ -560,13 +598,23 @@ fn fingerprint(entry: &Entry) -> String {
 /// `path` relative to `cwd` as a URI reference with `/` separators, when it
 /// lies beneath `cwd`.
 fn relative_uri(path: &Path, cwd: &Path) -> Option<String> {
+    let segments: Vec<String> = relative_segments(path, cwd)?
+        .iter()
+        .map(|segment| encode(segment))
+        .collect();
+    Some(segments.join("/"))
+}
+
+/// `path` relative to `cwd`, one entry per component, when it lies beneath
+/// `cwd`.
+pub(crate) fn relative_segments(path: &Path, cwd: &Path) -> Option<Vec<String>> {
     let absolute = normalize(&cwd.join(path));
     let relative = absolute.strip_prefix(normalize(cwd)).ok()?;
     let segments: Vec<String> = relative
         .components()
-        .map(|component| encode(&component.as_os_str().to_string_lossy()))
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
         .collect();
-    (!segments.is_empty()).then(|| segments.join("/"))
+    (!segments.is_empty()).then_some(segments)
 }
 
 /// A `file://` URI for a path outside the working directory.
@@ -585,7 +633,7 @@ fn absolute_uri(path: &Path, cwd: &Path) -> String {
 
 /// Lexically removes `.` and resolves `..` — no filesystem access, so a
 /// path's spelling (and a Windows drive's) stays as the user gave it.
-fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {

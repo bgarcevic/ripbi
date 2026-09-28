@@ -19,6 +19,7 @@ pub mod scan;
 pub mod stub;
 pub mod style;
 pub mod update;
+pub mod vso;
 
 #[cfg(test)]
 pub(crate) mod test_support;

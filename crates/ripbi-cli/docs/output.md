@@ -73,7 +73,7 @@ reports.
 
 | Content | Stream | Notes |
 |---|---|---|
-| Findings, summary, JSON, plain records | stdout | the machine-readable side |
+| Findings, summary, JSON, plain records, SARIF, `##vso` commands | stdout | the machine-readable side |
 | Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
 | Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
 | Coverage caveat | stderr | once per run |
@@ -151,7 +151,8 @@ unaffected.
 | `--json` | JSON on stdout (schema below). Mutually exclusive with `--plain` and `--summary` |
 | `--plain` | One `<type>\t<id>` record per finding, for grep/awk |
 | `--sarif` | A SARIF 2.1.0 log on stdout for GitHub code scanning and Azure DevOps (see [SARIF](#sarif)). Mutually exclusive with `--json`, `--plain`, and `--summary` |
-| `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json`, `--plain`, and `--sarif` |
+| `--azure-devops` | One `##vso[task.logissue]` logging command per finding on stdout, so an Azure Pipelines run lists them as warnings and errors (see [Azure DevOps](#azure-devops)). Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--summary` |
+| `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--azure-devops` |
 | `-q`, `--quiet` | No output; exit code only |
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
 | `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
@@ -411,8 +412,11 @@ steps:
       echo "##vso[task.prependpath]$HOME/.local/bin"
   - script: |
       git worktree add ../base "origin/${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
-      rib scan --compare-root ../base
+      rib scan --azure-devops --compare-root ../base
 ```
+
+`--azure-devops` lists each new finding as a warning or error on the run's summary
+(see [Azure DevOps](#azure-devops)); drop it for the plain human report in the log.
 
 Accepting a finding means merging the change: once it is on the base branch, the next
 pull request compares against it. An object meant to stay unused on purpose — a measure
@@ -916,7 +920,37 @@ GitHub Actions (needs the `security-events: write` permission):
 
 Azure DevOps: publish `ripbi.sarif` as a build artifact named `CodeAnalysisLogs`. The
 [SARIF SAST Scans Tab](https://marketplace.visualstudio.com/items?itemName=sariftools.scans)
-extension shows it on the build summary.
+extension shows it on the build summary. For warnings and errors without an extension,
+see [Azure DevOps](#azure-devops).
+
+## Azure DevOps
+
+`--azure-devops` writes one
+[`task.logissue`](https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#logissue-log-an-error-or-warning)
+logging command per finding on stdout. The agent turns each into a warning or error on the
+run's summary page and the step's log, with no extension or published artifact:
+
+```text
+##vso[task.logissue type=warning;sourcepath=Mini.SemanticModel/definition/tables/Sales.tmdl;linenumber=10;code=RIPBI-UNUSED-MEASURE;]Unused measure 'Sales'[Legacy Total]: no report reaches it.
+```
+
+Each command carries the same fields as the SARIF result for that finding:
+
+| Property | Value |
+|---|---|
+| `type` | The rule's SARIF level: `warning`, or `error` for broken visuals and broken artifacts |
+| `sourcepath` | The SARIF location's file, relative to the working directory with `/` separators; an absolute path when the file lies outside it. Omitted when no file is known |
+| `linenumber` | The TMDL declaration line; omitted for single-file formats and report-level findings |
+| `code` | The SARIF rule id (see [Rules](#rules)) |
+| message | The SARIF result message |
+
+`%`, carriage returns, and line feeds in a value are escaped as the agent expects
+(`%AZP25`, `%0D`, `%0A`); property values also escape `;` and `]`. In-use auto
+date/time tables are advice, not findings, and log nothing, as in SARIF. Under
+`--compare-root`, findings that already existed in the other checkout are dropped, as in
+every mode but SARIF. The exit code is unchanged: a finding still fails the step with
+`1`, so the logged issues and the gate agree. Run the scan from the repository root so
+`sourcepath` is repository-relative.
 
 ## `ripbi.toml`
 

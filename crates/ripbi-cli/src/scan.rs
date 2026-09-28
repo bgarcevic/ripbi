@@ -24,6 +24,7 @@ use crate::render::{
 };
 use crate::sarif::{self, Locator};
 use crate::style::Palette;
+use crate::vso;
 
 /// Exit code: no unused objects.
 pub const EXIT_CLEAN: i32 = 0;
@@ -112,7 +113,7 @@ fn scan(
             streams,
             palette_err,
             args.quiet,
-            args.json || args.plain || args.sarif,
+            args.json || args.plain || args.sarif || args.azure_devops,
         ),
         *palette_err,
         progress::SCAN,
@@ -448,10 +449,11 @@ fn scan(
     let mut detected = Detected::new();
     let mut existing = 0;
     // `--sarif` keeps what already existed as suppressed results (issue
-    // #142), and needs every finding's source file: both only when rendering.
+    // #142); it and `--azure-devops` need every finding's source file. Both
+    // only when rendering.
     let sarif_mode = args.sarif && probe.is_none();
     let mut kept_existing = sarif::Existing::default();
-    let mut locator = if sarif_mode {
+    let mut locator = if (args.sarif || args.azure_devops) && probe.is_none() {
         let declared = ingest::source_locations(&paired.model).map_err(|error| {
             ScanError::new(format!(
                 "cannot read source positions of {}: {error}",
@@ -759,8 +761,12 @@ fn scan(
         if args.json {
             render::json(streams.out, &output).map_err(ScanError::from)?;
         } else if let Some(locator) = &locator {
-            sarif::write(streams.out, &output, &kept_existing, locator, cwd)
-                .map_err(ScanError::from)?;
+            if args.azure_devops {
+                vso::write(streams.out, &output, locator, cwd)
+            } else {
+                sarif::write(streams.out, &output, &kept_existing, locator, cwd)
+            }
+            .map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else if args.summary {
