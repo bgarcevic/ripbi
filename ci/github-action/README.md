@@ -75,6 +75,13 @@ measure 'Budget Variance' = [Budget] - [Actual]
 `[scan].ignore` patterns in a `ripbi.toml` also work. See
 [Keeping objects on purpose](https://bgarcevic.github.io/ripbi/output.html#keeping-objects-on-purpose).
 
+## Versions
+
+`@v1` follows the latest release of this action and never changes its inputs or
+outputs incompatibly. `@v1.0.0` and later tags never move, for a workflow that
+pins one exact version. Either way, the action installs the `version` input's
+ripbi release, `latest` by default.
+
 ## Several models
 
 Run the action once per model, with a distinct `path` each. Each run uploads its SARIF
