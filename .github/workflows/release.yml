@@ -131,8 +131,10 @@ jobs:
   # Mirrors ci/github-action to bgarcevic/ripbi-action (issue #143): the
   # Marketplace wants the action alone at a repository root, with no
   # workflows, so it is developed and tested here and copied there on each
-  # release. Moves the major tag users pin (`@v1`); bump ACTION_MAJOR only for
-  # a breaking change to the action's inputs or outputs.
+  # release. When the action changed, tags a new minor version (v1.0.0, then
+  # v1.1.0, ...) that never moves; every release moves the major tag users pin
+  # (`@v1`). Bump ACTION_MAJOR only for a breaking change to the action's
+  # inputs or outputs; its first version is then v2.0.0.
   #
   # Pushes with a deploy key: write access to ripbi-action alone, and no
   # expiry, unlike a personal access token. The private key is the
@@ -178,6 +180,18 @@ jobs:
             git commit -qm "Sync with ripbi ${GITHUB_REF_NAME}" \
               -m "From bgarcevic/ripbi@${GITHUB_SHA}, ci/github-action."
             git push -q origin HEAD:main # also names the first branch of the empty repository
+            # A new minor version under the major tag, never moved, so a
+            # workflow can pin one exact version (@v1.1.0).
+            latest=$(git tag -l "${ACTION_MAJOR}.*.*" --sort=-v:refname | head -n 1)
+            if [ -z "$latest" ]; then
+              version="${ACTION_MAJOR}.0.0"
+            else
+              IFS=. read -r major minor _ <<< "$latest"
+              version="${major}.$((minor + 1)).0"
+            fi
+            git tag "$version"
+            git push -q origin "refs/tags/${version}"
+            echo "published ${version}; add a Marketplace release for it to update the listing"
           fi
           git tag -f "$ACTION_MAJOR"
           git push -q -f origin "refs/tags/${ACTION_MAJOR}"
