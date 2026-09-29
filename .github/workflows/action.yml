@@ -108,6 +108,7 @@ jobs:
           [ "$OUTCOME" = failure ] || { echo "expected failure, got $OUTCOME"; exit 1; }
           [ "$NEW" = 1 ] || { echo "expected 1 new finding, got '$NEW'"; exit 1; }
           grep -q "RIPBI-UNUSED-MEASURE" "$SARIF"
+          grep -qF '2 already in `main`' "$RUNNER_TEMP/ripbi/ripbi.md"
           [ ! -e ../ripbi-base ] || { echo "the comparison checkout was left behind"; exit 1; }
 
       - name: Check out the unrelated change

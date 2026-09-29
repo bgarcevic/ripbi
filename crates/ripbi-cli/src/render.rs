@@ -116,6 +116,8 @@ impl ScanOutput {
 pub struct CompareOut {
     /// The other checkout, as given.
     pub root: String,
+    /// What the output calls it: `--compare-label`, else `root`.
+    pub label: String,
     /// Reportable findings that already existed there: left out of every
     /// list and of the exit code.
     pub existing: usize,
@@ -390,7 +392,7 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
         "{}",
         palette.ok(&format!(
             "Fixed since {} ({})",
-            compare.root,
+            compare.label,
             compare.fixed.len()
         ))
     )?;
@@ -691,7 +693,7 @@ pub fn human_summary(
         writeln!(
             out,
             "{}: {}",
-            palette.ok(&format!("Fixed since {}", compare.root)),
+            palette.ok(&format!("Fixed since {}", compare.label)),
             compare.fixed.len()
         )?;
         if fixed_uncertain(report) {
@@ -794,7 +796,7 @@ fn write_summary(
     if let Some(compare) = &report.compare {
         notes.push(format!(
             "({} findings already in {})",
-            compare.existing, compare.root
+            compare.existing, compare.label
         ));
     }
     if report.ignored > 0 {

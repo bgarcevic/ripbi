@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the counts, the findings (capped at 50 rows), the `Fixed since` list under
   `--compare-root`, and the worst tables, sized for `$GITHUB_STEP_SUMMARY`, an Azure
   DevOps build summary, or a pull request comment.
+- **`scan --compare-label <NAME>`** (issue #143): what the output calls the
+  `--compare-root` checkout, so a CI summary reads `2 already in main` rather than
+  `2 already in ../ripbi-base`. `--json`'s `compare.root` keeps the folder.
 - **`summary.findings` in `--json`** (issue #143): every reported finding in one
   number (unused objects, auto date/time tables that are not in use, broken bindings,
   and broken artifacts), the unsuppressed SARIF result count. Under `--compare-root`,

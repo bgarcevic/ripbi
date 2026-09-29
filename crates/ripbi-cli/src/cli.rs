@@ -422,6 +422,10 @@ pub struct ScanArgs {
     /// Rerun this scan in another checkout; report and gate only on findings new since it.
     #[arg(long, value_name = "DIR")]
     pub compare_root: Option<PathBuf>,
+
+    /// Name the --compare-root checkout in the output, e.g. the branch it holds; defaults to DIR.
+    #[arg(long, value_name = "NAME", requires = "compare_root")]
+    pub compare_label: Option<String>,
 }
 
 /// How `scan` orders its unused findings.

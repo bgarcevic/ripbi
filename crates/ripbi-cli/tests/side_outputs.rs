@@ -149,6 +149,30 @@ fn compare_root_side_files_count_only_new_findings() {
     assert_eq!((results.len(), suppressed), (3, 2));
 
     assert_golden(&read(&head.join("out.md")), "mini-compare.md");
+
+    // --compare-label names the checkout by what it holds, in every output
+    // that shows it; the JSON keeps the folder.
+    let (_, stdout, stderr) = run_scan(
+        &ScanArgs {
+            compare_root: Some(PathBuf::from("../base")),
+            compare_label: Some("main".into()),
+            ..side_files()
+        },
+        &head,
+        "",
+    );
+    assert!(
+        stdout.contains("(2 findings already in main)"),
+        "{stdout}{stderr}"
+    );
+    assert!(read(&head.join("out.md")).contains("· 2 already in `main`"));
+    let sarif = read(&head.join("out.sarif"));
+    assert!(
+        sarif.contains("\"justification\": \"already in main\""),
+        "{sarif}"
+    );
+    let json = json_payload(&read(&head.join("out.json")));
+    assert_eq!(json["compare"]["root"], "../base");
 }
 
 /// Breakage and auto date/time rows count as findings too: `summary.findings`

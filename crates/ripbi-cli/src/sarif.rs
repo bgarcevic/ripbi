@@ -346,7 +346,7 @@ pub fn write(
     let suppression = report.compare.as_ref().map(|compare| {
         json!([{
             "kind": "external",
-            "justification": format!("already in {}", compare.root),
+            "justification": format!("already in {}", compare.label),
         }])
     });
     let results: Vec<Value> = issues(report, existing, locator)
