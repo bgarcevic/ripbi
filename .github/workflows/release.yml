@@ -132,22 +132,39 @@ jobs:
   # Marketplace wants the action alone at a repository root, with no
   # workflows, so it is developed and tested here and copied there on each
   # release. Moves the major tag users pin (`@v1`); bump ACTION_MAJOR only for
-  # a breaking change to the action's inputs or outputs. Skips until the
-  # RIPBI_ACTION_TOKEN secret (contents: write on ripbi-action) exists.
+  # a breaking change to the action's inputs or outputs.
+  #
+  # Pushes with a deploy key: write access to ripbi-action alone, and no
+  # expiry, unlike a personal access token. The private key is the
+  # RIPBI_ACTION_DEPLOY_KEY secret; its public half is a deploy key with write
+  # access on ripbi-action. Without the secret the step warns rather than
+  # skipping silently, so a release never looks mirrored when it was not.
   publish-action:
     name: Publish the GitHub Action
     needs: release
     runs-on: ubuntu-latest
     env:
       ACTION_MAJOR: v1
-      RIPBI_ACTION_TOKEN: ${{ secrets.RIPBI_ACTION_TOKEN }}
+      RIPBI_ACTION_DEPLOY_KEY: ${{ secrets.RIPBI_ACTION_DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v7
       - name: Mirror to bgarcevic/ripbi-action
-        if: env.RIPBI_ACTION_TOKEN != ''
         shell: bash
         run: |
-          git clone -q "https://x-access-token:${RIPBI_ACTION_TOKEN}@github.com/bgarcevic/ripbi-action.git" mirror
+          if [ -z "$RIPBI_ACTION_DEPLOY_KEY" ]; then
+            echo "::warning title=ripbi-action::RIPBI_ACTION_DEPLOY_KEY is not set; the action was not mirrored to bgarcevic/ripbi-action"
+            exit 0
+          fi
+          ssh_dir="$RUNNER_TEMP/ripbi-action-ssh"
+          mkdir -m 700 "$ssh_dir"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$RIPBI_ACTION_DEPLOY_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          # GitHub's published host key, so the push never trusts on first use.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+
+          git clone -q git@github.com:bgarcevic/ripbi-action.git mirror
           find mirror -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -r ci/github-action/. mirror/
           cp LICENSE-MIT LICENSE-APACHE mirror/
@@ -158,7 +175,8 @@ jobs:
           if git diff --cached --quiet; then
             echo "the action is unchanged since the last release"
           else
-            git commit -qm "Sync with ripbi ${GITHUB_REF_NAME}"               -m "From bgarcevic/ripbi@${GITHUB_SHA}, ci/github-action."
+            git commit -qm "Sync with ripbi ${GITHUB_REF_NAME}" \
+              -m "From bgarcevic/ripbi@${GITHUB_SHA}, ci/github-action."
             git push -q origin HEAD:main # also names the first branch of the empty repository
           fi
           git tag -f "$ACTION_MAJOR"
