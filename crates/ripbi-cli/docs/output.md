@@ -910,7 +910,7 @@ GitHub Actions (needs the `security-events: write` permission):
 
 ```yaml
 - run: rib scan --compare-root ../base --sarif-file ripbi.sarif
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@v4
   if: always()
   with:
     sarif_file: ripbi.sarif
