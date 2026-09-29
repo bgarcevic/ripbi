@@ -751,6 +751,10 @@ fn scan(
             .zip(args.compare_root.as_ref())
             .map(|(before, root)| CompareOut {
                 root: root.display().to_string(),
+                label: args
+                    .compare_label
+                    .clone()
+                    .unwrap_or_else(|| root.display().to_string()),
                 existing,
                 fixed: compare::fixed(before, &detected),
             }),
@@ -1653,6 +1657,7 @@ fn scan_before(
         quiet: true,
         no_input: true,
         compare_root: None,
+        compare_label: None,
         sarif_file: None,
         json_file: None,
         markdown_file: None,

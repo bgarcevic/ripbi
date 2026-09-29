@@ -167,6 +167,7 @@ unaffected.
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
 | `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
 | `--compare-root <DIR>` | Rerun the same scan in another checkout (the base branch, a previous release) and report and gate on only the findings that did not exist there; findings gone since are listed as fixed. Exit `2` when `DIR` is not a folder. See [Comparing against another checkout](#comparing-against-another-checkout) |
+| `--compare-label <NAME>` | What the output calls the `--compare-root` checkout, e.g. the branch it holds: `(412 findings already in main)`. Defaults to `DIR` as given. `--json`'s `compare.root` stays `DIR`. Needs `--compare-root` |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -379,7 +380,9 @@ ripbi scan --compare-root ../base
   Existing findings are left out of every output mode and the exit code, like
   `[scan].ignore` suppressions. The human modes count them under the summary line:
   `(412 findings already in ../base)`. A dead auto date/time table's own finding goes
-  with its row.
+  with its row. `--compare-label main` makes that `already in main`, here and in
+  every other output that names the checkout, for a CI run that knows which branch
+  it holds.
 - **Fixed findings** are the other checkout's findings this scan no longer detects at
   all, whether reported, ignored, filtered, or suppressed. A finding hidden by `--type`
   is still detected, so it is not fixed. Human output lists them in a
@@ -909,7 +912,7 @@ code scanning tracks one alert across runs, branches, and moved files.
 
 Findings that already existed in the other checkout are kept rather than dropped as in
 the other modes. They carry
-`suppressions: [{"kind": "external", "justification": "already in <DIR>"}]`, which is what
+`suppressions: [{"kind": "external", "justification": "already in <DIR>"}]` (`<NAME>` under `--compare-label`), which is what
 code scanning expects: the pull request annotates only new findings, and existing alerts
 stay tracked. Only unsuppressed findings gate the exit code. The `Fixed since` list has no
 SARIF form; code scanning closes an alert itself when its fingerprint stops appearing.
@@ -986,7 +989,8 @@ GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
 ````
 
 - **Headline.** `**N findings**`, the `summary.findings` count. Under `--compare-root`:
-  `**N new findings** · F fixed · E already in <DIR>`.
+  `**N new findings** · F fixed · E already in <DIR>`, with `--compare-label`'s name
+  in place of `DIR` when given.
 - **Counts.** One row per finding type with findings, in the human output's order,
   then auto date/time tables, broken visual bindings, and broken artifacts.
 - **Findings.** One row each, the same findings the other modes report: type, object,
