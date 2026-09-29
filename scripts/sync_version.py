@@ -62,16 +62,25 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
             )
         remember(path, old, new)
 
-    for relative in ("desktop/package.json", "desktop/package-lock.json", "desktop/src-tauri/tauri.conf.json"):
+    # The JSON files are edited as text so their hand formatting (tauri.conf.json's
+    # inline arrays) survives; the parse afterwards proves the right fields moved.
+    for relative, fields in (
+        ("desktop/package.json", 1),
+        ("desktop/package-lock.json", 2),
+        ("desktop/src-tauri/tauri.conf.json", 1),
+    ):
         path = root / relative
         old = path.read_text(encoding="utf-8")
-        data = json.loads(old)
-        original = json.loads(old)
-        data["version"] = version
-        if relative.endswith("package-lock.json"):
-            data["packages"][""]["version"] = version
-        if data != original:
-            updates[path] = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        expected = json.loads(old)
+        expected["version"] = version
+        if fields == 2:
+            expected["packages"][""]["version"] = version
+        new = re.sub(
+            r'("version"\s*:\s*")[^"]*(")', lambda m: m[1] + version + m[2], old, count=fields
+        )
+        if json.loads(new) != expected:
+            raise ValueError(f"Expected the first {fields} version field(s) in {relative} to be the local package's")
+        remember(path, old, new)
     return version, updates
 
 
