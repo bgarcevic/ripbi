@@ -168,6 +168,7 @@ jobs:
             and ([.issues[] | select(.code == "RIPBI-UNUSED-MEASURE")] | length) == 1
             and .artifacts[0].name == "CodeAnalysisLogs"
             and (.summaries | length) == 1' "$RUNNER_TEMP/ado-orphan.json"
+          grep -qF '2 already in `main`' "$(jq -r '.summaries[0]' "$RUNNER_TEMP/ado-orphan.json" | tr -d '\r')"
           [ ! -e ../ripbi-base ] || { echo "the comparison checkout was left behind"; exit 1; }
 
       - name: Azure Pipelines — the unrelated pull request passes

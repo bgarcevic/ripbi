@@ -150,6 +150,9 @@ steps:
         else
           ref=$compare
         fi
+        # The summary names what the checkout holds (main, v0.7.0), not its folder.
+        label=${ref#refs/heads/}
+        label=${label#refs/tags/}
         # The checkout step does not keep its credentials for Azure Repos;
         # the job's token is sent the way that step sends it. Other hosts need
         # persistCredentials: true on the checkout, or a public repository.
@@ -165,7 +168,7 @@ steps:
         git worktree remove --force "$base_dir" 2> /dev/null || rm -rf "$base_dir"
         git worktree prune
         git worktree add --detach "$base_dir" FETCH_HEAD
-        args+=(--compare-root "$base_dir")
+        args+=(--compare-root "$base_dir" --compare-label "$label")
       fi
 
       out="$(posix "$AGENT_TEMPDIRECTORY")/$INPUT_NAME"
