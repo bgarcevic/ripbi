@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-29
+
+### Added
+
+- `scan --compare-root` points new unused objects at the `ripbi_keep` annotation
+  (issue #151): a `hint:` on stderr (every mode but `--json`) and a quoted line in
+  the `--markdown-file` summary say to remove them, or to mark one that something
+  outside these reports reads with `annotation ripbi_keep = <reason>`.
+
 ### Changed
 
 - The GitHub Action uploads SARIF with `github/codeql-action/upload-sarif@v4`;
@@ -736,7 +745,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/bgarcevic/ripbi/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/bgarcevic/ripbi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/bgarcevic/ripbi/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/bgarcevic/ripbi/compare/v0.6.0...v0.6.1
