@@ -30,6 +30,7 @@ table Sales
 	measure 'Sales Target' = [Sales] * 1.1
 		formatString: #,0
 		lineageTag: 5e1e5a7a-0000-4000-8000-000000000143
+		annotation ripbi_keep = Demo: read by the Finance Excel pivot
 
 	/// Distinct sales orders.
 	measure Orders = DISTINCTCOUNT('Sales Order'[Sales Order])
