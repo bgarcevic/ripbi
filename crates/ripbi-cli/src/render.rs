@@ -416,6 +416,13 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
 pub(crate) const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
                             of these may be parse damage, not removals; see the notices below)";
 
+/// What to do about new unused findings under `--compare-root`: remove them,
+/// or keep one a consumer ripbi cannot see reads (issue #151). Stderr and the
+/// Markdown summary carry it; the gate is where authors meet the annotation.
+pub(crate) const KEEP_HINT: &str = "Remove the new unused objects, or if something outside \
+                            these reports reads one (an Excel pivot, another workspace's \
+                            report), mark it in the model: `annotation ripbi_keep = <reason>`";
+
 /// Whether a `Fixed since` list may be parse damage: some finding vanished,
 /// and this scan's ingest recorded an `unknown_object` skip — the one kind
 /// that can drop an object (the same bar issue #60 holds breakage claims to).

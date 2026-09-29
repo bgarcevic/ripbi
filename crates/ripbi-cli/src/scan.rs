@@ -795,6 +795,9 @@ fn scan(
         // Notices are stderr's job in text modes; --json carries them itself.
         if !args.json {
             write_skip_notices(streams.err, &output.skips)?;
+            if output.compare.is_some() && !output.findings.is_empty() {
+                writeln!(streams.err, "hint: {}", render::KEEP_HINT)?;
+            }
         }
     }
 
