@@ -10,6 +10,7 @@ pub mod discover;
 pub mod entry;
 pub mod error;
 pub mod glob;
+pub mod markdown;
 pub mod notify;
 pub mod progress;
 pub mod render;

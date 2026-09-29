@@ -93,6 +93,24 @@ pub struct ScanOutput {
     pub compare: Option<CompareOut>,
 }
 
+impl ScanOutput {
+    /// Every reported finding: the unused objects, the auto date/time tables
+    /// that are not `in_use` (a dead table's own finding counts with its row),
+    /// and both breakage lists — one per unsuppressed SARIF result. Under
+    /// `--compare-root` these are exactly the new findings.
+    #[must_use]
+    pub fn reported(&self) -> usize {
+        self.findings.len()
+            + self
+                .auto_date_time
+                .iter()
+                .filter(|row| row.verdict != "in_use")
+                .count()
+            + self.broken.len()
+            + self.broken_artifacts.len()
+    }
+}
+
 /// How a scan compared against the same scan in another checkout (issue #141).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompareOut {
@@ -254,12 +272,12 @@ const WORST_TABLES_LIMIT: usize = 10;
 
 /// The worst-tables breakdown of `--summary` (issue #38).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct WorstTables {
+pub(crate) struct WorstTables {
     /// `(table display name, surviving finding count)`, count descending then
     /// table name, capped at [`WORST_TABLES_LIMIT`] rows.
-    rows: Vec<(String, usize)>,
+    pub(crate) rows: Vec<(String, usize)>,
     /// Tables with findings beyond the shown rows.
-    more: usize,
+    pub(crate) more: usize,
 }
 
 /// The object kind of an id, as used in `--plain`, JSON, and grouping.
@@ -393,13 +411,13 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
 /// The caveat a `Fixed since` list carries when this scan's ingest skipped
 /// objects: a finding that vanished may have been lost to the parse, not
 /// removed (issue #141).
-const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
+pub(crate) const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
                             of these may be parse damage, not removals; see the notices below)";
 
 /// Whether a `Fixed since` list may be parse damage: some finding vanished,
 /// and this scan's ingest recorded an `unknown_object` skip — the one kind
 /// that can drop an object (the same bar issue #60 holds breakage claims to).
-fn fixed_uncertain(report: &ScanOutput) -> bool {
+pub(crate) fn fixed_uncertain(report: &ScanOutput) -> bool {
     report
         .compare
         .as_ref()
@@ -571,7 +589,7 @@ fn write_auto_date_time(
 /// no table and are skipped; relationships count under their "from" side. Count
 /// descending, then table name folded (case-insensitively, like every other
 /// ordering), so the output is deterministic across runs.
-fn worst_tables(findings: &[Finding]) -> WorstTables {
+pub(crate) fn worst_tables(findings: &[Finding]) -> WorstTables {
     let mut counts: HashMap<&NameKey, usize> = HashMap::new();
     for finding in findings {
         if let Some(table) = &finding.table {
@@ -957,6 +975,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
         target: report.target.clone(),
         reports: report.reports.clone(),
         summary: JsonSummary {
+            findings: report.reported(),
             objects: report.objects,
             reachable: report.reachable,
             roots: report.roots,
@@ -1099,6 +1118,10 @@ struct JsonBrokenArtifact {
 
 #[derive(Serialize)]
 struct JsonSummary {
+    /// Every reported finding: `unused`, the auto date/time rows that are not
+    /// `in_use`, `broken`, and `broken_artifacts` — the unsuppressed SARIF
+    /// result count. Under `--compare-root`, the new findings.
+    findings: usize,
     objects: usize,
     reachable: usize,
     roots: usize,

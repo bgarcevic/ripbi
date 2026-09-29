@@ -54,6 +54,7 @@ Examples:
   ripbi scan --json > findings.json
   ripbi scan --sarif > ripbi.sarif # GitHub code scanning / Azure DevOps annotations
   ripbi scan --azure-devops        # warnings/errors on an Azure Pipelines run
+  ripbi scan --sarif-file ripbi.sarif --markdown-file summary.md  # CI: one scan, many outputs
   ripbi scan --summary             # counts only, when the list would flood the terminal
   ripbi scan --type measure --type column  # only these unused object types
   ripbi scan -q                            # exit code only: 0 clean, 1 unused found, 2 error
@@ -356,6 +357,18 @@ pub struct ScanArgs {
     /// `##vso[task.logissue]` lines for Azure Pipelines (docs/output.md).
     #[arg(long, conflicts_with_all = ["json", "plain", "sarif"])]
     pub azure_devops: bool,
+
+    /// Also write the SARIF log to PATH, whatever stdout shows.
+    #[arg(long, value_name = "PATH")]
+    pub sarif_file: Option<PathBuf>,
+
+    /// Also write the --json output to PATH, whatever stdout shows.
+    #[arg(long, value_name = "PATH")]
+    pub json_file: Option<PathBuf>,
+
+    /// Also write a Markdown summary to PATH (a CI job summary or PR comment).
+    #[arg(long, value_name = "PATH")]
+    pub markdown_file: Option<PathBuf>,
 
     /// Counts only, when the list would flood the terminal.
     #[arg(short = 's', long, conflicts_with_all = ["json", "plain", "sarif", "azure_devops"])]
