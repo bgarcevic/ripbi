@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and fails on new findings (`fail-on: new | any | never`). Outputs: `new-findings`,
   `fixed-findings`, `sarif-file`. Developed in `ci/github-action/`, tested end to end
   on Linux and Windows, and mirrored to its Marketplace repository on each release.
+- **Azure Pipelines template** (issue #143): `templates/ripbi-scan.yml` does the same
+  in Azure DevOps. On a pull request build it compares against the target branch,
+  logs each new finding as a warning or error on the run, uploads the Markdown
+  summary to the run's Extensions tab, publishes the SARIF log as the
+  `CodeAnalysisLogs` artifact, and fails on new findings (`failOn`). Tested under an
+  emulator of the agent (`scripts/run_ado_template.py`) in the same end-to-end
+  workflow.
+- **CI in five minutes** (issue #143): a user guide chapter with the one file to
+  paste for GitHub Actions or Azure Pipelines, and what to do when the check fails.
 
 - **`scan --sarif-file`, `--json-file`, and `--markdown-file`** (issue #143): write
   the SARIF log, the JSON output, or a Markdown summary to a file, whatever stdout

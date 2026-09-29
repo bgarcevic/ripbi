@@ -1,0 +1,255 @@
+# ripbi scan for Azure Pipelines (issue #143): a steps template, the Azure
+# DevOps counterpart of the bgarcevic/ripbi-action GitHub Action.
+#
+#   resources:
+#     repositories:
+#       - repository: ripbi
+#         type: github
+#         name: bgarcevic/ripbi
+#         ref: refs/tags/v0.8.0
+#         endpoint: github # a GitHub service connection
+#   steps:
+#     - checkout: self
+#     - template: templates/ripbi-scan.yml@ripbi
+#
+# On a pull request build it checks out the target branch beside the
+# repository and compares the two scans, so only findings the change
+# introduces fail the build. Every step is bash (Git Bash on Windows agents)
+# and needs curl, git, and jq, which the Microsoft-hosted images have.
+#
+# The parameters reach the scripts as environment variables, never spliced
+# into them, so a path or ref is never parsed as shell. The e2e workflow runs
+# this file under a small emulator (scripts/run_ado_template.py): keep to the
+# expression forms it knows, listed at its top.
+
+parameters:
+  # What to scan: a .pbip, .pbix, project folder, .SemanticModel, or .Report.
+  # Empty discovers one project in the working directory.
+  - name: path
+    type: string
+    default: ""
+  # auto: the pull request's target branch on a pull request build, else none.
+  # none, or any git ref, e.g. the last release tag.
+  - name: compare
+    type: string
+    default: auto
+  # new: findings the change adds. any: every finding, existing ones included.
+  # never: report only. auto: new with a comparison, else any.
+  - name: failOn
+    type: string
+    default: auto
+    values: [auto, new, any, never]
+  # The ripbi release to install, e.g. 0.8.0.
+  - name: version
+    type: string
+    default: latest
+  # Each finding as a warning or error on the run's summary (--azure-devops).
+  - name: logIssues
+    type: boolean
+    default: true
+  # The SARIF log as the CodeAnalysisLogs build artifact, which the SARIF SAST
+  # Scans Tab extension shows.
+  - name: publishSarif
+    type: boolean
+    default: true
+  # Extra `rib scan` flags, split on whitespace, e.g. --type measure --strict.
+  - name: args
+    type: string
+    default: ""
+  # A folder holding a ripbi binary to use instead of downloading a release.
+  - name: binary
+    type: string
+    default: ""
+  # The repository root: SARIF and issue paths are relative to it.
+  - name: workingDirectory
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+  # The scan step's name, which prefixes its output variables
+  # ($(ripbi.newFindings)); give each use of the template in a job its own.
+  - name: name
+    type: string
+    default: ripbi
+
+steps:
+  - bash: |
+      set -euo pipefail
+      native() { if command -v cygpath > /dev/null; then cygpath -w "$1"; else printf '%s\n' "$1"; fi; }
+      posix() { if command -v cygpath > /dev/null; then cygpath -u "$1"; else printf '%s\n' "$1"; fi; }
+
+      if [ -n "$INPUT_BINARY" ]; then
+        dir=$(cd "$INPUT_BINARY" && pwd)
+      else
+        if [ "$INPUT_VERSION" = latest ]; then
+          # The release page's redirect, not the API: anonymous API calls
+          # share the agent IP's hourly limit with every other job on it.
+          url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/bgarcevic/ripbi/releases/latest)
+          tag=${url##*/}
+        else
+          tag="v${INPUT_VERSION#v}"
+        fi
+        dir="$(posix "$AGENT_TEMPDIRECTORY")/$INPUT_NAME-bin"
+        script="https://raw.githubusercontent.com/bgarcevic/ripbi/$tag"
+        if [ "$AGENT_OS" = Windows_NT ]; then
+          ps1="$(posix "$AGENT_TEMPDIRECTORY")/ripbi-install.ps1"
+          curl -fsSL "$script/install.ps1" -o "$ps1"
+          shell=$(command -v pwsh || command -v powershell)
+          RIPBI_INSTALL_DIR="$(native "$dir")" "$shell" -NoProfile -ExecutionPolicy Bypass -File "$(native "$ps1")" -Version "$tag"
+        else
+          curl -fsSL "$script/install.sh" | RIPBI_INSTALL_DIR="$dir" sh -s -- --version "$tag"
+        fi
+      fi
+
+      if [ ! -x "$dir/rib" ] && [ ! -x "$dir/rib.exe" ]; then
+        echo "##vso[task.logissue type=error]ripbi: no rib binary in $dir"
+        exit 1
+      fi
+      echo "##vso[task.prependpath]$(native "$dir")"
+      "$dir/rib" --version
+      # The template writes every output from one scan; releases before these
+      # flags would need one scan per format.
+      if ! "$dir/rib" scan --help | grep -q -- --markdown-file; then
+        echo "##vso[task.logissue type=error]ripbi: this release predates scan --markdown-file; set version to a newer release or latest"
+        exit 1
+      fi
+    displayName: ripbi – install
+    workingDirectory: ${{ parameters.workingDirectory }}
+    env:
+      INPUT_NAME: ${{ parameters.name }}
+      INPUT_VERSION: ${{ parameters.version }}
+      INPUT_BINARY: ${{ parameters.binary }}
+
+  # Runs one `rib scan`, against a sibling checkout of the compared ref when
+  # there is one, and sets the output variables: the counts, the file paths,
+  # and the verdict the gate step acts on. It never fails on findings, so the
+  # SARIF is still published.
+  - bash: |
+      set -euo pipefail
+      say() { printf 'ripbi: %s\n' "$1" >&2; }
+      native() { if command -v cygpath > /dev/null; then cygpath -w "$1"; else printf '%s\n' "$1"; fi; }
+      posix() { if command -v cygpath > /dev/null; then cygpath -u "$1"; else printf '%s\n' "$1"; fi; }
+      output() { echo "##vso[task.setvariable variable=$1;isoutput=true]$2"; }
+
+      compare=$INPUT_COMPARE
+      if [ "$compare" = auto ]; then
+        compare=$([ "${BUILD_REASON:-}" = PullRequest ] && echo base || echo none)
+      fi
+
+      args=(scan --no-input)
+      [ -z "$INPUT_PATH" ] || args+=("$INPUT_PATH")
+
+      base_dir="../$INPUT_NAME-base"
+      if [ "$compare" != none ]; then
+        if [ "$compare" = base ]; then
+          ref=${SYSTEM_PULLREQUEST_TARGETBRANCH:-}
+          if [ -z "$ref" ]; then
+            echo "##vso[task.logissue type=error]ripbi: compare: base needs a pull request build; pass a ref or none"
+            exit 1
+          fi
+          # Azure Repos names it refs/heads/main; GitHub repositories, main.
+          case "$ref" in refs/*) ;; *) ref="refs/heads/$ref" ;; esac
+        else
+          ref=$compare
+        fi
+        # The checkout step does not keep its credentials for Azure Repos;
+        # the job's token is sent the way that step sends it. Other hosts need
+        # persistCredentials: true on the checkout, or a public repository.
+        auth=()
+        if [ "${BUILD_REPOSITORY_PROVIDER:-}" = TfsGit ] && [ -n "${SYSTEM_ACCESSTOKEN:-}" ]; then
+          auth=(-c "http.extraheader=AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN")
+        fi
+        # A depth-1 fetch of the ref alone: ripbi compares two folders, so no
+        # merge base is needed, and it works under a shallow checkout. The
+        # sibling folder is outside the scan's discovery.
+        say "fetching $ref"
+        git ${auth[@]+"${auth[@]}"} fetch --no-tags --depth=1 origin "$ref"
+        git worktree remove --force "$base_dir" 2> /dev/null || rm -rf "$base_dir"
+        git worktree prune
+        git worktree add --detach "$base_dir" FETCH_HEAD
+        args+=(--compare-root "$base_dir")
+      fi
+
+      out="$(posix "$AGENT_TEMPDIRECTORY")/$INPUT_NAME"
+      mkdir -p "$out"
+      sarif="$out/$INPUT_NAME.sarif" json="$out/$INPUT_NAME.json" md="$out/$INPUT_NAME.md"
+      rm -f "$sarif" "$json" "$md"
+      args+=(--sarif-file "$sarif" --json-file "$json" --markdown-file "$md")
+      case "$INPUT_LOG_ISSUES" in [Tt]rue) args+=(--azure-devops) ;; esac
+      if [ -n "$INPUT_ARGS" ]; then
+        read -r -a extra <<< "$INPUT_ARGS"
+        args+=("${extra[@]}")
+      fi
+
+      say "rib ${args[*]}"
+      set +e
+      CLICOLOR_FORCE=1 rib "${args[@]}"
+      code=$?
+      set -e
+
+      if [ ! -f "$json" ]; then
+        # Exit 2 before any finding: usage, discovery, or ingestion.
+        output verdict error
+        exit 0
+      fi
+
+      # jq.exe ends its lines with CRLF on Windows.
+      count() { jq "$1" "$json" | tr -d '\r'; }
+      new=$(count '.summary.findings')
+      fixed=$(count '.compare.fixed // [] | length')
+      existing=$(count '.compare.existing // 0')
+      output newFindings "$new"
+      output fixedFindings "$fixed"
+      output sarifFile "$(native "$sarif")"
+      output markdownFile "$(native "$md")"
+      echo "##vso[task.uploadsummary]$(native "$md")"
+
+      fail_on=$INPUT_FAIL_ON
+      [ "$fail_on" != auto ] || fail_on=$([ "$compare" = none ] && echo any || echo new)
+      case "$fail_on:$code" in
+        *:2) verdict=error ;; # --strict skips, or a file that could not be written
+        never:*) verdict=pass ;;
+        new:1) verdict=fail ;;
+        new:*) verdict=pass ;;
+        # Under a comparison, the existing findings are not in the exit code.
+        any:*) verdict=$([ "$code" = 1 ] || [ "$existing" -gt 0 ] && echo fail || echo pass) ;;
+      esac
+      output verdict "$verdict"
+    name: ${{ parameters.name }}
+    displayName: ripbi – scan
+    workingDirectory: ${{ parameters.workingDirectory }}
+    env:
+      INPUT_NAME: ${{ parameters.name }}
+      INPUT_PATH: ${{ parameters.path }}
+      INPUT_COMPARE: ${{ parameters.compare }}
+      INPUT_FAIL_ON: ${{ parameters.failOn }}
+      INPUT_LOG_ISSUES: ${{ parameters.logIssues }}
+      INPUT_ARGS: ${{ parameters.args }}
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - ${{ if parameters.publishSarif }}:
+      - task: PublishBuildArtifacts@1
+        displayName: ripbi – publish SARIF
+        condition: and(succeeded(), ne(variables['${{ parameters.name }}.sarifFile'], ''))
+        # A publish failure is no reason to hide the verdict.
+        continueOnError: true
+        inputs:
+          PathtoPublish: $(${{ parameters.name }}.sarifFile)
+          ArtifactName: CodeAnalysisLogs
+
+  - bash: |
+      git worktree remove --force "../$INPUT_NAME-base" 2> /dev/null || rm -rf "../$INPUT_NAME-base"
+      git worktree prune 2> /dev/null || true
+    displayName: ripbi – remove the comparison checkout
+    condition: always()
+    workingDirectory: ${{ parameters.workingDirectory }}
+    env:
+      INPUT_NAME: ${{ parameters.name }}
+
+  - bash: |
+      case "$VERDICT" in
+        pass) exit 0 ;;
+        fail) echo "##vso[task.logissue type=error]ripbi: the scan found unused or broken objects (see the run's Extensions tab)"; exit 1 ;;
+        *) echo "##vso[task.logissue type=error]ripbi: the scan could not run (see the ripbi – scan step)"; exit 1 ;;
+      esac
+    displayName: ripbi – gate
+    env:
+      VERDICT: $(${{ parameters.name }}.verdict)

@@ -129,9 +129,11 @@ ripbi scan --compare-root ../base
 
 Every connected report is compared on both sides, so a report change that
 orphans a measure counts too. Findings gone since the base are listed as fixed.
-ripbi only compares folders; the pipeline supplies the other checkout. The
-user guide has
-[GitHub Actions and Azure DevOps examples](https://bgarcevic.github.io/ripbi/output.html#comparing-against-another-checkout).
+ripbi only compares folders; the pipeline supplies the other checkout.
+
+In CI, the [GitHub Action](ci/github-action/) (`uses: bgarcevic/ripbi-action@v1`)
+and the [Azure Pipelines template](templates/ripbi-scan.yml) do this on every
+pull request; see [CI in five minutes](https://bgarcevic.github.io/ripbi/ci.html).
 
 ## Exit codes
 

@@ -395,33 +395,20 @@ ripbi scan --compare-root ../base
 
 ### In CI
 
-GitHub Actions, on pull requests:
+The [ripbi GitHub Action](https://github.com/bgarcevic/ripbi/tree/main/ci/github-action)
+and the Azure Pipelines template
+([`templates/ripbi-scan.yml`](https://github.com/bgarcevic/ripbi/blob/main/templates/ripbi-scan.yml))
+do all of this on pull requests: they check out the target branch beside the
+repository, compare, annotate the new findings, and fail only on them. See
+[CI in five minutes](https://bgarcevic.github.io/ripbi/ci.html).
 
-```yaml
-- uses: actions/checkout@v4
-  with:
-    fetch-depth: 0
-- run: curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | sh
-- run: git worktree add ../base "origin/${{ github.base_ref }}"
-- run: rib scan --compare-root ../base
+By hand, the target branch needs no history, only its files:
+
+```sh
+git fetch --depth=1 origin main
+git worktree add ../base FETCH_HEAD
+rib scan --compare-root ../base
 ```
-
-Azure DevOps, on pull requests:
-
-```yaml
-steps:
-  - checkout: self
-    fetchDepth: 0
-  - script: |
-      curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | sh
-      echo "##vso[task.prependpath]$HOME/.local/bin"
-  - script: |
-      git worktree add ../base "origin/${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
-      rib scan --azure-devops --compare-root ../base
-```
-
-`--azure-devops` lists each new finding as a warning or error on the run's summary
-(see [Azure DevOps](#azure-devops)); drop it for the plain human report in the log.
 
 Accepting a finding means merging the change: once it is on the base branch, the next
 pull request compares against it. An object meant to stay unused on purpose — a measure

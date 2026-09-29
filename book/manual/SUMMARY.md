@@ -7,6 +7,7 @@
 ---
 
 - [The scan command](output.md)
+- [CI in five minutes](ci.md)
 - [The deps command](deps.md)
 - [The report command](report.md)
 - [What counts as unused](graph.md)
