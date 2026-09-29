@@ -78,7 +78,7 @@ runs:
     - name: Upload SARIF
       if: ${{ !cancelled() && steps.scan.outputs.sarif-file != '' && inputs.upload-sarif != 'false' }}
       continue-on-error: ${{ inputs.upload-sarif == 'auto' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-file }}
         category: ripbi${{ inputs.path != '' && format('/{0}', inputs.path) || '' }}

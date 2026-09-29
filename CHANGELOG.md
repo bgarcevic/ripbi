@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The GitHub Action uploads SARIF with `github/codeql-action/upload-sarif@v4`;
+  `@v3` is deprecated in December 2026 and runs on the deprecated Node.js 20.
+
 ## [0.8.0] - 2026-09-29
 
 ### Added
