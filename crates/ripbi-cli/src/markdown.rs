@@ -42,7 +42,7 @@ fn headline(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             "**{total} new {noun}** · {} fixed · {} already in {}",
             compare.fixed.len(),
             compare.existing,
-            code(&compare.root)
+            code(&compare.label)
         )?,
         None => writeln!(out, "**{total} {noun}**")?,
     }
@@ -184,7 +184,7 @@ fn fixed(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     writeln!(
         out,
         "#### Fixed since {} ({})",
-        code(&compare.root),
+        code(&compare.label),
         compare.fixed.len()
     )?;
     writeln!(out)?;
