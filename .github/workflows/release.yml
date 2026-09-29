@@ -159,7 +159,7 @@ jobs:
             echo "the action is unchanged since the last release"
           else
             git commit -qm "Sync with ripbi ${GITHUB_REF_NAME}"               -m "From bgarcevic/ripbi@${GITHUB_SHA}, ci/github-action."
-            git push -q origin HEAD
+            git push -q origin HEAD:main # also names the first branch of the empty repository
           fi
           git tag -f "$ACTION_MAJOR"
           git push -q -f origin "refs/tags/${ACTION_MAJOR}"
