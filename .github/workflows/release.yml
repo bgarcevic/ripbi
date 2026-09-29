@@ -128,6 +128,42 @@ jobs:
             --generate-notes \
             --verify-tag
 
+  # Mirrors ci/github-action to bgarcevic/ripbi-action (issue #143): the
+  # Marketplace wants the action alone at a repository root, with no
+  # workflows, so it is developed and tested here and copied there on each
+  # release. Moves the major tag users pin (`@v1`); bump ACTION_MAJOR only for
+  # a breaking change to the action's inputs or outputs. Skips until the
+  # RIPBI_ACTION_TOKEN secret (contents: write on ripbi-action) exists.
+  publish-action:
+    name: Publish the GitHub Action
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      ACTION_MAJOR: v1
+      RIPBI_ACTION_TOKEN: ${{ secrets.RIPBI_ACTION_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Mirror to bgarcevic/ripbi-action
+        if: env.RIPBI_ACTION_TOKEN != ''
+        shell: bash
+        run: |
+          git clone -q "https://x-access-token:${RIPBI_ACTION_TOKEN}@github.com/bgarcevic/ripbi-action.git" mirror
+          find mirror -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r ci/github-action/. mirror/
+          cp LICENSE-MIT LICENSE-APACHE mirror/
+          cd mirror
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "the action is unchanged since the last release"
+          else
+            git commit -qm "Sync with ripbi ${GITHUB_REF_NAME}"               -m "From bgarcevic/ripbi@${GITHUB_SHA}, ci/github-action."
+            git push -q origin HEAD
+          fi
+          git tag -f "$ACTION_MAJOR"
+          git push -q -f origin "refs/tags/${ACTION_MAJOR}"
+
   # Skips until the CARGO_REGISTRY_TOKEN secret exists; once the owner sets it,
   # every tag publish runs. Secrets cannot be tested in a job-level `if`, so the
   # token is mapped into the job env and the steps check it there.

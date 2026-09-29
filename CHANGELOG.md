@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub Action** (issue #143): `uses: bgarcevic/ripbi-action@v1` installs a
+  checksum-verified ripbi, checks out the pull request's base branch beside the
+  repository (fetching it itself, so the default shallow checkout works), and runs one
+  `rib scan --compare-root`. It writes the job summary, uploads SARIF to code
+  scanning, optionally keeps one pull request comment up to date (`comment: true`),
+  and fails on new findings (`fail-on: new | any | never`). Outputs: `new-findings`,
+  `fixed-findings`, `sarif-file`. Developed in `ci/github-action/`, tested end to end
+  on Linux and Windows, and mirrored to its Marketplace repository on each release.
+
 - **`scan --sarif-file`, `--json-file`, and `--markdown-file`** (issue #143): write
   the SARIF log, the JSON output, or a Markdown summary to a file, whatever stdout
   shows, so a CI job gets annotations, counts, a job summary, and a readable log from

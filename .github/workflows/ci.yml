@@ -80,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # shellcheck is preinstalled on the runner.
-      - run: shellcheck install.sh book/assemble.sh
+      - run: shellcheck install.sh book/assemble.sh ci/github-action/scripts/*.sh
       - name: PSScriptAnalyzer
         shell: pwsh
         run: |

@@ -1,0 +1,144 @@
+name: Action
+
+# End-to-end test of the GitHub Action in ci/github-action (issue #143). The
+# Marketplace repository it is mirrored to cannot hold workflows, so it is
+# tested here: against a throwaway PBIP repository whose base branch already
+# has findings, a change that orphans a measure must fail the step with one
+# new finding, and a change that does not must pass — each checked out the
+# way actions/checkout does by default, one commit deep.
+
+on:
+  push:
+    branches: [main]
+    paths: ["ci/github-action/**", ".github/workflows/action.yml", "crates/**"]
+  pull_request:
+    paths: ["ci/github-action/**", ".github/workflows/action.yml", "crates/**"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # ripbi lives in a subfolder: the workspace root becomes the sample
+      # repository, where the action runs as it would in a user's workflow.
+      - uses: actions/checkout@v7
+        with:
+          path: ripbi
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ripbi
+          key: action-e2e-v1
+      # The action's side-output flags are newer than any release, so it runs
+      # this checkout's build (the `binary` input).
+      - run: cargo build --release --locked -p ripbi
+        working-directory: ripbi
+
+      - name: Create the sample repository
+        run: |
+          git config --global user.name ripbi-e2e
+          git config --global user.email ripbi-e2e@users.noreply.github.com
+          origin="$RUNNER_TEMP/origin.git"
+          git init -q --bare "$origin"
+          seed="$RUNNER_TEMP/seed"
+          git init -q -b main "$seed"
+          cp -r ripbi/crates/ripbi-cli/tests/fixtures/mini-pbip/. "$seed"
+          cd "$seed"
+          git add -A && git commit -qm "Base: two unused objects already"
+
+          # A change that orphans a measure: nothing binds or references it.
+          git checkout -qb orphan main
+          sales=Mini.SemanticModel/definition/tables/Sales.tmdl
+          awk '/^\tcolumn Amount/ { print "\tmeasure '\''Draft KPI'\'' = 1"; print "\t\tlineageTag: 99999999-9999-9999-9999-999999999990"; print "" } { print }' \
+            "$sales" > "$sales.new" && mv "$sales.new" "$sales"
+          git commit -qam "Orphan a measure"
+
+          # A change that touches the model without orphaning anything.
+          git checkout -qb clean main
+          echo "# Sample" > README.md
+          git add README.md && git commit -qm "Unrelated change"
+
+          git push -q "$origin" main orphan clean
+
+          # The workspace becomes that repository's shallow checkout, with
+          # ripbi/ ignored.
+          cd "$GITHUB_WORKSPACE"
+          git init -q
+          echo ripbi/ >> .git/info/exclude
+          if [ "$RUNNER_OS" = Windows ]; then
+            url="file:///$(cygpath -m "$origin")"
+          else
+            url="file://$origin"
+          fi
+          git remote add origin "$url"
+
+      - name: Check out the orphaning change
+        run: git fetch -q --depth=1 origin orphan && git checkout -q --force FETCH_HEAD
+
+      - name: Scan the orphaning change
+        id: orphan
+        continue-on-error: true
+        uses: ./ripbi/ci/github-action
+        with:
+          path: Mini.pbip
+          compare: main
+          binary: ripbi/target/release
+          upload-sarif: "false"
+
+      - name: The orphaning change fails with one new finding
+        env:
+          OUTCOME: ${{ steps.orphan.outcome }}
+          NEW: ${{ steps.orphan.outputs.new-findings }}
+          SARIF: ${{ steps.orphan.outputs.sarif-file }}
+        run: |
+          [ "$OUTCOME" = failure ] || { echo "expected failure, got $OUTCOME"; exit 1; }
+          [ "$NEW" = 1 ] || { echo "expected 1 new finding, got '$NEW'"; exit 1; }
+          grep -q "RIPBI-UNUSED-MEASURE" "$SARIF"
+          [ ! -e ../ripbi-base ] || { echo "the comparison checkout was left behind"; exit 1; }
+
+      - name: Check out the unrelated change
+        run: git fetch -q --depth=1 origin clean && git checkout -q --force FETCH_HEAD
+
+      - name: Scan the unrelated change
+        id: clean
+        uses: ./ripbi/ci/github-action
+        with:
+          path: Mini.pbip
+          compare: main
+          binary: ripbi/target/release
+          upload-sarif: "false"
+
+      - name: The unrelated change passes with no new findings
+        env:
+          NEW: ${{ steps.clean.outputs.new-findings }}
+        run: '[ "$NEW" = 0 ] || { echo "expected 0 new findings, got ''$NEW''"; exit 1; }'
+
+      # Without a comparison every finding counts, and fail-on: never reports
+      # without failing.
+      - name: Scan without a comparison
+        id: plain
+        uses: ./ripbi/ci/github-action
+        with:
+          path: Mini.pbip
+          compare: none
+          fail-on: never
+          binary: ripbi/target/release
+          upload-sarif: "false"
+
+      - name: Every finding counts without a comparison
+        env:
+          NEW: ${{ steps.plain.outputs.new-findings }}
+        run: '[ "$NEW" = 2 ] || { echo "expected 2 findings, got ''$NEW''"; exit 1; }'
