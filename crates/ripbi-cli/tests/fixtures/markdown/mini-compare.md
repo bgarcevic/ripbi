@@ -12,6 +12,8 @@
 |---|---|
 | measure | `'Sales'[Draft KPI]` |
 
+> Remove the new unused objects, or if something outside these reports reads one (an Excel pivot, another workspace's report), mark it in the model: `annotation ripbi_keep = <reason>`
+
 #### Worst tables
 
 | Table | Unused |

@@ -172,6 +172,10 @@ fn findings(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
         }
     }
     more(out, rows.len())?;
+    if report.compare.is_some() && !report.findings.is_empty() {
+        writeln!(out)?;
+        writeln!(out, "> {}", render::KEEP_HINT)?;
+    }
     writeln!(out)
 }
 

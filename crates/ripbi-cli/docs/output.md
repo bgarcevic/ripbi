@@ -395,6 +395,9 @@ ripbi scan --compare-root ../base
 - **Nothing to compare.** When the scan cannot run in `DIR` (a model this change
   adds, say), a `Note: nothing to compare in …` on stderr says why, and every
   finding is new. A `DIR` that is not a folder is exit `2`.
+- **The keep hint.** When new unused objects are reported, every mode but `--json`
+  ends with a `hint:` on stderr pointing at the `ripbi_keep` annotation, the answer
+  for an object a consumer ripbi cannot see reads.
 
 ### In CI
 
@@ -968,6 +971,8 @@ GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
 |---|---|
 | measure | `'Sales'[Draft KPI]` |
 
+> Remove the new unused objects, or if something outside these reports reads one (an Excel pivot, another workspace's report), mark it in the model: `annotation ripbi_keep = <reason>`
+
 #### Worst tables
 
 | Table | Unused |
@@ -984,7 +989,9 @@ GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
   and a `Detail` column when any row has one (a storage size, a broken binding's reason
   and site, an artifact's unresolved references, an auto date/time verdict). The list
   stops after 50 rows with a count of the rest; `No findings.` (`No new findings.`
-  under `--compare-root`) when there are none.
+  under `--compare-root`) when there are none. Under `--compare-root`, new unused
+  objects end with a quoted hint: remove them, or keep one with a `ripbi_keep`
+  annotation (see [Keeping objects on purpose](#keeping-objects-on-purpose)).
 - **Fixed since `<DIR>`.** Under `--compare-root`, the other checkout's findings this
   scan no longer detects, also capped at 50 rows, with the parse-damage caveat when it
   applies.
