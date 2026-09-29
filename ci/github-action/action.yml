@@ -1,0 +1,112 @@
+name: ripbi scan
+description: Find unused measures, columns, and tables in Power BI projects, and fail pull requests that add new ones.
+author: bgarcevic
+branding:
+  icon: scissors
+  color: green
+
+inputs:
+  path:
+    description: What to scan (a .pbip, .pbix, project folder, .SemanticModel, or .Report). Empty discovers a project in the repository root.
+    required: false
+    default: ""
+  compare:
+    description: "What to compare against: base (the pull request's base branch), none, or any git ref. Empty means base on pull_request events and none otherwise."
+    required: false
+    default: ""
+  version:
+    description: The ripbi release to install, e.g. 0.8.0, or latest.
+    required: false
+    default: latest
+  fail-on:
+    description: "When to fail the step: new (findings the change adds), any (every finding), or never. Empty means new under a comparison and any without one."
+    required: false
+    default: ""
+  upload-sarif:
+    description: "Upload the SARIF log to code scanning: auto (try; carry on without security-events: write), true, or false."
+    required: false
+    default: auto
+  comment:
+    description: Post or update one pull request comment with the summary (needs pull-requests write).
+    required: false
+    default: "false"
+  args:
+    description: Extra `rib scan` flags, split on whitespace, e.g. `--type measure --strict`.
+    required: false
+    default: ""
+  binary:
+    description: A folder holding a ripbi binary to use instead of downloading a release.
+    required: false
+    default: ""
+  github-token:
+    description: The token for release lookups and the pull request comment.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  new-findings:
+    description: Findings the scan reports; under a comparison, only the ones the change adds.
+    value: ${{ steps.scan.outputs.new-findings }}
+  fixed-findings:
+    description: Findings of the compared ref that are gone; 0 without a comparison.
+    value: ${{ steps.scan.outputs.fixed-findings }}
+  sarif-file:
+    description: The SARIF log's path.
+    value: ${{ steps.scan.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install ripbi
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BINARY: ${{ inputs.binary }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: '"$GITHUB_ACTION_PATH/scripts/install.sh"'
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_COMPARE: ${{ inputs.compare }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_ARGS: ${{ inputs.args }}
+      run: '"$GITHUB_ACTION_PATH/scripts/scan.sh"'
+
+    - name: Upload SARIF
+      if: ${{ !cancelled() && steps.scan.outputs.sarif-file != '' && inputs.upload-sarif != 'false' }}
+      continue-on-error: ${{ inputs.upload-sarif == 'auto' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: ripbi${{ inputs.path != '' && format('/{0}', inputs.path) || '' }}
+
+    - name: Comment on the pull request
+      if: ${{ !cancelled() && inputs.comment == 'true' && steps.scan.outputs.markdown-file != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_PATH: ${{ inputs.path }}
+        MARKDOWN_FILE: ${{ steps.scan.outputs.markdown-file }}
+      run: '"$GITHUB_ACTION_PATH/scripts/comment.sh"'
+
+    - name: Remove the comparison checkout
+      if: ${{ always() && steps.scan.outputs.base-dir != '' }}
+      shell: bash
+      env:
+        BASE_DIR: ${{ steps.scan.outputs.base-dir }}
+      run: git worktree remove --force "$BASE_DIR" || rm -rf "$BASE_DIR"
+
+    - name: Gate
+      if: ${{ !cancelled() }}
+      shell: bash
+      env:
+        VERDICT: ${{ steps.scan.outputs.verdict }}
+      run: |
+        case "$VERDICT" in
+          pass) exit 0 ;;
+          fail) echo "::error title=ripbi::the scan found unused or broken objects (see the job summary)"; exit 1 ;;
+          *) echo "::error title=ripbi::the scan could not run (see the Scan step)"; exit 1 ;;
+        esac
