@@ -30,10 +30,13 @@ if [ "$compare" != none ]; then
   else
     ref="$compare"
   fi
+  # The summary names what the checkout holds (main, v0.7.0), not its folder.
+  label=${ref#refs/heads/}
+  label=${label#refs/tags/}
   # A depth-1 fetch of the ref alone: ripbi compares two folders, so no merge
   # base is needed, and it works under actions/checkout's default shallow
   # clone. The checkout is a sibling of the repository, outside the scan's
-  # discovery, which is also what makes the summary read `../ripbi-base`.
+  # discovery.
   say "fetching $ref"
   git fetch --no-tags --depth=1 origin "$ref"
   base_dir=../ripbi-base
@@ -41,7 +44,7 @@ if [ "$compare" != none ]; then
   git worktree prune
   git worktree add --detach "$base_dir" FETCH_HEAD
   output base-dir "$(cd "$base_dir" && pwd)"
-  args+=(--compare-root "$base_dir")
+  args+=(--compare-root "$base_dir" --compare-label "$label")
 fi
 
 out="$RUNNER_TEMP/ripbi"
