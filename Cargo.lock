@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "petgraph",
  "quick-xml",
@@ -1210,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-xpress9"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cc",
 ]
