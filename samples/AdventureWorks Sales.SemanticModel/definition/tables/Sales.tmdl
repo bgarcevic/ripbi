@@ -26,6 +26,11 @@ table Sales
 		displayFolder: Core
 		lineageTag: 14803ab6-35fb-42a1-8b94-84fe2dfe5fe8
 
+	/// Demo: an unused measure for the ripbi-action trial PR.
+	measure 'Sales Target' = [Sales] * 1.1
+		formatString: #,0
+		lineageTag: 5e1e5a7a-0000-4000-8000-000000000143
+
 	/// Distinct sales orders.
 	measure Orders = DISTINCTCOUNT('Sales Order'[Sales Order])
 		formatString: #,0
