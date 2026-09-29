@@ -17,6 +17,7 @@ use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
+use crate::markdown;
 use crate::progress::{self, Progress};
 use crate::render::{
     self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
@@ -448,12 +449,13 @@ fn scan(
     // counted in `existing` and dropped, exactly like an ignored one.
     let mut detected = Detected::new();
     let mut existing = 0;
-    // `--sarif` keeps what already existed as suppressed results (issue
-    // #142); it and `--azure-devops` need every finding's source file. Both
-    // only when rendering.
-    let sarif_mode = args.sarif && probe.is_none();
+    // `--sarif` (and `--sarif-file`) keeps what already existed as
+    // suppressed results (issue #142); it and `--azure-devops` need every
+    // finding's source file. Both only when rendering.
+    let wants_sarif = args.sarif || args.sarif_file.is_some();
+    let sarif_mode = wants_sarif && probe.is_none();
     let mut kept_existing = sarif::Existing::default();
-    let mut locator = if (args.sarif || args.azure_devops) && probe.is_none() {
+    let mut locator = if (wants_sarif || args.azure_devops) && probe.is_none() {
         let declared = ingest::source_locations(&paired.model).map_err(|error| {
             ScanError::new(format!(
                 "cannot read source positions of {}: {error}",
@@ -507,9 +509,11 @@ fn scan(
     }
 
     // The model table travels with a finding only where a mode reads it: `--json`
-    // (the `table` field) and `--summary` (the worst-tables breakdown). Cloning
-    // it for the default and `--plain` output would allocate for nothing.
-    let want_table = args.json || args.summary;
+    // (the `table` field) and `--summary` and Markdown (the worst-tables
+    // breakdown). Cloning it for the default and `--plain` output would
+    // allocate for nothing.
+    let want_table =
+        args.json || args.summary || args.json_file.is_some() || args.markdown_file.is_some();
     let mut filtered_out = 0;
     let mut machinery_members = 0;
     // The identities behind `findings`, for the storage total's dedupe.
@@ -747,6 +751,10 @@ fn scan(
             .zip(args.compare_root.as_ref())
             .map(|(before, root)| CompareOut {
                 root: root.display().to_string(),
+                label: args
+                    .compare_label
+                    .clone()
+                    .unwrap_or_else(|| root.display().to_string()),
                 existing,
                 fixed: compare::fixed(before, &detected),
             }),
@@ -757,10 +765,12 @@ fn scan(
         .finish(streams.err, Some(&scanned))
         .map_err(ScanError::from)?;
 
+    write_side_outputs(args, cwd, &output, &kept_existing, locator.as_ref())?;
+
     if !args.quiet {
         if args.json {
             render::json(streams.out, &output).map_err(ScanError::from)?;
-        } else if let Some(locator) = &locator {
+        } else if let Some(locator) = locator.as_ref().filter(|_| args.sarif || args.azure_devops) {
             if args.azure_devops {
                 vso::write(streams.out, &output, locator, cwd)
             } else {
@@ -1647,6 +1657,10 @@ fn scan_before(
         quiet: true,
         no_input: true,
         compare_root: None,
+        compare_label: None,
+        sarif_file: None,
+        json_file: None,
+        markdown_file: None,
         // Sizes never change a verdict; skip the storage source entirely.
         stats_from: Some(PathBuf::from("none")),
         ..args.clone()
@@ -1683,6 +1697,47 @@ fn scan_before(
         return Ok(Detected::new());
     }
     Ok(detected)
+}
+
+/// Writes the `--sarif-file`, `--json-file`, and `--markdown-file` outputs:
+/// the same scan rendered to files alongside whatever stdout shows, so a CI
+/// job gets its annotations, counts, and summary from one scan. `-q` silences
+/// the streams, never a file the user asked for. Paths resolve against `cwd`.
+fn write_side_outputs(
+    args: &ScanArgs,
+    cwd: &Path,
+    output: &ScanOutput,
+    kept_existing: &sarif::Existing,
+    locator: Option<&Locator>,
+) -> Result<(), ScanError> {
+    if let (Some(path), Some(locator)) = (&args.sarif_file, locator) {
+        write_file("--sarif-file", path, cwd, |out| {
+            sarif::write(out, output, kept_existing, locator, cwd)
+        })?;
+    }
+    if let Some(path) = &args.json_file {
+        write_file("--json-file", path, cwd, |out| render::json(out, output))?;
+    }
+    if let Some(path) = &args.markdown_file {
+        write_file("--markdown-file", path, cwd, |out| {
+            markdown::write(out, output)
+        })?;
+    }
+    Ok(())
+}
+
+/// Renders one side output into memory, then writes it to `path` (resolved
+/// against `cwd`) in one go.
+fn write_file(
+    flag: &str,
+    path: &Path,
+    cwd: &Path,
+    render: impl FnOnce(&mut dyn io::Write) -> io::Result<()>,
+) -> Result<(), ScanError> {
+    let mut buffer = Vec::new();
+    render(&mut buffer).map_err(ScanError::from)?;
+    std::fs::write(cwd.join(path), buffer)
+        .map_err(|error| ScanError::new(format!("cannot write {flag} {}: {error}", path.display())))
 }
 
 /// A broken binding's reason, as the snake_case code `--plain`/`--json` emit.

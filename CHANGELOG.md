@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scan --sarif-file`, `--json-file`, and `--markdown-file`** (issue #143): write
+  the SARIF log, the JSON output, or a Markdown summary to a file, whatever stdout
+  shows, so a CI job gets annotations, counts, a job summary, and a readable log from
+  one scan instead of rerunning it per format. The files are byte-identical to
+  `--sarif` and `--json`; `-q` still writes them. The Markdown summary (new) carries
+  the counts, the findings (capped at 50 rows), the `Fixed since` list under
+  `--compare-root`, and the worst tables, sized for `$GITHUB_STEP_SUMMARY`, an Azure
+  DevOps build summary, or a pull request comment.
+- **`scan --compare-label <NAME>`** (issue #143): what the output calls the
+  `--compare-root` checkout, so a CI summary reads `2 already in main` rather than
+  `2 already in ../ripbi-base`. `--json`'s `compare.root` keeps the folder.
+- **`summary.findings` in `--json`** (issue #143): every reported finding in one
+  number (unused objects, auto date/time tables that are not in use, broken bindings,
+  and broken artifacts), the unsuppressed SARIF result count. Under `--compare-root`,
+  the new findings.
+
 - **`ripbi_keep` model annotation** (issue #151): mark an object that is unused
   on purpose — a measure only an Excel pivot reads, a column kept for an
   upcoming report — in the model itself, with the reason as the value

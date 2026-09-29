@@ -74,6 +74,7 @@ reports.
 | Content | Stream | Notes |
 |---|---|---|
 | Findings, summary, JSON, plain records, SARIF, `##vso` commands | stdout | the machine-readable side |
+| `--sarif-file`, `--json-file`, `--markdown-file` | the named file | written whatever stdout shows, `-q` included (see [Several outputs from one scan](#several-outputs-from-one-scan)) |
 | Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
 | Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
 | Coverage caveat | stderr | once per run |
@@ -82,6 +83,7 @@ reports.
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
+Files named by `--sarif-file`, `--json-file`, and `--markdown-file` are still written.
 
 ## Model-centric scans (`--model`, or a PATH naming a semantic model)
 
@@ -152,6 +154,9 @@ unaffected.
 | `--plain` | One `<type>\t<id>` record per finding, for grep/awk |
 | `--sarif` | A SARIF 2.1.0 log on stdout for GitHub code scanning and Azure DevOps (see [SARIF](#sarif)). Mutually exclusive with `--json`, `--plain`, and `--summary` |
 | `--azure-devops` | One `##vso[task.logissue]` logging command per finding on stdout, so an Azure Pipelines run lists them as warnings and errors (see [Azure DevOps](#azure-devops)). Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--summary` |
+| `--sarif-file <PATH>` | Also write the `--sarif` log to `PATH`, whatever stdout shows (see [Several outputs from one scan](#several-outputs-from-one-scan)) |
+| `--json-file <PATH>` | Also write the `--json` output to `PATH` |
+| `--markdown-file <PATH>` | Also write a Markdown summary to `PATH`, for a CI job summary or pull request comment (see [Markdown](#markdown)) |
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--azure-devops` |
 | `-q`, `--quiet` | No output; exit code only |
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
@@ -162,6 +167,7 @@ unaffected.
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
 | `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
 | `--compare-root <DIR>` | Rerun the same scan in another checkout (the base branch, a previous release) and report and gate on only the findings that did not exist there; findings gone since are listed as fixed. Exit `2` when `DIR` is not a folder. See [Comparing against another checkout](#comparing-against-another-checkout) |
+| `--compare-label <NAME>` | What the output calls the `--compare-root` checkout, e.g. the branch it holds: `(412 findings already in main)`. Defaults to `DIR` as given. `--json`'s `compare.root` stays `DIR`. Needs `--compare-root` |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
 | `--strict` | Any parser skip notice becomes exit code `2` |
 | `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
@@ -374,7 +380,9 @@ ripbi scan --compare-root ../base
   Existing findings are left out of every output mode and the exit code, like
   `[scan].ignore` suppressions. The human modes count them under the summary line:
   `(412 findings already in ../base)`. A dead auto date/time table's own finding goes
-  with its row.
+  with its row. `--compare-label main` makes that `already in main`, here and in
+  every other output that names the checkout, for a CI run that knows which branch
+  it holds.
 - **Fixed findings** are the other checkout's findings this scan no longer detects at
   all, whether reported, ignored, filtered, or suppressed. A finding hidden by `--type`
   is still detected, so it is not fixed. Human output lists them in a
@@ -664,6 +672,7 @@ Pretty-printed JSON, stable field order, additive schema:
   "target": "samples/AdventureWorks Sales.SemanticModel",
   "reports": ["samples/AdventureWorks Sales.Report"],
   "summary": {
+    "findings": 64,
     "objects": 130,
     "reachable": 74,
     "roots": 51,
@@ -738,6 +747,11 @@ Pretty-printed JSON, stable field order, additive schema:
 }
 ```
 
+- `summary.findings` counts every reported finding: `unused`, `broken`,
+  `broken_artifacts`, and the `auto_date_time` rows whose verdict is not `in_use` (a
+  `dead` row counts once, its nested finding with it). It equals the number of
+  unsuppressed SARIF results. Under `--compare-root` it counts only the new findings,
+  since existing ones are left out of every array.
 - `summary.unused` is the length of `unused` — after `[scan].ignore` and the type
   flags. `summary.unused_total` counts every unused object in the graph before any
   suppression, filter, or section move, so `reachable = objects − unused_total` always
@@ -898,7 +912,7 @@ code scanning tracks one alert across runs, branches, and moved files.
 
 Findings that already existed in the other checkout are kept rather than dropped as in
 the other modes. They carry
-`suppressions: [{"kind": "external", "justification": "already in <DIR>"}]`, which is what
+`suppressions: [{"kind": "external", "justification": "already in <DIR>"}]` (`<NAME>` under `--compare-label`), which is what
 code scanning expects: the pull request annotates only new findings, and existing alerts
 stay tracked. Only unsuppressed findings gate the exit code. The `Fixed since` list has no
 SARIF form; code scanning closes an alert itself when its fingerprint stops appearing.
@@ -908,7 +922,7 @@ SARIF form; code scanning closes an alert itself when its fingerprint stops appe
 GitHub Actions (needs the `security-events: write` permission):
 
 ```yaml
-- run: rib scan --sarif --compare-root ../base > ripbi.sarif
+- run: rib scan --compare-root ../base --sarif-file ripbi.sarif
 - uses: github/codeql-action/upload-sarif@v3
   if: always()
   with:
@@ -916,12 +930,83 @@ GitHub Actions (needs the `security-events: write` permission):
     category: ripbi
 ```
 
-`if: always()` uploads the log even when the scan step fails the job with exit `1`.
+`--sarif-file` keeps the readable report in the job log; `--sarif > ripbi.sarif`
+writes the same log. `if: always()` uploads it even when the scan step fails the job
+with exit `1`.
 
 Azure DevOps: publish `ripbi.sarif` as a build artifact named `CodeAnalysisLogs`. The
 [SARIF SAST Scans Tab](https://marketplace.visualstudio.com/items?itemName=sariftools.scans)
 extension shows it on the build summary. For warnings and errors without an extension,
 see [Azure DevOps](#azure-devops).
+
+## Several outputs from one scan
+
+A CI job usually wants several outputs at once: SARIF for annotations, JSON for counts,
+Markdown for a job summary, and a readable log. The stdout modes are exclusive, so the
+file flags write the others from the same scan, without running it again (twice
+again, under `--compare-root`):
+
+```sh
+rib scan --compare-root ../base   --sarif-file ripbi.sarif --json-file ripbi.json --markdown-file ripbi.md
+```
+
+- Each file is byte-identical to its stdout mode: `--sarif-file` to `--sarif`
+  (existing findings kept as suppressed results), `--json-file` to `--json`.
+  `--markdown-file` has no stdout mode.
+- They combine with any stdout mode, `-q` included, and with each other.
+- A relative `PATH` resolves against the working directory. The file is replaced if it
+  exists; its folder must exist. A file that cannot be written is exit `2`.
+- The files are written once the scan has its findings, before stdout. A run that
+  fails earlier with exit `2` (a bad PATH, an ingestion error) writes none of them, so
+  a pipeline should not read a file left over from an earlier run.
+
+## Markdown
+
+`--markdown-file` writes a GitHub-flavored Markdown summary of the scan, sized for a
+GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
+(`##vso[task.uploadsummary]`), or a pull request comment:
+
+````markdown
+### ripbi scan: `Mini.SemanticModel`
+
+**1 new finding** · 0 fixed · 2 already in `../base`
+
+| Finding | Count |
+|---|--:|
+| Unused measures | 1 |
+
+#### New findings (1)
+
+| Type | Object |
+|---|---|
+| measure | `'Sales'[Draft KPI]` |
+
+#### Worst tables
+
+| Table | Unused |
+|---|--:|
+| `'Sales'` | 1 |
+````
+
+- **Headline.** `**N findings**`, the `summary.findings` count. Under `--compare-root`:
+  `**N new findings** · F fixed · E already in <DIR>`, with `--compare-label`'s name
+  in place of `DIR` when given.
+- **Counts.** One row per finding type with findings, in the human output's order,
+  then auto date/time tables, broken visual bindings, and broken artifacts.
+- **Findings.** One row each, the same findings the other modes report: type, object,
+  and a `Detail` column when any row has one (a storage size, a broken binding's reason
+  and site, an artifact's unresolved references, an auto date/time verdict). The list
+  stops after 50 rows with a count of the rest; `No findings.` (`No new findings.`
+  under `--compare-root`) when there are none.
+- **Fixed since `<DIR>`.** Under `--compare-root`, the other checkout's findings this
+  scan no longer detects, also capped at 50 rows, with the parse-damage caveat when it
+  applies.
+- **Worst tables.** The tables with the most unused findings, as `--summary` ranks them.
+- **Notes.** `[scan].ignore` suppressions and parser skips, as counts. The skips
+  themselves are on stderr.
+
+Object names are code spans, with `|` escaped so a name cannot break the table. The
+layout may change between releases; parse `--json`, not the Markdown.
 
 ## Azure DevOps
 
