@@ -31,6 +31,7 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |
 | Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Three-crate workspace |
 | GitHub Action (`bgarcevic/ripbi-action`) | [ci/github-action/](ci/github-action/) | [ci/github-action/README.md](ci/github-action/README.md) | Composite action mirrored to its own repo on release; tested by `.github/workflows/action.yml` |
+| Azure Pipelines template | [templates/](templates/) | [ripbi-scan.yml](templates/ripbi-scan.yml) header | Steps template; tested under `scripts/run_ado_template.py` by `.github/workflows/action.yml`, so keep to the expressions that emulator knows |
 | Desktop UI (Tauri) | [desktop/](desktop/) | [desktop/README.md](desktop/README.md) | Separate native package; reuses CLI scan orchestration |
 | Project intro / positioning | [README.md](README.md) | [README.md](README.md) | User-facing overview |
 | Docs site (mdBook on Pages) | [book/](book/) | [CONTRIBUTING.md](CONTRIBUTING.md) | `book/src/` is generated — edit the canonical docs, never the projection |

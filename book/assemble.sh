@@ -21,6 +21,7 @@ for f in \
   "$MANUAL/SUMMARY.md" \
   "$MANUAL/introduction.md" \
   "$MANUAL/installation.md" \
+  "$MANUAL/ci.md" \
   CHANGELOG.md \
   crates/ripbi-cli/docs/output.md \
   crates/ripbi-cli/docs/deps.md \

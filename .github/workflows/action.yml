@@ -1,18 +1,19 @@
 name: Action
 
-# End-to-end test of the GitHub Action in ci/github-action (issue #143). The
-# Marketplace repository it is mirrored to cannot hold workflows, so it is
-# tested here: against a throwaway PBIP repository whose base branch already
-# has findings, a change that orphans a measure must fail the step with one
-# new finding, and a change that does not must pass — each checked out the
-# way actions/checkout does by default, one commit deep.
+# End-to-end test of the GitHub Action in ci/github-action and the Azure
+# Pipelines template in templates/ (issue #143). Neither can be tested where it
+# ships (the Marketplace repository cannot hold workflows; Azure Pipelines does
+# not run here), so both are tested here: against a throwaway PBIP repository
+# whose base branch already has findings, a change that orphans a measure must
+# fail with one new finding, and a change that does not must pass, each
+# checked out one commit deep, as actions/checkout does by default.
 
 on:
   push:
     branches: [main]
-    paths: ["ci/github-action/**", ".github/workflows/action.yml", "crates/**"]
+    paths: ["ci/github-action/**", "templates/**", "scripts/run_ado_template.py", ".github/workflows/action.yml", "crates/**"]
   pull_request:
-    paths: ["ci/github-action/**", ".github/workflows/action.yml", "crates/**"]
+    paths: ["ci/github-action/**", "templates/**", "scripts/run_ado_template.py", ".github/workflows/action.yml", "crates/**"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -143,3 +144,50 @@ jobs:
         env:
           NEW: ${{ steps.plain.outputs.new-findings }}
         run: '[ "$NEW" = 2 ] || { echo "expected 2 findings, got ''$NEW''"; exit 1; }'
+
+      # The Azure Pipelines template (templates/ripbi-scan.yml) on the same
+      # changes, under an emulator of the agent: Azure Pipelines cannot run
+      # here. Each run writes the job's result, variables, logged issues, and
+      # artifacts as JSON.
+      - name: Install the Azure Pipelines emulator's dependency
+        run: |
+          py=$(command -v python3 || command -v python)
+          "$py" -m pip install --quiet pyyaml
+          echo "PY=$py" >> "$GITHUB_ENV"
+
+      - name: Azure Pipelines — the orphaning pull request fails with one new finding
+        run: |
+          git fetch -q --depth=1 origin orphan && git checkout -q --force FETCH_HEAD
+          "$PY" ripbi/scripts/run_ado_template.py ripbi/templates/ripbi-scan.yml \
+            --param path=Mini.pbip --param binary=ripbi/target/release \
+            --var Build.Reason=PullRequest --var System.PullRequest.TargetBranch=refs/heads/main \
+            --result "$RUNNER_TEMP/ado-orphan.json"
+          jq -e '.result == "Failed"
+            and .variables["ripbi.newFindings"] == "1"
+            and .variables["ripbi.verdict"] == "fail"
+            and ([.issues[] | select(.code == "RIPBI-UNUSED-MEASURE")] | length) == 1
+            and .artifacts[0].name == "CodeAnalysisLogs"
+            and (.summaries | length) == 1' "$RUNNER_TEMP/ado-orphan.json"
+          grep -qF '2 already in `main`' "$(jq -r '.summaries[0]' "$RUNNER_TEMP/ado-orphan.json" | tr -d '\r')"
+          [ ! -e ../ripbi-base ] || { echo "the comparison checkout was left behind"; exit 1; }
+
+      - name: Azure Pipelines — the unrelated pull request passes
+        run: |
+          git fetch -q --depth=1 origin clean && git checkout -q --force FETCH_HEAD
+          "$PY" ripbi/scripts/run_ado_template.py ripbi/templates/ripbi-scan.yml \
+            --param path=Mini.pbip --param binary=ripbi/target/release \
+            --var Build.Reason=PullRequest --var System.PullRequest.TargetBranch=main \
+            --result "$RUNNER_TEMP/ado-clean.json"
+          jq -e '.result == "Succeeded" and .variables["ripbi.newFindings"] == "0"' "$RUNNER_TEMP/ado-clean.json"
+
+      # A branch build compares nothing, so every finding counts; failOn:
+      # never reports without failing.
+      - name: Azure Pipelines — a branch build reports every finding
+        run: |
+          "$PY" ripbi/scripts/run_ado_template.py ripbi/templates/ripbi-scan.yml \
+            --param path=Mini.pbip --param binary=ripbi/target/release --param failOn=never \
+            --var Build.Reason=IndividualCI \
+            --result "$RUNNER_TEMP/ado-branch.json"
+          jq -e '.result == "Succeeded"
+            and .variables["ripbi.newFindings"] == "2"
+            and ([.issues[] | select(.type == "warning")] | length) == 2' "$RUNNER_TEMP/ado-branch.json"
