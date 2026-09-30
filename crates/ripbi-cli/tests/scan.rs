@@ -99,6 +99,44 @@ mod output_modes {
         assert_eq!(json["summary"]["unused"], 0);
     }
 
+    /// A workspace-wide log: another model's query on `[Legacy Total]` does
+    /// not keep this model's `[Legacy Total]` alive, unless
+    /// `--queries-item` says the log's `Other` is this model.
+    #[test]
+    fn a_workspace_wide_log_counts_only_this_models_queries() {
+        let temp = TempDir::new("queried-workspace");
+        project_into(&temp.0, "Mini");
+        let log = temp.0.join("workspace.csv");
+        std::fs::write(
+            &log,
+            "OperationName,ItemName,EventText\n\
+             QueryEnd,Mini,\"EVALUATE VALUES('Sales'[Amount])\"\n\
+             QueryEnd,Other,\"SELECT {[Measures].[Legacy Total]} ON 0 FROM [Model]\"\n",
+        )
+        .expect("write log");
+
+        let args = ScanArgs {
+            queries_from: Some(log.clone()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "{stdout}{stderr}");
+        assert!(stdout.contains("2 unused"), "{stdout}");
+        assert!(
+            stderr.contains("covers 2 models; ignored 1 of 2"),
+            "{stderr}"
+        );
+
+        let args = ScanArgs {
+            queries_from: Some(log),
+            queries_item: Some("Other".to_string()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "{stdout}{stderr}");
+        assert!(stdout.contains("0 unused"), "{stdout}");
+    }
+
     #[test]
     fn human_output_summarizes_and_annotates_the_chain() {
         let temp = TempDir::new("human");

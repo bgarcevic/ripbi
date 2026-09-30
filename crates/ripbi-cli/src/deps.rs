@@ -230,6 +230,7 @@ fn explore(
 
     let query_log = scan::load_query_log(
         queries_path,
+        scan::query_log_item(args.queries_item.as_deref(), config.as_ref()),
         &paired.model,
         args.quiet,
         streams.err,

@@ -363,7 +363,8 @@ ripbi deps "'Sales'[Total]" --json | jq '.bindings[] | .report + "/" + .page'
 ## `ripbi.toml`
 
 `target` and `reports` participate in the input ladder exactly as in scan, and
-`queries_from` supplies the query log when `--queries-from` is not passed. There is no
+`queries_from` supplies the query log when `--queries-from` is not passed, and
+`queries_item` picks its model when `--queries-item` is not. There is no
 `[deps]` section; `[scan].ignore` does not apply here — a dependency view must show
 what the graph says, ignored or not.
 

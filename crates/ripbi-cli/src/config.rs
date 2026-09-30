@@ -42,6 +42,9 @@ pub struct Config {
     /// `queries_from`: a workspace-monitoring query-log export, shared by
     /// `scan` and `deps`.
     pub queries_from: Option<PathBuf>,
+    /// `queries_item`: which model's rows to read from a workspace-wide
+    /// query log, by `ItemName` or `ItemId`.
+    pub queries_item: Option<String>,
 }
 
 /// A `--stats-from` or `[scan].stats_from` value.
@@ -85,6 +88,7 @@ struct FileFormat {
     #[serde(default)]
     reports: Vec<String>,
     queries_from: Option<String>,
+    queries_item: Option<String>,
     scan: Option<ScanSection>,
 }
 
@@ -134,6 +138,7 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
                 ignore: scan.ignore,
                 stats_from,
                 queries_from,
+                queries_item: file.queries_item,
             },
         }));
     }

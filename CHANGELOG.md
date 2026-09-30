@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clients read stops being reported unused. `ripbi deps --impact` shows those objects
   in a `Queried` section (how often, how many users, last seen, clients, reports) and
   in `queried` plain records and a JSON `queried` array; `scan --json` counts them in
-  `summary.queried`. User names never reach the output.
+  `summary.queried`. User names never reach the output. A workspace-wide export is
+  narrowed to the scanned model by `ItemName`/`ItemId` (`--queries-item` or
+  `queries_item` when the service name differs), so another model's queries never
+  keep this one's objects alive.
 
 ## [0.8.1] - 2026-09-29
 

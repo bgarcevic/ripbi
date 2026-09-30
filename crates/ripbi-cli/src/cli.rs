@@ -117,6 +117,10 @@ pub struct DepsArgs {
     #[arg(long, value_name = "PATH")]
     pub queries_from: Option<PathBuf>,
 
+    /// The model's name or item id in the query log; defaults to the model's folder or file name.
+    #[arg(long, value_name = "NAME")]
+    pub queries_item: Option<String>,
+
     /// Show what the object relies on, upstream.
     #[arg(long)]
     pub dependencies: bool,
@@ -426,6 +430,10 @@ pub struct ScanArgs {
     /// Workspace-monitoring query log (CSV/JSON export); objects it queries count as used.
     #[arg(long, value_name = "PATH")]
     pub queries_from: Option<PathBuf>,
+
+    /// The model's name or item id in the query log; defaults to the model's folder or file name.
+    #[arg(long, value_name = "NAME")]
+    pub queries_item: Option<String>,
 
     /// Rerun this scan in another checkout; report and gate only on findings new since it.
     #[arg(long, value_name = "DIR")]

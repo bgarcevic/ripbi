@@ -202,6 +202,109 @@ Queried
             "{err}"
         );
     }
+
+    /// A workspace-wide export: `Mini` read a column, `Other` — a different
+    /// model with the same object names — ran the Excel query on `[Legacy Total]`.
+    const TWO_MODELS: &str = "OperationName,ItemName,ItemId,Timestamp,ApplicationName,EventText\n\
+        QueryEnd,Mini,aaaaaaaa-0001,2026-09-01,PowerBI,\"EVALUATE VALUES('Sales'[Amount])\"\n\
+        QueryEnd,Other,bbbbbbbb-0002,2026-09-02,Excel,\"SELECT {[Measures].[Legacy Total]} ON 0 FROM [Model]\"\n";
+
+    fn two_models(names: (&str, &str)) -> (TempDir, std::path::PathBuf) {
+        let dir = mini_project();
+        let path = dir.0.join("workspace.csv");
+        let text = TWO_MODELS
+            .replace(",Mini,", &format!(",{},", names.0))
+            .replace(",Other,", &format!(",{},", names.1));
+        std::fs::write(&path, text).expect("write log");
+        (dir, path)
+    }
+
+    fn legacy_impact(
+        dir: &TempDir,
+        configure: impl FnOnce(&mut DepsArgs),
+    ) -> (i32, String, String) {
+        let mut args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            impact: true,
+            ..DepsArgs::default()
+        };
+        configure(&mut args);
+        run_deps(&args, &dir.0, "")
+    }
+
+    #[test]
+    fn a_workspace_wide_log_is_narrowed_to_the_model() {
+        let (dir, log) = two_models(("Mini", "Other"));
+        let (code, out, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            !out.contains("Queried"),
+            "Other's query must not count:\n{out}"
+        );
+        assert!(
+            err.contains("Note: 1 logged queries (2026-09-01) from "),
+            "{err}"
+        );
+        assert!(
+            err.contains(
+                "Note: the query log covers 2 models; ignored 1 of 2 queries logged against the others."
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn queries_item_picks_the_model_by_name_or_id() {
+        for key in ["other", "BBBBBBBB-0002"] {
+            let (dir, log) = two_models(("Mini", "Other"));
+            let (code, out, err) = legacy_impact(&dir, |args| {
+                args.queries_from = Some(log);
+                args.queries_item = Some(key.to_string());
+            });
+            assert_eq!(code, 0, "{err}");
+            assert!(
+                out.contains("└─ 'Sales'[Legacy Total]  queried 1× · last 2026-09-02 · Excel\n"),
+                "{key}: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_config_key_picks_the_model() {
+        let (dir, _) = two_models(("Mini", "Other"));
+        std::fs::write(
+            dir.0.join("ripbi.toml"),
+            "queries_from = \"workspace.csv\"\nqueries_item = \"Other\"\n",
+        )
+        .expect("write config");
+        let (code, out, err) = legacy_impact(&dir, |_| {});
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("\nQueried\n"), "{out}");
+    }
+
+    #[test]
+    fn a_log_of_other_models_only_is_a_usage_error() {
+        let (dir, log) = two_models(("Finance", "Budget"));
+        let (code, _, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
+        assert_eq!(code, 2);
+        assert!(
+            err.contains("error: the query log has no queries for Mini; it names Budget, Finance"),
+            "{err}"
+        );
+        assert!(err.contains("--queries-item"), "{err}");
+    }
+
+    #[test]
+    fn an_explicit_item_the_log_lacks_is_a_usage_error() {
+        let (code, _, err) = with_log("'Sales'[Legacy]", |args| {
+            args.queries_item = Some("Finance".to_string());
+        });
+        assert_eq!(code, 2);
+        assert!(
+            err.contains("error: the query log has no queries for Finance; it names Mini"),
+            "{err}"
+        );
+    }
 }
 
 /// Issue #151: a `ripbi_keep` annotation is the answer to "why is this

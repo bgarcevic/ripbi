@@ -498,8 +498,18 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   it with `set notruncation;` before the query) and marks it partial rather than
   failing — a truncated log silently undercounts. Filtering to `QueryEnd` in the KQL,
   as above, keeps even months of a busy model far below that.
-- **Notes:** one `Note:` names the query count and the log's date window; another
-  appears when the log's `ItemName` is not the scanned model's name. The coverage
+- **One model per log.** An export can cover every model in the workspace. The rows
+  whose `ItemName` (or `ItemId`) is this model are used — the model is the
+  `.SemanticModel` folder's or `.pbix`/`.pbit`/`.abf` file's name, or `--queries-item
+  NAME|ID` (`queries_item` in `ripbi.toml`) when the service name differs — and
+  another model's queries are ignored, with a note: its `'Date'[Year]` says nothing
+  about this model's. Rows that name no model are kept. A log that covers several
+  models but not this one, or has no rows for an explicit `--queries-item`, is exit
+  `2`. A log of a single model under another name is used, with a note — most likely
+  the same model, named differently locally.
+- **Notes:** one `Note:` names the query count and the log's date window; others say
+  how many queries another model's rows accounted for, or that a single-model log
+  names a different model. The coverage
   caveat changes to say that consumers outside the window stay invisible — a log is
   only as long as its retention, so a monthly report may not show up in a week of logs.
 - **Output.** `--json` counts the queried objects in `summary.queried`;

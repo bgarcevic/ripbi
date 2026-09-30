@@ -80,6 +80,11 @@ pub struct LoggedQuery {
     pub user: Option<String>,
     /// The client application (`ApplicationName`), e.g. `PowerBI`.
     pub application: Option<String>,
+    /// The semantic model the query ran against (`ItemName`, or Log
+    /// Analytics' `ArtifactName`). One export can cover a whole workspace.
+    pub item: Option<String>,
+    /// The model's service item id (`ItemId`, or `ArtifactId`).
+    pub item_id: Option<String>,
     /// The report visuals the query was issued for, when recorded.
     pub sources: Vec<QuerySource>,
 }
@@ -96,8 +101,9 @@ pub struct QueryLog {
     /// The latest query timestamp, as exported.
     pub last_seen: Option<String>,
     /// The distinct semantic-model names the queries were logged against
-    /// (`ItemName`, or Log Analytics' `ArtifactName`), sorted. Lets a caller
-    /// warn when the log belongs to a different model.
+    /// (`ItemName`, or Log Analytics' `ArtifactName`), sorted, one entry per
+    /// case-insensitive name. Lets a caller warn when the log belongs to a
+    /// different model, or pick one model out of a workspace-wide export.
     pub item_names: Vec<String>,
 }
 
@@ -106,6 +112,54 @@ impl QueryLog {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queries.is_empty()
+    }
+
+    /// True when `key` names one of the log's models: an `ItemName` or an
+    /// `ItemId`, compared ASCII case-insensitively.
+    #[must_use]
+    pub fn names_item(&self, key: &str) -> bool {
+        self.queries.iter().any(|query| query.is_for(key))
+    }
+
+    /// Keeps only the queries logged against the model `key` names (see
+    /// [`QueryLog::names_item`]), plus those that name no model at all, and
+    /// narrows `first_seen`/`last_seen` to them. `item_names` still lists
+    /// every model the export covered. Returns how many queries were dropped.
+    pub fn retain_item(&mut self, key: &str) -> usize {
+        let before = self.queries.len();
+        self.queries
+            .retain(|query| query.item.is_none() && query.item_id.is_none() || query.is_for(key));
+        self.first_seen = None;
+        self.last_seen = None;
+        for stamp in self
+            .queries
+            .iter()
+            .filter_map(|query| query.timestamp.as_ref())
+        {
+            widen_window(&mut self.first_seen, &mut self.last_seen, stamp);
+        }
+        before - self.queries.len()
+    }
+}
+
+impl LoggedQuery {
+    fn is_for(&self, key: &str) -> bool {
+        self.item
+            .as_deref()
+            .is_some_and(|item| item.eq_ignore_ascii_case(key))
+            || self
+                .item_id
+                .as_deref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(key))
+    }
+}
+
+fn widen_window(first: &mut Option<String>, last: &mut Option<String>, stamp: &str) {
+    if first.as_deref().is_none_or(|current| stamp < current) {
+        *first = Some(stamp.to_string());
+    }
+    if last.as_deref().is_none_or(|current| stamp > current) {
+        *last = Some(stamp.to_string());
     }
 }
 
@@ -117,6 +171,7 @@ const OPERATION: &[&str] = &["operationname"];
 const OPERATION_DETAIL: &[&str] = &["operationdetailname"];
 const TIMESTAMP: &[&str] = &["timestamp", "timegenerated"];
 const ITEM_NAME: &[&str] = &["itemname", "artifactname"];
+const ITEM_ID: &[&str] = &["itemid", "artifactid"];
 const APPLICATION: &[&str] = &["applicationname"];
 const APPLICATION_CONTEXT: &[&str] = &["applicationcontext"];
 const USER: &[&str] = &["executinguser", "user"];
@@ -207,6 +262,7 @@ impl Table {
         let detail = self.column(OPERATION_DETAIL);
         let timestamp = self.column(TIMESTAMP);
         let item_name = self.column(ITEM_NAME);
+        let item_id = self.column(ITEM_ID);
         let application = self.column(APPLICATION);
         let context = self.column(APPLICATION_CONTEXT);
         let user = self.column(USER);
@@ -244,12 +300,7 @@ impl Table {
             };
             let stamp = cell(timestamp).map(str::to_string);
             if let Some(stamp) = &stamp {
-                if log.first_seen.as_ref().is_none_or(|first| stamp < first) {
-                    log.first_seen = Some(stamp.clone());
-                }
-                if log.last_seen.as_ref().is_none_or(|last| stamp > last) {
-                    log.last_seen = Some(stamp.clone());
-                }
+                widen_window(&mut log.first_seen, &mut log.last_seen, stamp);
             }
             if let Some(item) = cell(item_name) {
                 items.insert(item.to_string());
@@ -260,10 +311,18 @@ impl Table {
                 timestamp: stamp,
                 user: cell(user).map(str::to_string),
                 application: cell(application).map(str::to_string),
+                item: cell(item_name).map(str::to_string),
+                item_id: cell(item_id).map(str::to_string),
                 sources: cell(context).map(sources_of).unwrap_or_default(),
             });
         }
-        log.item_names = items.into_iter().collect();
+        // One model per name however its rows spell it: the service treats
+        // item names case-insensitively.
+        let mut seen = BTreeSet::new();
+        log.item_names = items
+            .into_iter()
+            .filter(|item: &String| seen.insert(item.to_lowercase()))
+            .collect();
         Ok(Ingested { value: log, skips })
     }
 }
@@ -835,6 +894,8 @@ mod tests {
             timestamp: None,
             user: None,
             application: None,
+            item: None,
+            item_id: None,
             sources: Vec::new(),
         }
     }
@@ -1026,6 +1087,46 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    const TWO_MODELS: &str = "OperationName,ItemName,ItemId,Timestamp,EventText\n\
+        QueryEnd,Sales,11111111-aaaa,2026-09-01,EVALUATE Sales\n\
+        QueryEnd,Finance,22222222-bbbb,2026-09-05,EVALUATE Ledger\n\
+        QueryEnd,sales,11111111-aaaa,2026-09-03,EVALUATE Sales\n\
+        QueryEnd,,,2026-09-09,EVALUATE Unknown\n";
+
+    #[test]
+    fn retain_item_keeps_one_models_queries_and_its_window() {
+        let mut log = parse_query_log(TWO_MODELS, Path::new("t.csv"))
+            .unwrap()
+            .value;
+        assert_eq!(log.item_names, ["Finance", "Sales"]);
+        assert!(log.names_item("SALES"));
+        assert!(!log.names_item("Budget"));
+        assert_eq!(log.retain_item("Sales"), 1);
+        let texts: Vec<&str> = log.queries.iter().map(|q| q.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["EVALUATE Sales", "EVALUATE Sales", "EVALUATE Unknown"]
+        );
+        assert_eq!(log.first_seen.as_deref(), Some("2026-09-01"));
+        assert_eq!(log.last_seen.as_deref(), Some("2026-09-09"));
+        assert_eq!(
+            log.item_names.len(),
+            2,
+            "item_names still lists the whole export"
+        );
+    }
+
+    #[test]
+    fn retain_item_matches_the_item_id() {
+        let mut log = parse_query_log(TWO_MODELS, Path::new("t.csv"))
+            .unwrap()
+            .value;
+        assert!(log.names_item("22222222-BBBB"));
+        assert_eq!(log.retain_item("22222222-bbbb"), 2);
+        assert_eq!(log.queries[0].text, "EVALUATE Ledger");
+        assert_eq!(log.queries.len(), 2);
     }
 
     #[test]

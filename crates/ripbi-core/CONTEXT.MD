@@ -56,7 +56,8 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   (`SemanticModelLogs` / Log Analytics `PowerBIDatasetsWorkspace` — CSV, a JSON row
   array, a Kusto v1/v2 or Log Analytics query API response, optionally gzipped or
   zipped; columns matched by name) into a source-agnostic
-  `QueryLog` of `QueryEnd` queries, and resolves each DAX query through the DAX binder
+  `QueryLog` of `QueryEnd` queries (each tagged with its model's `ItemName`/`ItemId`;
+  `QueryLog::retain_item` narrows a workspace-wide export to one model), and resolves each DAX query through the DAX binder
   and each MDX query through a small bracketed-chain lexer. `DependencyGraph::build_with_queries`
   adds the directly referenced objects as roots (`DependencyGraph::queried`), beside
   report bindings and kept objects. User principal names stay in `LoggedQuery` for

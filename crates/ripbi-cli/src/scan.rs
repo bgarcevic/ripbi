@@ -363,6 +363,7 @@ fn scan(
     }
     let query_log = load_query_log(
         query_log_path(args.queries_from.as_deref(), config.as_ref()),
+        query_log_item(args.queries_item.as_deref(), config.as_ref()),
         &paired.model,
         args.quiet,
         streams.err,
@@ -1487,13 +1488,29 @@ pub(crate) fn query_log_path(
         .or_else(|| config.and_then(|config| config.queries_from.clone()))
 }
 
+/// Which model's rows to read from a query log: `--queries-item`, else the
+/// config's `queries_item`. `None` falls back to the model's own name.
+pub(crate) fn query_log_item<'a>(
+    flag: Option<&'a str>,
+    config: Option<&'a config::Config>,
+) -> Option<&'a str> {
+    flag.or_else(|| config.and_then(|config| config.queries_item.as_deref()))
+}
+
 /// Reads the query log `scan` and `deps` add as roots, when one is set. An
 /// empty [`QueryLog`] when none is: the graph is then built exactly as
 /// without one. A log that cannot be read fails the run — it was asked for
 /// by name, like an explicit `--stats-from`. Rows the parser skipped join
 /// `skips`; the log's size and window, and a model-name mismatch, are notes.
+///
+/// One export can cover a whole workspace. A log that names several models
+/// is narrowed to this one — `item` (`--queries-item`), else the model's
+/// folder or file name — because another model's `'Date'[Year]` query says
+/// nothing about this one's. When no model in such a log matches, or an
+/// explicit `item` matches none, the run fails rather than guess.
 pub(crate) fn load_query_log(
     path: Option<PathBuf>,
+    item: Option<&str>,
     model_path: &Path,
     quiet: bool,
     err: &mut dyn io::Write,
@@ -1508,7 +1525,51 @@ pub(crate) fn load_query_log(
         )
     })?;
     skips.extend(ingested.skips.iter().map(skip_notice_out));
-    let log = ingested.value;
+    let mut log = ingested.value;
+
+    let model = model_name(model_path);
+    let key = item.or(model.as_deref());
+    let pick_hint =
+        "pass --queries-item NAME (or set queries_item in ripbi.toml) to pick the model";
+    let mut notes = Vec::new();
+    if !log.item_names.is_empty() {
+        match key.filter(|key| log.names_item(key)) {
+            // Several models: keep this one's rows.
+            Some(key) if log.item_names.len() > 1 => {
+                let total = log.queries.len();
+                let dropped = log.retain_item(key);
+                notes.push(format!(
+                    "the query log covers {} models; ignored {dropped} of {total} queries \
+                     logged against the others.",
+                    log.item_names.len(),
+                ));
+            }
+            Some(_) => {}
+            None if item.is_some() || log.item_names.len() > 1 => {
+                let names = capped_names(&log.item_names);
+                let message = match key {
+                    Some(key) => {
+                        format!("the query log has no queries for {key}; it names {names}")
+                    }
+                    None => format!(
+                        "the query log covers {} models ({names}); which one is this?",
+                        log.item_names.len()
+                    ),
+                };
+                return Err(ScanError::new(message).with_hint(pick_hint));
+            }
+            // One model under another name: most likely this one, renamed
+            // locally. Keep its queries, but say so.
+            None => {
+                if let Some(model) = &model {
+                    notes.push(format!(
+                        "the query log names {}, not {model}; its queries may belong to another model.",
+                        capped_names(&log.item_names)
+                    ));
+                }
+            }
+        }
+    }
     if quiet {
         return Ok(log);
     }
@@ -1524,19 +1585,8 @@ pub(crate) fn load_query_log(
         path.display()
     )
     .map_err(ScanError::from)?;
-    if let Some(model) = model_name(model_path)
-        && !log.item_names.is_empty()
-        && !log
-            .item_names
-            .iter()
-            .any(|item| item.eq_ignore_ascii_case(&model))
-    {
-        writeln!(
-            err,
-            "Note: the query log names {}, not {model}; its queries may belong to another model.",
-            capped_names(&log.item_names)
-        )
-        .map_err(ScanError::from)?;
+    for note in notes {
+        writeln!(err, "Note: {note}").map_err(ScanError::from)?;
     }
     Ok(log)
 }
