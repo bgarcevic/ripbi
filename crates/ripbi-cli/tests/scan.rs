@@ -63,6 +63,101 @@ mod output_modes {
         assert_eq!(json["summary"]["unused"], 0);
     }
 
+    /// Workspace monitoring: an Excel query logged against `[Legacy Total]`
+    /// makes it — and the column it reads — live; the JSON summary counts
+    /// the queried objects.
+    #[test]
+    fn logged_queries_are_roots() {
+        let temp = TempDir::new("queried");
+        project_into(&temp.0, "Mini");
+        let log = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ripbi-core/tests/fixtures/query-log/semantic-model-logs.csv");
+
+        let (code, _, _) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 1);
+
+        let args = ScanArgs {
+            queries_from: Some(log.clone()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "{stdout}{stderr}");
+        assert!(
+            stdout.contains("6 objects, 6 reachable from 1 roots, 0 unused"),
+            "{stdout}"
+        );
+        assert!(stderr.contains("Note: 3 logged queries"), "{stderr}");
+
+        let args = ScanArgs {
+            json: true,
+            queries_from: Some(log),
+            ..ScanArgs::default()
+        };
+        let (_, stdout, _) = run_scan(&args, &temp.0, "");
+        let json = json_payload(&stdout);
+        assert_eq!(json["summary"]["queried"], 3);
+        assert_eq!(json["summary"]["unused"], 0);
+    }
+
+    /// A workspace-wide log: another model's query on `[Legacy Total]` does
+    /// not keep this model's `[Legacy Total]` alive, unless
+    /// `--queries-item` says the log's `Other` is this model.
+    #[test]
+    fn a_workspace_wide_log_counts_only_this_models_queries() {
+        let temp = TempDir::new("queried-workspace");
+        project_into(&temp.0, "Mini");
+        let log = temp.0.join("workspace.csv");
+        std::fs::write(
+            &log,
+            "OperationName,ItemName,EventText\n\
+             QueryEnd,Mini,\"EVALUATE VALUES('Sales'[Amount])\"\n\
+             QueryEnd,Other,\"SELECT {[Measures].[Legacy Total]} ON 0 FROM [Model]\"\n",
+        )
+        .expect("write log");
+
+        let args = ScanArgs {
+            queries_from: Some(log.clone()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "{stdout}{stderr}");
+        assert!(stdout.contains("2 unused"), "{stdout}");
+        assert!(
+            stderr.contains("covers 2 models; ignored 1 of 2"),
+            "{stderr}"
+        );
+
+        let args = ScanArgs {
+            queries_from: Some(log.clone()),
+            queries_item: Some("Other".to_string()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "{stdout}{stderr}");
+        assert!(stdout.contains("0 unused"), "{stdout}");
+
+        // A log without this model is the no-log baseline, not a failure…
+        let mut args = ScanArgs {
+            queries_from: Some(log),
+            queries_item: Some("Budget".to_string()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "{stdout}{stderr}");
+        assert!(stdout.contains("2 unused"), "{stdout}");
+        assert!(
+            stderr.contains("[stale_state] the query log has no queries for Budget"),
+            "{stderr}"
+        );
+
+        // …but a skip notice, so a `--strict` CI gate catches the mismatch,
+        // even when `--quiet` hides the notes.
+        args.strict = true;
+        args.quiet = true;
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 2, "{stdout}{stderr}");
+    }
+
     #[test]
     fn human_output_summarizes_and_annotates_the_chain() {
         let temp = TempDir::new("human");
