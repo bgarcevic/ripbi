@@ -306,8 +306,10 @@ impl DependencyGraph {
     /// Every object a logged query references directly, in identity order —
     /// empty unless the graph was built with
     /// [`build_with_queries`](DependencyGraph::build_with_queries). Each is a
-    /// reachability root. Unlike a kept table, a queried table does not carry
-    /// its members: a query reads what it names.
+    /// reachability root. A queried table also keeps its columns alive — a
+    /// table expression returns every one — but, unlike a kept table, not its
+    /// measures or other members. The list itself names only what the queries
+    /// named.
     pub fn queried(&self) -> &[QueriedObject] {
         &self.queried
     }
@@ -473,7 +475,8 @@ impl DependencyGraph {
     }
 
     /// The petgraph indices reachability starts from: every root target,
-    /// every role, and every kept object — a kept table with its members.
+    /// every role, every kept object — a kept table with its members — and
+    /// every queried object, a queried table with its columns.
     pub(super) fn seed_indices(&self) -> Vec<NodeIndex> {
         let mut seeds: Vec<NodeIndex> = self
             .roots
@@ -481,11 +484,24 @@ impl DependencyGraph {
             .filter_map(|(id, _)| self.nodes.get(id).copied())
             .collect();
         let kept = !self.kept.is_empty();
+        // A table expression (`EVALUATE 'Sales'`, an Excel drillthrough,
+        // `ADDCOLUMNS('Sales', …)`) returns every column, so a queried table
+        // keeps its columns — but not its measures, which it never returns.
+        let queried_tables: HashSet<&NameKey> = self
+            .queried
+            .iter()
+            .filter_map(|queried| match &queried.id {
+                ObjectId::Table { table } => Some(table),
+                _ => None,
+            })
+            .collect();
         seeds.extend(
             self.nodes
                 .iter()
                 .filter(|(id, _)| {
-                    matches!(id, ObjectId::Role { .. }) || (kept && self.kept_by(id).is_some())
+                    matches!(id, ObjectId::Role { .. })
+                        || (kept && self.kept_by(id).is_some())
+                        || matches!(id, ObjectId::Column { table, .. } if queried_tables.contains(table))
                 })
                 .map(|(_, &index)| index),
         );

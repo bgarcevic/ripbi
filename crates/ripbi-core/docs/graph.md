@@ -15,7 +15,8 @@ Thin reports, Excel, XMLA clients, and other external consumers are invisible
 unless their bindings were included — or the model marks what they read with a
 `ripbi_keep` annotation, which makes the object a root like a report binding — or a
 workspace-monitoring query log (`--queries-from`) shows them querying it: every object a
-logged DAX or MDX query names directly is a root too (`DependencyGraph::queried`). A model with no connected reports is
+logged DAX or MDX query names directly is a root too (`DependencyGraph::queried`), and a
+queried table keeps its columns, which a table expression returns. A model with no connected reports is
 refused by default, because a scan without report roots cannot give a useful
 unused verdict. Use `ripbi deps` to inspect what a finding relies on and what
 else relies on it.

@@ -182,7 +182,7 @@ Queried
     }
 
     #[test]
-    fn a_log_for_another_model_earns_a_note() {
+    fn a_log_for_another_model_earns_a_skip_notice() {
         let dir = mini_project();
         let text = std::fs::read_to_string(log()).expect("read log");
         std::fs::write(
@@ -198,7 +198,7 @@ Queried
         let (code, _, err) = run_deps(&args, &dir.0, "");
         assert_eq!(code, 0, "{err}");
         assert!(
-            err.contains("Note: the query log names Other, not Mini;"),
+            err.contains("[stale_state] the query log names Other, not Mini; its queries count"),
             "{err}"
         );
     }
@@ -293,8 +293,8 @@ Queried
         assert!(err.contains("Note: 0 logged queries from "), "{err}");
         assert!(
             err.contains(
-                "Note: the query log has no queries for Mini (it names Budget, Finance); \
-                 pass --queries-item NAME"
+                "[stale_state] the query log has no queries for Mini (it names Budget, Finance); \
+                 none count"
             ),
             "{err}"
         );
@@ -309,7 +309,7 @@ Queried
         assert_eq!(code, 0, "{err}");
         assert!(!out.contains("Queried"), "{out}");
         assert!(
-            err.contains("Note: the query log has no queries for Finance (it names Mini);"),
+            err.contains("[stale_state] the query log has no queries for Finance (it names Mini);"),
             "{err}"
         );
     }

@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `summary.queried`. User names never reach the output. A workspace-wide export is
   narrowed to the scanned model by `ItemName`/`ItemId` (`--queries-item` or
   `queries_item` when the service name differs), so another model's queries never
-  keep this one's objects alive.
+  keep this one's objects alive; a log that does not identify the model is a
+  `stale_state` skip notice, so `--strict` fails on it. A queried table keeps its
+  columns alive (a table expression returns every one), not its measures.
 
 ## [0.8.1] - 2026-09-29
 

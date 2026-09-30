@@ -471,8 +471,8 @@ workspace's monitoring Eventhouse. Export the `QueryEnd` events and pass the fil
 SemanticModelLogs
 | where OperationName == "QueryEnd" and ItemName == "AdventureWorks Sales"
 | where Timestamp > ago(30d)
-| project Timestamp, OperationName, OperationDetailName, ItemName, ApplicationName,
-          ApplicationContext, ExecutingUser, EventText
+| project Timestamp, OperationName, OperationDetailName, ItemId, ItemName,
+          ApplicationName, ApplicationContext, ExecutingUser, EventText
 ```
 
 ```console
@@ -483,8 +483,9 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   it is live, and so is everything it uses. DAX queries resolve through the same
   binder as model DAX (query-local `DEFINE MEASURE`/`VAR` names resolve to nothing);
   MDX queries name `[Measures].[X]` measures and `[Table].[Column]` attribute or user
-  hierarchies. A queried table does not carry its members — a query reads what it
-  names.
+  hierarchies. A queried table keeps its columns alive — `EVALUATE 'Sales'`, an Excel
+  drillthrough or `ADDCOLUMNS('Sales', …)` returns every one — but not its measures,
+  which a table expression never returns.
 - **Formats:** the CSV an Eventhouse or KQL queryset exports (a UTF-8 BOM, quoted
   multi-line fields), a JSON array of row objects (`az monitor log-analytics query`,
   pandas `to_json(orient="records")`), a Kusto REST v1/v2 response, or a Log Analytics
@@ -505,13 +506,15 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   another model's queries are ignored, with a note: its `'Date'[Year]` says nothing
   about this model's. Rows that name no model are kept. A log that covers several
   models but not this one, or has no rows for an explicit `--queries-item`, counts
-  none of its queries, with a note — the log is supplementary evidence, and a model
-  nobody queried in the window is a real answer, not a failed run. A log of a single
-  model under another name is used, with a note — most likely the same model, named
-  differently locally.
-- **Notes:** one `Note:` names the query count and the log's date window; others say
-  how many queries another model's rows accounted for, or that a single-model log
-  names a different model. The coverage
+  none of its queries — the log is supplementary evidence, and a model nobody
+  queried in the window is a real answer, not a failed run. A log of a single model
+  under another name is used — most likely the same model, named differently
+  locally. Either way the mismatch is a `stale_state` skip notice, so the run goes on
+  but `--strict` fails it: in CI, a typo'd `--queries-item` or a renamed model never
+  passes silently. Prefer the model's `ItemId` GUID as the key there (below) — it
+  survives renames and folder names.
+- **Notes:** one `Note:` names the query count and the log's date window; another
+  says how many queries other models' rows accounted for. The coverage
   caveat changes to say that consumers outside the window stay invisible — a log is
   only as long as its retention, so a monthly report may not show up in a week of logs.
 - **Output.** `--json` counts the queried objects in `summary.queried`;
@@ -525,24 +528,34 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
 The Eventhouse's REST endpoint returns a Kusto v1 response, which `--queries-from`
 reads as is. A service principal with read access to the workspace's monitoring KQL
 database (the tenant must allow service principals to use Fabric APIs) is enough;
-the query URI and database name are on the KQL database's page in Fabric.
+the query URI and database name are on the KQL database's page in Fabric. Pin the
+model by its item id rather than its name — the GUID after `/semanticmodels/` (or
+`/datasets/`) in the model's Fabric URL — and gate with `--strict`, so a log that
+stops matching fails the build instead of quietly counting nothing:
+
+```toml
+# ripbi.toml
+queries_from = "query-log.json"
+queries_item = "00000000-0000-0000-0000-000000000000"  # the model's ItemId
+```
 
 ```bash
 az login --service-principal -u "$CLIENT_ID" -p "$CLIENT_SECRET" --tenant "$TENANT_ID"
 TOKEN=$(az account get-access-token --resource "$KUSTO_URI" --query accessToken -o tsv)
 KQL="SemanticModelLogs
-  | where Timestamp > ago(30d) and OperationName == 'QueryEnd' and ItemName == '$MODEL'
-  | project Timestamp, OperationName, OperationDetailName, ItemName,
+  | where Timestamp > ago(30d) and OperationName == 'QueryEnd' and ItemId == '$MODEL_ID'
+  | project Timestamp, OperationName, OperationDetailName, ItemId, ItemName,
             ApplicationName, ApplicationContext, ExecutingUser, EventText"
 jq -n --arg db "$KUSTO_DB" --arg csl "$KQL" '{db: $db, csl: $csl}' |
   curl -sSf -X POST "$KUSTO_URI/v1/rest/query" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
     -d @- -o query-log.json
-ripbi scan --queries-from query-log.json
+ripbi scan --strict   # queries_from and queries_item come from ripbi.toml
 ```
 
 With Log Analytics instead, `az monitor log-analytics query --workspace <guid>
 --analytics-query "PowerBIDatasetsWorkspace | where OperationName == 'QueryEnd' …"`
+(project `ArtifactId` beside `ArtifactName` to match by id)
 writes row objects ripbi reads the same way. Drop `ExecutingUser` from the projection
 to keep user names out of the file entirely, at the cost of the distinct-user count.
 
@@ -925,7 +938,8 @@ Pretty-printed JSON, stable field order, additive schema:
   the flag the key is omitted, so other scans' output is unchanged.
 - `skips.notices` carries `{path, location, kind, detail}` per parser skip; `kind` is
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
-  `stale_state`, `opaque_source` (an M partition calls `Value.NativeQuery` or
+  `stale_state` (also: a `--queries-from` log that does not identify the model),
+  `opaque_source` (an M partition calls `Value.NativeQuery` or
   `Odbc.Query`; SQL text is not analyzed), and — when reports are discovered by walking search folders —
   `unresolved_dataset_reference` (a report item
   under a search folder with no usable `datasetReference`) and `malformed_report_item`

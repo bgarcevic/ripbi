@@ -136,8 +136,8 @@ mod output_modes {
         assert_eq!(code, 0, "{stdout}{stderr}");
         assert!(stdout.contains("0 unused"), "{stdout}");
 
-        // A log without this model is the no-log baseline, not a failure.
-        let args = ScanArgs {
+        // A log without this model is the no-log baseline, not a failure…
+        let mut args = ScanArgs {
             queries_from: Some(log),
             queries_item: Some("Budget".to_string()),
             ..ScanArgs::default()
@@ -145,7 +145,17 @@ mod output_modes {
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
         assert_eq!(code, 1, "{stdout}{stderr}");
         assert!(stdout.contains("2 unused"), "{stdout}");
-        assert!(stderr.contains("no queries for Budget"), "{stderr}");
+        assert!(
+            stderr.contains("[stale_state] the query log has no queries for Budget"),
+            "{stderr}"
+        );
+
+        // …but a skip notice, so a `--strict` CI gate catches the mismatch,
+        // even when `--quiet` hides the notes.
+        args.strict = true;
+        args.quiet = true;
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 2, "{stdout}{stderr}");
     }
 
     #[test]

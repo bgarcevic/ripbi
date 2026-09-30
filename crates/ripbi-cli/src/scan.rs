@@ -1501,15 +1501,17 @@ pub(crate) fn query_log_item<'a>(
 /// empty [`QueryLog`] when none is: the graph is then built exactly as
 /// without one. A log that cannot be read fails the run — it was asked for
 /// by name, like an explicit `--stats-from`. Rows the parser skipped join
-/// `skips`; the log's size and window, and a model-name mismatch, are notes.
+/// `skips`; the log's size and window are notes.
 ///
 /// One export can cover a whole workspace. A log that names several models
 /// is narrowed to this one — `item` (`--queries-item`), else the model's
 /// folder or file name — because another model's `'Date'[Year]` query says
 /// nothing about this one's. When no model in such a log matches, or an
-/// explicit `item` matches none, none of its queries count — a note says
-/// so. The log is supplementary root evidence: a model nobody queried is a
-/// real answer, and zero queries is exactly the no-log baseline.
+/// explicit `item` matches none, none of its queries count. The log is
+/// supplementary root evidence: a model nobody queried is a real answer, and
+/// zero queries is exactly the no-log baseline. Every such mismatch — and a
+/// single-model log under another name, whose queries do count — is a
+/// `stale_state` skip notice, so `--strict` fails on it.
 pub(crate) fn load_query_log(
     path: Option<PathBuf>,
     item: Option<&str>,
@@ -1532,6 +1534,10 @@ pub(crate) fn load_query_log(
     let model = model_name(model_path);
     let key = item.or(model.as_deref());
     let mut notes = Vec::new();
+    // A log that does not identify this model is a skip notice, not a note:
+    // the run goes on, but `--strict` — a CI gate — fails on it, so a typo'd
+    // `--queries-item` or a renamed model never passes silently.
+    let mut unmatched = None;
     if !log.item_names.is_empty() {
         match key.filter(|key| log.names_item(key)) {
             // Several models: keep this one's rows.
@@ -1550,14 +1556,14 @@ pub(crate) fn load_query_log(
             None if item.is_some() || log.item_names.len() > 1 => {
                 log.retain_item("");
                 let names = capped_names(&log.item_names);
-                notes.push(match key {
+                unmatched = Some(match key {
                     Some(key) => format!(
-                        "the query log has no queries for {key} (it names {names}); \
-                         pass --queries-item NAME if the service calls it something else."
+                        "the query log has no queries for {key} (it names {names}); none count \
+                         — pass --queries-item NAME if the service calls it something else"
                     ),
                     None => format!(
-                        "the query log covers {} models ({names}); \
-                         pass --queries-item NAME to pick this one.",
+                        "the query log covers {} models ({names}); none count \
+                         — pass --queries-item NAME to pick this one",
                         log.item_names.len()
                     ),
                 });
@@ -1566,13 +1572,22 @@ pub(crate) fn load_query_log(
             // locally. Keep its queries, but say so.
             None => {
                 if let Some(model) = &model {
-                    notes.push(format!(
-                        "the query log names {}, not {model}; its queries may belong to another model.",
+                    unmatched = Some(format!(
+                        "the query log names {}, not {model}; its queries count, but may belong \
+                         to another model — pass --queries-item NAME to confirm",
                         capped_names(&log.item_names)
                     ));
                 }
             }
         }
+    }
+    if let Some(detail) = unmatched {
+        skips.push(SkipNoticeOut {
+            path: path.display().to_string(),
+            location: None,
+            kind: "stale_state",
+            detail,
+        });
     }
     if quiet {
         return Ok(log);

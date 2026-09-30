@@ -1266,4 +1266,51 @@ mod tests {
                 .is_none()
         );
     }
+
+    /// `EVALUATE 'Sales'` returns every column of the table, so they are all
+    /// read — but not the table's measures, which a table expression never
+    /// returns. The Queried list still names only the table.
+    #[test]
+    fn a_queried_table_keeps_its_columns_not_its_measures() {
+        use crate::graph::DependencyGraph;
+
+        let db = model();
+        let log = QueryLog {
+            queries: vec![query("EVALUATE 'Date'", QueryLanguage::Dax)],
+            ..QueryLog::default()
+        };
+        let graph = DependencyGraph::build_with_queries(&db, &[], &log);
+        let dead: Vec<String> = graph
+            .unused_objects()
+            .iter()
+            .map(|unused| unused.id.to_string())
+            .collect();
+        for live in ["'Date'[Day]", "'Date'[Year]", "'Date'[Year Offset]"] {
+            assert!(!dead.contains(&live.to_string()), "{live}: {dead:?}");
+        }
+        assert!(dead.contains(&"'Sales'[Total]".to_string()), "{dead:?}");
+        let named: Vec<String> = graph.queried().iter().map(|q| q.id.to_string()).collect();
+        assert_eq!(named, ["table 'Date'"]);
+    }
+
+    /// A measure in a queried table is not returned by the table expression,
+    /// so it is not kept by it.
+    #[test]
+    fn a_queried_tables_measures_stay_unused() {
+        use crate::graph::DependencyGraph;
+
+        let db = model();
+        let log = QueryLog {
+            queries: vec![query("EVALUATE 'Sales'", QueryLanguage::Dax)],
+            ..QueryLog::default()
+        };
+        let graph = DependencyGraph::build_with_queries(&db, &[], &log);
+        let dead: Vec<String> = graph
+            .unused_objects()
+            .iter()
+            .map(|unused| unused.id.to_string())
+            .collect();
+        assert!(!dead.contains(&"'Sales'[Amount]".to_string()), "{dead:?}");
+        assert!(dead.contains(&"'Sales'[Total]".to_string()), "{dead:?}");
+    }
 }
