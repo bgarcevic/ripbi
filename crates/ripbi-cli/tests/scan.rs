@@ -128,13 +128,24 @@ mod output_modes {
         );
 
         let args = ScanArgs {
-            queries_from: Some(log),
+            queries_from: Some(log.clone()),
             queries_item: Some("Other".to_string()),
             ..ScanArgs::default()
         };
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
         assert_eq!(code, 0, "{stdout}{stderr}");
         assert!(stdout.contains("0 unused"), "{stdout}");
+
+        // A log without this model is the no-log baseline, not a failure.
+        let args = ScanArgs {
+            queries_from: Some(log),
+            queries_item: Some("Budget".to_string()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "{stdout}{stderr}");
+        assert!(stdout.contains("2 unused"), "{stdout}");
+        assert!(stderr.contains("no queries for Budget"), "{stderr}");
     }
 
     #[test]

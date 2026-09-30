@@ -1507,7 +1507,9 @@ pub(crate) fn query_log_item<'a>(
 /// is narrowed to this one — `item` (`--queries-item`), else the model's
 /// folder or file name — because another model's `'Date'[Year]` query says
 /// nothing about this one's. When no model in such a log matches, or an
-/// explicit `item` matches none, the run fails rather than guess.
+/// explicit `item` matches none, none of its queries count — a note says
+/// so. The log is supplementary root evidence: a model nobody queried is a
+/// real answer, and zero queries is exactly the no-log baseline.
 pub(crate) fn load_query_log(
     path: Option<PathBuf>,
     item: Option<&str>,
@@ -1529,8 +1531,6 @@ pub(crate) fn load_query_log(
 
     let model = model_name(model_path);
     let key = item.or(model.as_deref());
-    let pick_hint =
-        "pass --queries-item NAME (or set queries_item in ripbi.toml) to pick the model";
     let mut notes = Vec::new();
     if !log.item_names.is_empty() {
         match key.filter(|key| log.names_item(key)) {
@@ -1545,18 +1545,22 @@ pub(crate) fn load_query_log(
                 ));
             }
             Some(_) => {}
+            // Several models, none of them this one (or an explicit item the
+            // log lacks): only rows that name no model are left to count.
             None if item.is_some() || log.item_names.len() > 1 => {
+                log.retain_item("");
                 let names = capped_names(&log.item_names);
-                let message = match key {
-                    Some(key) => {
-                        format!("the query log has no queries for {key}; it names {names}")
-                    }
+                notes.push(match key {
+                    Some(key) => format!(
+                        "the query log has no queries for {key} (it names {names}); \
+                         pass --queries-item NAME if the service calls it something else."
+                    ),
                     None => format!(
-                        "the query log covers {} models ({names}); which one is this?",
+                        "the query log covers {} models ({names}); \
+                         pass --queries-item NAME to pick this one.",
                         log.item_names.len()
                     ),
-                };
-                return Err(ScanError::new(message).with_hint(pick_hint));
+                });
             }
             // One model under another name: most likely this one, renamed
             // locally. Keep its queries, but say so.

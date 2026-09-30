@@ -282,26 +282,34 @@ Queried
         assert!(out.contains("\nQueried\n"), "{out}");
     }
 
+    /// The log is supplementary: a model with no rows in it is simply
+    /// unqueried, never a failed run.
     #[test]
-    fn a_log_of_other_models_only_is_a_usage_error() {
+    fn a_log_of_other_models_only_counts_nothing() {
         let (dir, log) = two_models(("Finance", "Budget"));
-        let (code, _, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
-        assert_eq!(code, 2);
+        let (code, out, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
+        assert_eq!(code, 0, "{err}");
+        assert!(!out.contains("Queried"), "{out}");
+        assert!(err.contains("Note: 0 logged queries from "), "{err}");
         assert!(
-            err.contains("error: the query log has no queries for Mini; it names Budget, Finance"),
+            err.contains(
+                "Note: the query log has no queries for Mini (it names Budget, Finance); \
+                 pass --queries-item NAME"
+            ),
             "{err}"
         );
-        assert!(err.contains("--queries-item"), "{err}");
     }
 
     #[test]
-    fn an_explicit_item_the_log_lacks_is_a_usage_error() {
-        let (code, _, err) = with_log("'Sales'[Legacy]", |args| {
+    fn an_explicit_item_the_log_lacks_counts_nothing() {
+        let (code, out, err) = with_log("'Sales'[Legacy]", |args| {
+            args.impact = true;
             args.queries_item = Some("Finance".to_string());
         });
-        assert_eq!(code, 2);
+        assert_eq!(code, 0, "{err}");
+        assert!(!out.contains("Queried"), "{out}");
         assert!(
-            err.contains("error: the query log has no queries for Finance; it names Mini"),
+            err.contains("Note: the query log has no queries for Finance (it names Mini);"),
             "{err}"
         );
     }

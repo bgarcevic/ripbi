@@ -504,9 +504,11 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   NAME|ID` (`queries_item` in `ripbi.toml`) when the service name differs — and
   another model's queries are ignored, with a note: its `'Date'[Year]` says nothing
   about this model's. Rows that name no model are kept. A log that covers several
-  models but not this one, or has no rows for an explicit `--queries-item`, is exit
-  `2`. A log of a single model under another name is used, with a note — most likely
-  the same model, named differently locally.
+  models but not this one, or has no rows for an explicit `--queries-item`, counts
+  none of its queries, with a note — the log is supplementary evidence, and a model
+  nobody queried in the window is a real answer, not a failed run. A log of a single
+  model under another name is used, with a note — most likely the same model, named
+  differently locally.
 - **Notes:** one `Note:` names the query count and the log's date window; others say
   how many queries another model's rows accounted for, or that a single-model log
   names a different model. The coverage

@@ -124,7 +124,8 @@ impl QueryLog {
     /// Keeps only the queries logged against the model `key` names (see
     /// [`QueryLog::names_item`]), plus those that name no model at all, and
     /// narrows `first_seen`/`last_seen` to them. `item_names` still lists
-    /// every model the export covered. Returns how many queries were dropped.
+    /// every model the export covered. An empty `key` names no model, so only
+    /// the unattributed queries stay. Returns how many queries were dropped.
     pub fn retain_item(&mut self, key: &str) -> usize {
         let before = self.queries.len();
         self.queries
@@ -1127,6 +1128,12 @@ mod tests {
         assert_eq!(log.retain_item("22222222-bbbb"), 2);
         assert_eq!(log.queries[0].text, "EVALUATE Ledger");
         assert_eq!(log.queries.len(), 2);
+        assert_eq!(
+            log.retain_item(""),
+            1,
+            "an empty key keeps only unattributed rows"
+        );
+        assert_eq!(log.queries[0].text, "EVALUATE Unknown");
     }
 
     #[test]
