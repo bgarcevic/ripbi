@@ -815,8 +815,8 @@ mod tests {
                     ..Default::default()
                 },
                 Table {
-                    name: "Datoer".to_string(),
-                    columns: vec![column("År Offset"), column("Dato"), column("Year")],
+                    name: "Date".to_string(),
+                    columns: vec![column("Year Offset"), column("Day"), column("Year")],
                     hierarchies: vec![Hierarchy {
                         name: "Calendar".to_string(),
                         ..Default::default()
@@ -851,8 +851,8 @@ mod tests {
     #[test]
     fn dax_query_names_columns_measures_and_tables() {
         let found = ids(
-            "DEFINE VAR __DS0FilterTable = FILTER(KEEPFILTERS(VALUES('Datoer'[År Offset])), \
-             'Datoer'[År Offset] < 1) EVALUATE SUMMARIZECOLUMNS('Datoer'[Dato], \
+            "DEFINE VAR __DS0FilterTable = FILTER(KEEPFILTERS(VALUES('Date'[Year Offset])), \
+             'Date'[Year Offset] < 1) EVALUATE SUMMARIZECOLUMNS('Date'[Day], \
              __DS0FilterTable, \"x\", [Total], \"n\", COUNTROWS(Sales))",
             QueryLanguage::Dax,
         );
@@ -861,8 +861,8 @@ mod tests {
         assert_eq!(
             found,
             [
-                "'Datoer'[Dato]",
-                "'Datoer'[År Offset]",
+                "'Date'[Day]",
+                "'Date'[Year Offset]",
                 "'Sales'[Total]",
                 "table 'Sales'",
             ]
@@ -882,28 +882,28 @@ mod tests {
     #[test]
     fn dax_hierarchy_reference_is_found() {
         let found = ids(
-            "EVALUATE ROW(\"x\", ISINSCOPE('Datoer'[Calendar]))",
+            "EVALUATE ROW(\"x\", ISINSCOPE('Date'[Calendar]))",
             QueryLanguage::Dax,
         );
-        assert_eq!(found, ["hierarchy 'Datoer'[Calendar]"]);
+        assert_eq!(found, ["hierarchy 'Date'[Calendar]"]);
     }
 
     #[test]
     fn mdx_chains_name_measures_columns_and_hierarchies() {
         let mut found = ids(
             "SELECT NON EMPTY {[Measures].[Total]} ON COLUMNS, \
-             NON EMPTY [Datoer].[Year].[Year].Members ON ROWS \
-             FROM [Model] WHERE ([Datoer].[Calendar].&[2024]) -- [Sales].[Amount]",
+             NON EMPTY [Date].[Year].[Year].Members ON ROWS \
+             FROM [Model] WHERE ([Date].[Calendar].&[2024]) -- [Sales].[Amount]",
             QueryLanguage::Mdx,
         );
         found.sort();
         assert_eq!(
             found,
             [
-                "'Datoer'[Year]",
+                "'Date'[Year]",
                 "'Sales'[Total]",
-                "hierarchy 'Datoer'[Calendar]",
-                "table 'Datoer'",
+                "hierarchy 'Date'[Calendar]",
+                "table 'Date'",
             ]
         );
     }
@@ -1142,7 +1142,7 @@ mod tests {
         // The queried measure is a root, and what it uses stays live with it.
         assert!(!dead.contains(&"'Sales'[Total]".to_string()), "{dead:?}");
         assert!(!dead.contains(&"'Sales'[Amount]".to_string()), "{dead:?}");
-        assert!(dead.contains(&"'Datoer'[Dato]".to_string()), "{dead:?}");
+        assert!(dead.contains(&"'Date'[Day]".to_string()), "{dead:?}");
         let total = graph
             .queried_by(&ObjectId::Measure {
                 table: NameKey::new("Sales"),
