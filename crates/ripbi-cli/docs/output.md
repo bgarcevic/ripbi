@@ -486,11 +486,18 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   hierarchies. A queried table does not carry its members — a query reads what it
   names.
 - **Formats:** the CSV an Eventhouse or KQL queryset exports (a UTF-8 BOM, quoted
-  multi-line fields), a JSON array of row objects, or a Kusto REST v1/v2 response.
+  multi-line fields), a JSON array of row objects (`az monitor log-analytics query`,
+  pandas `to_json(orient="records")`), a Kusto REST v1/v2 response, or a Log Analytics
+  query API response. Any of them may be gzip-compressed (`.csv.gz`) or the only file
+  in a zip archive; the format is sniffed from content, not the extension.
   Columns are matched by name; only `EventText` is required. An unfiltered export
   works too: rows whose `OperationName` is not `QueryEnd` (storage-engine scans,
   discovers, metrics) are skipped silently. The Log Analytics `PowerBIDatasetsWorkspace`
   table's column names (`TimeGenerated`, `ArtifactName`) are read as well.
+- **Size limits.** Kusto truncates a result at 500,000 rows or 64 MB by default (lift
+  it with `set notruncation;` before the query) and marks it partial rather than
+  failing — a truncated log silently undercounts. Filtering to `QueryEnd` in the KQL,
+  as above, keeps even months of a busy model far below that.
 - **Notes:** one `Note:` names the query count and the log's date window; another
   appears when the log's `ItemName` is not the scanned model's name. The coverage
   caveat changes to say that consumers outside the window stay invisible — a log is
@@ -500,6 +507,32 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   User names in the log never reach any output — only distinct counts.
 - An unreadable file, or one with no `EventText` column, is exit `2`. A `QueryEnd`
   row with no text is a skip notice.
+
+### Pulling the log in CI
+
+The Eventhouse's REST endpoint returns a Kusto v1 response, which `--queries-from`
+reads as is. A service principal with read access to the workspace's monitoring KQL
+database (the tenant must allow service principals to use Fabric APIs) is enough;
+the query URI and database name are on the KQL database's page in Fabric.
+
+```bash
+az login --service-principal -u "$CLIENT_ID" -p "$CLIENT_SECRET" --tenant "$TENANT_ID"
+TOKEN=$(az account get-access-token --resource "$KUSTO_URI" --query accessToken -o tsv)
+KQL="SemanticModelLogs
+  | where Timestamp > ago(30d) and OperationName == 'QueryEnd' and ItemName == '$MODEL'
+  | project Timestamp, OperationName, OperationDetailName, ItemName,
+            ApplicationName, ApplicationContext, ExecutingUser, EventText"
+jq -n --arg db "$KUSTO_DB" --arg csl "$KQL" '{db: $db, csl: $csl}' |
+  curl -sSf -X POST "$KUSTO_URI/v1/rest/query" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d @- -o query-log.json
+ripbi scan --queries-from query-log.json
+```
+
+With Log Analytics instead, `az monitor log-analytics query --workspace <guid>
+--analytics-query "PowerBIDatasetsWorkspace | where OperationName == 'QueryEnd' …"`
+writes row objects ripbi reads the same way. Drop `ExecutingUser` from the projection
+to keep user names out of the file entirely, at the cost of the distinct-user count.
 
 ## Storage sizes
 

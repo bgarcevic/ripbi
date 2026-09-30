@@ -1196,6 +1196,7 @@ dependencies = [
 name = "ripbi-core"
 version = "0.8.1"
 dependencies = [
+ "flate2",
  "petgraph",
  "quick-xml",
  "ripbi-xpress9",

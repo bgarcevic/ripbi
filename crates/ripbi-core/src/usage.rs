@@ -34,6 +34,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::Read;
 use std::path::Path;
 
 use serde_json::Value;
@@ -121,13 +122,51 @@ const APPLICATION_CONTEXT: &[&str] = &["applicationcontext"];
 const USER: &[&str] = &["executinguser", "user"];
 
 /// Reads a query-log export: the CSV an Eventhouse / KQL queryset exports, a
-/// JSON array of row objects, or a Kusto REST response (v1 `Tables`, or the v2
-/// frame array). The format is detected from content, not the extension.
+/// JSON array of row objects, a Kusto REST response (v1 `Tables`, or the v2
+/// frame array), or a Log Analytics query API response (lowercase `tables`).
+/// Any of them may be gzip-compressed or the single file in a zip archive.
+/// The format is detected from content, not the extension.
 pub fn read_query_log(path: &Path) -> Result<Ingested<QueryLog>> {
-    let bytes = std::fs::read(path)?;
+    let bytes = decompress(std::fs::read(path)?, path)?;
     let text = String::from_utf8(bytes)
         .map_err(|_| Error::UnsupportedFormat(format!("{} is not UTF-8", path.display())))?;
     parse_query_log(&text, path)
+}
+
+/// Unwraps a gzip stream or a single-file zip archive, sniffed by magic bytes;
+/// anything else passes through untouched.
+fn decompress(bytes: Vec<u8>, path: &Path) -> Result<Vec<u8>> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut out = Vec::new();
+        flate2::read::MultiGzDecoder::new(bytes.as_slice()).read_to_end(&mut out)?;
+        return Ok(out);
+    }
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Ok(bytes);
+    }
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let files: Vec<String> = archive
+        .file_names()
+        .filter(|name| {
+            let base = name.rsplit('/').next().unwrap_or(name);
+            !name.ends_with('/') && !name.starts_with("__MACOSX/") && !base.starts_with('.')
+        })
+        .map(str::to_string)
+        .collect();
+    let [name] = files.as_slice() else {
+        return Err(Error::UnsupportedFormat(format!(
+            "{} is a zip archive; expected exactly one query-log file inside, found {}",
+            path.display(),
+            if files.is_empty() {
+                "none".to_string()
+            } else {
+                files.join(", ")
+            }
+        )));
+    };
+    let mut out = Vec::new();
+    archive.by_name(name)?.read_to_end(&mut out)?;
+    Ok(out)
 }
 
 /// Parses query-log text; `path` is only used to label errors and notices.
@@ -423,22 +462,26 @@ fn json_table(text: &str, path: &Path) -> Result<Table> {
     })
 }
 
-/// A Kusto result table: `Columns: [{ColumnName}]`, `Rows: [[…]]`.
+/// A Kusto result table: `Columns: [{ColumnName}]`, `Rows: [[…]]`, or the Log
+/// Analytics spelling `columns: [{name}]`, `rows: [[…]]`.
 fn columns_and_rows(table: &Value) -> Option<Table> {
     let header = table
-        .get("Columns")?
+        .get("Columns")
+        .or_else(|| table.get("columns"))?
         .as_array()?
         .iter()
         .map(|column| {
             column
                 .get("ColumnName")
+                .or_else(|| column.get("name"))
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string()
         })
         .collect();
     let rows = table
-        .get("Rows")?
+        .get("Rows")
+        .or_else(|| table.get("rows"))?
         .as_array()?
         .iter()
         .enumerate()
@@ -982,6 +1025,66 @@ mod tests {
                 .queries
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn log_analytics_rest_response_parses() {
+        let text = r#"{"tables":[{"name":"PrimaryResult","columns":[
+            {"name":"TimeGenerated","type":"datetime"},{"name":"OperationName","type":"string"},
+            {"name":"ArtifactName","type":"string"},{"name":"EventText","type":"string"}],
+            "rows":[["2026-09-02T10:00:00Z","QueryEnd","Sales","EVALUATE Sales"],
+                    ["2026-09-02T10:00:01Z","DiscoverEnd","Sales","<Discover/>"]]}]}"#;
+        let log = parse_query_log(text, Path::new("t.json")).unwrap().value;
+        assert_eq!(log.queries.len(), 1);
+        assert_eq!(log.queries[0].text, "EVALUATE Sales");
+        assert_eq!(log.first_seen.as_deref(), Some("2026-09-02T10:00:00Z"));
+        assert_eq!(log.item_names, ["Sales"]);
+    }
+
+    const COMPRESSED_CSV: &str = "OperationName,EventText\nQueryEnd,EVALUATE Sales\n";
+
+    fn read_bytes(bytes: &[u8]) -> Result<Ingested<QueryLog>> {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut file, bytes).unwrap();
+        read_query_log(file.path())
+    }
+
+    fn zipped(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, content) in files {
+            writer
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            std::io::Write::write_all(&mut writer, content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn gzip_export_is_decompressed() {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut encoder, COMPRESSED_CSV.as_bytes()).unwrap();
+        let log = read_bytes(&encoder.finish().unwrap()).unwrap().value;
+        assert_eq!(log.queries.len(), 1);
+    }
+
+    #[test]
+    fn zip_export_reads_its_single_file() {
+        let bytes = zipped(&[
+            ("export.csv", COMPRESSED_CSV),
+            ("__MACOSX/._export.csv", "junk"),
+        ]);
+        assert_eq!(read_bytes(&bytes).unwrap().value.queries.len(), 1);
+    }
+
+    #[test]
+    fn zip_with_several_files_is_rejected() {
+        let bytes = zipped(&[("a.csv", COMPRESSED_CSV), ("b.csv", COMPRESSED_CSV)]);
+        let err = read_bytes(&bytes).unwrap_err();
+        assert!(
+            matches!(&err, Error::UnsupportedFormat(message) if message.contains("a.csv, b.csv")),
+            "{err}"
         );
     }
 

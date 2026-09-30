@@ -79,6 +79,27 @@ Queried
     }
 
     #[test]
+    fn a_gzipped_log_reads_like_the_plain_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let gz = dir.path().join("semantic-model-logs.csv.gz");
+        let mut encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        std::io::Write::write_all(&mut encoder, &std::fs::read(log()).unwrap()).unwrap();
+        encoder.finish().unwrap();
+        let (code, out, err) = object_in("'Sales'[Legacy]", |args| {
+            args.queries_from = Some(gz);
+            args.impact = true;
+        });
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.contains("\nQueried\n└─ 'Sales'[Legacy Total]  queried 2× by 1 user"),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn the_queried_root_itself_counts_its_reports() {
         let (code, out, err) = with_log("'Sales'[Total]", |args| args.impact = true);
         assert_eq!(code, 0, "{err}");

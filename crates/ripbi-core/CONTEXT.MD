@@ -54,7 +54,8 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   liveness may over-keep, breakage must under-claim.
 - **Query-log usage** (`src/usage.rs`): reads a workspace-monitoring export
   (`SemanticModelLogs` / Log Analytics `PowerBIDatasetsWorkspace` — CSV, a JSON row
-  array, or a Kusto v1/v2 response; columns matched by name) into a source-agnostic
+  array, a Kusto v1/v2 or Log Analytics query API response, optionally gzipped or
+  zipped; columns matched by name) into a source-agnostic
   `QueryLog` of `QueryEnd` queries, and resolves each DAX query through the DAX binder
   and each MDX query through a small bracketed-chain lexer. `DependencyGraph::build_with_queries`
   adds the directly referenced objects as roots (`DependencyGraph::queried`), beside
