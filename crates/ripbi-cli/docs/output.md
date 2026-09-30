@@ -166,6 +166,7 @@ unaffected.
 | `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under Human output |
 | `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](#storage-sizes)); without it `size` keeps name order and says so in a `Note:` on stderr |
 | `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](#storage-sizes) |
+| `--queries-from <PATH>` | Add a workspace-monitoring query-log export as consumers: every object its logged DAX or MDX queries name is a root, like a report binding. Replaces `queries_from` in `ripbi.toml`. Exit `2` when the file cannot be read or has no `EventText` column. See [Logged queries](#logged-queries-workspace-monitoring) |
 | `--compare-root <DIR>` | Rerun the same scan in another checkout (the base branch, a previous release) and report and gate on only the findings that did not exist there; findings gone since are listed as fixed. Exit `2` when `DIR` is not a folder. See [Comparing against another checkout](#comparing-against-another-checkout) |
 | `--compare-label <NAME>` | What the output calls the `--compare-root` checkout, e.g. the branch it holds: `(412 findings already in main)`. Defaults to `DIR` as given. `--json`'s `compare.root` stays `DIR`. Needs `--compare-root` |
 | `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
@@ -458,6 +459,48 @@ object's inputs alive where an ignore pattern would leave them reported as dead.
 `[scan].ignore` remains the tool for findings you want silenced without a model
 edit, such as whole families of generated objects.
 
+## Logged queries (workspace monitoring)
+
+An annotation declares a consumer; a query log observes one. With [workspace
+monitoring](https://learn.microsoft.com/fabric/fundamentals/workspace-monitoring-overview)
+enabled, Fabric records every query a semantic model serves — report visuals, Excel
+pivots (MDX), DAX Studio, XMLA clients — in the `SemanticModelLogs` table of the
+workspace's monitoring Eventhouse. Export the `QueryEnd` events and pass the file:
+
+```kql
+SemanticModelLogs
+| where OperationName == "QueryEnd" and ItemName == "AdventureWorks Sales"
+| where Timestamp > ago(30d)
+| project Timestamp, OperationName, OperationDetailName, ItemName, ApplicationName,
+          ApplicationContext, ExecutingUser, EventText
+```
+
+```console
+ripbi scan --queries-from exports/semantic-model-logs.csv
+```
+
+- **Every object a logged query names directly is a root**, like a report binding:
+  it is live, and so is everything it uses. DAX queries resolve through the same
+  binder as model DAX (query-local `DEFINE MEASURE`/`VAR` names resolve to nothing);
+  MDX queries name `[Measures].[X]` measures and `[Table].[Column]` attribute or user
+  hierarchies. A queried table does not carry its members — a query reads what it
+  names.
+- **Formats:** the CSV an Eventhouse or KQL queryset exports (a UTF-8 BOM, quoted
+  multi-line fields), a JSON array of row objects, or a Kusto REST v1/v2 response.
+  Columns are matched by name; only `EventText` is required. An unfiltered export
+  works too: rows whose `OperationName` is not `QueryEnd` (storage-engine scans,
+  discovers, metrics) are skipped silently. The Log Analytics `PowerBIDatasetsWorkspace`
+  table's column names (`TimeGenerated`, `ArtifactName`) are read as well.
+- **Notes:** one `Note:` names the query count and the log's date window; another
+  appears when the log's `ItemName` is not the scanned model's name. The coverage
+  caveat changes to say that consumers outside the window stay invisible — a log is
+  only as long as its retention, so a monthly report may not show up in a week of logs.
+- **Output.** `--json` counts the queried objects in `summary.queried`;
+  `ripbi deps --impact` lists them in a `Queried` section (see [deps.md](deps.md)).
+  User names in the log never reach any output — only distinct counts.
+- An unreadable file, or one with no `EventText` column, is exit `2`. A `QueryEnd`
+  row with no text is a skip notice.
+
 ## Storage sizes
 
 PBIX and `.abf` models carry the engine's storage catalog, so a scan of one also
@@ -670,6 +713,7 @@ Pretty-printed JSON, stable field order, additive schema:
     "unused_total": 56,
     "ignored": 0,
     "kept": 0,
+    "queried": 0,
     "broken": 2,
     "broken_total": 2,
     "broken_artifacts": 1,
@@ -749,7 +793,9 @@ Pretty-printed JSON, stable field order, additive schema:
   `summary.ignored` counts findings suppressed by `[scan].ignore` — unused objects,
   broken artifacts, and broken bindings alike. `summary.kept` counts the objects a
   `ripbi_keep` model annotation keeps (a kept table counts once) — roots, so never in
-  `unused` (see [Keeping objects on purpose](#keeping-objects-on-purpose)). On a model with
+  `unused` (see [Keeping objects on purpose](#keeping-objects-on-purpose)). `summary.queried`
+  counts the objects `--queries-from` logged queries name directly — roots too, and `0`
+  without a log (see [Logged queries](#logged-queries-workspace-monitoring)). On a model with
   auto date/time machinery, the remaining gap between `unused` and `unused_total` is
   the machinery: `summary.auto_date_time.member_findings` counts its unused members
   and the `dead` verdict count its nested own findings.
@@ -1040,6 +1086,7 @@ Unknown keys are errors, so a misspelled setting cannot silently change a scan.
 ```toml
 target = "samples/AdventureWorks Sales.SemanticModel"  # used when no PATH is given
 reports = ["samples/AdventureWorks Sales.Report"]      # extra roots when discovery finds none
+queries_from = "exports/semantic-model-logs.csv"        # logged queries as consumers (scan and deps)
 
 [scan]
 ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, never reported unused
@@ -1050,6 +1097,9 @@ stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL m
 a path resolved against the file's directory, or `none` to turn off
 `.pbi/cache.abf` auto-detection. The flag replaces it. It is ignored when the
 scanned model carries its own storage catalog (a PBIX or `.abf`).
+
+`queries_from` is the config form of `--queries-from`, resolved against the file's
+directory; it sits at the top level because `deps` reads it too. The flag replaces it.
 
 `ignore` patterns are case-insensitive globs where `*` matches any run of characters
 and `?` exactly one; everything else (quotes and brackets included — they appear in
@@ -1150,7 +1200,9 @@ which static analysis deliberately ignores.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
   (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; scan prints this
   caveat on every run. Mark what they read with a `ripbi_keep` annotation
-  ([Keeping objects on purpose](#keeping-objects-on-purpose)).
+  ([Keeping objects on purpose](#keeping-objects-on-purpose)), or add what they
+  actually queried from a workspace-monitoring log with `--queries-from`
+  ([Logged queries](#logged-queries-workspace-monitoring)).
 - A model-only scan is refused: with no report bindings (and no RLS roles) everything
   is formally unused, which is never the answer the user wants. Pass `--report`. When
   search folders are walked, the same refusal lists how many report items were bound to

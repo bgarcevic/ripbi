@@ -52,6 +52,15 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   references that resolve to nothing, or bindings onto broken artifacts (issues #60/#84).
   The precision bar inverts the conservatism rule:
   liveness may over-keep, breakage must under-claim.
+- **Query-log usage** (`src/usage.rs`): reads a workspace-monitoring export
+  (`SemanticModelLogs` / Log Analytics `PowerBIDatasetsWorkspace` — CSV, a JSON row
+  array, or a Kusto v1/v2 response; columns matched by name) into a source-agnostic
+  `QueryLog` of `QueryEnd` queries, and resolves each DAX query through the DAX binder
+  and each MDX query through a small bracketed-chain lexer. `DependencyGraph::build_with_queries`
+  adds the directly referenced objects as roots (`DependencyGraph::queried`), beside
+  report bindings and kept objects. User principal names stay in `LoggedQuery` for
+  distinct counts only. Pinned by `tests/fixtures/query-log/` (synthetic, shaped like a
+  real export).
 
 ## Rules
 

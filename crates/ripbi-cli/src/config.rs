@@ -8,6 +8,9 @@
 //! ```toml
 //! target = "samples/AdventureWorks Sales.SemanticModel"
 //! reports = ["samples/AdventureWorks Sales.Report"]
+//! # A workspace-monitoring query export: objects its queries name count as
+//! # used by `scan` and show under Impact in `deps`.
+//! queries_from = "exports/semantic-model-logs.csv"
 //!
 //! [scan]
 //! # Object-name globs suppressed from the unused report.
@@ -36,6 +39,9 @@ pub struct Config {
     pub ignore: Vec<String>,
     /// `[scan].stats_from`: where storage sizes come from (issue #129).
     pub stats_from: Option<StatsSetting>,
+    /// `queries_from`: a workspace-monitoring query-log export, shared by
+    /// `scan` and `deps`.
+    pub queries_from: Option<PathBuf>,
 }
 
 /// A `--stats-from` or `[scan].stats_from` value.
@@ -78,6 +84,7 @@ struct FileFormat {
     target: Option<String>,
     #[serde(default)]
     reports: Vec<String>,
+    queries_from: Option<String>,
     scan: Option<ScanSection>,
 }
 
@@ -113,6 +120,7 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
         let resolve = |written: &String| resolve_against(&root, written);
         let target = file.target.as_ref().map(&resolve);
         let reports: Vec<PathBuf> = file.reports.iter().map(&resolve).collect();
+        let queries_from = file.queries_from.as_ref().map(&resolve);
         let scan = file.scan.unwrap_or_default();
         let stats_from = scan
             .stats_from
@@ -125,6 +133,7 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
                 reports,
                 ignore: scan.ignore,
                 stats_from,
+                queries_from,
             },
         }));
     }

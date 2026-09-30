@@ -63,6 +63,42 @@ mod output_modes {
         assert_eq!(json["summary"]["unused"], 0);
     }
 
+    /// Workspace monitoring: an Excel query logged against `[Legacy Total]`
+    /// makes it — and the column it reads — live; the JSON summary counts
+    /// the queried objects.
+    #[test]
+    fn logged_queries_are_roots() {
+        let temp = TempDir::new("queried");
+        project_into(&temp.0, "Mini");
+        let log = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ripbi-core/tests/fixtures/query-log/semantic-model-logs.csv");
+
+        let (code, _, _) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 1);
+
+        let args = ScanArgs {
+            queries_from: Some(log.clone()),
+            ..ScanArgs::default()
+        };
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "{stdout}{stderr}");
+        assert!(
+            stdout.contains("6 objects, 6 reachable from 1 roots, 0 unused"),
+            "{stdout}"
+        );
+        assert!(stderr.contains("Note: 3 logged queries"), "{stderr}");
+
+        let args = ScanArgs {
+            json: true,
+            queries_from: Some(log),
+            ..ScanArgs::default()
+        };
+        let (_, stdout, _) = run_scan(&args, &temp.0, "");
+        let json = json_payload(&stdout);
+        assert_eq!(json["summary"]["queried"], 3);
+        assert_eq!(json["summary"]["unused"], 0);
+    }
+
     #[test]
     fn human_output_summarizes_and_annotates_the_chain() {
         let temp = TempDir::new("human");

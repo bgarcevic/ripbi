@@ -108,6 +108,7 @@ fn explore(
         args.reports.clone()
     };
     let depth = parse_depth(args.depth.as_deref())?;
+    let queries_path = scan::query_log_path(args.queries_from.as_deref(), config.as_ref());
 
     // Target: the shared ladder — --model, else PATH (none here: the
     // positional is an object operand, not a path), else config `target`,
@@ -176,8 +177,8 @@ fn explore(
         }
         writeln!(
             streams.err,
-            "Note: analysis covers only the ingested reports; \
-             external consumers (thin reports, Excel, XMLA) are invisible."
+            "{}",
+            scan::coverage_caveat(queries_path.is_some())
         )
         .map_err(ScanError::from)?;
     }
@@ -227,11 +228,19 @@ fn explore(
         skips.extend(walk.bound.parse_skips.iter().map(scan::skip_notice_out));
     }
 
+    let query_log = scan::load_query_log(
+        queries_path,
+        &paired.model,
+        args.quiet,
+        streams.err,
+        &mut skips,
+    )?;
+
     // Analysis is core's job; this module only chooses slices and asks for
     // them by name.
     progress.stage(3);
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
-    let graph = DependencyGraph::build(&model.value, &report_refs);
+    let graph = DependencyGraph::build_with_queries(&model.value, &report_refs, &query_log);
     progress.stage(4);
 
     let output = if args.object.is_some() || args.table.is_some() || !args.types.is_empty() {
@@ -330,6 +339,7 @@ fn selection_view(
     let mut impact = None;
     let mut bindings = Vec::new();
     let mut kept = Vec::new();
+    let mut queried = Vec::new();
     // A `ripbi_keep` annotation stands in for a consumer ripbi cannot see
     // (issue #151): not a visual, not a model object, in no report — so any
     // consumer or report filter leaves it out.
@@ -387,6 +397,17 @@ fn selection_view(
             } else {
                 Vec::new()
             });
+            // Logged queries are consumers outside every report and model
+            // object, so the same filters leave them out.
+            queried.push(if show_kept {
+                slice
+                    .nodes
+                    .iter()
+                    .filter_map(|id| graph.queried_by(id).cloned())
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            });
             slices.push(slice);
         }
         impact = Some(slices);
@@ -398,6 +419,7 @@ fn selection_view(
         impact,
         bindings,
         kept,
+        queried,
         model_hidden,
     })))
 }

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Workspace-monitoring query logs** (`--queries-from PATH` on `scan` and `deps`, or
+  `queries_from` in `ripbi.toml`): an export of Fabric workspace monitoring's
+  `SemanticModelLogs` (or Log Analytics' `PowerBIDatasetsWorkspace`) `QueryEnd` events
+  — CSV, JSON rows, or a Kusto REST response — makes every object a logged DAX or MDX
+  query names a reachability root, so what Excel pivots, thin reports, and XMLA
+  clients read stops being reported unused. `ripbi deps --impact` shows those objects
+  in a `Queried` section (how often, how many users, last seen, clients, reports) and
+  in `queried` plain records and a JSON `queried` array; `scan --json` counts them in
+  `summary.queried`. User names never reach the output.
+
 ## [0.8.1] - 2026-09-29
 
 ### Added

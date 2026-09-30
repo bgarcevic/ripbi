@@ -37,6 +37,152 @@ fn object(object: &str) -> (i32, String, String) {
     object_in(object, |_| {})
 }
 
+/// Workspace monitoring: logged queries are consumers ripbi cannot otherwise
+/// see, so the Impact view names the queried objects on the slice.
+mod queried {
+    use super::*;
+
+    fn log() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ripbi-core/tests/fixtures/query-log/semantic-model-logs.csv")
+    }
+
+    fn with_log(object: &str, configure: impl FnOnce(&mut DepsArgs)) -> (i32, String, String) {
+        object_in(object, |args| {
+            args.queries_from = Some(log());
+            configure(args);
+        })
+    }
+
+    #[test]
+    fn an_excel_query_shows_under_impact() {
+        let (code, out, err) = with_log("'Sales'[Legacy]", |args| args.impact = true);
+        assert_eq!(code, 0, "{err}");
+        assert_eq!(
+            out,
+            "'Sales'[Legacy]  column
+
+Impact
+
+Model
+└─ 'Sales'[Legacy Total]  measure
+
+Queried
+└─ 'Sales'[Legacy Total]  queried 2× by 1 user · last 2026-09-30 · Excel
+"
+        );
+        assert!(
+            err.contains("Note: 3 logged queries (2026-09-28 → 2026-09-30) from "),
+            "{err}"
+        );
+        assert!(err.contains("and the logged queries"), "{err}");
+    }
+
+    #[test]
+    fn the_queried_root_itself_counts_its_reports() {
+        let (code, out, err) = with_log("'Sales'[Total]", |args| args.impact = true);
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.ends_with(
+                "\nQueried\n└─ queried 1× by 1 user · last 2026-09-28 · PowerBI · 1 report\n"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn plain_and_json_carry_the_queried_record_without_user_names() {
+        let (_, plain, _) = with_log("'Sales'[Legacy]", |args| args.plain = true);
+        assert!(
+            plain.contains(
+                "queried\t'Sales'[Legacy Total]\t2\t2026-09-30 09:45:00.0000000\t1\tExcel\n"
+            ),
+            "{plain}"
+        );
+        let (_, json, _) = with_log("'Sales'[Total]", |args| args.json = true);
+        assert!(!json.contains("contoso.example"), "{json}");
+        assert_eq!(
+            json_payload(&json)["queried"],
+            serde_json::json!([{
+                "object": "'Sales'[Total]",
+                "count": 1,
+                "last_seen": "2026-09-28 08:15:01.0300000",
+                "users": 1,
+                "applications": ["PowerBI"],
+                "reports": ["00000000-0000-4000-8000-00000000000a"],
+            }])
+        );
+    }
+
+    #[test]
+    fn consumer_filters_leave_queried_out() {
+        let (_, out, _) = with_log("'Sales'[Legacy]", |args| {
+            args.consumer = Some("visual".to_string());
+        });
+        assert!(!out.contains("Queried"), "{out}");
+    }
+
+    #[test]
+    fn without_a_log_the_view_and_caveat_are_unchanged() {
+        let (_, out, err) = object_in("'Sales'[Legacy]", |args| args.json = true);
+        assert_eq!(json_payload(&out)["queried"], serde_json::json!([]));
+        assert!(
+            err.contains("external consumers (thin reports, Excel, XMLA)"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_config_key_supplies_the_log() {
+        let dir = mini_project();
+        std::fs::copy(log(), dir.0.join("logs.csv")).expect("copy log");
+        std::fs::write(dir.0.join("ripbi.toml"), "queries_from = \"logs.csv\"\n")
+            .expect("write config");
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            impact: true,
+            ..DepsArgs::default()
+        };
+        let (code, out, err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("\nQueried\n"), "{out}");
+    }
+
+    #[test]
+    fn an_unreadable_log_is_a_usage_error() {
+        let (code, _, err) = object_in("'Sales'[Legacy]", |args| {
+            args.queries_from = Some("does-not-exist.csv".into());
+        });
+        assert_eq!(code, 2);
+        assert!(
+            err.contains("error: cannot read queries from does-not-exist.csv"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_log_for_another_model_earns_a_note() {
+        let dir = mini_project();
+        let text = std::fs::read_to_string(log()).expect("read log");
+        std::fs::write(
+            dir.0.join("other.csv"),
+            text.replace("\"Mini\"", "\"Other\""),
+        )
+        .expect("write log");
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            queries_from: Some(dir.0.join("other.csv")),
+            ..DepsArgs::default()
+        };
+        let (code, _, err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            err.contains("Note: the query log names Other, not Mini;"),
+            "{err}"
+        );
+    }
+}
+
 /// Issue #151: a `ripbi_keep` annotation is the answer to "why is this
 /// alive?" — the Impact view names the kept object and its reason.
 mod kept {

@@ -29,6 +29,7 @@ ripbi deps [OBJECT] [flags]
 ripbi deps --table NAME [flags]
 ripbi deps --type TYPE [flags]
 ripbi deps [OBJECT] --model PATH [--report PATH]... [flags]
+ripbi deps [OBJECT] --queries-from LOG [flags]
 ```
 
 `OBJECT` is the only positional operand — the one deliberate exception to the
@@ -110,6 +111,9 @@ slice), and `Kept` (the objects on the impact slice a `ripbi_keep` model annotat
 keeps, issue #151); an impact with none of them prints `└─ nothing` and still exits
 `0`.
 
+`Queried` follows `Kept` when a workspace-monitoring query log is in play (see
+[Logged queries](#logged-queries)).
+
 `Kept` answers "why is this alive?" when no report is the reason. Each kept object
 prints the annotation's reason — prefixed with the object unless it is the one asked
 about, naming the kept table when the annotation sits on the table:
@@ -129,6 +133,34 @@ Kept
 An empty reason reads `kept (no reason given)`; a member of a kept table reads
 `kept by table 'Archive': …`. The consumer and report filters leave `Kept` out: an
 annotation is neither a visual, a model object, nor in a report.
+
+## Logged queries
+
+`--queries-from PATH` (or `queries_from` in `ripbi.toml`) reads an export of
+workspace monitoring's `SemanticModelLogs` `QueryEnd` events — the formats, the KQL
+to export them, and the resolution rules are in
+[output.md](output.md#logged-queries-workspace-monitoring). Each object on the impact
+slice that a logged query names directly gets a `Queried` line: how many queries, by
+how many distinct users (never who), the last day seen, the client applications, and
+how many distinct reports the queries came from.
+
+```text
+'Sales'[Legacy]  column
+
+Impact
+
+Model
+└─ 'Sales'[Legacy Total]  measure
+
+Queried
+└─ 'Sales'[Legacy Total]  queried 2× by 1 user · last 2026-09-30 · Excel
+```
+
+The line is prefixed with the object unless it is the one asked about. Like `Kept`,
+the consumer and report filters leave `Queried` out: a logged query is neither a
+visual, a model object, nor in an ingested report. A log's report ids are service
+GUIDs, which no local report file carries, so they are counted, not matched to the
+`Reports` section.
 
 ## Depth
 
@@ -235,6 +267,7 @@ dependency	'Sales'[Total]	'Sales'[Amount]	measure_expression
 impact	'Sales'[Total]	'Sales'[Margin Color]	measure_expression
 binding	'Sales'[Total]	Mini	P1	V1	Values
 kept	'Sales'[Legacy Total]	'Sales'[Legacy Total]	Used by the Finance Excel pivot
+queried	'Sales'[Legacy Total]	2	2026-09-30 09:45:00.0000000	1	Excel
 ```
 
 - `dependency` — graph orientation: consumer, what it uses, provenance key.
@@ -245,6 +278,9 @@ kept	'Sales'[Legacy Total]	'Sales'[Legacy Total]	Used by the Finance Excel pivot
 - `kept` — the kept object on the impact slice, the annotated object (itself, or its
   kept table), and the reason, with tabs and line breaks inside it turned into
   spaces.
+- `queried` — an object on the impact slice logged queries name, the query count,
+  the last timestamp as exported (`-` when absent), the distinct user count, and the
+  comma-joined client applications (`-` when none).
 
 Selector runs merge their roots' slices and drop duplicate records. The overview prints
 count records instead (`objects`, `edges`, `bindings`, then one `type	count` line per
@@ -285,7 +321,8 @@ trailing newline. Never truncated.
       "kind": "visual_binding"
     }
   ],
-  "kept": []
+  "kept": [],
+  "queried": []
 }
 ```
 
@@ -302,6 +339,10 @@ trailing newline. Never truncated.
 - `kept` lists each object on the impact slices a `ripbi_keep` annotation keeps:
   `object`, `annotated` (the object itself, or its kept table), and `reason` (empty
   when the annotation gives none). Empty unless `--impact` is in the view.
+- `queried` lists each object on the impact slices that `--queries-from` logged
+  queries name: `object`, `count`, `last_seen` (as exported, or `null`), `users` (a
+  distinct count), `applications`, and `reports` (service report ids from the
+  queries' `ApplicationContext`). Empty without a log or `--impact`.
 - The overview prints its counts shape: `objects`, `edges`, `bindings`, and a
   `by_type` object.
 
@@ -321,7 +362,8 @@ ripbi deps "'Sales'[Total]" --json | jq '.bindings[] | .report + "/" + .page'
 
 ## `ripbi.toml`
 
-`target` and `reports` participate in the input ladder exactly as in scan. There is no
+`target` and `reports` participate in the input ladder exactly as in scan, and
+`queries_from` supplies the query log when `--queries-from` is not passed. There is no
 `[deps]` section; `[scan].ignore` does not apply here — a dependency view must show
 what the graph says, ignored or not.
 
