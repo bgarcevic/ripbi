@@ -56,6 +56,7 @@ pub mod m;
 pub mod model;
 pub mod report;
 pub mod stub;
+pub mod usage;
 
 pub use dax::{
     Binding, RawRef, Token, TokenKind, bind, quoted_names, references, tokenize, unescape_name,
@@ -85,6 +86,7 @@ pub use report::{
     Projection, ReportMeasure, ReportModel, Visual,
 };
 pub use stub::{STUB_ANNOTATION, StubFile, report_stub};
+pub use usage::{LoggedQuery, QueriedObject, QueryLanguage, QueryLog, QuerySource};
 
 use thiserror::Error;
 

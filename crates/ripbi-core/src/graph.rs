@@ -161,6 +161,7 @@ pub use slice::{DepEdge, DepSlice};
 use crate::identity::{NameKey, ObjectId, fold_name};
 use crate::model::TabularDatabase;
 use crate::report::ReportModel;
+use crate::usage::{QueriedObject, QueryLog};
 
 /// The dependency graph of one semantic model and the reports sharing it.
 ///
@@ -193,6 +194,10 @@ pub struct DependencyGraph {
     /// `ripbi_keep` annotation, in model order (issue #151). Roots beside the
     /// report bindings, standing in for a consumer ripbi cannot see.
     kept: Vec<KeptObject>,
+    /// The objects logged queries reference directly (workspace monitoring),
+    /// in identity order. Roots beside the report bindings and the kept
+    /// objects: a consumer ripbi cannot see, observed rather than declared.
+    queried: Vec<QueriedObject>,
 }
 
 impl DependencyGraph {
@@ -203,6 +208,21 @@ impl DependencyGraph {
     #[must_use]
     pub fn build(db: &TabularDatabase, reports: &[&ReportModel]) -> Self {
         builder::build(db, reports)
+    }
+
+    /// Builds the graph like [`build`](DependencyGraph::build), then adds the
+    /// objects `log`'s queries reference as reachability roots: a queried
+    /// object stays live, and so does everything it uses. An empty log builds
+    /// exactly what [`build`](DependencyGraph::build) does.
+    #[must_use]
+    pub fn build_with_queries(
+        db: &TabularDatabase,
+        reports: &[&ReportModel],
+        log: &QueryLog,
+    ) -> Self {
+        let mut graph = builder::build(db, reports);
+        graph.queried = crate::usage::queried_objects(db, log);
+        graph
     }
 
     /// Assembles a finished graph from its parts. Only the builder calls this.
@@ -223,6 +243,7 @@ impl DependencyGraph {
             broken,
             broken_artifacts,
             kept,
+            queried: Vec::new(),
         }
     }
 
@@ -280,6 +301,25 @@ impl DependencyGraph {
                 matches!(&kept.id, ObjectId::Table { table: kept_table } if kept_table == table)
             })
         })
+    }
+
+    /// Every object a logged query references directly, in identity order —
+    /// empty unless the graph was built with
+    /// [`build_with_queries`](DependencyGraph::build_with_queries). Each is a
+    /// reachability root. A queried table also keeps its columns alive — a
+    /// table expression returns every one — but, unlike a kept table, not its
+    /// measures or other members. The list itself names only what the queries
+    /// named.
+    pub fn queried(&self) -> &[QueriedObject] {
+        &self.queried
+    }
+
+    /// How logged queries use `id` directly, when they do.
+    pub fn queried_by(&self, id: &ObjectId) -> Option<&QueriedObject> {
+        self.queried
+            .binary_search_by(|queried| queried.id.cmp(id))
+            .ok()
+            .map(|index| &self.queried[index])
     }
 
     /// Every report binding whose written field reference resolves to nothing
@@ -435,7 +475,8 @@ impl DependencyGraph {
     }
 
     /// The petgraph indices reachability starts from: every root target,
-    /// every role, and every kept object — a kept table with its members.
+    /// every role, every kept object — a kept table with its members — and
+    /// every queried object, a queried table with its columns.
     pub(super) fn seed_indices(&self) -> Vec<NodeIndex> {
         let mut seeds: Vec<NodeIndex> = self
             .roots
@@ -443,13 +484,31 @@ impl DependencyGraph {
             .filter_map(|(id, _)| self.nodes.get(id).copied())
             .collect();
         let kept = !self.kept.is_empty();
+        // A table expression (`EVALUATE 'Sales'`, an Excel drillthrough,
+        // `ADDCOLUMNS('Sales', …)`) returns every column, so a queried table
+        // keeps its columns — but not its measures, which it never returns.
+        let queried_tables: HashSet<&NameKey> = self
+            .queried
+            .iter()
+            .filter_map(|queried| match &queried.id {
+                ObjectId::Table { table } => Some(table),
+                _ => None,
+            })
+            .collect();
         seeds.extend(
             self.nodes
                 .iter()
                 .filter(|(id, _)| {
-                    matches!(id, ObjectId::Role { .. }) || (kept && self.kept_by(id).is_some())
+                    matches!(id, ObjectId::Role { .. })
+                        || (kept && self.kept_by(id).is_some())
+                        || matches!(id, ObjectId::Column { table, .. } if queried_tables.contains(table))
                 })
                 .map(|(_, &index)| index),
+        );
+        seeds.extend(
+            self.queried
+                .iter()
+                .filter_map(|queried| self.nodes.get(&queried.id).copied()),
         );
         seeds
     }

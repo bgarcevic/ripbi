@@ -113,6 +113,14 @@ pub struct DepsArgs {
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
 
+    /// Workspace-monitoring query log (CSV/JSON export); queried objects show under Impact.
+    #[arg(long, value_name = "PATH")]
+    pub queries_from: Option<PathBuf>,
+
+    /// The model's name or item id in the query log; defaults to the model's folder or file name.
+    #[arg(long, value_name = "NAME")]
+    pub queries_item: Option<String>,
+
     /// Show what the object relies on, upstream.
     #[arg(long)]
     pub dependencies: bool,
@@ -418,6 +426,14 @@ pub struct ScanArgs {
     /// Storage stats from an .abf, .pbix, or .vpax export; `none` skips .pbi/cache.abf.
     #[arg(long, value_name = "PATH")]
     pub stats_from: Option<PathBuf>,
+
+    /// Workspace-monitoring query log (CSV/JSON export); objects it queries count as used.
+    #[arg(long, value_name = "PATH")]
+    pub queries_from: Option<PathBuf>,
+
+    /// The model's name or item id in the query log; defaults to the model's folder or file name.
+    #[arg(long, value_name = "NAME")]
+    pub queries_item: Option<String>,
 
     /// Rerun this scan in another checkout; report and gate only on findings new since it.
     #[arg(long, value_name = "DIR")]

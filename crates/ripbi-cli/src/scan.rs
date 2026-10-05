@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::{BrokenReason, DependencyGraph};
 use ripbi_core::ingest::{self, SkipKind, SkipNotice};
+use ripbi_core::usage::{self, QueryLog};
 use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
 use crate::cli::{ScanArgs, SortKey};
@@ -272,8 +273,10 @@ fn scan(
         }
         writeln!(
             streams.err,
-            "Note: analysis covers only the ingested reports; \
-             external consumers (thin reports, Excel, XMLA) are invisible."
+            "{}",
+            coverage_caveat(
+                query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some()
+            )
         )
         .map_err(ScanError::from)?;
     }
@@ -358,12 +361,20 @@ fn scan(
         }));
         skips.extend(scan.bound.parse_skips.iter().map(skip_notice_out));
     }
+    let query_log = load_query_log(
+        query_log_path(args.queries_from.as_deref(), config.as_ref()),
+        query_log_item(args.queries_item.as_deref(), config.as_ref()),
+        &paired.model,
+        args.quiet,
+        streams.err,
+        &mut skips,
+    )?;
     dedupe_opaque_skips(&mut skips);
 
     // Analysis: entirely core's job.
     progress.stage(3);
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
-    let graph = DependencyGraph::build(&model.value, &report_refs);
+    let graph = DependencyGraph::build_with_queries(&model.value, &report_refs, &query_log);
     let unused = graph.unused_objects();
     let verdicts = graph.auto_date_time_tables(&model.value);
     let objects = graph.object_ids().count();
@@ -730,6 +741,7 @@ fn scan(
         unused_raw: objects - reachable,
         ignored,
         kept: graph.kept().len(),
+        queried: graph.queried().len(),
         filtered_out,
         machinery_members,
         broken,
@@ -1454,6 +1466,178 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// The on-disk cost of the reported findings (issue #122): each file once, so
 /// a column or relationship whose owning table is itself reported is covered
 /// by the table's size. `None` when no finding carries a size.
+/// The stderr coverage caveat `scan` and `deps` print once per run. A query
+/// log narrows the blind spot to the consumers outside its window.
+pub(crate) fn coverage_caveat(with_query_log: bool) -> &'static str {
+    if with_query_log {
+        "Note: analysis covers the ingested reports and the logged queries; \
+         consumers outside the log's time window are invisible."
+    } else {
+        "Note: analysis covers only the ingested reports; \
+         external consumers (thin reports, Excel, XMLA) are invisible."
+    }
+}
+
+/// The workspace-monitoring query log to read: `--queries-from` (taken as
+/// written, like `--model`), else the config's `queries_from`.
+pub(crate) fn query_log_path(
+    flag: Option<&Path>,
+    config: Option<&config::Config>,
+) -> Option<PathBuf> {
+    flag.map(Path::to_path_buf)
+        .or_else(|| config.and_then(|config| config.queries_from.clone()))
+}
+
+/// Which model's rows to read from a query log: `--queries-item`, else the
+/// config's `queries_item`. `None` falls back to the model's own name.
+pub(crate) fn query_log_item<'a>(
+    flag: Option<&'a str>,
+    config: Option<&'a config::Config>,
+) -> Option<&'a str> {
+    flag.or_else(|| config.and_then(|config| config.queries_item.as_deref()))
+}
+
+/// Reads the query log `scan` and `deps` add as roots, when one is set. An
+/// empty [`QueryLog`] when none is: the graph is then built exactly as
+/// without one. A log that cannot be read fails the run — it was asked for
+/// by name, like an explicit `--stats-from`. Rows the parser skipped join
+/// `skips`; the log's size and window are notes.
+///
+/// One export can cover a whole workspace. A log that names several models
+/// is narrowed to this one — `item` (`--queries-item`), else the model's
+/// folder or file name — because another model's `'Date'[Year]` query says
+/// nothing about this one's. When no model in such a log matches, or an
+/// explicit `item` matches none, none of its queries count. The log is
+/// supplementary root evidence: a model nobody queried is a real answer, and
+/// zero queries is exactly the no-log baseline. Every such mismatch — and a
+/// single-model log under another name, whose queries do count — is a
+/// `stale_state` skip notice, so `--strict` fails on it.
+pub(crate) fn load_query_log(
+    path: Option<PathBuf>,
+    item: Option<&str>,
+    model_path: &Path,
+    quiet: bool,
+    err: &mut dyn io::Write,
+    skips: &mut Vec<SkipNoticeOut>,
+) -> Result<QueryLog, ScanError> {
+    let Some(path) = path else {
+        return Ok(QueryLog::default());
+    };
+    let ingested = usage::read_query_log(&path).map_err(|error| {
+        ScanError::new(format!("cannot read queries from {}: {error}", path.display())).with_hint(
+            "export SemanticModelLogs QueryEnd rows (with EventText) as CSV or JSON; see docs/deps.md",
+        )
+    })?;
+    skips.extend(ingested.skips.iter().map(skip_notice_out));
+    let mut log = ingested.value;
+
+    let model = model_name(model_path);
+    let key = item.or(model.as_deref());
+    let mut notes = Vec::new();
+    // A log that does not identify this model is a skip notice, not a note:
+    // the run goes on, but `--strict` — a CI gate — fails on it, so a typo'd
+    // `--queries-item` or a renamed model never passes silently.
+    let mut unmatched = None;
+    if !log.item_names.is_empty() {
+        match key.filter(|key| log.names_item(key)) {
+            // Several models: keep this one's rows.
+            Some(key) if log.item_names.len() > 1 => {
+                let total = log.queries.len();
+                let dropped = log.retain_item(key);
+                notes.push(format!(
+                    "the query log covers {} models; ignored {dropped} of {total} queries \
+                     logged against the others.",
+                    log.item_names.len(),
+                ));
+            }
+            Some(_) => {}
+            // Several models, none of them this one (or an explicit item the
+            // log lacks): only rows that name no model are left to count.
+            None if item.is_some() || log.item_names.len() > 1 => {
+                log.retain_item("");
+                let names = capped_names(&log.item_names);
+                unmatched = Some(match key {
+                    Some(key) => format!(
+                        "the query log has no queries for {key} (it names {names}); none count \
+                         — pass --queries-item NAME if the service calls it something else"
+                    ),
+                    None => format!(
+                        "the query log covers {} models ({names}); none count \
+                         — pass --queries-item NAME to pick this one",
+                        log.item_names.len()
+                    ),
+                });
+            }
+            // One model under another name: most likely this one, renamed
+            // locally. Keep its queries, but say so.
+            None => {
+                if let Some(model) = &model {
+                    unmatched = Some(format!(
+                        "the query log names {}, not {model}; its queries count, but may belong \
+                         to another model — pass --queries-item NAME to confirm",
+                        capped_names(&log.item_names)
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(detail) = unmatched {
+        skips.push(SkipNoticeOut {
+            path: path.display().to_string(),
+            location: None,
+            kind: "stale_state",
+            detail,
+        });
+    }
+    if quiet {
+        return Ok(log);
+    }
+    let window = match (log.first_seen.as_deref(), log.last_seen.as_deref()) {
+        (Some(first), Some(last)) if day(first) == day(last) => format!(" ({})", day(first)),
+        (Some(first), Some(last)) => format!(" ({} → {})", day(first), day(last)),
+        _ => String::new(),
+    };
+    writeln!(
+        err,
+        "Note: {} logged queries{window} from {} count as consumers.",
+        log.queries.len(),
+        path.display()
+    )
+    .map_err(ScanError::from)?;
+    for note in notes {
+        writeln!(err, "Note: {note}").map_err(ScanError::from)?;
+    }
+    Ok(log)
+}
+
+/// The date part of an exported timestamp (`2026-09-30 11:11:05.65` or ISO 8601).
+fn day(stamp: &str) -> &str {
+    stamp
+        .split([' ', 'T'])
+        .next()
+        .filter(|date| !date.is_empty())
+        .unwrap_or(stamp)
+}
+
+/// The model's name as the service would log it: the `.SemanticModel`
+/// folder's stem, or a PBIX/PBIT/ABF file's. `None` when the path names no
+/// such item (a bare `model.bim`), so no mismatch is ever guessed.
+fn model_name(model_path: &Path) -> Option<String> {
+    model_path.ancestors().find_map(|path| {
+        let name = path.file_name()?.to_str()?;
+        [".SemanticModel", ".Dataset", ".pbix", ".pbit", ".abf"]
+            .iter()
+            .find_map(|suffix| {
+                name.len()
+                    .checked_sub(suffix.len())
+                    .filter(|&cut| {
+                        name.is_char_boundary(cut) && name[cut..].eq_ignore_ascii_case(suffix)
+                    })
+                    .map(|cut| name[..cut].to_string())
+            })
+    })
+}
+
 /// Attaches storage sizes from outside the model (issue #129): the explicit
 /// `--stats-from`/`[scan].stats_from` source, else a PBIP's `.pbi/cache.abf`.
 /// Returns the source used, if any.

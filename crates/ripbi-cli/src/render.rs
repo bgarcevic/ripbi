@@ -33,6 +33,9 @@ pub struct ScanOutput {
     /// annotation (issue #151): reachability roots, never findings. Counted
     /// for the JSON summary only; the human output lists them nowhere.
     pub kept: usize,
+    /// Objects the `--queries-from` query log references directly: roots,
+    /// never findings. Counted for the JSON summary only.
+    pub queried: usize,
     /// Unused objects hidden by type selection.
     /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
     /// instead.
@@ -992,6 +995,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             unused_total: report.unused_raw,
             ignored: report.ignored,
             kept: report.kept,
+            queried: report.queried,
             broken: report.broken.len(),
             broken_total: report.broken_raw,
             broken_artifacts: report.broken_artifacts.len(),
@@ -1145,6 +1149,9 @@ struct JsonSummary {
     /// Objects a `ripbi_keep` model annotation keeps (issue #151) — roots,
     /// so never in `unused`; a kept table counts once, not per member.
     kept: usize,
+    /// Objects a `--queries-from` query log references directly — roots, so
+    /// never in `unused`. 0 without a log.
+    queried: usize,
     /// Broken visual bindings (issue #60) after `[scan].ignore` and the type
     /// flags — the length of `broken`.
     broken: usize,
@@ -1449,6 +1456,7 @@ mod tests {
             unused_raw: findings.len(),
             ignored: 0,
             kept: 0,
+            queried: 0,
             filtered_out: 0,
             machinery_members: 0,
             broken: Vec::new(),
