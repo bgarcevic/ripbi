@@ -122,9 +122,9 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
                 .with_hint("fix the TOML syntax, or move the file out of the way")
         })?;
         let resolve = |written: &String| resolve_against(&root, written);
-        let target = file.target.as_ref().map(&resolve);
+        let target = file.target.as_ref().map(resolve);
         let reports: Vec<PathBuf> = file.reports.iter().map(&resolve).collect();
-        let queries_from = file.queries_from.as_ref().map(&resolve);
+        let queries_from = file.queries_from.as_ref().map(resolve);
         let scan = file.scan.unwrap_or_default();
         let stats_from = scan
             .stats_from
