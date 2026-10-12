@@ -21,6 +21,7 @@ class VersionSyncTests(unittest.TestCase):
             "Cargo.toml", "Cargo.lock", "desktop/src-tauri/Cargo.toml",
             "desktop/src-tauri/Cargo.lock", "desktop/package.json",
             "desktop/package-lock.json", "desktop/src-tauri/tauri.conf.json",
+            "book/manual/installation.md",
         ):
             destination = self.root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -31,10 +32,16 @@ class VersionSyncTests(unittest.TestCase):
         manifest = self.root / "Cargo.toml"
         manifest.write_text(manifest.read_text().replace(f'version = "{version}"', 'version = "9.8.7"', 1))
         version, updates = planned_updates(self.root, "v9.8.7")
-        self.assertEqual(len(updates), 7)
+        self.assertEqual(len(updates), 8)
         for path, content in updates.items():
             path.write_text(content, encoding="utf-8")
         self.assertEqual(planned_updates(self.root), ("9.8.7", {}))
+        manifest_text = manifest.read_text()
+        self.assertIn('ripbi-core = { path = "crates/ripbi-core", version = "9.8.7" }', manifest_text)
+        self.assertIn('ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "9.8.7" }', manifest_text)
+        install_doc = (self.root / "book/manual/installation.md").read_text(encoding="utf-8")
+        self.assertIn("RIPBI_VERSION=v9.8.7 sh", install_doc)
+        self.assertIn("$env:RIPBI_VERSION = 'v9.8.7'", install_doc)
         lock = json.loads((self.root / "desktop/package-lock.json").read_text())
         self.assertEqual(lock["packages"]["node_modules/vite"], json.loads((ROOT / "desktop/package-lock.json").read_text())["packages"]["node_modules/vite"])
 
@@ -78,6 +85,21 @@ class VersionSyncTests(unittest.TestCase):
             with patch("sys.argv", ["sync_version.py", "--write"]):
                 self.assertEqual(main(), 0)
         self.assertEqual(planned_updates(self.root)[1], {})
+
+    def test_set_bumps_the_workspace_version_and_synchronizes(self):
+        with patch("sync_version.ROOT", self.root), contextlib.redirect_stdout(io.StringIO()):
+            with patch("sys.argv", ["sync_version.py", "--set", "9.8.7"]):
+                self.assertEqual(main(), 0)
+        self.assertEqual(planned_updates(self.root, "v9.8.7"), ("9.8.7", {}))
+        package = json.loads((self.root / "desktop/package.json").read_text())
+        self.assertEqual(package["version"], "9.8.7")
+
+    def test_set_rejects_an_invalid_version_without_writing(self):
+        before = (self.root / "Cargo.toml").read_bytes()
+        with patch("sync_version.ROOT", self.root), contextlib.redirect_stderr(io.StringIO()):
+            with patch("sys.argv", ["sync_version.py", "--set", "v9.8"]):
+                self.assertEqual(main(), 1)
+        self.assertEqual((self.root / "Cargo.toml").read_bytes(), before)
 
 
 if __name__ == "__main__":

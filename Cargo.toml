@@ -11,7 +11,7 @@ repository = "https://github.com/bgarcevic/ripbi"
 
 [workspace.dependencies]
 ripbi-core = { path = "crates/ripbi-core", version = "0.8.1" }
-ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.8.0" }
+ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.8.1" }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "serialize"] }
 quick-xml = "0.42"
 tempfile = "3"

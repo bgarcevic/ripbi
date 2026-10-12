@@ -1,0 +1,165 @@
+name: Release PR
+
+# Keeps one open "chore(release): prepare X.Y.Z" PR up to date with main, and
+# tags the release when that PR is merged. The version comes from the
+# conventional-commit titles since the last stable tag
+# (scripts/release/next-version.sh); the notes are the hand-written
+# [Unreleased] section of CHANGELOG.md (scripts/release/changelog.sh). The PR
+# also carries the version bump: scripts/sync_version.py --set rewrites the
+# workspace version and every file synced from it.
+#
+# Events created with GITHUB_TOKEN do not start other workflows, except
+# workflow_dispatch. So this workflow dispatches ci.yml on the release branch
+# (the required checks) and release.yml on the new tag, instead of relying on
+# the pull_request and tag-push triggers.
+#
+# Requires "Allow GitHub Actions to create and approve pull requests" in the
+# repository's Actions settings.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+env:
+  RELEASE_BRANCH: release/next
+
+jobs:
+  tag:
+    name: Tag release
+    # The squash-merged release PR. Its title (plus " (#N)") is the subject.
+    if: >-
+      github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release): prepare ')
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Tag and dispatch release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBJECT: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          subject="${SUBJECT%%$'\n'*}"
+          if [[ ! "${subject}" =~ ^chore\(release\):\ prepare\ ([0-9]+\.[0-9]+\.[0-9]+)( |$) ]]; then
+            echo "::error::cannot read a version from '${subject}'"
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          if ! grep -q "^## \[${version}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no [${version}] section"
+            exit 1
+          fi
+          # The same check release.yml runs first; failing here leaves no tag.
+          python3 scripts/sync_version.py --check --tag "v${version}"
+          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+            echo "::error::tag v${version} already exists"
+            exit 1
+          fi
+          git tag "v${version}" "${GITHUB_SHA}"
+          git push origin "v${version}"
+          gh workflow run release.yml --ref "v${version}"
+          echo "Tagged v${version} and started the release workflow." >> "$GITHUB_STEP_SUMMARY"
+
+  update:
+    name: Update release PR
+    if: >-
+      github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release): prepare ')
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: next
+        run: |
+          set -euo pipefail
+          read -r version bump <<<"$(bash scripts/release/next-version.sh)" || true
+          notes="$(bash scripts/release/changelog.sh unreleased)"
+          echo "version=${version:-}" >> "$GITHUB_OUTPUT"
+          echo "bump=${bump:-}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${version:-}" && -n "${notes}" ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Nothing user-facing is waiting: an empty [Unreleased] never becomes a
+      # release, even when commits landed.
+      - name: Close stale release PR
+        if: steps.next.outputs.release == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr="$(gh pr list --head "${RELEASE_BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "${pr}" ]]; then
+            gh pr close "${pr}" --delete-branch --comment "Nothing under [Unreleased] to release."
+          fi
+          echo "No release pending: [Unreleased] is empty." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update release PR
+        if: steps.next.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.next.outputs.version }}
+          BUMP: ${{ steps.next.outputs.bump }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -C "${RELEASE_BRANCH}"
+          notes="$(bash scripts/release/changelog.sh unreleased)"
+          bash scripts/release/changelog.sh prepare "${VERSION}" "$(date -u +%Y-%m-%d)"
+          python3 scripts/sync_version.py --set "${VERSION}"
+          title="chore(release): prepare ${VERSION}"
+          git commit -am "${title}"
+          git push --force origin "${RELEASE_BRANCH}"
+
+          if [[ "${BUMP}" == release-as ]]; then
+            bump_line="Version: **${VERSION}**, from a \`Release-As:\` footer since the last release."
+          else
+            bump_line="Bump: **${BUMP}**, from the commit titles since the last release."
+          fi
+          body_file="$(mktemp)"
+          {
+            echo "Merging this PR tags \`v${VERSION}\` and publishes it."
+            echo
+            echo "${bump_line}"
+            echo "To ship more first, keep merging; this PR updates itself."
+            echo "Polish the notes by editing \`CHANGELOG.md\` here, just before merging:"
+            echo "the next merge to main rebuilds this branch and drops edits made here."
+            echo
+            echo "## Release notes"
+            echo
+            echo "${notes}"
+          } > "${body_file}"
+
+          pr="$(gh pr list --head "${RELEASE_BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "${pr}" ]]; then
+            gh pr edit "${pr}" --title "${title}" --body-file "${body_file}"
+          else
+            gh pr create --base main --head "${RELEASE_BRANCH}" --title "${title}" --body-file "${body_file}"
+          fi
+
+          # Pushes made with GITHUB_TOKEN do not trigger pull_request, so start
+          # the required build checks on the release branch explicitly.
+          gh workflow run ci.yml --ref "${RELEASE_BRANCH}"
