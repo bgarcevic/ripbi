@@ -38,6 +38,19 @@ class VersionSyncTests(unittest.TestCase):
         lock = json.loads((self.root / "desktop/package-lock.json").read_text())
         self.assertEqual(lock["packages"]["node_modules/vite"], json.loads((ROOT / "desktop/package-lock.json").read_text())["packages"]["node_modules/vite"])
 
+    def test_json_bump_changes_only_the_version_lines(self):
+        manifest = self.root / "Cargo.toml"
+        version, _ = planned_updates(self.root)
+        manifest.write_text(manifest.read_text().replace(f'version = "{version}"', 'version = "9.8.7"', 1))
+        _, updates = planned_updates(self.root)
+        for relative in ("desktop/package.json", "desktop/package-lock.json", "desktop/src-tauri/tauri.conf.json"):
+            before = (self.root / relative).read_text(encoding="utf-8").splitlines()
+            after = updates[self.root / relative].splitlines()
+            self.assertEqual(len(before), len(after), relative)
+            changed = [new for old, new in zip(before, after) if old != new]
+            self.assertTrue(changed, relative)
+            self.assertTrue(all('"version": "9.8.7"' in line for line in changed), relative)
+
     def test_wrong_tag_fails_without_writing(self):
         before = (self.root / "Cargo.toml").read_bytes()
         with self.assertRaisesRegex(ValueError, "must match"):

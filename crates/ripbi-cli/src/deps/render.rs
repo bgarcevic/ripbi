@@ -8,7 +8,7 @@ use std::io;
 
 use serde::Serialize;
 
-use ripbi_core::{BindingEdge, BindingSite, DepSlice, KeptObject, ObjectId};
+use ripbi_core::{BindingEdge, BindingSite, DepSlice, KeptObject, ObjectId, QueriedObject};
 
 use super::tree::{Node, Orientation, TreeBuilder};
 use crate::error::ScanError;
@@ -89,6 +89,9 @@ pub(crate) struct FocusedOut {
     /// annotation keeps (issue #151), with the annotation keeping them — the
     /// object's own, or its kept table's. One entry per root, in slice order.
     pub kept: Vec<Vec<(ObjectId, KeptObject)>>,
+    /// The objects on each root's impact slice that `--queries-from` logged
+    /// queries reference directly. One entry per root, in slice order.
+    pub queried: Vec<Vec<QueriedObject>>,
     /// True for a `--consumer visual` run: the Impact view belongs to the
     /// report bindings, so the Model section stays out entirely.
     pub model_hidden: bool,
@@ -195,12 +198,13 @@ fn write_focused(
             let slice = &slices[index];
             let bindings = &focused.bindings[index];
             let kept = &focused.kept[index];
+            let queried = &focused.queried[index];
             writeln!(out)?;
             writeln!(out, "{}", palette.bold("Impact"))?;
             let mut builder = TreeBuilder::new(Orientation::Impact);
             let tree = builder.build(slice, root, label);
             let model_hidden = focused.model_hidden || tree.children.is_empty();
-            if model_hidden && bindings.is_empty() && kept.is_empty() {
+            if model_hidden && bindings.is_empty() && kept.is_empty() && queried.is_empty() {
                 writeln!(out, "└─ nothing")?;
             } else {
                 if !focused.model_hidden {
@@ -218,6 +222,11 @@ fn write_focused(
                     writeln!(out)?;
                     writeln!(out, "{}", palette.bold("Kept"))?;
                     write_children(out, &kept_nodes(root, kept), "")?;
+                }
+                if !queried.is_empty() {
+                    writeln!(out)?;
+                    writeln!(out, "{}", palette.bold("Queried"))?;
+                    write_children(out, &queried_nodes(root, queried), "")?;
                 }
             }
         }
@@ -290,6 +299,48 @@ fn kept_nodes(root: &ObjectId, kept: &[(ObjectId, KeptObject)]) -> Vec<Node> {
             Node::leaf(label)
         })
         .collect()
+}
+
+/// The queried objects of one root's impact slice, one leaf each — prefixed
+/// with the object when it is not the root.
+fn queried_nodes(root: &ObjectId, queried: &[QueriedObject]) -> Vec<Node> {
+    queried
+        .iter()
+        .map(|by| {
+            let mut label = String::new();
+            if &by.id != root {
+                label.push_str(&format!("{}  ", by.id));
+            }
+            label.push_str(&queried_phrase(by));
+            Node::leaf(label)
+        })
+        .collect()
+}
+
+/// `queried 3× by 2 users · last 2026-09-30 · PowerBI · 1 report`: how often,
+/// by how many people (never who), when last, from which clients and how
+/// many distinct reports. Absent facts are left out.
+fn queried_phrase(by: &QueriedObject) -> String {
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut phrase = format!("queried {}×", by.count);
+    if by.users > 0 {
+        phrase.push_str(&format!(" by {}", plural(by.users, "user", "users")));
+    }
+    if let Some(last) = &by.last_seen {
+        let day = last.split([' ', 'T']).next().unwrap_or(last);
+        phrase.push_str(&format!(" · last {day}"));
+    }
+    if !by.applications.is_empty() {
+        phrase.push_str(&format!(" · {}", by.applications.join(", ")));
+    }
+    if !by.reports.is_empty() {
+        phrase.push_str(&format!(
+            " · {}",
+            plural(by.reports.len(), "report", "reports")
+        ));
+    }
+    phrase
 }
 
 /// `kept: <reason>`, or `kept by table 'T': <reason>` for a member a kept
@@ -480,6 +531,24 @@ pub fn plain(out: &mut dyn io::Write, output: &DepsOutput) -> io::Result<()> {
                         writeln!(out, "kept\t{}\t{}\t{reason}", id, by.id)?;
                     }
                 }
+                let mut seen: HashSet<&ObjectId> = HashSet::new();
+                for by in focused.queried.iter().flatten() {
+                    if seen.insert(&by.id) {
+                        let applications = if by.applications.is_empty() {
+                            "-".to_string()
+                        } else {
+                            by.applications.join(",").replace(['\t', '\n', '\r'], " ")
+                        };
+                        writeln!(
+                            out,
+                            "queried\t{}\t{}\t{}\t{}\t{applications}",
+                            by.id,
+                            by.count,
+                            by.last_seen.as_deref().unwrap_or("-"),
+                            by.users,
+                        )?;
+                    }
+                }
                 for bindings in &focused.bindings {
                     for (id, edge) in bindings {
                         writeln!(
@@ -621,6 +690,21 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                 }
             }
 
+            let mut queried: Vec<JsonQueried> = Vec::new();
+            let mut seen: HashSet<&ObjectId> = HashSet::new();
+            for by in focused.queried.iter().flatten() {
+                if seen.insert(&by.id) {
+                    queried.push(JsonQueried {
+                        object: by.id.to_string(),
+                        count: by.count,
+                        last_seen: by.last_seen.clone(),
+                        users: by.users,
+                        applications: by.applications.clone(),
+                        reports: by.reports.clone(),
+                    });
+                }
+            }
+
             let root = single_root.then(|| {
                 let id = &focused.roots[0];
                 JsonRoot {
@@ -637,6 +721,7 @@ pub fn json(out: &mut dyn io::Write, output: &DepsOutput) -> Result<(), ScanErro
                     edges,
                     bindings,
                     kept,
+                    queried,
                 },
             )
         }
@@ -660,6 +745,20 @@ struct JsonFocused {
     edges: Vec<JsonEdge>,
     bindings: Vec<JsonBinding>,
     kept: Vec<JsonKept>,
+    queried: Vec<JsonQueried>,
+}
+
+/// One object on an impact slice that logged queries reference directly.
+/// User identities never leave the log: `users` is a distinct count.
+#[derive(Serialize)]
+struct JsonQueried {
+    object: String,
+    count: usize,
+    last_seen: Option<String>,
+    users: usize,
+    applications: Vec<String>,
+    /// Service report ids from the queries' `ApplicationContext`.
+    reports: Vec<String>,
 }
 
 /// One object on an impact slice a `ripbi_keep` annotation keeps.

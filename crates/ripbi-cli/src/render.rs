@@ -33,6 +33,9 @@ pub struct ScanOutput {
     /// annotation (issue #151): reachability roots, never findings. Counted
     /// for the JSON summary only; the human output lists them nowhere.
     pub kept: usize,
+    /// Objects the `--queries-from` query log references directly: roots,
+    /// never findings. Counted for the JSON summary only.
+    pub queried: usize,
     /// Unused objects hidden by type selection.
     /// `[scan].ignore` suppressions are counted in [`ScanOutput::ignored`]
     /// instead.
@@ -415,6 +418,13 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
 /// removed (issue #141).
 pub(crate) const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
                             of these may be parse damage, not removals; see the notices below)";
+
+/// What to do about new unused findings under `--compare-root`: remove them,
+/// or keep one a consumer ripbi cannot see reads (issue #151). Stderr and the
+/// Markdown summary carry it; the gate is where authors meet the annotation.
+pub(crate) const KEEP_HINT: &str = "Remove the new unused objects, or if something outside \
+                            these reports reads one (an Excel pivot, another workspace's \
+                            report), mark it in the model: `annotation ripbi_keep = <reason>`";
 
 /// Whether a `Fixed since` list may be parse damage: some finding vanished,
 /// and this scan's ingest recorded an `unknown_object` skip — the one kind
@@ -985,6 +995,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             unused_total: report.unused_raw,
             ignored: report.ignored,
             kept: report.kept,
+            queried: report.queried,
             broken: report.broken.len(),
             broken_total: report.broken_raw,
             broken_artifacts: report.broken_artifacts.len(),
@@ -1138,6 +1149,9 @@ struct JsonSummary {
     /// Objects a `ripbi_keep` model annotation keeps (issue #151) — roots,
     /// so never in `unused`; a kept table counts once, not per member.
     kept: usize,
+    /// Objects a `--queries-from` query log references directly — roots, so
+    /// never in `unused`. 0 without a log.
+    queried: usize,
     /// Broken visual bindings (issue #60) after `[scan].ignore` and the type
     /// flags — the length of `broken`.
     broken: usize,
@@ -1442,6 +1456,7 @@ mod tests {
             unused_raw: findings.len(),
             ignored: 0,
             kept: 0,
+            queried: 0,
             filtered_out: 0,
             machinery_members: 0,
             broken: Vec::new(),

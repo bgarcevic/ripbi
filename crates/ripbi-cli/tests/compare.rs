@@ -93,11 +93,29 @@ fn a_new_dead_measure_is_the_only_finding_and_gates() {
     let checkouts = Checkouts::of("compare-new", &mini_pbip());
     checkouts.edit("head", SALES, "\tcolumn Amount", DEAD_MEASURE);
 
-    let (code, stdout, _) = checkouts.scan(ScanArgs::default());
+    let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
     assert_eq!(code, 1, "{stdout}");
     assert!(stdout.contains(", 1 unused"), "{stdout}");
     assert!(stdout.contains("'Sales'[Draft KPI]"), "{stdout}");
     assert!(!stdout.contains("'Sales'[Legacy Total]"), "{stdout}");
+    assert!(
+        stderr.contains("hint: Remove the new unused objects") && stderr.contains("ripbi_keep"),
+        "the gate points at the annotation:\n{stderr}"
+    );
+}
+
+/// The keep hint belongs to a failing comparison only: not to a clean one,
+/// and not to a plain scan whose findings are not "new".
+#[test]
+fn the_keep_hint_needs_new_unused_findings() {
+    let checkouts = Checkouts::of("compare-hint", &mini_pbip());
+    let (code, _, stderr) = checkouts.scan(ScanArgs::default());
+    assert_eq!(code, 0);
+    assert!(!stderr.contains("ripbi_keep"), "{stderr}");
+
+    let (code, _, stderr) = run_scan(&ScanArgs::default(), &checkouts.head(), "");
+    assert_eq!(code, 1);
+    assert!(!stderr.contains("ripbi_keep"), "{stderr}");
 }
 
 /// Issue #151: the same new measure, annotated as deliberately kept, is a

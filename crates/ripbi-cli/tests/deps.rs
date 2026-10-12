@@ -37,6 +37,284 @@ fn object(object: &str) -> (i32, String, String) {
     object_in(object, |_| {})
 }
 
+/// Workspace monitoring: logged queries are consumers ripbi cannot otherwise
+/// see, so the Impact view names the queried objects on the slice.
+mod queried {
+    use super::*;
+
+    fn log() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ripbi-core/tests/fixtures/query-log/semantic-model-logs.csv")
+    }
+
+    fn with_log(object: &str, configure: impl FnOnce(&mut DepsArgs)) -> (i32, String, String) {
+        object_in(object, |args| {
+            args.queries_from = Some(log());
+            configure(args);
+        })
+    }
+
+    #[test]
+    fn an_excel_query_shows_under_impact() {
+        let (code, out, err) = with_log("'Sales'[Legacy]", |args| args.impact = true);
+        assert_eq!(code, 0, "{err}");
+        assert_eq!(
+            out,
+            "'Sales'[Legacy]  column
+
+Impact
+
+Model
+└─ 'Sales'[Legacy Total]  measure
+
+Queried
+└─ 'Sales'[Legacy Total]  queried 2× by 1 user · last 2026-09-30 · Excel
+"
+        );
+        assert!(
+            err.contains("Note: 3 logged queries (2026-09-28 → 2026-09-30) from "),
+            "{err}"
+        );
+        assert!(err.contains("and the logged queries"), "{err}");
+    }
+
+    #[test]
+    fn a_gzipped_log_reads_like_the_plain_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let gz = dir.path().join("semantic-model-logs.csv.gz");
+        let mut encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        std::io::Write::write_all(&mut encoder, &std::fs::read(log()).unwrap()).unwrap();
+        encoder.finish().unwrap();
+        let (code, out, err) = object_in("'Sales'[Legacy]", |args| {
+            args.queries_from = Some(gz);
+            args.impact = true;
+        });
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.contains("\nQueried\n└─ 'Sales'[Legacy Total]  queried 2× by 1 user"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn the_queried_root_itself_counts_its_reports() {
+        let (code, out, err) = with_log("'Sales'[Total]", |args| args.impact = true);
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            out.ends_with(
+                "\nQueried\n└─ queried 1× by 1 user · last 2026-09-28 · PowerBI · 1 report\n"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn plain_and_json_carry_the_queried_record_without_user_names() {
+        let (_, plain, _) = with_log("'Sales'[Legacy]", |args| args.plain = true);
+        assert!(
+            plain.contains(
+                "queried\t'Sales'[Legacy Total]\t2\t2026-09-30 09:45:00.0000000\t1\tExcel\n"
+            ),
+            "{plain}"
+        );
+        let (_, json, _) = with_log("'Sales'[Total]", |args| args.json = true);
+        assert!(!json.contains("contoso.example"), "{json}");
+        assert_eq!(
+            json_payload(&json)["queried"],
+            serde_json::json!([{
+                "object": "'Sales'[Total]",
+                "count": 1,
+                "last_seen": "2026-09-28 08:15:01.0300000",
+                "users": 1,
+                "applications": ["PowerBI"],
+                "reports": ["00000000-0000-4000-8000-00000000000a"],
+            }])
+        );
+    }
+
+    #[test]
+    fn consumer_filters_leave_queried_out() {
+        let (_, out, _) = with_log("'Sales'[Legacy]", |args| {
+            args.consumer = Some("visual".to_string());
+        });
+        assert!(!out.contains("Queried"), "{out}");
+    }
+
+    #[test]
+    fn without_a_log_the_view_and_caveat_are_unchanged() {
+        let (_, out, err) = object_in("'Sales'[Legacy]", |args| args.json = true);
+        assert_eq!(json_payload(&out)["queried"], serde_json::json!([]));
+        assert!(
+            err.contains("external consumers (thin reports, Excel, XMLA)"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_config_key_supplies_the_log() {
+        let dir = mini_project();
+        std::fs::copy(log(), dir.0.join("logs.csv")).expect("copy log");
+        std::fs::write(dir.0.join("ripbi.toml"), "queries_from = \"logs.csv\"\n")
+            .expect("write config");
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            impact: true,
+            ..DepsArgs::default()
+        };
+        let (code, out, err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("\nQueried\n"), "{out}");
+    }
+
+    #[test]
+    fn an_unreadable_log_is_a_usage_error() {
+        let (code, _, err) = object_in("'Sales'[Legacy]", |args| {
+            args.queries_from = Some("does-not-exist.csv".into());
+        });
+        assert_eq!(code, 2);
+        assert!(
+            err.contains("error: cannot read queries from does-not-exist.csv"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_log_for_another_model_earns_a_skip_notice() {
+        let dir = mini_project();
+        let text = std::fs::read_to_string(log()).expect("read log");
+        std::fs::write(
+            dir.0.join("other.csv"),
+            text.replace("\"Mini\"", "\"Other\""),
+        )
+        .expect("write log");
+        let args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            queries_from: Some(dir.0.join("other.csv")),
+            ..DepsArgs::default()
+        };
+        let (code, _, err) = run_deps(&args, &dir.0, "");
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            err.contains("[stale_state] the query log names Other, not Mini; its queries count"),
+            "{err}"
+        );
+    }
+
+    /// A workspace-wide export: `Mini` read a column, `Other` — a different
+    /// model with the same object names — ran the Excel query on `[Legacy Total]`.
+    const TWO_MODELS: &str = "OperationName,ItemName,ItemId,Timestamp,ApplicationName,EventText\n\
+        QueryEnd,Mini,aaaaaaaa-0001,2026-09-01,PowerBI,\"EVALUATE VALUES('Sales'[Amount])\"\n\
+        QueryEnd,Other,bbbbbbbb-0002,2026-09-02,Excel,\"SELECT {[Measures].[Legacy Total]} ON 0 FROM [Model]\"\n";
+
+    fn two_models(names: (&str, &str)) -> (TempDir, std::path::PathBuf) {
+        let dir = mini_project();
+        let path = dir.0.join("workspace.csv");
+        let text = TWO_MODELS
+            .replace(",Mini,", &format!(",{},", names.0))
+            .replace(",Other,", &format!(",{},", names.1));
+        std::fs::write(&path, text).expect("write log");
+        (dir, path)
+    }
+
+    fn legacy_impact(
+        dir: &TempDir,
+        configure: impl FnOnce(&mut DepsArgs),
+    ) -> (i32, String, String) {
+        let mut args = DepsArgs {
+            object: Some("'Sales'[Legacy]".to_string()),
+            impact: true,
+            ..DepsArgs::default()
+        };
+        configure(&mut args);
+        run_deps(&args, &dir.0, "")
+    }
+
+    #[test]
+    fn a_workspace_wide_log_is_narrowed_to_the_model() {
+        let (dir, log) = two_models(("Mini", "Other"));
+        let (code, out, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
+        assert_eq!(code, 0, "{err}");
+        assert!(
+            !out.contains("Queried"),
+            "Other's query must not count:\n{out}"
+        );
+        assert!(
+            err.contains("Note: 1 logged queries (2026-09-01) from "),
+            "{err}"
+        );
+        assert!(
+            err.contains(
+                "Note: the query log covers 2 models; ignored 1 of 2 queries logged against the others."
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn queries_item_picks_the_model_by_name_or_id() {
+        for key in ["other", "BBBBBBBB-0002"] {
+            let (dir, log) = two_models(("Mini", "Other"));
+            let (code, out, err) = legacy_impact(&dir, |args| {
+                args.queries_from = Some(log);
+                args.queries_item = Some(key.to_string());
+            });
+            assert_eq!(code, 0, "{err}");
+            assert!(
+                out.contains("└─ 'Sales'[Legacy Total]  queried 1× · last 2026-09-02 · Excel\n"),
+                "{key}: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_config_key_picks_the_model() {
+        let (dir, _) = two_models(("Mini", "Other"));
+        std::fs::write(
+            dir.0.join("ripbi.toml"),
+            "queries_from = \"workspace.csv\"\nqueries_item = \"Other\"\n",
+        )
+        .expect("write config");
+        let (code, out, err) = legacy_impact(&dir, |_| {});
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("\nQueried\n"), "{out}");
+    }
+
+    /// The log is supplementary: a model with no rows in it is simply
+    /// unqueried, never a failed run.
+    #[test]
+    fn a_log_of_other_models_only_counts_nothing() {
+        let (dir, log) = two_models(("Finance", "Budget"));
+        let (code, out, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
+        assert_eq!(code, 0, "{err}");
+        assert!(!out.contains("Queried"), "{out}");
+        assert!(err.contains("Note: 0 logged queries from "), "{err}");
+        assert!(
+            err.contains(
+                "[stale_state] the query log has no queries for Mini (it names Budget, Finance); \
+                 none count"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_item_the_log_lacks_counts_nothing() {
+        let (code, out, err) = with_log("'Sales'[Legacy]", |args| {
+            args.impact = true;
+            args.queries_item = Some("Finance".to_string());
+        });
+        assert_eq!(code, 0, "{err}");
+        assert!(!out.contains("Queried"), "{out}");
+        assert!(
+            err.contains("[stale_state] the query log has no queries for Finance (it names Mini);"),
+            "{err}"
+        );
+    }
+}
+
 /// Issue #151: a `ripbi_keep` annotation is the answer to "why is this
 /// alive?" — the Impact view names the kept object and its reason.
 mod kept {

@@ -2927,7 +2927,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "clap",
  "flate2",
@@ -2945,8 +2945,9 @@ dependencies = [
 
 [[package]]
 name = "ripbi-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
+ "flate2",
  "petgraph",
  "quick-xml",
  "ripbi-xpress9",
@@ -2960,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-desktop"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ripbi",
  "serde",
@@ -2972,7 +2973,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-xpress9"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "cc",
 ]
