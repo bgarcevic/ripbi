@@ -610,7 +610,7 @@ mod tests {
             assert_eq!(refs, &["[Gone]".to_string()]);
         }
 
-        /// The kundechef-DB shape: a report measure built on sibling report
+        /// A report measure built on sibling report
         /// measures. The graph keeps the siblings alive through exactly these
         /// unqualified names (`add_expression_edges`), so the breakage pass
         /// must not call them unresolvable.
