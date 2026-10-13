@@ -38,7 +38,7 @@ and an NSIS packaging build on Windows for every PR. PR artifacts are debug
 builds for testing; release-tag artifacts are optimized release builds.
 
 Version metadata is synchronized from the root `Cargo.toml` workspace version.
-See [release preparation](../CONTRIBUTING.md#release-preparation) before tagging.
+Releases are automated; see [Releases](../CONTRIBUTING.md#releases).
 
 ## Workflow and metrics
 

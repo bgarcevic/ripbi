@@ -1,7 +1,8 @@
 """Synchronize release metadata from Cargo.toml's workspace.package.version.
 
 Uses only Python 3.11+ standard library. Checks are read-only; --write updates
-known local packages without resolving or changing third-party dependencies.
+known local packages without resolving or changing third-party dependencies;
+--set X.Y.Z changes the workspace version first (the release PR's bump).
 """
 
 import argparse
@@ -12,6 +13,7 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION_PATTERN = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
 
 
 def replace_once(text: str, pattern: str, version: str) -> str:
@@ -21,11 +23,23 @@ def replace_once(text: str, pattern: str, version: str) -> str:
     return result
 
 
+def set_workspace_version(root: Path, version: str) -> None:
+    """Rewrite [workspace.package].version, the source --write syncs from."""
+    if not re.fullmatch(VERSION_PATTERN, version):
+        raise ValueError(f"Invalid version: {version}")
+    manifest_path = root / "Cargo.toml"
+    manifest = manifest_path.read_text(encoding="utf-8")
+    manifest = replace_once(
+        manifest, r'(\[workspace\.package\]\n(?:[^\[\n][^\n]*\n|\n)*?version\s*=\s*")[^"]+(")', version
+    )
+    manifest_path.write_text(manifest, encoding="utf-8", newline="\n")
+
+
 def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path, str]]:
     manifest_path = root / "Cargo.toml"
     manifest = manifest_path.read_text(encoding="utf-8")
     version = tomllib.loads(manifest)["workspace"]["package"]["version"]
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version):
+    if not re.fullmatch(VERSION_PATTERN, version):
         raise ValueError(f"Invalid workspace version: {version}")
     if tag is not None and tag != f"v{version}":
         raise ValueError(f"Tag {tag!r} must match workspace version v{version}")
@@ -36,10 +50,22 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
         if old != new:
             updates[path] = new
 
-    synced = replace_once(
-        manifest, r'^(ripbi-core\s*=\s*\{[^\n]*version\s*=\s*")[^"]+("[^\n]*\})$', version
-    )
+    synced = manifest
+    for name in ("ripbi-core", "ripbi-xpress9"):
+        synced = replace_once(
+            synced, rf'^({re.escape(name)}\s*=\s*\{{[^\n]*version\s*=\s*")[^"]+("[^\n]*\}})$', version
+        )
     remember(manifest_path, manifest, synced)
+
+    # The pinned-install examples (sh and PowerShell) name the latest release.
+    install_doc = root / "book/manual/installation.md"
+    old = install_doc.read_text(encoding="utf-8")
+    new, count = re.subn(
+        r"(RIPBI_VERSION\s*=\s*'?v)[0-9][^\s']*", lambda m: m[1] + version, old
+    )
+    if count != 2:
+        raise ValueError(f"Expected two RIPBI_VERSION pins in {install_doc.relative_to(root)}")
+    remember(install_doc, old, new)
 
     desktop_manifest = root / "desktop/src-tauri/Cargo.toml"
     old = desktop_manifest.read_text(encoding="utf-8")
@@ -89,9 +115,12 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Fail on version drift without writing")
     mode.add_argument("--write", action="store_true", help="Synchronize metadata with the workspace version")
+    mode.add_argument("--set", metavar="VERSION", help="Set the workspace version, then synchronize (as --write)")
     parser.add_argument("--tag", help="Also require this exact release tag (e.g. v0.4.1)")
     args = parser.parse_args()
     try:
+        if args.set:
+            set_workspace_version(ROOT, args.set)
         version, updates = planned_updates(ROOT, args.tag)
         if updates and args.check:
             print("Version drift; run python scripts/sync_version.py --write:", file=sys.stderr)

@@ -127,33 +127,73 @@ them.
 
 ## Commits and PRs
 
-- Write commit subjects in the imperative mood, like the rest of the log:
-  "Implement the ripbi scan command", not "Added…" or "fix: …".
+- PRs are squash-merged, so the **PR title** becomes the commit subject on
+  `main`. Write it as a [Conventional Commit](https://www.conventionalcommits.org/)
+  in the imperative mood: `feat(scan): add --queries-from`,
+  `fix(tmdl): keep columns named in partition M`, `docs: …`. Allowed types:
+  `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`,
+  `revert`, `style`. The `pr checks` workflow enforces this, because the title
+  decides the next version (see [Versioning](#versioning)).
+- Add an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any
+  change users can see: it becomes the release notes. PRs that touch shipped
+  code (`crates/*/src`, the desktop app, the GitHub Action, the Azure Pipelines
+  template) without one fail the check; a maintainer adds the `skip-changelog`
+  label for changes users cannot see.
+- No AI attribution: PR descriptions and commits must not carry
+  `Co-authored-by: … <noreply@anthropic.com>` trailers or "Generated with
+  Claude Code" footers. The check rejects them, and the project's
+  `.claude/settings.json` turns them off for Claude Code sessions.
 - Reference the issue in the PR description ("Closes #41").
 - Keep PRs small and focused — one change per PR.
-- Versions and releases are maintainer-run: pushing a `v*` tag drives the
-  release and crates.io publish workflow. Don't bump versions in your PR.
+- Don't bump versions in your PR: releases are automated (below).
 
-## Release preparation
+## Releases
+
+Releases are automated by `.github/workflows/release-pr.yml` and
+`release.yml`:
+
+- A bot keeps one `chore(release): prepare X.Y.Z` PR open from the
+  `release/next` branch, rebuilt on every merge to `main`. It moves
+  `[Unreleased]` into a dated `[X.Y.Z]` section and bumps every version file
+  (`python scripts/sync_version.py --set X.Y.Z`). With nothing under
+  `[Unreleased]`, there is no release PR.
+- Polish the notes by editing `CHANGELOG.md` on that PR just before merging;
+  the next merge to `main` rebuilds the branch and drops edits made there.
+- Merging it tags `vX.Y.Z` and starts `release.yml`: the CLI archives (each
+  run once on its native runner first), the Windows desktop installer, one
+  GitHub release whose body is the changelog section, then the GitHub Action
+  mirror and crates.io.
+
+### Versioning
+
+The bump comes from the PR titles since the last release: `feat` is a minor,
+everything else a patch, and `!` after the type (`feat!:`) or a
+`BREAKING CHANGE:` line in the body a major. Breaking PRs need the
+`breaking-approved` label. While the major version is 0, breaking changes bump
+the minor instead.
+
+A `Release-As: X.Y.Z` line in a commit body since the last release overrides
+the computed version (the newest wins): use it in a squash-merge message for a
+deliberate 1.0.0, or when the titles undersell a release.
+
+### Version metadata
 
 CLI and experimental Windows desktop releases use the same version and tag.
 The source of truth is `[workspace.package].version` in the root `Cargo.toml`.
-To prepare a maintainer-approved release:
+`python scripts/sync_version.py --write` (Python 3.11+) propagates it to the
+workspace dependency requirements, desktop Cargo/Tauri/npm metadata, local
+package versions in both Cargo lockfiles and the npm lockfile, and the pinned
+install examples in `book/manual/installation.md`; `--set X.Y.Z` changes the
+workspace version first. Third-party dependency versions stay unchanged. CI
+rejects drift, and the release checks the tag against it before building.
 
-1. Change that workspace version.
-2. Run `python scripts/sync_version.py --write` (Python 3.11+). This updates
-   the core dependency requirement, desktop Cargo/Tauri/npm metadata, and local
-   package versions in both Cargo lockfiles and the npm lockfile. Third-party
-   dependency versions stay unchanged.
-3. Run `python scripts/sync_version.py --check --tag vX.Y.Z` with the intended
-   tag and the normal CLI and desktop checks. Commit all synchronized files.
-4. Push the matching `vX.Y.Z` tag through the existing release process.
+To release by hand (a release candidate, or if the bot is unavailable): run
+`--set`, cut the changelog section, merge, then push the `vX.Y.Z` tag
+yourself. A tag pushed by hand starts `release.yml` directly.
 
-CI rejects version drift. The release workflow also checks the tag before
-starting builds, waits for CLI archives and the Windows desktop installer,
-then publishes one release with shared checksums. The desktop build and installer
-checks also run on PRs via `.github/workflows/desktop.yml`. Windows uses MSVC;
-the existing CLI build matrix is unchanged. Desktop remains outside crates.io.
+The desktop build and installer checks also run on PRs via
+`.github/workflows/desktop.yml`. Windows uses MSVC. Desktop remains outside
+crates.io.
 
 The desktop installer is experimental and unsigned. Release notes disclose
 Windows trust prompts, the WebView2 download requirement, and manual updates.

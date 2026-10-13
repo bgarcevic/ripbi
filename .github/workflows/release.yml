@@ -1,8 +1,17 @@
 name: Release
 
+# release-pr.yml tags each release and dispatches this workflow on the tag,
+# because a tag pushed with GITHUB_TOKEN does not fire the tag trigger. A tag
+# pushed by hand still starts it through that trigger.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+
+# No cancel-in-progress: cancelling mid-publish can strand a half-published
+# version (crates.io versions are immutable). The group stops duplicates.
+concurrency:
+  group: release-${{ github.ref }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,6 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Require a tag
+        if: github.ref_type != 'tag'
+        run: |
+          echo "::error::Run this workflow on a v* tag, not on ${GITHUB_REF}."
+          exit 1
       - name: Require one version matching the tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -59,6 +73,22 @@ jobs:
           key: ${{ matrix.os }}-${{ matrix.target }}-glibc22-v1
           cache-targets: false
       - run: cargo build --release --locked -p ripbi --target ${{ matrix.target }}
+
+      # Each target builds on a native runner, so both binaries can run here:
+      # a release never ships an archive that fails to start or reports
+      # another version.
+      - name: Run the binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REF_NAME#v}"
+          for bin in ripbi rib; do
+            actual="$("target/${{ matrix.target }}/release/${bin}" --version | tr -d '\r')"
+            if [[ "${actual}" != "ripbi ${expected}" ]]; then
+              echo "::error::${bin} --version printed '${actual}', expected 'ripbi ${expected}'"
+              exit 1
+            fi
+          done
 
       - name: Package (tar.gz)
         if: runner.os != 'Windows'
@@ -117,6 +147,28 @@ jobs:
           cd dist
           sha256sum ripbi-* > sha256sums.txt
 
+      # The curated CHANGELOG.md section leads the release body, then the
+      # download notes; GitHub's generated PR list follows.
+      - name: Release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # The newest section runs to end-of-file, so the trailing link-reference
+          # definitions come with it; they are never referenced from the body.
+          # grep's no-match exit is swallowed so that a missing section reaches
+          # the explicit check below instead of tripping pipefail here.
+          awk -v v="${version}" '
+            $0 == "## [" v "]" || index($0, "## [" v "] ") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md | { grep -v '^\[[^]]*\]: http' || true; } > "$RUNNER_TEMP/changes.md"
+          if [[ ! -s "$RUNNER_TEMP/changes.md" ]]; then
+            echo "::error::CHANGELOG.md has no '## [${version}]' section to release from"
+            exit 1
+          fi
+          { cat "$RUNNER_TEMP/changes.md"; echo; cat .github/release-notes.md; } > "$RUNNER_TEMP/release-notes.md"
+
       - name: Create GitHub release
         shell: bash
         env:
@@ -124,7 +176,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" \
-            --notes-file .github/release-notes.md \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --generate-notes \
             --verify-tag
 
