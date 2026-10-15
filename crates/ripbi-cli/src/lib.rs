@@ -19,6 +19,7 @@ pub mod sarif;
 pub mod scan;
 pub mod stub;
 pub mod style;
+pub mod tx_rm;
 pub mod update;
 pub mod vso;
 

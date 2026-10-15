@@ -12,7 +12,7 @@ use ripbi_core::ingest::{self, SkipKind, SkipNotice};
 use ripbi_core::usage::{self, QueryLog};
 use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
-use crate::cli::{ScanArgs, SortKey};
+use crate::cli::{EmitFormat, ScanArgs, SortKey};
 use crate::compare::{self, Detected, Entry};
 use crate::config;
 use crate::discover::{self, Candidate, Resolution};
@@ -26,6 +26,7 @@ use crate::render::{
 };
 use crate::sarif::{self, Locator};
 use crate::style::Palette;
+use crate::tx_rm;
 use crate::vso;
 
 /// Exit code: no unused objects.
@@ -115,7 +116,7 @@ fn scan(
             streams,
             palette_err,
             args.quiet,
-            args.json || args.plain || args.sarif || args.azure_devops,
+            args.json || args.plain || args.sarif || args.azure_devops || args.emit.is_some(),
         ),
         *palette_err,
         progress::SCAN,
@@ -529,6 +530,9 @@ fn scan(
     let mut machinery_members = 0;
     // The identities behind `findings`, for the storage total's dedupe.
     let mut reported: Vec<&ObjectId> = Vec::new();
+    // Dead auto date/time tables, filed under their verdict rows: removable
+    // like any finding, so `--emit tx-rm` lists them too.
+    let mut dead_machinery: Vec<&ObjectId> = Vec::new();
     for finding in &unused {
         if is_machinery_member(&finding.id, &machinery) {
             machinery_members += 1;
@@ -588,7 +592,10 @@ fn scan(
         };
         match section_row {
             _ if is_existing => kept_existing.findings.push(finding),
-            Some(position) => auto_date_time[position].finding = Some(finding),
+            Some(position) => {
+                dead_machinery.push(id);
+                auto_date_time[position].finding = Some(finding);
+            }
             None => {
                 reported.push(id);
                 findings.push(finding);
@@ -789,6 +796,10 @@ fn scan(
                 sarif::write(streams.out, &output, &kept_existing, locator, cwd)
             }
             .map_err(ScanError::from)?;
+        } else if args.emit == Some(EmitFormat::TxRm) {
+            reported.extend(dead_machinery);
+            tx_rm::write(streams.out, &output.target, &model.value, &reported)
+                .map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else if args.summary {

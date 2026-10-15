@@ -73,7 +73,7 @@ reports.
 
 | Content | Stream | Notes |
 |---|---|---|
-| Findings, summary, JSON, plain records, SARIF, `##vso` commands | stdout | the machine-readable side |
+| Findings, summary, JSON, plain records, SARIF, `##vso` commands, `--emit` lines | stdout | the machine-readable side |
 | `--sarif-file`, `--json-file`, `--markdown-file` | the named file | written whatever stdout shows, `-q` included (see [Several outputs from one scan](#several-outputs-from-one-scan)) |
 | Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
 | Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
@@ -157,6 +157,7 @@ unaffected.
 | `--sarif-file <PATH>` | Also write the `--sarif` log to `PATH`, whatever stdout shows (see [Several outputs from one scan](#several-outputs-from-one-scan)) |
 | `--json-file <PATH>` | Also write the `--json` output to `PATH` |
 | `--markdown-file <PATH>` | Also write a Markdown summary to `PATH`, for a CI job summary or pull request comment (see [Markdown](#markdown)) |
+| `--emit tx-rm` | JSON Lines for tomix's `tx rm --from` on stdout instead of findings: one object per line, removed together as one change (see [Removing with tomix](#removing-with-tomix)). Mutually exclusive with `--json`, `--plain`, `--sarif`, `--azure-devops`, and `--summary` |
 | `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--azure-devops` |
 | `-q`, `--quiet` | No output; exit code only |
 | `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
@@ -1135,6 +1136,51 @@ date/time tables are advice, not findings, and log nothing, as in SARIF. Under
 every mode but SARIF. The exit code is unchanged: a finding still fails the step with
 `1`, so the logged issues and the gate agree. Run the scan from the repository root so
 `sourcepath` is repository-relative.
+
+## Removing with tomix
+
+`--emit tx-rm` prints the findings as JSON Lines for
+[tomix](https://github.com/bgarcevic/tomix-cli)'s batch removal, `tx rm --from`. `tx`
+removes the whole list as **one change**: it resolves every line before anything changes,
+judges the dependency guards against the whole set, and saves and validates once. Preview
+first, then save:
+
+```console
+$ ripbi scan --emit tx-rm | tx rm --from - ./Model.SemanticModel
+$ ripbi scan --emit tx-rm | tx rm --from - ./Model.SemanticModel --save
+```
+
+```text
+# ripbi unused objects in Mini.SemanticModel
+# Remove them as one change: tx rm --from <this-file> <model> --save
+{"type":"column","table":"Sales","name":"Legacy","id":"'Sales'[Legacy]"}
+{"type":"measure","table":"Sales","name":"Legacy Total","id":"'Sales'[Legacy Total]"}
+```
+
+| Field | Value |
+|---|---|
+| `type` | `table`, `column`, `measure`, `hierarchy`, `partition`, `calculation_item`, `relationship`, `role`, `expression`, or `function`. Always set: it keeps a column and a partition that share a name apart |
+| `table` | The owning table, for columns, measures, hierarchies, partitions, and calculation items |
+| `name` | The object's name, as written in the model. JSON carries any name, so nothing is quoted |
+| `path` | Only for a relationship the model gives no name: its endpoints, `'A'[x] -> 'B'[y]`, which `tx` resolves itself |
+| `id` | ripbi's display id. `tx` ignores it but echoes the whole line back as the target's `input`, so its JSON result traces each removal to its finding |
+
+- **What it lists.** Exactly the findings the other modes list — `[scan].ignore`, `--type`,
+  and `--compare-root` filter it the same way — plus dead auto date/time tables (verdict
+  `dead`). An auto date/time table still `in_use` or `unused_by_reports` is advice, not a
+  removal: switch the setting off in Desktop instead. Report measures and bookmarks live in
+  the report, not the model: they are `# skipped` comment lines, which `tx` skips.
+- **Order.** None needed. Lines follow ripbi's identity order; a dead table's members are
+  listed beside it and `tx` reports them as `subsumed`.
+- **Cascades.** When the set would also change objects that stay — a relationship to a live
+  table, a sort-by setting, a perspective entry — `tx` lists them under `Would also change:`
+  and refuses until you pass `--cascade`.
+- **No findings.** The list is only comments, and `tx rm --from` exits `2` (`No objects to
+  remove`). Gate the pipe on ripbi's exit code (`1` means there is something to remove).
+- **Rescan after saving.** Removing objects can expose new findings — a key column whose
+  only relationship is gone — so run the scan again.
+
+The exit code is unchanged: `1` when there are findings, as in every mode.
 
 ## `ripbi.toml`
 
