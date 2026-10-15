@@ -55,6 +55,7 @@ Examples:
   ripbi scan --sarif > ripbi.sarif # GitHub code scanning / Azure DevOps annotations
   ripbi scan --azure-devops        # warnings/errors on an Azure Pipelines run
   ripbi scan --sarif-file ripbi.sarif --markdown-file summary.md  # CI: one scan, many outputs
+  ripbi scan --emit tx-rm | tx rm --from - ./Model.SemanticModel  # preview removing them all
   ripbi scan --summary             # counts only, when the list would flood the terminal
   ripbi scan --type measure --type column  # only these unused object types
   ripbi scan -q                            # exit code only: 0 clean, 1 unused found, 2 error
@@ -382,6 +383,15 @@ pub struct ScanArgs {
     #[arg(short = 's', long, conflicts_with_all = ["json", "plain", "sarif", "azure_devops"])]
     pub summary: bool,
 
+    /// Print the findings for another tool instead: tx-rm (JSON Lines for `tx rm --from`).
+    #[arg(
+        long,
+        value_enum,
+        value_name = "FORMAT",
+        conflicts_with_all = ["json", "plain", "sarif", "azure_devops", "summary"]
+    )]
+    pub emit: Option<EmitFormat>,
+
     /// Print nothing; the exit code is the only output.
     #[arg(short = 'q', long)]
     pub quiet: bool,
@@ -442,6 +452,13 @@ pub struct ScanArgs {
     /// Name the --compare-root checkout in the output, e.g. the branch it holds; defaults to DIR.
     #[arg(long, value_name = "NAME", requires = "compare_root")]
     pub compare_label: Option<String>,
+}
+
+/// The formats `scan --emit` prints in place of its findings.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmitFormat {
+    /// JSON Lines for `tx rm --from`: one object per line, removed together as one change.
+    TxRm,
 }
 
 /// How `scan` orders its unused findings.

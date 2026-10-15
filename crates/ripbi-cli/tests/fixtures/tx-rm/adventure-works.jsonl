@@ -1,0 +1,56 @@
+{"type":"table","name":"Time Intelligence","id":"table 'Time Intelligence'"}
+{"type":"column","table":"Customer","name":"City","id":"'Customer'[City]"}
+{"type":"column","table":"Customer","name":"Customer","id":"'Customer'[Customer]"}
+{"type":"column","table":"Customer","name":"Customer ID","id":"'Customer'[Customer ID]"}
+{"type":"column","table":"Customer","name":"Postal Code","id":"'Customer'[Postal Code]"}
+{"type":"column","table":"Customer","name":"State-Province","id":"'Customer'[State-Province]"}
+{"type":"column","table":"Date","name":"Fiscal Quarter","id":"'Date'[Fiscal Quarter]"}
+{"type":"column","table":"Date","name":"Fiscal Year","id":"'Date'[Fiscal Year]"}
+{"type":"column","table":"Date","name":"Full Date","id":"'Date'[Full Date]"}
+{"type":"column","table":"Date","name":"Month","id":"'Date'[Month]"}
+{"type":"column","table":"Date","name":"MonthKey","id":"'Date'[MonthKey]"}
+{"type":"column","table":"Product","name":"Color","id":"'Product'[Color]"}
+{"type":"column","table":"Product","name":"List Price","id":"'Product'[List Price]"}
+{"type":"column","table":"Product","name":"SKU","id":"'Product'[SKU]"}
+{"type":"column","table":"Product","name":"Standard Cost","id":"'Product'[Standard Cost]"}
+{"type":"column","table":"Reseller","name":"City","id":"'Reseller'[City]"}
+{"type":"column","table":"Reseller","name":"Country-Region","id":"'Reseller'[Country-Region]"}
+{"type":"column","table":"Reseller","name":"Postal Code","id":"'Reseller'[Postal Code]"}
+{"type":"column","table":"Reseller","name":"Reseller","id":"'Reseller'[Reseller]"}
+{"type":"column","table":"Reseller","name":"Reseller ID","id":"'Reseller'[Reseller ID]"}
+{"type":"column","table":"Reseller","name":"State-Province","id":"'Reseller'[State-Province]"}
+{"type":"column","table":"Sales","name":"Extended Amount","id":"'Sales'[Extended Amount]"}
+{"type":"column","table":"Sales","name":"Order Quantity (base)","id":"'Sales'[Order Quantity (base)]"}
+{"type":"column","table":"Sales","name":"Product Standard Cost","id":"'Sales'[Product Standard Cost]"}
+{"type":"column","table":"Sales","name":"Unit Price","id":"'Sales'[Unit Price]"}
+{"type":"column","table":"Sales","name":"Unit Price Discount Pct","id":"'Sales'[Unit Price Discount Pct]"}
+{"type":"column","table":"Sales Order","name":"Sales Order Line","id":"'Sales Order'[Sales Order Line]"}
+{"type":"column","table":"Sales Territory","name":"Country","id":"'Sales Territory'[Country]"}
+{"type":"column","table":"Time Intelligence","name":"Time Intelligence","id":"'Time Intelligence'[Time Intelligence]"}
+{"type":"measure","table":"Sales","name":"Average Sales per Order","id":"'Sales'[Average Sales per Order]"}
+{"type":"measure","table":"Sales","name":"Order Quantity","id":"'Sales'[Order Quantity]"}
+{"type":"measure","table":"Sales","name":"Sales by Due Date","id":"'Sales'[Sales by Due Date]"}
+{"type":"measure","table":"Sales","name":"Sales by Order Date","id":"'Sales'[Sales by Order Date]"}
+{"type":"measure","table":"Sales","name":"Sales by Ship Date","id":"'Sales'[Sales by Ship Date]"}
+{"type":"measure","table":"Sales","name":"Sales MTD","id":"'Sales'[Sales MTD]"}
+{"type":"measure","table":"Sales","name":"Sales PY","id":"'Sales'[Sales PY]"}
+{"type":"measure","table":"Sales","name":"Sales QTD","id":"'Sales'[Sales QTD]"}
+{"type":"measure","table":"Sales","name":"Sales YoY","id":"'Sales'[Sales YoY]"}
+{"type":"measure","table":"Sales","name":"Sales YoY %","id":"'Sales'[Sales YoY %]"}
+{"type":"measure","table":"Sales","name":"Sales YTD","id":"'Sales'[Sales YTD]"}
+{"type":"hierarchy","table":"Customer","name":"Geography","id":"hierarchy 'Customer'[Geography]"}
+{"type":"hierarchy","table":"Date","name":"Fiscal","id":"hierarchy 'Date'[Fiscal]"}
+{"type":"hierarchy","table":"Reseller","name":"Geography","id":"hierarchy 'Reseller'[Geography]"}
+{"type":"hierarchy","table":"Sales Order","name":"Sales Orders","id":"hierarchy 'Sales Order'[Sales Orders]"}
+{"type":"hierarchy","table":"Sales Territory","name":"Sales Territories","id":"hierarchy 'Sales Territory'[Sales Territories]"}
+{"type":"partition","table":"Time Intelligence","name":"Partition_Time Intelligence","id":"partition 'Time Intelligence'[Partition_Time Intelligence]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"Current","id":"calculation item 'Time Intelligence'[Current]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"MTD","id":"calculation item 'Time Intelligence'[MTD]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"PY","id":"calculation item 'Time Intelligence'[PY]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"PY MTD","id":"calculation item 'Time Intelligence'[PY MTD]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"PY QTD","id":"calculation item 'Time Intelligence'[PY QTD]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"PY YTD","id":"calculation item 'Time Intelligence'[PY YTD]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"QTD","id":"calculation item 'Time Intelligence'[QTD]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"YoY","id":"calculation item 'Time Intelligence'[YoY]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"YoY %","id":"calculation item 'Time Intelligence'[YoY %]"}
+{"type":"calculation_item","table":"Time Intelligence","name":"YTD","id":"calculation item 'Time Intelligence'[YTD]"}

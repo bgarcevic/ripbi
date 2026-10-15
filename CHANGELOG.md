@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scan --emit tx-rm`**: the findings as JSON Lines for tomix's batch removal, so
+  `ripbi scan --emit tx-rm | tx rm --from - ./Model.SemanticModel --save` removes every
+  unused model object, dead auto date/time tables included, as one change. Each line names
+  its object by `type`, `table`, and `name`, with ripbi's id beside it; report measures and
+  bookmarks are comment lines. Needs a `tx` with `rm --from`.
 - **Workspace-monitoring query logs** (`--queries-from PATH` on `scan` and `deps`, or
   `queries_from` in `ripbi.toml`): an export of Fabric workspace monitoring's
   `SemanticModelLogs` (or Log Analytics' `PowerBIDatasetsWorkspace`) `QueryEnd` events
