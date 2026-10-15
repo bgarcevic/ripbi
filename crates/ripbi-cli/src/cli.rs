@@ -351,7 +351,7 @@ pub struct ScanArgs {
     #[arg(long = "report", value_name = "PATH")]
     pub reports: Vec<PathBuf>,
 
-    /// Machine-readable JSON (schema: docs/output.md).
+    /// Machine-readable JSON (schema: docs/scan/json.md).
     #[arg(long, conflicts_with = "plain")]
     pub json: bool,
 
@@ -359,11 +359,11 @@ pub struct ScanArgs {
     #[arg(long)]
     pub plain: bool,
 
-    /// SARIF 2.1.0 for code scanning and PR annotations (docs/output.md).
+    /// SARIF 2.1.0 for code scanning and PR annotations (docs/scan/ci-formats.md).
     #[arg(long, conflicts_with_all = ["json", "plain"])]
     pub sarif: bool,
 
-    /// `##vso[task.logissue]` lines for Azure Pipelines (docs/output.md).
+    /// `##vso[task.logissue]` lines for Azure Pipelines (docs/scan/ci-formats.md).
     #[arg(long, conflicts_with_all = ["json", "plain", "sarif"])]
     pub azure_devops: bool,
 

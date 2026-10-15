@@ -2,7 +2,7 @@
 //! finding, so an Azure Pipelines run lists each finding as a warning or
 //! error on the build summary — no extension or artifact needed. The rules,
 //! messages, and sites are `sarif.rs`'s; the contract lives in
-//! `docs/output.md` under "Azure DevOps".
+//! `docs/scan/ci-formats.md` under "Azure DevOps".
 
 use std::io;
 use std::path::Path;

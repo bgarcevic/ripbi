@@ -15,6 +15,8 @@ SRC=book/src
 FIXTURES="https://github.com/bgarcevic/ripbi/blob/main/crates/ripbi-cli/tests/fixtures"
 CORE_SRC="https://github.com/bgarcevic/ripbi/blob/main/crates/ripbi-core/src"
 
+SITE='https://bgarcevic\.github\.io/ripbi/'
+
 # Fail loudly if a source moved or was renamed — a silent gap would ship a
 # book missing a chapter.
 for f in \
@@ -22,10 +24,25 @@ for f in \
   "$MANUAL/introduction.md" \
   "$MANUAL/installation.md" \
   "$MANUAL/ci.md" \
+  "$MANUAL/cleanup.md" \
+  "$MANUAL/unused.md" \
+  "$MANUAL/inputs.md" \
   CHANGELOG.md \
-  crates/ripbi-cli/docs/output.md \
+  crates/ripbi-cli/docs/scan/overview.md \
+  crates/ripbi-cli/docs/scan/flags.md \
+  crates/ripbi-cli/docs/scan/human-output.md \
+  crates/ripbi-cli/docs/scan/text-formats.md \
+  crates/ripbi-cli/docs/scan/json.md \
+  crates/ripbi-cli/docs/scan/ci-formats.md \
+  crates/ripbi-cli/docs/scan/boundaries.md \
+  crates/ripbi-cli/docs/scan/compare.md \
+  crates/ripbi-cli/docs/scan/keep.md \
+  crates/ripbi-cli/docs/scan/queries.md \
+  crates/ripbi-cli/docs/scan/storage.md \
+  crates/ripbi-cli/docs/scan/tx-rm.md \
   crates/ripbi-cli/docs/deps.md \
   crates/ripbi-cli/docs/report.md \
+  crates/ripbi-cli/docs/config.md \
   crates/ripbi-core/docs/graph.md \
   crates/ripbi-core/docs/formats.md \
   crates/ripbi-core/docs/semantic-model.md \
@@ -38,7 +55,7 @@ for f in \
 done
 
 rm -rf "$SRC"
-mkdir -p "$SRC"
+mkdir -p "$SRC/scan"
 
 cp "$MANUAL"/*.md "$SRC"/
 # Terminal recordings (scripts/record_demos.py). The canonical docs reach them
@@ -46,23 +63,29 @@ cp "$MANUAL"/*.md "$SRC"/
 cp -R docs/media "$SRC"/media
 cp CHANGELOG.md "$SRC"/changelog.md
 
-# The canonical docs link repo files relatively — the cli doc's golden test
+# The canonical docs link repo files relatively — the cli docs' golden test
 # baselines and the core docs' source definitions ([`BindingRef`] et al).
-# The book ships without the repo, so repoint those links at GitHub.
-sed -e "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
-    -e "s|](\.\./\.\./\.\./docs/media/|](media/|g" \
-  crates/ripbi-cli/docs/output.md > "$SRC"/output.md
+# The book ships without the repo, so repoint those links at GitHub. Links
+# across crates are absolute site URLs, since no relative path works from both
+# crates; in the book they become relative again, so the link check covers them.
+for doc in crates/ripbi-cli/docs/*.md; do
+  sed -e "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
+      -e "s|](\.\./\.\./\.\./docs/media/|](media/|g" \
+      -e "s|]($SITE\([^)#]*\)\.html|](\1.md|g" \
+    "$doc" > "$SRC/$(basename "$doc")"
+done
 
-sed -e "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
-    -e "s|](\.\./\.\./\.\./docs/media/|](media/|g" \
-  crates/ripbi-cli/docs/deps.md > "$SRC"/deps.md
-
-sed "s|](\.\./tests/fixtures/|]($FIXTURES/|g" \
-  crates/ripbi-cli/docs/report.md > "$SRC"/report.md
+for doc in crates/ripbi-cli/docs/scan/*.md; do
+  sed -e "s|](\.\./\.\./tests/fixtures/|]($FIXTURES/|g" \
+      -e "s|](\.\./\.\./\.\./\.\./docs/media/|](../media/|g" \
+      -e "s|]($SITE\([^)#]*\)\.html|](../\1.md|g" \
+    "$doc" > "$SRC/scan/$(basename "$doc")"
+done
 
 for doc in crates/ripbi-core/docs/*.md; do
   sed -e "s|](\.\./src/|]($CORE_SRC/|g" \
       -e "s|]: \.\./src/|]: $CORE_SRC/|g" \
+      -e "s|]($SITE\([^)#]*\)\.html|](\1.md|g" \
     "$doc" > "$SRC/$(basename "$doc")"
 done
 

@@ -6,8 +6,7 @@
 //! it — kind plus display id, and for breakage the reason and binding site —
 //! never a file path or position, so two checkouts in different folders
 //! compare cleanly. Matching is case-insensitive, like the engine's own name
-//! comparison. The contract lives in `docs/output.md` under "Comparing
-//! against another checkout".
+//! comparison. The contract lives in `docs/scan/compare.md`.
 
 use std::collections::BTreeMap;
 

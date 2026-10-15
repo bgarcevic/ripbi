@@ -4,7 +4,7 @@ ripbi fails a pull request that leaves a measure, column, or table no report
 uses. On a pull request it scans twice, the change and its target branch, and
 fails only on findings the change *introduces*, so a model with hundreds of old
 findings can gate from day one (see
-[Comparing against another checkout](output.md#comparing-against-another-checkout)).
+[Comparing against another checkout](scan/compare.md)).
 
 Pick your CI, paste the file, open a pull request.
 
@@ -124,16 +124,16 @@ rib scan --compare-root ../base \
 Exit `1` means new findings, `2` an error. `ripbi.json`'s `summary.findings` is
 the count, `ripbi.md` a summary for the run's page, and `ripbi.sarif` the
 annotations for tools that read SARIF. See
-[Several outputs from one scan](output.md#several-outputs-from-one-scan).
+[Several outputs from one scan](scan/ci-formats.md#several-outputs-from-one-scan).
 
 ## When the check fails
 
 - **The finding is real.** Delete the object, or use it in a report.
 - **It is unused on purpose,** say a measure only an Excel pivot reads. Give it a
   `ripbi_keep` annotation with the reason, see
-  [Keeping objects on purpose](output.md#keeping-objects-on-purpose).
+  [Keeping objects on purpose](scan/keep.md).
 - **It is in a whole folder of objects ripbi should not judge.** Add an
-  `[scan].ignore` pattern to `ripbi.toml`, see [`ripbi.toml`](output.md#ripbitoml).
+  `[scan].ignore` pattern to `ripbi.toml`, see [`ripbi.toml`](config.md).
 
 An old finding never fails a pull request, so none of this is needed to adopt the
 gate: only new findings need an answer.

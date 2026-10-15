@@ -139,7 +139,7 @@ annotation is neither a visual, a model object, nor in a report.
 `--queries-from PATH` (or `queries_from` in `ripbi.toml`) reads an export of
 workspace monitoring's `SemanticModelLogs` `QueryEnd` events — the formats, the KQL
 to export them, and the resolution rules are in
-[output.md](output.md#logged-queries-workspace-monitoring). Each object on the impact
+[Logged queries](scan/queries.md). Each object on the impact
 slice that a logged query names directly gets a `Queried` line: how many queries, by
 how many distinct users (never who), the last day seen, the client applications, and
 how many distinct reports the queries came from.
@@ -364,8 +364,8 @@ ripbi deps "'Sales'[Total]" --json | jq '.bindings[] | .report + "/" + .page'
 
 `target` and `reports` participate in the input ladder exactly as in scan, and
 `queries_from` supplies the query log when `--queries-from` is not passed, and
-`queries_item` picks its model when `--queries-item` is not. There is no
-`[deps]` section; `[scan].ignore` does not apply here — a dependency view must show
+`queries_item` picks its model when `--queries-item` is not (see
+[`ripbi.toml`](config.md)). There is no `[deps]` section; `[scan].ignore` does not apply here — a dependency view must show
 what the graph says, ignored or not.
 
 ## Known boundaries

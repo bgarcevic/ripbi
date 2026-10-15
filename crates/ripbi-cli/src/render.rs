@@ -1,7 +1,7 @@
 //! Rendering: everything a scan prints to stdout, in the three output modes
 //! from `docs/cli-ux-guidelines.md` — human text, `--plain`, and `--json`.
-//! The full contract (shapes, examples, schema) lives in `docs/output.md`
-//! beside this crate.
+//! The full contract (shapes, examples, schema) lives in `docs/scan/` beside
+//! this crate: `human-output.md`, `text-formats.md`, and `json.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -982,7 +982,7 @@ pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     Ok(())
 }
 
-/// Writes `--json` output: the v1 schema from `docs/output.md`.
+/// Writes `--json` output: the v1 schema from `docs/scan/json.md`.
 ///
 /// # Errors
 /// Propagates stream write failures.

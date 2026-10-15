@@ -73,7 +73,7 @@ measure 'Budget Variance' = [Budget] - [Actual]
 ```
 
 `[scan].ignore` patterns in a `ripbi.toml` also work. See
-[Keeping objects on purpose](https://bgarcevic.github.io/ripbi/output.html#keeping-objects-on-purpose).
+[Keeping objects on purpose](https://bgarcevic.github.io/ripbi/scan/keep.html).
 
 ## Versions
 

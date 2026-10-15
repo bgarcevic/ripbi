@@ -205,9 +205,10 @@ documented in the user guide's
 
 ## Output
 
-The full output contract (human, `--summary`, `--plain`, `--json`, and
-`ripbi.toml` configuration) is documented in the user guide's
-[scan chapter](https://bgarcevic.github.io/ripbi/output.html).
+Every flag and output format (human, `--summary`, `--plain`, `--json`, SARIF,
+Markdown, Azure DevOps) is documented in the user guide's
+[scan reference](https://bgarcevic.github.io/ripbi/scan/overview.html), and
+project settings in [`ripbi.toml`](https://bgarcevic.github.io/ripbi/config.html).
 
 ## Contributing
 

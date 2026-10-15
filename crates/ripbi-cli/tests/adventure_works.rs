@@ -57,7 +57,7 @@ const LIVE_GUARDS: &[&str] = &[
     "'Category'[Sorting]",         // used by Product's sort-by (live)
 ];
 
-/// The one accepted static-analysis delta, documented in docs/output.md:
+/// The one accepted static-analysis delta, documented in docs/scan/boundaries.md:
 /// the dead 'Time Intelligence' field-parameter cluster. ripbi reports it,
 /// because nothing anywhere references it — not even a single binding.
 fn is_expected_extra(kind: &str, id: &str) -> bool {

@@ -1,0 +1,33 @@
+# `scan` flags
+
+Every flag `ripbi scan` accepts. The output modes (`--json`, `--plain`, `--sarif`,
+`--azure-devops`, `--emit`, `--summary`) are mutually exclusive on stdout; the
+`--*-file` flags write extra outputs beside any of them.
+
+| Flag | Effect |
+|---|---|
+| `--json` | JSON on stdout (see [JSON output](json.md)). Mutually exclusive with `--plain` and `--summary` |
+| `--plain` | One `<type>\t<id>` record per finding, for grep/awk |
+| `--sarif` | A SARIF 2.1.0 log on stdout for GitHub code scanning and Azure DevOps (see [SARIF](ci-formats.md#sarif)). Mutually exclusive with `--json`, `--plain`, and `--summary` |
+| `--azure-devops` | One `##vso[task.logissue]` logging command per finding on stdout, so an Azure Pipelines run lists them as warnings and errors (see [Azure DevOps](ci-formats.md#azure-devops)). Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--summary` |
+| `--sarif-file <PATH>` | Also write the `--sarif` log to `PATH`, whatever stdout shows (see [Several outputs from one scan](ci-formats.md#several-outputs-from-one-scan)) |
+| `--json-file <PATH>` | Also write the `--json` output to `PATH` |
+| `--markdown-file <PATH>` | Also write a Markdown summary to `PATH`, for a CI job summary or pull request comment (see [Markdown](ci-formats.md#markdown)) |
+| `--emit tx-rm` | JSON Lines for tomix's `tx rm --from` on stdout instead of findings: one object per line, removed together as one change (see [Removing with tomix](tx-rm.md)). Mutually exclusive with `--json`, `--plain`, `--sarif`, `--azure-devops`, and `--summary` |
+| `-s`, `--summary` | Counts only: the summary line and per-type totals, no findings list. Mutually exclusive with `--json`, `--plain`, `--sarif`, and `--azure-devops` |
+| `-q`, `--quiet` | No output; exit code only |
+| `-v`, `--verbose` | Full pairing audit trail on stderr: every report's name in the scanning line, one pairing note per by-name-matched report, the complete ignored-reports list. The default caps each to one line |
+| `--model <PATH>` | Analyze one named semantic model (`.SemanticModel`, its `definition/`, a folder holding `model.tmdl`, or the project's `.pbip`). Disables cwd discovery and the `ripbi.toml` `target`; plain `--report` folders become search folders for reports bound to this model. Conflicts with `PATH` |
+| `--report <PATH>` | Extra report root; repeatable. Replaces `reports` from `ripbi.toml`. A `.pbip` expands to its project's reports. When the target is `--model` or a PATH naming a semantic model, a folder that is not itself a report item is searched recursively for reports bound to the model; with no other target, the reports' pairing derives the model and exactly these reports are scanned |
+| `--type <TYPE>` | Report only unused objects of the passed types; repeatable, and passed together they union (`--type measure --type bookmark`). Vocabulary is the machine kind keys shared with `deps --type`: `table`, `column`, `measure`, `hierarchy`, `partition`, `relationship`, `role`, `calculation_item`, `expression`, `function`, `report_measure`, `bookmark`. Filters every output mode and the exit code. With none of them, everything is reported |
+| `--broken` | Report broken visual bindings and DAX artifacts with unresolved references (issues #60/#84). Unions with the type selection (`--broken --type measure` gates on both); alone, it scopes the run to breakage. Without `--broken` or `--type`, breakage is reported but does not change the exit code. `unknown_object` model skips suppress breakage claims — see the precision bar under [Human output](human-output.md) |
+| `--sort <KEY>` | Order unused findings by `name` (the default: object identity) or `size` (largest storage first, findings without size data last, identity order among equals) in every output mode; human groups keep their fixed order and sort within. Size data comes from PBIX and `.abf` models, or from a storage source attached to any other model (see [Storage sizes](storage.md)); without it `size` keeps name order and says so in a `Note:` on stderr |
+| `--stats-from <PATH>` | Attach storage sizes to a model with no catalog of its own (PBIP, TMDL, `model.bim`, PBIT) from an `.abf` backup, a PBIX saved with its data, or a VertiPaq Analyzer `.vpax`; `none` turns off `.pbi/cache.abf` auto-detection. Replaces `[scan].stats_from`. A usage error (exit `2`) on a PBIX or `.abf` model, or when the source cannot be read or has no storage catalog. See [Storage sizes](storage.md) |
+| `--queries-from <PATH>` | Add a workspace-monitoring query-log export as consumers: every object its logged DAX or MDX queries name is a root, like a report binding. Replaces `queries_from` in `ripbi.toml`. Exit `2` when the file cannot be read or has no `EventText` column. See [Logged queries](queries.md) |
+| `--compare-root <DIR>` | Rerun the same scan in another checkout (the base branch, a previous release) and report and gate on only the findings that did not exist there; findings gone since are listed as fixed. Exit `2` when `DIR` is not a folder. See [Comparing against another checkout](compare.md) |
+| `--compare-label <NAME>` | What the output calls the `--compare-root` checkout, e.g. the branch it holds: `(412 findings already in main)`. Defaults to `DIR` as given. `--json`'s `compare.root` stays `DIR`. Needs `--compare-root` |
+| `--power-query` | Also print the `⭘ Power Query also names it` annotations (human output; a no-op in `--plain`, `--json`, and `-q`, whose consumers filter themselves) |
+| `--strict` | Any parser skip notice becomes exit code `2` |
+| `--allow-no-reports` | Skip a model with no connected reports instead of refusing with exit `2`: a `Skipped …` notice on stderr (suppressed by `-q`), exit `0`, and no stdout output in any mode. Lets a pipeline point the scan at every model and let each run decide whether it has anything to scan against — models are re-checked every run, so no exclusion list is needed |
+| `--no-color` | Never color, and no progress ticker (both are also off off-TTY, under `NO_COLOR`, or `TERM=dumb`; the ticker also needs a TTY stdout and human mode). `CLICOLOR_FORCE=1` turns color, never the ticker, on off-TTY, e.g. for CI logs |
+| `--no-input` | Never prompt; fail where a picker would appear |

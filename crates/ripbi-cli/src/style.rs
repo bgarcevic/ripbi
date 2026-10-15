@@ -7,7 +7,7 @@
 //! rust for dead wood (unused findings), moss for living wood (a clean scan),
 //! brick for breakage and errors, and warm greys for structure. Styling only
 //! ever adds color: the text is byte-identical with the palette off, so every
-//! output contract (`docs/output.md`) is defined by the uncolored form.
+//! output contract (`docs/scan/`) is defined by the uncolored form.
 
 /// One ink as a 24-bit color plus its nearest xterm-256 index, for terminals
 /// that do not advertise truecolor.
