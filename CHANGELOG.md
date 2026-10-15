@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Broken visual bindings name the visual and page as Power BI Desktop shows them:
+  the visual's type and literal title and the page's tab name, with the generated
+  IDs in parentheses — `lineChart visual 'Sick leave %' (id '6caf…') on page
+  'Absence' (id 'b725…')` instead of only the IDs. Human, Markdown and SARIF
+  output use the new phrase; `scan --json` adds it as `broken[].location` and
+  keeps `provenance` unchanged, so baselines still match.
 - Builds against `zip` 9. An archive member whose name cannot be read now fails
   with an error instead of being skipped silently.
 
