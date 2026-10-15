@@ -621,6 +621,7 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
     Some(Visual {
         name: NameKey::new(value.get("name").and_then(Value::as_str).unwrap_or(folder)),
         visual_type: visual_type.to_string(),
+        title: visual_title(inner.get("visualContainerObjects")),
         wells,
         filters,
         sorts: query
@@ -1793,6 +1794,25 @@ fn tooltip_page(objects: Option<&Value>, ctx: &mut Ctx, location: &str) -> Optio
     None
 }
 
+/// Reads a visual's literal title
+/// (`<objects>.title[].properties.text.expr.Literal.Value`) — the same shape
+/// under PBIR `visualContainerObjects` and the legacy layout's `vcObjects`.
+/// A title bound to a measure, or left to Power BI's auto-generated default,
+/// has no literal and reads as `None`; so does an empty one.
+pub(super) fn visual_title(objects: Option<&Value>) -> Option<String> {
+    objects?
+        .get("title")?
+        .as_array()?
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .pointer("/properties/text/expr/Literal/Value")
+                .and_then(Value::as_str)
+        })
+        .map(unquote_literal)
+        .find(|title| !title.trim().is_empty())
+}
+
 // --- Key policies ------------------------------------------------------------
 
 /// The key policy for one JSON object: `known` keys are parsed into the AST,
@@ -2457,6 +2477,27 @@ mod tests {
         #[case::unquoted("Top", "Top")]
         fn unquote_literal_strips_quotes(#[case] input: &str, #[case] expected: &str) {
             assert_eq!(unquote_literal(input), expected);
+        }
+
+        /// A literal title is the visual's label in findings; a title bound
+        /// to a measure, or a blank one, is no label.
+        #[rstest]
+        #[case::literal(
+            r#"{"title": [{"properties": {"text": {"expr": {"Literal": {"Value": "'Sick leave %'"}}}}}]}"#,
+            Some("Sick leave %")
+        )]
+        #[case::measure_bound(
+            r#"{"title": [{"properties": {"text": {"expr": {"Measure": {"Property": "Title"}}}}}]}"#,
+            None
+        )]
+        #[case::blank(
+            r#"{"title": [{"properties": {"text": {"expr": {"Literal": {"Value": "' '"}}}}}]}"#,
+            None
+        )]
+        #[case::absent(r#"{"general": []}"#, None)]
+        fn visual_title_reads_the_literal_text(#[case] json: &str, #[case] expected: Option<&str>) {
+            let objects: Value = serde_json::from_str(json).unwrap();
+            assert_eq!(visual_title(Some(&objects)).as_deref(), expected);
         }
     }
 

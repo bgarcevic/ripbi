@@ -120,6 +120,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
             visuals: vec![Visual {
                 name: NameKey::new("Card"),
                 visual_type: "card".to_string(),
+                title: None,
                 wells: vec![FieldWell {
                     role: "Values".to_string(),
                     projections: vec![Projection {

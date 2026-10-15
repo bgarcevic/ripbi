@@ -47,6 +47,7 @@ fn report_binding(table: &str, column: &str) -> ReportModel {
             visuals: vec![Visual {
                 name: NameKey::new("V1"),
                 visual_type: "card".to_string(),
+                title: None,
                 wells: vec![FieldWell {
                     role: "Values".to_string(),
                     projections: vec![Projection {

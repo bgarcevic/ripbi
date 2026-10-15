@@ -239,14 +239,17 @@ Columns (28)
   report binding whose written field reference resolves to nothing in the model, or
   that lands on an artifact whose own DAX no longer resolves — the static form of the
   error state the service would render. Each row names the written reference, the
-  reason, and the binding's site:
+  reason, and the binding's site as Power BI Desktop shows it — the visual's type
+  and literal title, the page's tab name — with the generated IDs in parentheses
+  for finding the PBIR folder. A visual without a literal title (an auto-generated
+  or measure-bound one) is named by its ID:
 
   ```text
   Broken visual bindings (2)
     'Sales'[Color]
-      ← field not found in the model — field well 'Values' — visual 'V2' on page 'P1'
+      ← field not found in the model — field well 'Values' — card visual 'Colors sold' (id 'V2') on page 'Overview' (id 'P1')
     'Sales'[Broken Total]
-      ← bound artifact 'Sales'[Broken Total] has unresolvable references — field well 'Values' — visual 'V3' on page 'P1'
+      ← bound artifact 'Sales'[Broken Total] has unresolvable references — field well 'Values' — card visual 'V3' on page 'Overview' (id 'P1')
   ```
 
   The section is a different verdict than reachability's — written references, not
@@ -806,14 +809,16 @@ Pretty-printed JSON, stable field order, additive schema:
       "reason": "field_not_found",
       "bound_artifact": null,
       "bound_artifact_report": null,
-      "provenance": "field well 'Values' — visual 'V2' on page 'P1'"
+      "provenance": "field well 'Values' — visual 'V2' on page 'P1'",
+      "location": "field well 'Values' — card visual 'Colors sold' (id 'V2') on page 'Overview' (id 'P1')"
     },
     {
       "target": "'Sales'[Broken Total]",
       "reason": "bound_artifact_broken",
       "bound_artifact": "'Sales'[Broken Total]",
       "bound_artifact_report": null,
-      "provenance": "field well 'Values' — visual 'V3' on page 'P1'"
+      "provenance": "field well 'Values' — visual 'V3' on page 'P1'",
+      "location": "field well 'Values' — card visual 'V3' on page 'Overview' (id 'P1')"
     }
   ],
   "broken_artifacts": [
@@ -885,7 +890,10 @@ Pretty-printed JSON, stable field order, additive schema:
   `bound_artifact_report` is the report path for a report-level measure and null
   for model artifacts or other reasons; `provenance`
   is the same binding-site phrase the unused findings' `used_by` entries carry,
-  `mobile layout …` prefixed for phone-layout bindings. Bindings suppressed by the
+  `mobile layout …` prefixed for phone-layout bindings — IDs only, so it stays a
+  stable key (baselines compare on it) when a visual is retitled; `location` is
+  the same site with the visual's type and title and the page's display name, for
+  people. Bindings suppressed by the
   clean-ingest bar or by `[scan].ignore` are absent entirely; the totals above keep
   the arithmetic.
 - `broken_artifacts` carries one row per DAX owner: `id`, object `type`, nullable

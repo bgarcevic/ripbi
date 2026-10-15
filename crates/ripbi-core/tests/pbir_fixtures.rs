@@ -86,6 +86,7 @@ fn golden_report() -> ReportModel {
                     Visual {
                         name: NameKey::new("V1"),
                         visual_type: "slicer".to_string(),
+                        title: None,
                         wells: vec![FieldWell {
                             role: "Category".to_string(),
                             projections: vec![Projection {
@@ -115,6 +116,7 @@ fn golden_report() -> ReportModel {
                     Visual {
                         name: NameKey::new("V2"),
                         visual_type: "card".to_string(),
+                        title: None,
                         wells: vec![FieldWell {
                             role: "Values".to_string(),
                             projections: vec![
@@ -178,6 +180,7 @@ fn golden_report() -> ReportModel {
             visuals: vec![Visual {
                 name: NameKey::new("VM"),
                 visual_type: "card".to_string(),
+                title: None,
                 wells: vec![FieldWell {
                     role: "Values".to_string(),
                     projections: vec![Projection {

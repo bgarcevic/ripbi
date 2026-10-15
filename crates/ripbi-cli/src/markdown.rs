@@ -131,7 +131,7 @@ fn rows(report: &ScanOutput) -> Vec<(String, String, String)> {
             format!(
                 "{} — {}",
                 cell(&render::reason_phrase(binding)),
-                cell(&binding.provenance)
+                cell(&binding.location)
             ),
         ));
     }

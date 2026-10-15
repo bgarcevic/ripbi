@@ -26,10 +26,10 @@ use crate::model::{
     ColumnKind, DaxExpressionRef, Hierarchy, HierarchyRef, Relationship, Table, TabularDatabase,
     Variation,
 };
-use crate::report::{BindingKind, Bookmark, FieldTarget, ReportModel};
+use crate::report::{BindingKind, Bookmark, FieldTarget, Page, ReportModel};
 
 use super::broken::{self, BrokenBinding, BrokenReason};
-use super::provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
+use super::provenance::{BindingEdge, BindingSite, Provenance, SiteLabels, StructuralEdge};
 use super::{DependencyGraph, KeptObject};
 
 /// Assembles the graph for one model and every report sharing it. Never fails:
@@ -673,6 +673,7 @@ impl Builder {
                 visual: binding.visual.cloned(),
                 bookmark: binding.bookmark.cloned(),
                 mobile: binding.mobile,
+                labels: site_labels(report, binding.page, binding.visual, binding.mobile),
             };
             let provenance = Provenance::Binding(Box::new(edge.clone()));
             let outcome = self.field_target_outcome(db, index, report, binding.target);
@@ -1294,6 +1295,44 @@ fn relationship_node_id(relationship: &crate::model::Relationship) -> ObjectId {
         to_table: NameKey::new(&relationship.to_table),
         to_column: NameKey::new(&relationship.to_column),
     }
+}
+
+/// The display labels of a binding's page and visual, looked up by ID. A
+/// phone-layout binding looks in the mobile tree first, which mirrors the
+/// desktop one under the same IDs; a bookmark's saved visual is labelled from
+/// the live page it was saved on. An ID the report no longer defines simply
+/// has no labels.
+fn site_labels(
+    report: &ReportModel,
+    page: Option<&NameKey>,
+    visual: Option<&NameKey>,
+    mobile: bool,
+) -> SiteLabels {
+    let Some(page) = page else {
+        return SiteLabels::default();
+    };
+    let desktop = page_named(&report.pages, page);
+    let mobile = mobile
+        .then(|| page_named(&report.mobile_pages, page))
+        .flatten();
+    let visual = visual.and_then(|name| {
+        mobile
+            .into_iter()
+            .chain(desktop)
+            .flat_map(|page| &page.visuals)
+            .find(|visual| visual.name == *name)
+    });
+    SiteLabels {
+        page: mobile
+            .and_then(|page| page.display_name.clone())
+            .or_else(|| desktop.and_then(|page| page.display_name.clone())),
+        visual_type: visual.map(|visual| visual.visual_type.clone()),
+        visual_title: visual.and_then(|visual| visual.title.clone()),
+    }
+}
+
+fn page_named<'a>(pages: &'a [Page], name: &NameKey) -> Option<&'a Page> {
+    pages.iter().find(|page| page.name == *name)
 }
 
 fn binding_site(kind: BindingKind<'_>) -> BindingSite {

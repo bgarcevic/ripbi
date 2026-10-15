@@ -22,7 +22,7 @@ type Result = {
     broken_artifacts: number;
   };
   unused: Finding[];
-  broken: { target: string; reason: string; provenance: string }[];
+  broken: { target: string; reason: string; provenance: string; location: string }[];
   broken_artifacts: {
     id: string;
     type: string;
@@ -213,7 +213,7 @@ function findingList() {
 function otherFindings() {
   const r = analysis!.result;
   if (tab === "broken")
-    return `<div class="detail-list">${[...r.broken.map((f) => `<article><strong>${escape(f.target)}</strong><p>${escape(label(f.reason))} · ${escape(f.provenance)}</p></article>`), ...r.broken_artifacts.map((f) => `<article><strong>${escape(f.id)}</strong><p>Unresolved: ${f.unresolved_references.map(escape).join(", ")}</p></article>`)].join("") || "<p>No broken references reported. Check coverage notices for parser limitations.</p>"}</div>`;
+    return `<div class="detail-list">${[...r.broken.map((f) => `<article><strong>${escape(f.target)}</strong><p>${escape(label(f.reason))} · ${escape(f.location)}</p></article>`), ...r.broken_artifacts.map((f) => `<article><strong>${escape(f.id)}</strong><p>Unresolved: ${f.unresolved_references.map(escape).join(", ")}</p></article>`)].join("") || "<p>No broken references reported. Check coverage notices for parser limitations.</p>"}</div>`;
   if (tab === "dates")
     return `<div class="detail-list">${r.auto_date_time.map((f) => `<article><span class="type-pill">${escape(label(f.verdict))}</span><strong>${escape(f.id)}</strong><p>${escape(f.source_column || "Date table template")}${f.finding ? ` · ${f.finding.used_by.length} referencing objects` : ""}</p></article>`).join("") || "<p>No auto date/time tables found.</p>"}</div>`;
   return `<div class="detail-list"><h3>Connected reports (${r.reports.length})</h3><ul>${r.reports.map((p) => `<li>${escape(p)}</li>`).join("")}</ul><h3>Parser notices (${r.skips.count})</h3>${r.skips.notices.map((n) => `<article><strong>${escape(n.path)}</strong><p>${escape(n.detail)}</p></article>`).join("") || "<p>No parser skips reported.</p>"}<h3>Discovery & configuration log</h3><pre>${escape(analysis!.diagnostics)}</pre></div>`;

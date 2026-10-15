@@ -214,6 +214,7 @@ fn visual(
     Visual {
         name: NameKey::new(&name),
         visual_type: visual_type.to_string(),
+        title: super::pbir::visual_title(inner.get("vcObjects")),
         wells,
         filters,
         sorts,

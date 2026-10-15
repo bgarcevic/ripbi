@@ -142,6 +142,11 @@ pub struct Visual {
     pub name: NameKey,
     /// Visual type as written, e.g. `"donutChart"`, `"slicer"`, `"card"`.
     pub visual_type: String,
+    /// The title the author typed, when it is a literal (PBIR
+    /// `visualContainerObjects.title[].properties.text`). Display only: it
+    /// tells a user which visual a finding means, since `name` is a generated
+    /// ID nobody sees in Power BI Desktop. `None` for auto-generated titles.
+    pub title: Option<String>,
     /// Field wells (PBIR `query.queryState`): role → projections.
     pub wells: Vec<FieldWell>,
     /// Filters applied to this visual only.
@@ -710,6 +715,7 @@ mod tests {
         Visual {
             name: NameKey::new(name),
             visual_type: visual_type.to_string(),
+            title: None,
             wells: Vec::new(),
             filters: Vec::new(),
             sorts: Vec::new(),

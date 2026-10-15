@@ -42,6 +42,7 @@ fn report() -> ReportModel {
             visuals: vec![Visual {
                 name: NameKey::new("Slicer"),
                 visual_type: "slicer".to_string(),
+                title: None,
                 wells: vec![FieldWell {
                     role: "Fields".to_string(),
                     projections: vec![Projection {

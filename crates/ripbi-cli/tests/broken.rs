@@ -198,6 +198,13 @@ fn the_fixture_flags_exactly_the_two_broken_bindings() {
             .contains("field well 'Values' — visual 'V2' on page 'P1'"),
         "the site names the visual:\n{color}"
     );
+    assert!(
+        color["location"]
+            .as_str()
+            .expect("location")
+            .contains("card visual 'Colors sold' (id 'V2') on page 'Overview' (id 'P1')"),
+        "the location names the visual and page as Power BI Desktop shows them:\n{color}"
+    );
 
     let broken_total = &payload["broken"][1];
     assert_eq!(broken_total["reason"], "bound_artifact_broken");
@@ -243,11 +250,11 @@ fn the_human_output_names_field_reason_and_site() {
     assert!(stdout.contains("Broken artifacts (1)"), "{stdout}");
     assert!(stdout.contains("← 'Sales'[Nope] not found"), "{stdout}");
     assert!(
-        stdout.contains("  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — visual 'V2' on page 'P1'\n"),
-        "the dropped-column binding:\n{stdout}"
+        stdout.contains("  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — card visual 'Colors sold' (id 'V2') on page 'Overview' (id 'P1')"),
+        "the dropped-column binding names the visual and page as Power BI Desktop shows them:\n{stdout}"
     );
     assert!(
-        stdout.contains("← bound artifact 'Sales'[Broken Total] has unresolvable references — field well 'Values' — visual 'V3' on page 'P1'\n"),
+        stdout.contains("← bound artifact 'Sales'[Broken Total] has unresolvable references — field well 'Values' — card visual 'V3' on page 'Overview' (id 'P1')"),
         "the inherited breakage names the artifact:\n{stdout}"
     );
     assert!(
