@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stale_state` skip notice, so `--strict` fails on it. A queried table keeps its
   columns alive (a table expression returns every one), not its measures.
 
+### Changed
+
+- Builds against `zip` 9. An archive member whose name cannot be read now fails
+  with an error instead of being skipped silently.
+
 ## [0.8.1] - 2026-09-29
 
 ### Added
