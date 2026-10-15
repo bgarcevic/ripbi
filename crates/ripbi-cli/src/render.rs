@@ -208,8 +208,13 @@ pub struct BrokenOut {
     /// Report path when the bound artifact is a report-level measure.
     pub bound_artifact_report: Option<String>,
     /// Where the binding lives, as a phrase — the same provenance rendering
-    /// the unused findings' `used_by` lines carry.
+    /// the unused findings' `used_by` lines carry. Stable: it keys baselines.
     pub provenance: String,
+    /// Where the binding lives, phrased so a person can find it in Power BI
+    /// Desktop: the visual's type and title and the page's tab name, with
+    /// the generated IDs alongside. Display only — it changes when a visual
+    /// is retitled, so nothing keys on it.
+    pub location: String,
 }
 
 /// One DAX-owning artifact with unresolved references.
@@ -508,7 +513,7 @@ fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput)
             palette.dim(&format!(
                 "    ← {} — {}",
                 reason_phrase(binding),
-                binding.provenance
+                binding.location
             ))
         )?;
     }
@@ -1025,6 +1030,7 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 bound_artifact: binding.bound_artifact.clone(),
                 bound_artifact_report: binding.bound_artifact_report.clone(),
                 provenance: binding.provenance.clone(),
+                location: binding.location.clone(),
             })
             .collect(),
         broken_artifacts: report
@@ -1116,8 +1122,11 @@ struct JsonBroken {
     bound_artifact: Option<String>,
     bound_artifact_report: Option<String>,
     /// Where the binding lives, as a phrase — the same provenance the unused
-    /// findings' `used_by` entries carry.
+    /// findings' `used_by` entries carry. Stable across retitles.
     provenance: String,
+    /// The same site with the visual's type and title and the page's display
+    /// name — what Power BI Desktop shows. Display only.
+    location: String,
 }
 
 #[derive(Serialize)]
@@ -1716,6 +1725,9 @@ mod tests {
             bound_artifact_report: None,
             provenance: "field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
                 .to_string(),
+            location: "field well 'Values' — card visual 'Revenue' (id 'V1') on page \
+                       'Overview' (id 'P1') in report 'Mini'"
+                .to_string(),
         }
     }
 
@@ -1732,7 +1744,7 @@ mod tests {
 
         let text = String::from_utf8(out).unwrap();
         assert!(
-            text.contains("Broken visual bindings (1)\n  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'\n"),
+            text.contains("Broken visual bindings (1)\n  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — card visual 'Revenue' (id 'V1') on page 'Overview' (id 'P1') in report 'Mini'\n"),
             "the section names the field, the reason, and the site:\n{text}"
         );
         assert!(text.contains("No unused objects."));
@@ -1863,6 +1875,11 @@ mod tests {
         assert_eq!(
             value["broken"][0]["provenance"],
             "field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
+        );
+        assert_eq!(
+            value["broken"][0]["location"],
+            "field well 'Values' — card visual 'Revenue' (id 'V1') on page 'Overview' (id 'P1') \
+             in report 'Mini'"
         );
     }
 

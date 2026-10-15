@@ -103,6 +103,7 @@
 //!         visuals: vec![Visual {
 //!             name: NameKey::new("V1"),
 //!             visual_type: "card".to_string(),
+//!             title: None,
 //!             wells: vec![FieldWell {
 //!                 role: "Values".to_string(),
 //!                 projections: vec![Projection {
@@ -154,7 +155,7 @@ mod builder;
 mod reachability;
 
 pub use broken::{BrokenArtifact, BrokenBinding, BrokenReason};
-pub use provenance::{BindingEdge, BindingSite, Provenance, StructuralEdge};
+pub use provenance::{BindingEdge, BindingSite, Provenance, SiteLabels, StructuralEdge};
 pub use reachability::{UnusedObject, UsedBy};
 pub use slice::{DepEdge, DepSlice};
 
@@ -744,6 +745,7 @@ mod tests {
                 visuals: vec![Visual {
                     name: NameKey::new(visual),
                     visual_type: "card".to_string(),
+                    title: None,
                     wells: vec![FieldWell {
                         role: "Values".to_string(),
                         projections: targets
@@ -2783,6 +2785,7 @@ mod tests {
                 visual,
                 bookmark,
                 mobile,
+                labels,
             } = edge.as_ref();
             assert!(matches!(kind, BindingSite::FieldWell { role } if role == "Values"));
             assert_eq!(report_name.as_ref().map(NameKey::as_str), Some("Mini"));
@@ -2790,6 +2793,7 @@ mod tests {
             assert_eq!(visual.as_ref().map(NameKey::as_str), Some("Card"));
             assert!(bookmark.is_none());
             assert!(!mobile);
+            assert_eq!(labels.visual_type.as_deref(), Some("card"));
         }
     }
 
@@ -3423,6 +3427,7 @@ mod tests {
                     visuals: vec![Visual {
                         name: NameKey::new("V1"),
                         visual_type: "card".to_string(),
+                        title: None,
                         wells: vec![FieldWell {
                             role: "Values".to_string(),
                             projections: vec![Projection {

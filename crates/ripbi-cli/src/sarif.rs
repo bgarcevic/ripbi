@@ -469,7 +469,7 @@ impl<'a> Context<'a> {
             "Broken visual binding {}: {} ({}).",
             binding.target,
             crate::render::reason_phrase(binding),
-            binding.provenance
+            binding.location
         );
         self.issue(&entry, "broken_visual", message, &binding.target)
     }

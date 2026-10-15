@@ -665,6 +665,7 @@ fn scan(
             bound_artifact,
             bound_artifact_report,
             provenance,
+            location: binding.edge.located().to_string(),
         };
         if is_existing {
             kept_existing.broken.push(out);

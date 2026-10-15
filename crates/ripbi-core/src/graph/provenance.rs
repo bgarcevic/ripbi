@@ -62,6 +62,89 @@ pub struct BindingEdge {
     /// identically — but it tells a user auditing a survivor which surface to
     /// look at (issue #49).
     pub mobile: bool,
+    /// What a person sees in Power BI Desktop for the page and visual, which
+    /// the generated `page`/`visual` IDs do not tell them. Display only:
+    /// derived from the IDs, so it never changes edge identity, and kept out
+    /// of [`Display`](fmt::Display) — that phrase is a stable comparison key
+    /// (baselines), and a retitled visual must not turn a finding new.
+    pub labels: SiteLabels,
+}
+
+/// The human labels of a binding's page and visual — see
+/// [`BindingEdge::labels`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct SiteLabels {
+    /// The page's display name (the tab name in Power BI Desktop).
+    pub page: Option<String>,
+    /// The visual's type as written, e.g. `"lineChart"`.
+    pub visual_type: Option<String>,
+    /// The visual's literal title.
+    pub visual_title: Option<String>,
+}
+
+impl BindingEdge {
+    /// The binding's site described for a person looking for it in Power BI
+    /// Desktop, e.g. `filter — lineChart visual 'Sick leave' (id
+    /// '6caf…') on page 'Absence' (id 'b725…') in report 'HR'`. Falls back
+    /// to the IDs wherever a label is missing; use [`Display`](fmt::Display)
+    /// for the stable form.
+    #[must_use]
+    pub fn located(&self) -> impl fmt::Display + '_ {
+        Located(self)
+    }
+}
+
+/// [`BindingEdge::located`]'s rendering.
+struct Located<'a>(&'a BindingEdge);
+
+impl fmt::Display for Located<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let BindingEdge {
+            kind,
+            report,
+            page,
+            visual,
+            bookmark,
+            mobile,
+            labels,
+        } = self.0;
+        if *mobile {
+            f.write_str("mobile layout ")?;
+        }
+        write_site(f, kind)?;
+        if let Some(visual) = visual {
+            f.write_str(" — ")?;
+            if let Some(visual_type) = &labels.visual_type {
+                write!(f, "{visual_type} ")?;
+            }
+            write_labelled(f, "visual", visual, labels.visual_title.as_deref())?;
+        }
+        if let Some(page) = page {
+            f.write_str(" on ")?;
+            write_labelled(f, "page", page, labels.page.as_deref())?;
+        }
+        if let Some(bookmark) = bookmark {
+            write!(f, " in bookmark {}", Quoted(bookmark.as_str()))?;
+        }
+        if let Some(report) = report {
+            write!(f, " in report {}", Quoted(report.as_str()))?;
+        }
+        Ok(())
+    }
+}
+
+/// `noun 'Label' (id 'ID')`, or `noun 'ID'` when there is no label or the
+/// label is the ID itself.
+fn write_labelled(
+    f: &mut fmt::Formatter<'_>,
+    noun: &str,
+    id: &NameKey,
+    label: Option<&str>,
+) -> fmt::Result {
+    match label.filter(|label| *label != id.as_str()) {
+        Some(label) => write!(f, "{noun} {} (id {})", Quoted(label), Quoted(id.as_str())),
+        None => write!(f, "{noun} {}", Quoted(id.as_str())),
+    }
 }
 
 impl fmt::Display for BindingEdge {
@@ -78,6 +161,7 @@ impl fmt::Display for BindingEdge {
             visual,
             bookmark,
             mobile,
+            labels: _,
         } = self;
         if *mobile {
             f.write_str("mobile layout ")?;
@@ -398,6 +482,7 @@ mod tests {
             visual: Some(NameKey::new("V1")),
             bookmark: None,
             mobile: false,
+            labels: SiteLabels::default(),
         }))
     }
 
@@ -424,6 +509,7 @@ mod tests {
                 visual: Some(NameKey::new("V1")),
                 bookmark: Some(NameKey::new("B1")),
                 mobile: false,
+                labels: SiteLabels::default(),
             }));
 
             assert_eq!(
@@ -445,12 +531,67 @@ mod tests {
                 visual: Some(NameKey::new("V1")),
                 bookmark: None,
                 mobile: true,
+                labels: SiteLabels::default(),
             }));
 
             assert_eq!(
                 provenance.to_string(),
                 "mobile layout field well 'Values' — visual 'V1' on page 'P1' in report 'Mini'"
             );
+        }
+
+        /// Labels never reach the stable phrase: it is a baseline key, and a
+        /// retitled visual or renamed page must not turn a finding new.
+        #[test]
+        fn labels_stay_out_of_the_stable_phrase() {
+            let mut edge = labelled_edge();
+            let plain = edge.to_string();
+            edge.labels = SiteLabels::default();
+
+            assert_eq!(plain, edge.to_string());
+        }
+
+        /// The located phrase leads with what Power BI Desktop shows — the
+        /// visual's type and title, the page's tab name — and keeps the IDs
+        /// for searching the PBIR folders.
+        #[test]
+        fn the_located_phrase_names_the_visual_and_page_as_desktop_shows_them() {
+            assert_eq!(
+                labelled_edge().located().to_string(),
+                "filter — lineChart visual 'Sick leave %' (id '6caf') on page \
+                 'Absence' (id 'b725') in report 'HR'"
+            );
+        }
+
+        /// Without labels, the located phrase falls back to the IDs.
+        #[test]
+        fn the_located_phrase_falls_back_to_ids() {
+            let mut edge = labelled_edge();
+            edge.labels = SiteLabels {
+                visual_type: Some("card".to_string()),
+                ..SiteLabels::default()
+            };
+
+            assert_eq!(
+                edge.located().to_string(),
+                "filter — card visual '6caf' on page 'b725' in report 'HR'"
+            );
+        }
+
+        fn labelled_edge() -> BindingEdge {
+            BindingEdge {
+                kind: BindingSite::Filter,
+                report: Some(NameKey::new("HR")),
+                page: Some(NameKey::new("b725")),
+                visual: Some(NameKey::new("6caf")),
+                bookmark: None,
+                mobile: false,
+                labels: SiteLabels {
+                    page: Some("Absence".to_string()),
+                    visual_type: Some("lineChart".to_string()),
+                    visual_title: Some("Sick leave %".to_string()),
+                },
+            }
         }
 
         #[test]
@@ -462,6 +603,7 @@ mod tests {
                 visual: None,
                 bookmark: None,
                 mobile: false,
+                labels: SiteLabels::default(),
             }));
 
             assert_eq!(provenance.to_string(), "filter");
