@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The user guide is reorganized by task.** The scan chapter, one long page, is
+  split into topic pages under `scan/`, and the book gains Guides (including a
+  new *Cleaning up a model* walkthrough), Concepts, and a single `ripbi.toml`
+  reference page. Old `output.html#…` links redirect to their new pages. SARIF
+  rules' `helpUri` now points at `scan/ci-formats.html#sarif`, and `scan --help`
+  names the new doc paths.
 - Broken visual bindings name the visual and page as Power BI Desktop shows them:
   the visual's type and literal title and the page's tab name, with the generated
   IDs in parentheses — `lineChart visual 'Sick leave %' (id '6caf…') on page
