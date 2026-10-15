@@ -201,14 +201,14 @@ fn decompress(bytes: Vec<u8>, path: &Path) -> Result<Vec<u8>> {
         return Ok(bytes);
     }
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
-    let files: Vec<String> = archive
-        .file_names()
-        .filter(|name| {
-            let base = name.rsplit('/').next().unwrap_or(name);
-            !name.ends_with('/') && !name.starts_with("__MACOSX/") && !base.starts_with('.')
-        })
-        .map(str::to_string)
-        .collect();
+    let mut files = Vec::new();
+    for name in archive.file_names() {
+        let name = name?;
+        let base = name.rsplit('/').next().unwrap_or(&name);
+        if !name.ends_with('/') && !name.starts_with("__MACOSX/") && !base.starts_with('.') {
+            files.push(name.into_owned());
+        }
+    }
     let [name] = files.as_slice() else {
         return Err(Error::UnsupportedFormat(format!(
             "{} is a zip archive; expected exactly one query-log file inside, found {}",

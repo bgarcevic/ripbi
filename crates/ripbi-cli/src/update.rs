@@ -489,7 +489,12 @@ fn extract_zip(data: &[u8], version: &Version, staging: &Path) -> Result<(), Sca
         if !file.is_file() {
             continue;
         }
-        let full_name = file.name().to_string();
+        let full_name = file
+            .name()
+            .map_err(|error| {
+                ScanError::new(format!("cannot read an archive member name: {error}"))
+            })?
+            .into_owned();
         let path = Path::new(&full_name);
         if !path.starts_with(&prefix) {
             continue;

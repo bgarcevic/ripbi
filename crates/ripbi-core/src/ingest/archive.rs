@@ -70,7 +70,7 @@ pub(super) fn report(path: &Path) -> Result<Ingested<ReportModel>> {
         let mut files = HashMap::new();
         for index in 0..zip.len() {
             let mut entry = zip.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.into_owned();
             if !name.starts_with("Report/definition/")
                 && !name.starts_with("Report/definition.mobile/")
                 && name != "Report/definition.pbir"
@@ -232,8 +232,8 @@ fn mashup_queries(bytes: &[u8]) -> Result<HashMap<String, String>> {
     let mut sections = 0;
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index)?;
-        if !entry.name().starts_with("Formulas/") || !entry.name().ends_with(".m") || entry.is_dir()
-        {
+        let name = entry.name()?;
+        if !name.starts_with("Formulas/") || !name.ends_with(".m") || entry.is_dir() {
             continue;
         }
         sections += 1;
