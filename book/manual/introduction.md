@@ -21,9 +21,18 @@ and standalone `.abf` backups.
 > [`main`](https://github.com/bgarcevic/ripbi/commits/main) and may document
 > changes that have not shipped in a release yet.
 
-Start with [installation and quickstart](installation.md). Then use
-[the scan command](output.md) to find candidates for review,
-[the report command](report.md) to check what ripbi read, and
-[the deps command](deps.md) to follow an object's dependencies and impact.
-[What counts as unused](graph.md) explains how to interpret a finding before
-you remove anything.
+Start with [installation and quickstart](installation.md). The rest of the
+book is organized by what you want to do:
+
+- **Guides** walk through tasks: [cleaning up a model](cleanup.md), gating pull
+  requests on [only new findings](scan/compare.md), and
+  [keeping objects on purpose](scan/keep.md).
+- **Concepts** explain [what counts as unused](unused.md) and which
+  [inputs](inputs.md) ripbi reads. Read the first before you remove anything.
+- **Reference** documents each command in full:
+  [`scan`](scan/overview.md) finds candidates for review,
+  [`deps`](deps.md) follows an object's dependencies and impact,
+  [`report`](report.md) shows what ripbi read from a report, and
+  [`ripbi.toml`](config.md) holds project settings.
+- **Internals** specify the graph, the parsers, and the lexers, for people
+  auditing results or changing ripbi.

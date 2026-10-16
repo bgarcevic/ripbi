@@ -15,3 +15,35 @@ git-repository-url = "https://github.com/bgarcevic/ripbi"
 # gate is for the book's internal links, so CI never flakes on the network.
 follow-web-links = false
 warning-policy = "error"
+
+[output.html.redirect]
+# The scan chapter was one page, output.html, until it was split by topic.
+# SARIF logs already uploaded carry output.html#sarif as their helpUri, and
+# READMEs link the old anchors, so every old anchor lands on its new page.
+"/output.html" = "scan/overview.html"
+"/output.html#flags" = "scan/flags.html"
+"/output.html#human-output-default" = "scan/human-output.html"
+"/output.html#comparing-against-another-checkout" = "scan/compare.html"
+"/output.html#in-ci" = "scan/compare.html#in-ci"
+"/output.html#keeping-objects-on-purpose" = "scan/keep.html"
+"/output.html#logged-queries-workspace-monitoring" = "scan/queries.html"
+"/output.html#pulling-the-log-in-ci" = "scan/queries.html#pulling-the-log-in-ci"
+"/output.html#storage-sizes" = "scan/storage.html"
+"/output.html#storage-sources-for-pbip-and-tmdl-models" = "scan/storage.html#storage-sources-for-pbip-and-tmdl-models"
+"/output.html#model-only-projects-ripbi-stub-report" = "scan/storage.html#model-only-projects-ripbi-stub-report"
+"/output.html#--summary" = "scan/text-formats.html#--summary"
+"/output.html#--plain" = "scan/text-formats.html#--plain"
+"/output.html#--json" = "scan/json.html"
+"/output.html#sarif" = "scan/ci-formats.html#sarif"
+"/output.html#rules" = "scan/ci-formats.html#rules"
+"/output.html#locations" = "scan/ci-formats.html#locations"
+"/output.html#fingerprints" = "scan/ci-formats.html#fingerprints"
+"/output.html#under---compare-root" = "scan/ci-formats.html#under---compare-root"
+"/output.html#uploading" = "scan/ci-formats.html#uploading"
+"/output.html#several-outputs-from-one-scan" = "scan/ci-formats.html#several-outputs-from-one-scan"
+"/output.html#markdown" = "scan/ci-formats.html#markdown"
+"/output.html#azure-devops" = "scan/ci-formats.html#azure-devops"
+"/output.html#removing-with-tomix" = "scan/tx-rm.html"
+"/output.html#ripbitoml" = "config.html"
+"/output.html#validation" = "scan/boundaries.html#validation"
+"/output.html#known-boundaries" = "scan/boundaries.html#known-boundaries"

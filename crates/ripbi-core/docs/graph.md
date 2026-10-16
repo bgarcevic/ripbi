@@ -1,31 +1,11 @@
-# What counts as unused
+# Graph and liveness rules
 
-`ripbi scan` starts with the fields used by the reports it can read, then
-follows the model expressions those fields depend on. An object is reported
-unused when no path from those report bindings reaches it. Role filters and
-other model rules can also keep their dependencies alive.
-
-For example, if a visual uses measure `[B]` and `[B]` uses `[A]`, both measures
-are live. If nothing in the reports reaches `[B]`, both can be reported unused,
-even though `[B]` refers to `[A]`. The finding describes the model and reports
-that ripbi analyzed; it is a starting point for review, not a deletion command.
-
-Before removing an object, check [the scan's known boundaries](https://bgarcevic.github.io/ripbi/output.html#known-boundaries).
-Thin reports, Excel, XMLA clients, and other external consumers are invisible
-unless their bindings were included — or the model marks what they read with a
-`ripbi_keep` annotation, which makes the object a root like a report binding — or a
-workspace-monitoring query log (`--queries-from`) shows them querying it: every object a
-logged DAX or MDX query names directly is a root too (`DependencyGraph::queried`), and a
-queried table keeps its columns, which a table expression returns. A model with no connected reports is
-refused by default, because a scan without report roots cannot give a useful
-unused verdict. Use `ripbi deps` to inspect what a finding relies on and what
-else relies on it.
-
-## Implementation rules
-
-The rest of this chapter explains the graph and each liveness rule for people
-auditing results or changing the analyzer. Changes here can change what
-`scan` suggests reviewing.
+The dependency graph behind `ripbi scan` and `ripbi deps`: how it is built, each
+rule that keeps an object alive, and the two verdicts beside reachability (auto
+date/time and broken bindings). It is the specification for people auditing results
+or changing the analyzer; changes here change what `scan` suggests reviewing. For
+the user-facing summary, see
+[what counts as unused](https://bgarcevic.github.io/ripbi/unused.html).
 
 ## Shape
 

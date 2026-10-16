@@ -3,7 +3,7 @@
 //! alerts. Another render mode over the same [`ScanOutput`] — plus, under
 //! `--compare-root`, the findings that already existed in the other checkout,
 //! which SARIF keeps as suppressed results instead of dropping. The contract
-//! lives in `docs/output.md` under "SARIF". `scan --azure-devops` (`vso.rs`)
+//! lives in `docs/scan/ci-formats.md` under "SARIF". `scan --azure-devops` (`vso.rs`)
 //! renders the same rules, messages, and sites as `##vso` logging commands.
 
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ use crate::scan::report_name;
 
 const SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 const INFORMATION_URI: &str = "https://bgarcevic.github.io/ripbi/";
-const HELP_URI: &str = "https://bgarcevic.github.io/ripbi/output.html#sarif";
+const HELP_URI: &str = "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif";
 /// The `partialFingerprints` key: versioned so a future change to the
 /// fingerprint opens new alerts instead of silently matching old ones.
 const FINGERPRINT: &str = "ripbiFinding/v1";

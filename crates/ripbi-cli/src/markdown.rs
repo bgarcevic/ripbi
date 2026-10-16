@@ -1,7 +1,7 @@
 //! `scan --markdown-file`: a GitHub-flavored Markdown summary of one scan,
 //! shaped for a CI job summary or a pull request comment (issue #143) — the
 //! counts, the findings, what the change fixed, and the worst tables. The
-//! contract lives in `docs/output.md` under "Markdown".
+//! contract lives in `docs/scan/ci-formats.md` under "Markdown".
 
 use std::io;
 use std::path::Path;

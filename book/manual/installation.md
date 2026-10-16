@@ -65,8 +65,10 @@ Exit codes:
 ripbi scan "samples/AdventureWorks Sales.pbip" -q   # no output; exit code only
 ```
 
-The [scan command](output.md) chapter documents every flag, the output
-shapes, `ripbi.toml`, and the exit codes in full.
+Next, [Cleaning up a model](cleanup.md) walks through a first cleanup, and
+[CI in five minutes](ci.md) adds the scan to pull requests. The
+[scan reference](scan/overview.md) documents every flag, output format, and exit
+code.
 
 ## More installation options
 

@@ -75,7 +75,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-MEASURE",
               "name": "UnusedMeasure",
               "shortDescription": {
@@ -86,7 +86,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-COLUMN",
               "name": "UnusedColumn",
               "shortDescription": {
@@ -97,7 +97,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-HIERARCHY",
               "name": "UnusedHierarchy",
               "shortDescription": {
@@ -108,7 +108,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-TABLE",
               "name": "UnusedTable",
               "shortDescription": {
@@ -119,7 +119,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-PARTITION",
               "name": "UnusedPartition",
               "shortDescription": {
@@ -130,7 +130,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-RELATIONSHIP",
               "name": "UnusedRelationship",
               "shortDescription": {
@@ -141,7 +141,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-ROLE",
               "name": "UnusedRole",
               "shortDescription": {
@@ -152,7 +152,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-CALCULATION-ITEM",
               "name": "UnusedCalculationItem",
               "shortDescription": {
@@ -163,7 +163,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-EXPRESSION",
               "name": "UnusedExpression",
               "shortDescription": {
@@ -174,7 +174,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-FUNCTION",
               "name": "UnusedFunction",
               "shortDescription": {
@@ -185,7 +185,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-UNUSED-REPORT-MEASURE",
               "name": "UnusedReportMeasure",
               "shortDescription": {
@@ -196,7 +196,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-STALE-BOOKMARK",
               "name": "StaleBookmark",
               "shortDescription": {
@@ -207,7 +207,7 @@
               "defaultConfiguration": {
                 "level": "error"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-BROKEN-VISUAL",
               "name": "BrokenVisualBinding",
               "shortDescription": {
@@ -218,7 +218,7 @@
               "defaultConfiguration": {
                 "level": "error"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-BROKEN-ARTIFACT",
               "name": "BrokenArtifact",
               "shortDescription": {
@@ -229,7 +229,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://bgarcevic.github.io/ripbi/output.html#sarif",
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
               "id": "RIPBI-AUTO-DATE-TIME",
               "name": "AutoDateTime",
               "shortDescription": {
