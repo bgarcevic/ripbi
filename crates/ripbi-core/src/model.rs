@@ -382,6 +382,12 @@ pub struct Relationship {
     /// reference (`USERELATIONSHIP`) activates them — otherwise the
     /// relationship and its key columns are all findings.
     pub is_active: bool,
+    /// True when filters also flow from the "from" table to the "to" table:
+    /// cross-filtering set to both directions, or a one-to-one relationship.
+    /// Filters always flow from "to" to "from". Decides which unused tables
+    /// bridge two live ones (the filter path between them runs through the
+    /// table); `false` when the source does not say.
+    pub filters_both_ways: bool,
     /// Storage statistics: the relationship's index. Display-only; `None` for
     /// formats without a storage catalog.
     pub storage: Option<StorageStats>,
@@ -391,6 +397,26 @@ pub struct Relationship {
     /// object and everything it references stay live (issue #151). `Some`
     /// with an empty string when the annotation gives no reason.
     pub keep: Option<String>,
+}
+
+/// Whether a relationship filters both ways, from its TOM properties as
+/// written (`crossFilteringBehavior`, `fromCardinality`, `toCardinality`;
+/// case-insensitive, `None` when omitted). Anything but a plain one-way filter
+/// (`automatic`, a value from a newer schema) counts as both ways — keeping a
+/// bridge table too many is the safe direction. Many-to-one is the default
+/// cardinality, as in TOM.
+pub(crate) fn filters_both_ways(
+    cross_filtering: Option<&str>,
+    from_cardinality: Option<&str>,
+    to_cardinality: Option<&str>,
+) -> bool {
+    let is = |value: Option<&str>, expected: &str| {
+        value.is_some_and(|value| value.eq_ignore_ascii_case(expected))
+    };
+    let both_directions = cross_filtering.is_some_and(|value| !is(Some(value), "oneDirection"));
+    let one_to_one =
+        is(from_cardinality, "one") && (to_cardinality.is_none() || is(to_cardinality, "one"));
+    both_directions || one_to_one
 }
 
 impl Default for Relationship {
@@ -405,6 +431,7 @@ impl Default for Relationship {
             to_table: String::new(),
             to_column: String::new(),
             is_active: true,
+            filters_both_ways: false,
             storage: None,
             keep: None,
         }
@@ -1729,6 +1756,7 @@ mod tests {
                     to_table: String::new(),
                     to_column: String::new(),
                     is_active: true,
+                    filters_both_ways: false,
                     storage: None,
                 }
             );

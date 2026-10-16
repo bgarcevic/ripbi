@@ -214,6 +214,7 @@ fn golden_database() -> TabularDatabase {
                 to_table: "Sales Order".to_string(),
                 to_column: "SalesOrderLineKey".to_string(),
                 is_active: true,
+                filters_both_ways: false,
                 storage: None,
             },
             Relationship {
@@ -228,6 +229,8 @@ fn golden_database() -> TabularDatabase {
                 // (PFE_XL_USERELATIONSHIP_AMBIGUOUS_PATH), so the second
                 // relationship on the pair must stay inactive.
                 is_active: false,
+                // `crossFilteringBehavior: bothDirections`.
+                filters_both_ways: true,
                 storage: None,
             },
             Relationship {
@@ -238,6 +241,7 @@ fn golden_database() -> TabularDatabase {
                 to_table: "Sales Order".to_string(),
                 to_column: "DueDateKey".to_string(),
                 is_active: false,
+                filters_both_ways: false,
                 storage: None,
             },
         ],

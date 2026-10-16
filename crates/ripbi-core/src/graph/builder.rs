@@ -30,7 +30,7 @@ use crate::report::{BindingKind, Bookmark, FieldTarget, Page, ReportModel};
 
 use super::broken::{self, BrokenBinding, BrokenReason};
 use super::provenance::{BindingEdge, BindingSite, Provenance, SiteLabels, StructuralEdge};
-use super::{DependencyGraph, KeptObject};
+use super::{DependencyGraph, FilterFlow, KeptObject};
 
 /// Assembles the graph for one model and every report sharing it. Never fails:
 /// resolution misses are data (an edge that cannot be created is skipped), and
@@ -54,6 +54,7 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
                 reason: reason.to_string(),
             })
             .collect(),
+        filter_flows: Vec::new(),
     };
 
     builder.add_model_objects(db, reports);
@@ -88,6 +89,9 @@ struct Builder {
     /// The objects a `ripbi_keep` annotation keeps: roots beside the report
     /// bindings (issue #151).
     kept: Vec<KeptObject>,
+    /// The direction filters travel along each relationship, between table
+    /// nodes — what bridge-table detection walks.
+    filter_flows: Vec<FilterFlow>,
 }
 
 impl Builder {
@@ -145,7 +149,7 @@ impl Builder {
                 .cmp(&b.report_index)
                 .then_with(|| a.id.cmp(&b.id))
         });
-        DependencyGraph::assemble(
+        let mut graph = DependencyGraph::assemble(
             self.graph,
             self.nodes,
             self.roots,
@@ -153,7 +157,9 @@ impl Builder {
             broken,
             artifacts,
             self.kept,
-        )
+        );
+        graph.filter_flows = self.filter_flows;
+        graph
     }
 
     /// Pre-creates a node for every model and report object, so isolated
@@ -341,6 +347,22 @@ impl Builder {
             let id = relationship_node_id(rel);
             let from = endpoint_column(db, index, &rel.from_table, &rel.from_column);
             let to = endpoint_column(db, index, &rel.to_table, &rel.to_column);
+            if let (Some((from_table, _)), Some((to_table, _))) = (&from, &to) {
+                // Filters run from the "to" (one) side to the "from" (many)
+                // side, and back again when the relationship filters both ways.
+                let relationship = self.node(&id);
+                let (from_table, to_table) = (self.node(from_table), self.node(to_table));
+                let flow = |filtering, filtered| FilterFlow {
+                    relationship,
+                    is_active: rel.is_active,
+                    filtering,
+                    filtered,
+                };
+                self.filter_flows.push(flow(to_table, from_table));
+                if rel.filters_both_ways {
+                    self.filter_flows.push(flow(from_table, to_table));
+                }
+            }
             if rel.is_active {
                 // Either endpoint table keeps the relationship alive, and it
                 // keeps both key columns alive — but, being a relationship

@@ -8,7 +8,9 @@
 //!    over every edge *except* relationship endpoints and the
 //!    inactive-relationship edges. Containment fires: a used column keeps its
 //!    table alive, a used table keeps its partitions and active relationships
-//!    alive.
+//!    alive. A dead table on a filter path between two distinct live tables
+//!    is a bridge: it joins the strong set with everything it keeps,
+//!    repeated until no new bridge appears.
 //! 2. **Weak pass** — extends the strong set over every edge *except*
 //!    containment and the inactive-relationship edges. A live table pulls in
 //!    its relationships and both their key columns, but a key column that is
@@ -41,7 +43,20 @@ impl Reachability {
         // extends that set without letting containment fire again, so weakly
         // alive key columns never drag their tables along — and inactive
         // relationships never confer liveness at all.
-        let strong = graph.reach(graph.seed_indices(), Provenance::is_strong_pass_edge);
+        let mut strong = graph.reach(graph.seed_indices(), Provenance::is_strong_pass_edge);
+        // A dead table between two live ones carries the filter from one to
+        // the other: it is live, and so is everything it keeps — which may
+        // bridge further tables, so repeat until nothing changes.
+        loop {
+            let bridges = graph.bridge_tables(&strong);
+            if bridges.is_empty() {
+                break;
+            }
+            strong = graph.reach(
+                strong.into_iter().chain(bridges),
+                Provenance::is_strong_pass_edge,
+            );
+        }
         let weak_seeds = strong.iter().copied().chain(graph.weak_seed_indices());
         let live = graph.reach(weak_seeds, Provenance::is_weak_pass_edge);
         Self {

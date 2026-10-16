@@ -60,6 +60,11 @@
 //!   reference (`USERELATIONSHIP`) activates it — switching one on at query
 //!   time is DAX's job, and nothing else can. Unactivated, it is a finding
 //!   itself, and its key columns are findings chained under it.
+//! - **Bridges**: the exception to the far-table rule. A table on the filter
+//!   path between two distinct live tables (`Sales → Bridge → User`) is live,
+//!   because deleting it would cut the filter from one to the other.
+//!   Filters run from a relationship's "to" side to its "from" side, and
+//!   back when it filters both ways.
 //!
 //! The conservatism rule from name resolution governs everything: marking an
 //! object used too many is harmless; marking one too few tells a user to
@@ -199,6 +204,25 @@ pub struct DependencyGraph {
     /// in identity order. Roots beside the report bindings and the kept
     /// objects: a consumer ripbi cannot see, observed rather than declared.
     queried: Vec<QueriedObject>,
+    /// The direction filters travel along each relationship, between table
+    /// nodes. Not edges: a table on a filter path between two live tables is
+    /// live only because *both* ends are, which no single edge can say.
+    filter_flows: Vec<FilterFlow>,
+}
+
+/// One direction a relationship carries filters in: from the `filtering`
+/// table to the `filtered` one.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct FilterFlow {
+    /// The relationship node carrying the filter.
+    pub(super) relationship: NodeIndex,
+    /// Whether the relationship is active. An inactive one carries filters
+    /// only while live — activated by a live `USERELATIONSHIP`.
+    pub(super) is_active: bool,
+    /// The table whose filter propagates.
+    pub(super) filtering: NodeIndex,
+    /// The table the filter lands on.
+    pub(super) filtered: NodeIndex,
 }
 
 impl DependencyGraph {
@@ -245,6 +269,7 @@ impl DependencyGraph {
             broken_artifacts,
             kept,
             queried: Vec::new(),
+            filter_flows: Vec::new(),
         }
     }
 
@@ -563,6 +588,67 @@ impl DependencyGraph {
             }
         }
         seen
+    }
+
+    /// The tables outside `live` that lie on a filter path between two
+    /// distinct live tables: removing one would cut the path, so a filter on
+    /// the first table would stop reaching the second. Only a live
+    /// relationship's direction counts — a path that dead-ends in a table, or
+    /// leads back to where it started, keeps nothing.
+    pub(super) fn bridge_tables(&self, live: &HashSet<NodeIndex>) -> HashSet<NodeIndex> {
+        let mut forward: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+        let mut backward: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+        let mut live_tables: HashSet<NodeIndex> = HashSet::new();
+        for flow in &self.filter_flows {
+            if !flow.is_active && !live.contains(&flow.relationship) {
+                continue;
+            }
+            forward
+                .entry(flow.filtering)
+                .or_default()
+                .push(flow.filtered);
+            backward
+                .entry(flow.filtered)
+                .or_default()
+                .push(flow.filtering);
+            live_tables.extend(
+                [flow.filtering, flow.filtered]
+                    .into_iter()
+                    .filter(|table| live.contains(table)),
+            );
+        }
+        let mut bridges = HashSet::new();
+        for &start in &live_tables {
+            // The dead tables a filter on `start` reaches, and the other live
+            // tables it lands on through them.
+            let mut reached: HashSet<NodeIndex> = HashSet::new();
+            let mut ends: Vec<NodeIndex> = Vec::new();
+            let mut queue = vec![start];
+            while let Some(table) = queue.pop() {
+                for &next in forward.get(&table).into_iter().flatten() {
+                    if live.contains(&next) {
+                        if table != start && next != start {
+                            ends.push(next);
+                        }
+                    } else if reached.insert(next) {
+                        queue.push(next);
+                    }
+                }
+            }
+            // Walk back from those ends: every reached dead table on the way
+            // carries the filter to one of them.
+            let mut on_path: HashSet<NodeIndex> = HashSet::new();
+            let mut queue = ends;
+            while let Some(table) = queue.pop() {
+                for &previous in backward.get(&table).into_iter().flatten() {
+                    if reached.contains(&previous) && on_path.insert(previous) {
+                        queue.push(previous);
+                    }
+                }
+            }
+            bridges.extend(on_path);
+        }
+        bridges
     }
 
     /// The node key at a petgraph index.
@@ -977,6 +1063,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: true,
+                    filters_both_ways: false,
                     storage: None,
                 }],
                 ..Default::default()
@@ -1032,6 +1119,158 @@ mod tests {
             assert_eq!(partition.used_by[0].id, table_id("DimOld"));
         }
 
+        /// One table per name, its columns, and a partition.
+        fn plain_table(name: &str, columns: &[&str]) -> Table {
+            Table {
+                name: name.to_string(),
+                columns: columns.iter().map(|name| column(name)).collect(),
+                partitions: vec![m_partition(name, "let Source = 1 in Source")],
+                ..Default::default()
+            }
+        }
+
+        /// An active many-to-one relationship on same-named key columns.
+        fn many_to_one(from_table: &str, to_table: &str, key: &str) -> Relationship {
+            Relationship {
+                from_table: from_table.to_string(),
+                from_column: key.to_string(),
+                to_table: to_table.to_string(),
+                to_column: key.to_string(),
+                ..Default::default()
+            }
+        }
+
+        /// A snowflake `Sales → Bridge → User`, plus `Bridge → Region` off to
+        /// the side: a filter on `User` reaches `Sales` only through `Bridge`.
+        fn snowflake() -> TabularDatabase {
+            TabularDatabase {
+                tables: vec![
+                    plain_table("Sales", &["Amt", "BridgeKey"]),
+                    plain_table("Bridge", &["BridgeKey", "UserKey", "RegionKey", "Notes"]),
+                    plain_table("User", &["UserKey", "Name"]),
+                    plain_table("Region", &["RegionKey"]),
+                ],
+                relationships: vec![
+                    many_to_one("Sales", "Bridge", "BridgeKey"),
+                    many_to_one("Bridge", "User", "UserKey"),
+                    many_to_one("Bridge", "Region", "RegionKey"),
+                ],
+                ..Default::default()
+            }
+        }
+
+        /// Two fact tables sharing a `Date` dimension: `Date` filters both,
+        /// but neither filters the other through it — unless `Sales → Date`
+        /// filters both ways.
+        fn shared_dimension(sales_both_ways: bool) -> TabularDatabase {
+            let mut sales = many_to_one("Sales", "Date", "DateKey");
+            sales.filters_both_ways = sales_both_ways;
+            TabularDatabase {
+                tables: vec![
+                    plain_table("Sales", &["Amt", "DateKey"]),
+                    plain_table("Budget", &["Amt", "DateKey"]),
+                    plain_table("Date", &["DateKey"]),
+                ],
+                relationships: vec![sales, many_to_one("Budget", "Date", "DateKey")],
+                ..Default::default()
+            }
+        }
+
+        /// A dead table on the filter path between two live tables is a
+        /// bridge: deleting it would break the filter, so it stays live —
+        /// with its partition, but not its unreferenced columns.
+        #[test]
+        fn a_table_bridging_two_live_tables_stays_live() {
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[column_target("Sales", "Amt"), column_target("User", "Name")],
+            );
+            let unused = DependencyGraph::build(&snowflake(), &[&report]).unused_objects();
+
+            not_unused(&unused, &table_id("Bridge"));
+            not_unused(
+                &unused,
+                &ObjectId::Partition {
+                    table: NameKey::new("Bridge"),
+                    partition: NameKey::new("Bridge"),
+                },
+            );
+            assert!(
+                find(&unused, &column_id("Bridge", "Notes"))
+                    .used_by
+                    .is_empty()
+            );
+            // A table off the path stays unused.
+            find(&unused, &table_id("Region"));
+        }
+
+        /// The path runs in the filter's direction, from any live table: a
+        /// filter on `Region` reaches `Sales` through `Bridge` too.
+        #[test]
+        fn a_bridge_is_found_from_either_live_end() {
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    column_target("Sales", "Amt"),
+                    column_target("Region", "RegionKey"),
+                ],
+            );
+            let unused = DependencyGraph::build(&snowflake(), &[&report]).unused_objects();
+            not_unused(&unused, &table_id("Bridge"));
+            find(&unused, &table_id("User"));
+        }
+
+        /// A dead dimension filtering two live fact tables carries no filter
+        /// between them, so it is not a bridge.
+        #[test]
+        fn a_dead_dimension_shared_by_two_facts_is_not_a_bridge() {
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    column_target("Sales", "Amt"),
+                    column_target("Budget", "Amt"),
+                ],
+            );
+            let unused =
+                DependencyGraph::build(&shared_dimension(false), &[&report]).unused_objects();
+            find(&unused, &table_id("Date"));
+        }
+
+        /// A both-ways relationship carries the filter back up to the
+        /// dimension, and on to the other fact table.
+        #[test]
+        fn a_both_ways_relationship_makes_a_shared_dimension_a_bridge() {
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[
+                    column_target("Sales", "Amt"),
+                    column_target("Budget", "Amt"),
+                ],
+            );
+            let unused =
+                DependencyGraph::build(&shared_dimension(true), &[&report]).unused_objects();
+            not_unused(&unused, &table_id("Date"));
+        }
+
+        /// An inactive relationship nothing activates carries no filter, so
+        /// a path through it bridges nothing.
+        #[test]
+        fn an_unactivated_inactive_relationship_bridges_nothing() {
+            let mut db = snowflake();
+            db.relationships[1].is_active = false;
+            let report = visual_page(
+                "P1",
+                "V1",
+                &[column_target("Sales", "Amt"), column_target("User", "Name")],
+            );
+            let unused = DependencyGraph::build(&db, &[&report]).unused_objects();
+            find(&unused, &table_id("Bridge"));
+        }
+
         /// An inactive relationship nothing activates is itself a finding,
         /// and its key columns are findings pointing back at it — the
         /// `only used by … (also unused)` chain shape. Only a live
@@ -1068,6 +1307,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: false,
+                    filters_both_ways: false,
                     storage: None,
                 }],
                 ..Default::default()
@@ -1153,6 +1393,7 @@ mod tests {
                     to_table: "DimOld".to_string(),
                     to_column: "Key".to_string(),
                     is_active: false,
+                    filters_both_ways: false,
                     storage: None,
                 }],
                 ..Default::default()

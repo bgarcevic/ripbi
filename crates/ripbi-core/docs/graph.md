@@ -180,6 +180,19 @@ alive. A table referenced by nothing but a relationship is still unused — dele
 together with the relationship is safe, and in a star schema where every table is
 related, this is the difference between table findings and none.
 
+The one exception is a **bridge**: a table on the filter path between two distinct live
+tables. In a snowflake `Sales → Bridge → User`, a filter on `User` reaches `Sales` only
+through `Bridge`, so deleting `Bridge` breaks the report even though nothing references
+it. Filters run from the "to" (one) side to the "from" (many) side, and back again when
+the relationship filters both ways (`crossFilteringBehavior: bothDirections`, or
+one-to-one; `automatic` or an unknown value counts as both ways too). Only active or
+`USERELATIONSHIP`-activated relationships carry filters. Direction matters: a dead `Date`
+dimension filtering two live fact tables carries nothing *between* them, so it stays a
+finding. A bridge joins the strong set with everything it keeps (its partitions and
+relationships, not its other columns), and the search repeats until no new bridge
+appears. Bridges are not edges, because a bridge is live only when *both* ends are, and
+no single edge can say that.
+
 One plain BFS cannot express that (containment would drag the far table in), so
 reachability runs two passes and the policy falls out of what each pass excludes:
 
