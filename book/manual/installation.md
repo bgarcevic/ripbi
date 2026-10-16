@@ -78,11 +78,11 @@ code.
 Pin a version:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | RIPBI_VERSION=v0.9.0 sh
+curl -fsSL https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.sh | RIPBI_VERSION=v0.9.1 sh
 ```
 
 ```powershell
-$env:RIPBI_VERSION = 'v0.9.0'; irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
+$env:RIPBI_VERSION = 'v0.9.1'; irm https://raw.githubusercontent.com/bgarcevic/ripbi/main/install.ps1 | iex
 ```
 
 Download a script to review it before running:
