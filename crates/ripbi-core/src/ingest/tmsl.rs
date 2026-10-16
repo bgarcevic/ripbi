@@ -46,6 +46,11 @@ pub(super) fn load(
                 .get("isActive")
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
+            filters_both_ways: crate::model::filters_both_ways(
+                string(item, "crossFilteringBehavior").as_deref(),
+                string(item, "fromCardinality").as_deref(),
+                string(item, "toCardinality").as_deref(),
+            ),
             storage: None,
             keep: keep(item),
         });

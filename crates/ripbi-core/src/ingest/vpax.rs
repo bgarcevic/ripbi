@@ -123,6 +123,17 @@ fn parse(document: &Value) -> TabularDatabase {
                 .get("IsActive")
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
+            filters_both_ways: crate::model::filters_both_ways(
+                relationship
+                    .get("CrossFilteringBehavior")
+                    .and_then(Value::as_str),
+                relationship
+                    .get("FromCardinalityType")
+                    .and_then(Value::as_str),
+                relationship
+                    .get("ToCardinalityType")
+                    .and_then(Value::as_str),
+            ),
             storage: Some(StorageStats {
                 bytes: Some(size),
                 basis: SizeBasis::Engine,

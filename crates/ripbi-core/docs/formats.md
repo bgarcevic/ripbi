@@ -366,9 +366,10 @@ Cultures (folder never read; keys listed for stray uses): `cultureInfo`,
 `linguisticMetadata`, `contentType`.
 
 Partitions: `mode`. Roles: `modelPermission`. KPIs: `statusGraphic`.
-Hierarchies/levels: `ordinal`. Relationships: `crossFilteringBehavior`,
-`fromCardinality`, `toCardinality`, `joinOnDateBehavior`, `hideArrows`,
-`securityFilteringBehavior`, `reliability`.
+Hierarchies/levels: `ordinal`. Relationships: `joinOnDateBehavior`, `hideArrows`,
+`securityFilteringBehavior`, `reliability`. A relationship's `crossFilteringBehavior`,
+`fromCardinality`, and `toCardinality` are read only to tell whether it filters both
+ways, which decides bridge tables (see `graph.md`).
 
 Refresh policies (TMDL `refreshPolicy`, a table-level object) are modeled for
 their two expression properties only: `sourceExpression` (the

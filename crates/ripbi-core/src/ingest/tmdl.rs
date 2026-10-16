@@ -101,9 +101,6 @@ const IGNORED_KEYS: &[&str] = &[
     // Roles
     "modelPermission",
     // Relationships
-    "crossFilteringBehavior",
-    "fromCardinality",
-    "toCardinality",
     "joinOnDateBehavior",
     "hideArrows",
     "securityFilteringBehavior",
@@ -1871,6 +1868,8 @@ fn map_relationship(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Op
     };
     let mut from: Option<(Option<String>, String)> = None;
     let mut to: Option<(Option<String>, String)> = None;
+    let mut cross_filtering: Option<&str> = None;
+    let (mut from_cardinality, mut to_cardinality): (Option<&str>, Option<&str>) = (None, None);
     for child in &node.children {
         if let Some(reason) = keep_reason(child) {
             relationship.keep = Some(reason);
@@ -1882,6 +1881,9 @@ fn map_relationship(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Op
         match child.key.as_str() {
             "fromColumn" => from = child.text().and_then(parse_column_ref),
             "toColumn" => to = child.text().and_then(parse_column_ref),
+            "crossFilteringBehavior" => cross_filtering = child.text(),
+            "fromCardinality" => from_cardinality = child.text(),
+            "toCardinality" => to_cardinality = child.text(),
             "isActive" => match parse_bool(child.text()) {
                 Some(value) => relationship.is_active = value,
                 None => notice(
@@ -1946,6 +1948,8 @@ fn map_relationship(node: &Node, path: &Path, skips: &mut Vec<SkipNotice>) -> Op
     relationship.from_column = from_column;
     relationship.to_table = to_table;
     relationship.to_column = to_column;
+    relationship.filters_both_ways =
+        crate::model::filters_both_ways(cross_filtering, from_cardinality, to_cardinality);
     Some(relationship)
 }
 

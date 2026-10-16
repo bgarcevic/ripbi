@@ -13,7 +13,8 @@
 //!
 //! Enum codes follow `Microsoft.AnalysisServices.Tabular`: `ColumnType`,
 //! `PartitionSourceType`, `MetadataPermission`, `CalculationGroupSelectionMode`,
-//! `RefreshPolicyType`, and `ObjectType` (3 = table) for annotations.
+//! `RefreshPolicyType`, `CrossFilteringBehavior`, `RelationshipEndCardinality`,
+//! and `ObjectType` (3 = table) for annotations.
 
 mod storage;
 
@@ -457,6 +458,13 @@ impl Catalog {
                 to_table: names[*to_table].clone(),
                 to_column: to_column.clone(),
                 is_active: row.int("IsActive").is_none_or(|value| value != 0),
+                // `CrossFilteringBehavior` 1 = OneDirection; `RelationshipEndCardinality`
+                // 1 = One. Many-to-one is the default when a code is missing.
+                filters_both_ways: row
+                    .int("CrossFilteringBehavior")
+                    .is_some_and(|code| code != 1)
+                    || (row.int("FromCardinality") == Some(1)
+                        && row.int("ToCardinality").is_none_or(|code| code == 1)),
                 storage: stats(&storage.relationships, row.id()),
                 keep: self.keep(OBJECT_TYPE_RELATIONSHIP, row.id()),
             });

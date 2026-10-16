@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bridge tables are no longer reported unused.** A table that nothing references but
+  that sits on the filter path between two live tables, such as `Bridge` in a snowflake
+  `Sales → Bridge → User`, used to be reported unused, and deleting it broke the filter
+  from `User` to `Sales`. Such a table now stays live along with its partitions and
+  relationships, though its unreferenced columns are still reported. Filter direction
+  counts: an unused dimension shared by two live fact tables is still a finding unless a
+  relationship filters both ways. Every ingest format now reads cross-filter direction and
+  cardinality.
+
 ## [0.9.0] - 2026-10-15
 
 ### Added
