@@ -18,6 +18,9 @@
 //! # Storage sizes for a model without its own catalog: an .abf, .pbix, or .vpax,
 //! # or "none" to turn off .pbi/cache.abf auto-detection.
 //! stats_from = "exports/Sales.abf"
+//! # "none" when nothing outside these reports reads the model (no thin
+//! # reports, Excel, or XMLA clients): drops the check-before-removing hint.
+//! external_consumers = "none"
 //! ```
 
 use std::fs;
@@ -45,6 +48,10 @@ pub struct Config {
     /// `queries_item`: which model's rows to read from a workspace-wide
     /// query log, by `ItemName` or `ItemId`.
     pub queries_item: Option<String>,
+    /// `[scan].external_consumers = "none"`: the team vouches that nothing
+    /// outside the ingested reports reads the model, so findings carry no
+    /// check-before-removing hint.
+    pub no_external_consumers: bool,
 }
 
 /// A `--stats-from` or `[scan].stats_from` value.
@@ -98,6 +105,7 @@ struct ScanSection {
     #[serde(default)]
     ignore: Vec<String>,
     stats_from: Option<String>,
+    external_consumers: Option<String>,
 }
 
 /// Finds and loads `ripbi.toml` in `start` or its nearest ancestor.
@@ -130,6 +138,20 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
             .stats_from
             .as_deref()
             .map(|written| StatsSetting::parse(&root, Path::new(written)));
+        let no_external_consumers = match scan.external_consumers.as_deref() {
+            None => false,
+            Some(value) if value.eq_ignore_ascii_case("none") => true,
+            Some(value) => {
+                return Err(ScanError::new(format!(
+                    "cannot parse {}: [scan].external_consumers = \"{value}\" is not a known value",
+                    path.display()
+                ))
+                .with_hint(
+                    "set it to \"none\" when nothing outside these reports reads the model, \
+                     or remove the key",
+                ));
+            }
+        };
         return Ok(Some(Loaded {
             root,
             config: Config {
@@ -139,6 +161,7 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
                 stats_from,
                 queries_from,
                 queries_item: file.queries_item,
+                no_external_consumers,
             },
         }));
     }
@@ -177,6 +200,22 @@ mod tests {
             Some(temp.0.join("model.SemanticModel"))
         );
         assert_eq!(loaded.config.ignore, vec!["_*".to_string()]);
+    }
+
+    #[test]
+    fn external_consumers_none_is_read_and_other_values_refused() {
+        let temp = TempDir::new("consumers");
+        temp.write("ripbi.toml", "[scan]\nexternal_consumers = \"None\"\n");
+        let loaded = find_in(&temp.0).expect("no error").expect("config found");
+        assert!(loaded.config.no_external_consumers);
+
+        temp.write("ripbi.toml", "[scan]\nexternal_consumers = \"some\"\n");
+        let error = find_in(&temp.0).expect_err("unknown value");
+        assert!(
+            error.message.contains("external_consumers"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]

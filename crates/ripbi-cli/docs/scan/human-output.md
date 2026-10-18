@@ -5,7 +5,7 @@ What `ripbi scan` prints when no output flag is passed.
 ![rib scan --type measure on the AdventureWorks sample: 11 unused measures, each with the reason it is dead](../../../../docs/media/scan-findings.svg)
 
 ```text
-130 objects, 74 reachable from 51 roots, 56 unused
+AdventureWorks Sales.SemanticModel · 1 report
 
 Measures (11)
   'Sales'[Average Sales per Order]
@@ -15,16 +15,36 @@ Columns (28)
     ← only used by hierarchy 'Customer'[Geography] — hierarchy level (also unused)
   'Customer'[Customer ID]
     ← nothing references it
+
+✗ 56 unused objects   74 of 130 reachable from 51 roots
+  check thin reports, Excel and XMLA clients before removing; ripbi can't see them
 ```
 
-- The summary line: total graph objects, how many reachability reached, from how many
-  report binding roots, and the unused count. Roots are report bindings — the desktop
-  tree and the phone layout (`definition.mobile/`, issue #49) alike; RLS roles also
-  seed reachability without counting here. When `[scan].ignore` suppressed objects, a
-  second line says how many; when the type selection hid findings, a third line counts them
-  (`(2 unused hidden by type filters)`); and when auto date/time machinery members are
-  covered by the section's table verdicts, a fourth counts them, so `0 unused` from a
-  filtered or machinery-heavy model never reads as a clean one by accident.
+The output reads in three tiers, most important last, because the last line is the
+one a terminal leaves in view:
+
+- **Header and notes** (stderr). The model's name and its report count, then one
+  indented line per note: `!` for a note that changes how to read the result (stale or
+  partial stats, a by-name pairing, a failed comparison base), `·` for background (a
+  query log in use, reports bound to other models, a ripbi stub). Full paths and notes
+  that only confirm the expected case (complete stats coverage) wait for `--verbose`.
+- **Findings and sections** (stdout), described below.
+- **The verdict** (stdout), last: `✓ No unused objects` or `✗ 56 unused objects`, then
+  how many objects reachability reached, out of the total, from how many report
+  binding roots. Roots are report bindings — the desktop tree and the phone layout
+  (`definition.mobile/`, issue #49) alike; RLS roles also seed reachability without
+  counting here. On a terminal the scan's wall time closes the line. Indented under it:
+  the `Unused storage:` total ([Storage sizes](storage.md)); a line for objects
+  `[scan].ignore` suppressed; one for findings the type selection hid
+  (`(2 unused hidden by type filters)`); and one for auto date/time machinery members
+  covered by the section's table verdicts, so `No unused objects` from a filtered or
+  machinery-heavy model never reads as a clean one by accident.
+- **The consumer hint** (stderr), under a verdict with findings only: ripbi sees the
+  ingested reports, not thin reports in other workspaces, Analyze in Excel, or XMLA
+  clients, so a finding is a candidate until those are checked. With a query log it
+  names the consumers outside the log's window instead. A clean scan has nothing to
+  remove and prints no hint; `[scan].external_consumers = "none"` in
+  [`ripbi.toml`](../config.md) drops it for a model nothing else reads.
 - Findings are grouped by object type (measures, columns, hierarchies, tables,
   partitions, relationships, calculation items, expressions, functions, report
   measures, bookmarks — fixed order, empty groups omitted), sorted by object identity. The type
@@ -78,12 +98,12 @@ Columns (28)
   ```
 
   The section is a different verdict than reachability's — written references, not
-  graph liveness — so it prints even on an otherwise clean `No unused objects.` scan,
+  graph liveness — so it prints even on an otherwise clean `No unused objects` scan,
   and it is *advisory*: it never changes the exit code unless `--broken` selects it.
   Under a lone `--broken`, the findings list is empty by construction — the flag scopes
-  the run to breakage — so the findings placeholder names the scope instead:
-  `No broken reports or artifacts.` when nothing flags, and no placeholder line when either breakage section
-  has rows. Every other selection keeps `No unused objects.` Hidden bindings (a type
+  the run to breakage — so the verdict names that scope instead:
+  `✓ No broken reports or artifacts` when nothing flags, `✗ 3 broken bindings` when either
+  breakage section has rows. Every other selection keeps the unused verdict. Hidden bindings (a type
   flag without `--broken`) and suppressed ones are accounted
   for in the summary's arithmetic lines: `(2 broken-visual bindings hidden by type
   filters)` and `(N possible broken-visual bindings suppressed — the model ingest

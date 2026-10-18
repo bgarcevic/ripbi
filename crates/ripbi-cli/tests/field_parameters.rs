@@ -103,7 +103,7 @@ fn human_output_reports_the_fixture_summary() {
 
     assert_eq!(code, 1);
     assert!(
-        stdout.contains("18 objects, 16 reachable from 5 roots, 2 unused"),
+        stdout.contains("2 unused objects   16 of 18 reachable from 5 roots"),
         "summary line missing:\n{stdout}"
     );
     assert!(

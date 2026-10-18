@@ -69,13 +69,18 @@ Model
 
 Queried
 └─ 'Sales'[Legacy Total]  queried 2× by 1 user · last 2026-09-30 · Excel
+
+'Sales'[Legacy]   used by 1 object, 0 report bindings
 "
         );
         assert!(
-            err.contains("Note: 3 logged queries (2026-09-28 → 2026-09-30) from "),
+            err.contains("· 3 logged queries (2026-09-28 → 2026-09-30) from "),
             "{err}"
         );
-        assert!(err.contains("and the logged queries"), "{err}");
+        assert!(
+            err.contains("consumers outside the query log's window before changing it"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -104,8 +109,8 @@ Queried
         let (code, out, err) = with_log("'Sales'[Total]", |args| args.impact = true);
         assert_eq!(code, 0, "{err}");
         assert!(
-            out.ends_with(
-                "\nQueried\n└─ queried 1× by 1 user · last 2026-09-28 · PowerBI · 1 report\n"
+            out.contains(
+                "\nQueried\n└─ queried 1× by 1 user · last 2026-09-28 · PowerBI · 1 report\n\n"
             ),
             "{out}"
         );
@@ -144,12 +149,22 @@ Queried
     }
 
     #[test]
-    fn without_a_log_the_view_and_caveat_are_unchanged() {
+    fn without_a_log_the_view_and_hint_are_unchanged() {
         let (_, out, err) = object_in("'Sales'[Legacy]", |args| args.json = true);
         assert_eq!(json_payload(&out)["queried"], serde_json::json!([]));
         assert!(
-            err.contains("external consumers (thin reports, Excel, XMLA)"),
+            !err.contains("before changing it"),
+            "--json documents the graph; the hint is the human view's:\n{err}"
+        );
+        let (_, _, err) = object("'Sales'[Legacy]");
+        assert!(
+            err.contains("check thin reports, Excel and XMLA clients before changing it"),
             "{err}"
+        );
+        let (_, _, err) = object_in("'Sales'[Legacy]", |args| args.dependencies = true);
+        assert!(
+            !err.contains("before changing it"),
+            "no Impact view, no hint:\n{err}"
         );
     }
 
@@ -242,12 +257,12 @@ Queried
             "Other's query must not count:\n{out}"
         );
         assert!(
-            err.contains("Note: 1 logged queries (2026-09-01) from "),
+            err.contains("· 1 logged queries (2026-09-01) from "),
             "{err}"
         );
         assert!(
             err.contains(
-                "Note: the query log covers 2 models; ignored 1 of 2 queries logged against the others."
+                "! the query log covers 2 models; ignored 1 of 2 queries logged against the others"
             ),
             "{err}"
         );
@@ -290,7 +305,7 @@ Queried
         let (code, out, err) = legacy_impact(&dir, |args| args.queries_from = Some(log));
         assert_eq!(code, 0, "{err}");
         assert!(!out.contains("Queried"), "{out}");
-        assert!(err.contains("Note: 0 logged queries from "), "{err}");
+        assert!(err.contains("· 0 logged queries from "), "{err}");
         assert!(
             err.contains(
                 "[stale_state] the query log has no queries for Mini (it names Budget, Finance); \
@@ -363,6 +378,8 @@ Model
 
 Kept
 └─ 'Sales'[Legacy Total]  kept: Used by the Finance Excel pivot
+
+'Sales'[Legacy]   used by 1 object, 0 report bindings
 "
         );
     }
@@ -371,10 +388,7 @@ Kept
     fn the_kept_object_itself_shows_its_reason_and_empty_reasons_say_so() {
         let dir = kept_project("annotation ripbi_keep =");
         let out = run(&dir, "'Sales'[Legacy Total]", |args| args.impact = true);
-        assert!(
-            out.ends_with("\nKept\n└─ kept (no reason given)\n"),
-            "{out}"
-        );
+        assert!(out.contains("\nKept\n└─ kept (no reason given)\n"), "{out}");
     }
 
     #[test]
@@ -436,6 +450,8 @@ Reports
    └─ P1
       └─ V1  visual
          └─ Values
+
+'Sales'[Total]   uses 3 objects · used by 0 objects, 1 report binding
 "
         );
     }
@@ -596,7 +612,7 @@ mod inputs {
         let (code, out, err) = run_deps(&args, &dir.0, "");
 
         assert_eq!(code, 0, "stderr: {err}");
-        assert!(err.contains("with no reports"));
+        assert!(err.contains(" · no reports"), "{err}");
         assert!(out.contains("'Sales'[Total]  measure"));
         assert!(out.contains("Dependencies"));
         assert!(!out.contains("Reports"), "no report bindings exist:\n{out}");
@@ -1155,7 +1171,7 @@ mod derived_inputs {
 
         assert_eq!(code, 0, "{err}");
         assert!(
-            err.contains("Exploring") && err.contains("Sales.SemanticModel"),
+            err.contains("Sales.SemanticModel · "),
             "the derived model is announced:
 {err}"
         );

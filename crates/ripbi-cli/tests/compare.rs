@@ -82,9 +82,9 @@ fn identical_checkouts_report_nothing_new() {
     let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
 
     assert_eq!(code, 0, "nothing new:\n{stdout}\n{stderr}");
-    assert!(stdout.contains(", 0 unused"), "{stdout}");
+    assert!(stdout.contains("No unused objects"), "{stdout}");
     assert!(stdout.contains("(2 findings already in"), "{stdout}");
-    assert!(stdout.contains("No unused objects."), "{stdout}");
+    assert!(stdout.contains("No unused objects"), "{stdout}");
     assert!(!stdout.contains("Fixed since"), "{stdout}");
 }
 
@@ -95,7 +95,7 @@ fn a_new_dead_measure_is_the_only_finding_and_gates() {
 
     let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
     assert_eq!(code, 1, "{stdout}");
-    assert!(stdout.contains(", 1 unused"), "{stdout}");
+    assert!(stdout.contains("1 unused object "), "{stdout}");
     assert!(stdout.contains("'Sales'[Draft KPI]"), "{stdout}");
     assert!(!stdout.contains("'Sales'[Legacy Total]"), "{stdout}");
     assert!(
@@ -131,7 +131,7 @@ fn a_new_measure_kept_by_annotation_passes_the_gate() {
 
     let (code, stdout, _) = checkouts.scan(ScanArgs::default());
     assert_eq!(code, 0, "{stdout}");
-    assert!(stdout.contains(", 0 unused"), "{stdout}");
+    assert!(stdout.contains("No unused objects"), "{stdout}");
     assert!(!stdout.contains("Draft KPI"), "{stdout}");
 }
 
@@ -251,8 +251,8 @@ fn a_base_without_the_model_makes_every_finding_new() {
 
     let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
     assert_eq!(code, 1, "{stdout}");
-    assert!(stderr.contains("Note: nothing to compare in"), "{stderr}");
-    assert!(stdout.contains(", 2 unused"), "{stdout}");
+    assert!(stderr.contains("! nothing to compare in"), "{stderr}");
+    assert!(stdout.contains("2 unused objects"), "{stdout}");
     assert!(stdout.contains("(0 findings already in"), "{stdout}");
 }
 
@@ -314,7 +314,7 @@ fn a_space_indented_measure_is_new_and_breaks_nothing_else() {
 
     let (code, stdout, stderr) = checkouts.scan(ScanArgs::default());
     assert_eq!(code, 1, "{stdout}");
-    assert!(stdout.contains(", 1 unused"), "{stdout}");
+    assert!(stdout.contains("1 unused object "), "{stdout}");
     assert!(stdout.contains("'Sales'[Try Me]"), "{stdout}");
     assert!(!stdout.contains("Fixed since"), "{stdout}");
     assert!(stderr.contains("indented with spaces"), "{stderr}");

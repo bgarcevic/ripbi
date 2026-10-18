@@ -93,8 +93,12 @@ fn defaults_to_a_fresh_temp_folder_bound_back_to_the_model() {
     );
     assert!(!stderr.contains(".gitignore"), "{stderr}");
     assert!(
-        stderr.contains("Open Central.pbip in Power BI Desktop"),
+        stderr.contains("\u{2713} Created Central.pbip   one empty page, no visuals\n"),
         "{stderr}"
+    );
+    assert!(
+        stderr.contains("next: open it in Power BI Desktop, refresh, then save"),
+        "the next step sits under the result:\n{stderr}"
     );
 
     // The relative byPath from the temp folder resolves to the model.
@@ -257,7 +261,7 @@ fn scan_refuses_a_model_whose_only_report_is_a_stub() {
     let (code, _, stderr) = run_scan(&args, &temp.0, "");
     assert_eq!(code, 2, "{stderr}");
     assert!(
-        stderr.contains("Note: Central.Report is a ripbi stub (no bindings)."),
+        stderr.contains("· Central.Report is a ripbi stub (no bindings)"),
         "{stderr}"
     );
     assert!(stderr.contains("has only ripbi stub reports"), "{stderr}");

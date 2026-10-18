@@ -52,9 +52,9 @@ ripbi scan --queries-from exports/semantic-model-logs.csv
   but `--strict` fails it: in CI, a typo'd `--queries-item` or a renamed model never
   passes silently. Prefer the model's `ItemId` GUID as the key there (below) — it
   survives renames and folder names.
-- **Notes:** one `Note:` names the query count and the log's date window; another
-  says how many queries other models' rows accounted for. The coverage
-  caveat changes to say that consumers outside the window stay invisible — a log is
+- **Notes:** one `·` note names the query count and the log's date window; a `!` note
+  says how many queries other models' rows accounted for. The consumer hint under a
+  verdict with findings changes to say that consumers outside the window stay invisible — a log is
   only as long as its retention, so a monthly report may not show up in a week of logs.
 - **Output.** `--json` counts the queried objects in `summary.queried`;
   `ripbi deps --impact` lists them in a `Queried` section (see [deps.md](../deps.md)).

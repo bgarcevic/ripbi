@@ -189,6 +189,20 @@ impl Palette {
         self.ink(MOSS, true, text)
     }
 
+    /// `  ! text` — a note that changes how to read the result: stale or
+    /// partial stats, a weak pairing. The marker carries the color; the text
+    /// stays readable.
+    #[must_use]
+    pub fn warn_note(&self, text: &str) -> String {
+        format!("  {} {text}", self.warn("!"))
+    }
+
+    /// `  · text` — background context the result does not hinge on.
+    #[must_use]
+    pub fn info_note(&self, text: &str) -> String {
+        format!("  {}", self.dim(&format!("· {text}")))
+    }
+
     fn ink(&self, ink: Ink, bold: bool, text: &str) -> String {
         let weight = if bold { "1;" } else { "" };
         match self.depth {

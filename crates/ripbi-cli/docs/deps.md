@@ -49,17 +49,17 @@ reports as binding sources the same way scan takes them, search folders included
 One deliberate difference from scan: **a model with no reports is valid**. There is no
 zero-connected-report refusal and no `--allow-no-reports` — liveness is not the
 question here, and the intra-model dependency graph is fully explorable without any
-report. The announce line says so: `Exploring X with no reports`.
+report. The header says so: `X.SemanticModel · no reports`.
 
 ## Streams
 
 | Content | Stream | Notes |
 |---|---|---|
-| The view: focused trees, diagrams, overview, JSON, plain records | stdout | the machine-readable side |
-| Discovery/selection announce, exploring line | stderr | one line each; the exploring line counts the paired reports (`--verbose` names them) |
-| Pairing notes (`Note:` by-name matches, `Ignored … bound to other models`) | stderr | capped lines, as in scan |
-| Coverage caveat | stderr | once per run |
-| Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header, in every mode — the JSON documents the graph, not the run |
+| The view: focused trees, diagrams, overview, closing line, JSON, plain records | stdout | the machine-readable side |
+| Discovery/selection announce, header | stderr | one line each; the header names the model and counts the paired reports (`--verbose` gives the full path and names them) |
+| Pairing and query-log notes (`!` by-name matches, `· ignored … bound to other models`, `· N logged queries …`) | stderr | the same tiered, capped lines as `scan` |
+| Skip notices (parser drift, stale saved state, unresolved dataset references) | stderr | grouped under one header, above the view, in every mode — the JSON documents the graph, not the run |
+| Consumer hint | stderr | under the closing line of a human view with an Impact section |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
@@ -217,7 +217,19 @@ Reports
    └─ P1
       └─ V1  visual
          └─ Values
+
+'Sales'[Total]   uses 3 objects · used by 0 objects, 1 report binding
+  check thin reports, Excel and XMLA clients before changing it; ripbi can't see them
 ```
+
+The closing line, last because a terminal leaves it in view, counts what the
+selection uses and what uses it (model objects and report bindings) and on a
+terminal ends with the wall time. A selection of several objects names their count
+instead. Under it, whenever the view has an Impact section, a dim hint says that
+consumers ripbi cannot see (thin reports elsewhere, Analyze in Excel, XMLA clients)
+are not in it; with `--queries-from` it names the consumers outside the log's window
+instead. `--dependencies` alone shows no Impact, so no hint. The overview is its own
+summary and ends with its `Try:` list.
 
 The projection rules: a node on the current path prints `↺ cycle`; a node expanded
 anywhere earlier prints `↩ already shown` instead of duplicating its subtree; children

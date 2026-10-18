@@ -51,13 +51,13 @@ reads `(no semantic model)` in that mode.
 
 | Content | Stream | Notes |
 |---|---|---|
-| Inventory tree, view tables, plain records, JSON | stdout | the machine-readable side |
-| Reading line (`Reading … with N report(s)`) | stderr | one line |
-| Pairing notes from a walk (`Note:` by-name matches, `Ignored … bound to other models`) | stderr | same collapsed one-line forms as `scan` |
-| Model-less note (`No semantic model paired — listing … as written`) | stderr | under `--allow-no-model` |
-| Next-command pointer (`N unresolved — see: ripbi report --broken`) | stderr | after the `--visuals` view, when any visual is broken |
-| Empty-filter note (`no pages match …`) | stderr | when filters match nothing; the run still exits `0` |
-| Skip notices (parser drift, stale saved state) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
+| Inventory tree, view tables, closing line, plain records, JSON | stdout | the machine-readable side |
+| Header (`Sales.SemanticModel · 1 report`) | stderr | the model's name and report count, as in `scan` |
+| Pairing notes from a walk (`!` by-name matches, `· ignored … bound to other models`) | stderr | the same tiered, collapsed lines as `scan` |
+| Model-less header and note (`Solo.Report · no model`, `! no semantic model paired; …`) | stderr | under `--allow-no-model` |
+| Empty-filter note (`! no pages match …`) | stderr | when filters match nothing; the run still exits `0` |
+| Skip notices (parser drift, stale saved state) | stderr | grouped under one header, above the inventory; suppressed in `--json` mode, where the JSON carries them |
+| Next-command pointer (`see them with: ripbi report --broken`) | stderr | under the closing line, when any binding is unresolved and `--broken` is not already on |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
@@ -106,13 +106,15 @@ Overview  V1      card  1       0
 Overview  V2      card  1       1
 Overview  V3      card  1       1
 Overview  V4      kpi   1       0
+
+✗ 2 unresolved bindings   1 report · 1 page · 4 visuals
+  see them with: ripbi report --broken
 ```
 
 - `--pages` — `page`, `display`, `hidden`, `mobile`, `visuals`. `-` marks a page
   without a display name.
 - `--visuals` — `page`, `visual`, `type` (the `visualType` as written), `fields`
-  (binding rows), `unresolved` (count). When any visual carries unresolved bindings, a
-  dim stderr line points at `--broken`.
+  (binding rows), `unresolved` (count).
 - `--fields` — `page`, `visual`, `site`, `kind`, `target`, `note`: one row per field
   well, sort, conditional-formatting rule, and alt-text reference, one per filter
   target (`kind: filter`) and condition-tree reference (`kind: filter_ref`), and one
@@ -179,7 +181,16 @@ AdventureWorks Sales — 1 page, 17 visuals
               formatting measure 'Sales'[Products]
               filter     Filterf32699ca5c7851734a77 (Categorical) — 'Reseller'[Business Type]
               …
+
+✓ All bindings resolve   1 report · 1 page · 17 visuals
 ```
+
+Every human view, the tree and the tables alike, ends with a closing line, last because
+a terminal leaves it in view: `✓ All bindings resolve` or `✗ N unresolved bindings`,
+then how many reports, pages, and visuals were read (under filters, the surviving
+ones), and on a terminal the wall time. When any binding is unresolved, a dim stderr
+line under it points at `--broken`. Under `--allow-no-model` nothing was checked, so
+the line reads `Not checked against a model` instead of a verdict.
 
 - The report header carries the report name, its page count (desktop pages; the phone
   layout has its own section), its visual count, and — when any exist — the unresolved

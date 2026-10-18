@@ -52,7 +52,7 @@ mod happy_path {
 
         assert_eq!(code, 1, "the mini model keeps its dead chain");
         assert!(
-            stderr.contains("with 2 report(s): A.Report, B.Report"),
+            stderr.contains("2 reports: A.Report, B.Report"),
             "--verbose names every bound report:\n{stderr}"
         );
         assert!(
@@ -129,7 +129,7 @@ mod exclusions_and_unresolved {
 
         assert_eq!(code, 1, "the connected report keeps the scan running");
         assert!(
-            stderr.contains("Ignored 1 report(s) bound to other models: HR.Report"),
+            stderr.contains("ignored 1 report(s) bound to other models: HR.Report"),
             "exclusions are listed:\n{stderr}"
         );
         assert!(
@@ -168,7 +168,7 @@ mod exclusions_and_unresolved {
 
         assert!(
             stderr.contains(
-                "Ignored 5 report(s) bound to other models: \
+                "ignored 5 report(s) bound to other models: \
                  Drift.Report, Finans.Report, HR.Report, … and 2 more \
                  — rerun with --verbose to list them"
             ),
@@ -181,7 +181,7 @@ mod exclusions_and_unresolved {
         };
         let (_, _, stderr) = run_scan(&args, &temp.0, "");
         assert!(
-            stderr.contains("Ignored 5 report(s) bound to other models: ")
+            stderr.contains("ignored 5 report(s) bound to other models: ")
                 && stderr.contains("Support.Report"),
             "--verbose lists every ignored report:\n{stderr}"
         );
@@ -395,7 +395,7 @@ mod allow_no_reports {
 
         assert_eq!(code, 1, "the mini model keeps its dead chain");
         assert!(
-            stderr.contains("with 1 report(s)"),
+            stderr.contains("1 report"),
             "the report is found and scanned:\n{stderr}"
         );
         assert!(
@@ -508,7 +508,7 @@ mod default_search_folder {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("with 1 report(s): X.Report"),
+            stderr.contains("1 report: X.Report"),
             "--verbose names the sibling report:\n{stderr}"
         );
     }
@@ -567,7 +567,7 @@ mod explicit_reports {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("with 2 report(s)"),
+            stderr.contains("2 reports"),
             "A.Report is not counted twice:\n{stderr}"
         );
         let payload = json_payload(&stdout);
@@ -653,11 +653,11 @@ mod discovery_is_disabled {
 
         assert_eq!(code, 1, "the explicit model wins over the config target");
         assert!(
-            stderr.contains("Scanning") && stderr.contains("X.SemanticModel"),
+            stderr.contains("X.SemanticModel · "),
             "the explicit model is scanned:\n{stderr}"
         );
         assert!(
-            stderr.contains("with 1 report(s): A.Report"),
+            stderr.contains("1 report: A.Report"),
             "the config reports value was walked as a search folder:\n{stderr}"
         );
         assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
@@ -689,11 +689,11 @@ mod name_based_binding {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("with 2 report(s)"),
+            stderr.contains("2 reports"),
             "both tiers connect:\n{stderr}"
         );
         assert!(
-            stderr.contains("Note:")
+            stderr.contains("  ! ")
                 && stderr.contains(
                     "1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales Model'): Thin.Report"
                 ),
@@ -736,7 +736,7 @@ mod name_based_binding {
         assert_eq!(
             stderr
                 .lines()
-                .filter(|line| line.starts_with("Note: ")
+                .filter(|line| line.starts_with("  ! ")
                     && line.contains("matched by dataset name only"))
                 .count(),
             1,
@@ -760,7 +760,7 @@ mod name_based_binding {
         assert_eq!(
             stderr
                 .lines()
-                .filter(|line| line.starts_with("Note: ")
+                .filter(|line| line.starts_with("  ! ")
                     && line.contains("matched by dataset name only"))
                 .count(),
             2,
@@ -843,7 +843,7 @@ mod binding_spellings {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("with 1 report(s): A.Report"),
+            stderr.contains("1 report: A.Report"),
             "--verbose names the report the backslash spelling connects:\n{stderr}"
         );
     }
@@ -871,7 +871,7 @@ mod strict_mode {
             "bound-elsewhere is informational, only the dead chain gates:\n{stderr}"
         );
         assert!(
-            stderr.contains("Ignored 1 report(s) bound to other models: Y.Report"),
+            stderr.contains("ignored 1 report(s) bound to other models: Y.Report"),
             "the exclusion is still visible:\n{stderr}"
         );
     }

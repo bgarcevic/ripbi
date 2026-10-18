@@ -13,6 +13,7 @@ queries_item = "AdventureWorks Sales"                   # the log's model, when 
 [scan]
 ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, never reported unused
 stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL model, or "none"
+external_consumers = "none"                            # nothing outside these reports reads the model
 ```
 
 | Key | Flag it stands in for | Read by |
@@ -23,6 +24,7 @@ stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL m
 | `queries_item` | `--queries-item` | `scan`, `deps` |
 | `[scan].ignore` | — | `scan` |
 | `[scan].stats_from` | `--stats-from` | `scan` |
+| `[scan].external_consumers` | — | `scan` |
 
 `target` and `reports` feed the input ladder every command shares: see
 [inputs and pairing](scan/overview.md#inputs-and-pairing). `--model` disables
@@ -32,6 +34,11 @@ stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL m
 a path resolved against the file's directory, or `none` to turn off
 `.pbi/cache.abf` auto-detection. The flag replaces it. It is ignored when the
 scanned model carries its own storage catalog (a PBIX or `.abf`).
+
+`external_consumers = "none"` says nothing outside the scanned reports reads the
+model — no thin reports in other workspaces, Analyze in Excel, or XMLA clients — and
+drops the check-before-removing hint a scan with findings prints under its verdict.
+It changes no finding and no exit code. `none` is the only value.
 
 `queries_from` is the config form of `--queries-from`, resolved against the file's
 directory; it sits at the top level because `deps` reads it too. `queries_item` picks

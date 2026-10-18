@@ -109,6 +109,7 @@ fn explore(
     };
     let depth = parse_depth(args.depth.as_deref())?;
     let queries_path = scan::query_log_path(args.queries_from.as_deref(), config.as_ref());
+    let query_logged = queries_path.is_some();
 
     // Target: the shared ladder — --model, else PATH (none here: the
     // positional is an object operand, not a path), else config `target`,
@@ -131,56 +132,18 @@ fn explore(
     progress.stage(1);
     let report_paths = scan::dedupe(paired.reports);
 
+    let notes = scan::Notes(*palette_err);
     if !args.quiet {
-        announce.push(if report_paths.is_empty() {
-            format!("Exploring {} with no reports", paired.model.display())
-        } else {
-            format!(
-                "Exploring {} with {} report(s)",
-                paired.model.display(),
-                report_paths.len()
-            )
-        });
-        if let Some(walk) = &walk {
-            if !walk.bound.name_matched.is_empty() {
-                if args.verbose {
-                    let names: Vec<String> = walk
-                        .bound
-                        .name_matched
-                        .iter()
-                        .map(|(path, _)| scan::report_name(path))
-                        .collect();
-                    announce.push(format!(
-                        "Note: matched by dataset name only: {}",
-                        names.join(", ")
-                    ));
-                } else {
-                    announce.extend(scan::collapse_name_matched(&walk.bound.name_matched));
-                }
-            }
-            if !walk.bound.ignored_elsewhere.is_empty() {
-                let count = walk.bound.ignored_elsewhere.len();
-                let names: Vec<String> = walk
-                    .bound
-                    .ignored_elsewhere
-                    .iter()
-                    .map(|path| scan::report_name(path))
-                    .collect();
-                announce.push(format!(
-                    "Ignored {count} report(s) bound to other models: {}",
-                    scan::capped_names(&names)
-                ));
-            }
-        }
+        announce.extend(scan::pairing_announce(
+            notes,
+            &paired.model,
+            &report_paths,
+            walk.as_ref().map(|walk| &walk.bound),
+            Some(args.verbose),
+        ));
         for line in &announce {
             writeln!(streams.err, "{line}").map_err(ScanError::from)?;
         }
-        writeln!(
-            streams.err,
-            "{}",
-            scan::coverage_caveat(queries_path.is_some())
-        )
-        .map_err(ScanError::from)?;
     }
 
     // Ingest: the model, then every report as a binding source.
@@ -233,6 +196,7 @@ fn explore(
         scan::query_log_item(args.queries_item.as_deref(), config.as_ref()),
         &paired.model,
         args.quiet,
+        notes,
         streams.err,
         &mut skips,
     )?;
@@ -249,11 +213,20 @@ fn explore(
     } else {
         overview_view(&graph)
     };
-    progress
-        .finish(streams.err, Some(&progress::item_label(&paired.model)))
-        .map_err(ScanError::from)?;
+    // The header already named the model; the elapsed time rides on the
+    // closing line, so the ticker just clears.
+    let elapsed = progress.elapsed();
+    progress.finish(streams.err).map_err(ScanError::from)?;
 
     if !args.quiet {
+        // The deps JSON documents the graph, not the run, so skip notices are
+        // stderr's job in every mode. They print above the output, so the
+        // closing line stays last.
+        scan::write_skip_notices(streams.err, &skips)?;
+        let human = !(args.json || args.plain);
+        if human {
+            writeln!(streams.err).map_err(ScanError::from)?;
+        }
         if args.json {
             render::json(streams.out, &output)?;
         } else if args.graph {
@@ -263,9 +236,16 @@ fn explore(
         } else {
             render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
         }
-        // The deps JSON documents the graph, not the run, so skip notices are
-        // stderr's job in every mode.
-        scan::write_skip_notices(streams.err, &skips)?;
+        if human {
+            render::closing(streams.out, &palette_out, &output, elapsed)
+                .map_err(ScanError::from)?;
+        }
+        // Impact lists what ripbi sees; a consumer it cannot see is exactly
+        // the one an empty or short Impact view would hide.
+        if human && output.shows_impact() {
+            let hint = scan::consumer_hint(query_logged, "changing it");
+            writeln!(streams.err, "  {}", palette_err.dim(&hint)).map_err(ScanError::from)?;
+        }
     }
     Ok(EXIT_OK)
 }

@@ -14,8 +14,6 @@ like any other mode. Same stdout, same exit codes, same stderr (notices still pr
 Use `--plain` or `--json` when you want the individual objects.
 
 ```text
-3781 objects, 1207 reachable from 2962 roots, 2574 unused
-
 Measures: 214
 Columns: 2211
 Report measures: 149
@@ -25,6 +23,8 @@ Worst tables:
   'Customer'   187
   'Date'       154
   ... and 14 more tables with findings
+
+✗ 2574 unused objects   1207 of 3781 reachable from 2962 roots
 ```
 
 The `Worst tables:` block groups the same surviving findings the counts above come from

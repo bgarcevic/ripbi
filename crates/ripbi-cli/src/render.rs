@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::time::Duration;
 
 use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
 use serde::Serialize;
@@ -94,6 +95,9 @@ pub struct ScanOutput {
     pub stats_source: Option<String>,
     /// The `--compare-root` comparison (issue #141); `None` without the flag.
     pub compare: Option<CompareOut>,
+    /// Wall time, shown on the verdict line when the stage ticker ran (an
+    /// interactive terminal); `None` keeps piped and captured output stable.
+    pub elapsed: Option<Duration>,
 }
 
 impl ScanOutput {
@@ -339,11 +343,13 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
     labels
 }
 
-/// Writes the human-readable report: a summary line, then findings grouped by
-/// object type with `←` chain annotations. `show_power_query` adds the
+/// Writes the human-readable report: findings grouped by object type with `←`
+/// chain annotations, the breakage, auto date/time, and `Fixed since`
+/// sections, then the verdict — last, because the last line is the one a
+/// terminal leaves in view. `show_power_query` adds the
 /// `⭘ Power Query also names it` annotations (hidden by default; `--json`
 /// always carries the underlying field). `broken_only` — a lone `--broken` —
-/// swaps the empty-findings placeholder for `clean_line`'s broken phrasing.
+/// swaps the verdict headline for its broken phrasing.
 ///
 /// # Errors
 /// Propagates stream write failures.
@@ -354,8 +360,6 @@ pub fn human(
     show_power_query: bool,
     broken_only: bool,
 ) -> io::Result<()> {
-    write_summary(out, palette, report)?;
-
     if !report.findings.is_empty() {
         for (kind, label) in GROUPS {
             let group: Vec<&Finding> = report
@@ -377,13 +381,12 @@ pub fn human(
             }
             writeln!(out)?;
         }
-    } else if let Some(line) = clean_line(report, broken_only) {
-        writeln!(out, "{line}")?;
     }
     write_broken_artifacts(out, palette, report)?;
     write_broken(out, palette, report)?;
     write_auto_date_time(out, palette, report, show_power_query)?;
-    write_fixed(out, palette, report)
+    write_fixed(out, palette, report)?;
+    write_verdict(out, palette, report, broken_only)
 }
 
 /// The `Fixed since <root>` section: findings of the other checkout that are
@@ -445,18 +448,35 @@ pub(crate) fn fixed_uncertain(report: &ScanOutput) -> bool {
             .any(|skip| skip.kind == "unknown_object")
 }
 
-/// The placeholder line for an empty findings list. Under a lone `--broken`
+/// The verdict's headline and whether it is clean. Under a lone `--broken`
 /// the run's scope is the broken bindings — the empty reachability list is
-/// the filter's doing, not a result — so the placeholder speaks for them:
-/// `No broken reports or artifacts.` when none were found, and no line when
-/// either breakage section has rows. Every other selection keeps the reachability
-/// phrasing.
-fn clean_line(report: &ScanOutput, broken_only: bool) -> Option<&'static str> {
-    if !broken_only {
-        return Some("No unused objects.");
+/// the filter's doing, not a result — so the headline speaks for them. Every
+/// other selection keeps the reachability phrasing.
+fn headline(report: &ScanOutput, broken_only: bool) -> (String, bool) {
+    if broken_only {
+        let broken = report.broken.len() + report.broken_artifacts.len();
+        return if broken == 0 {
+            ("No broken reports or artifacts".to_string(), true)
+        } else {
+            (
+                format!("{broken} broken {}", plural(broken, "binding")),
+                false,
+            )
+        };
     }
-    (report.broken.is_empty() && report.broken_artifacts.is_empty())
-        .then_some("No broken reports or artifacts.")
+    match report.findings.len() {
+        0 => ("No unused objects".to_string(), true),
+        count => (format!("{count} unused {}", plural(count, "object")), false),
+    }
+}
+
+/// `object` or `objects`.
+fn plural(count: usize, noun: &str) -> String {
+    if count == 1 {
+        noun.to_string()
+    } else {
+        format!("{noun}s")
+    }
 }
 
 fn write_broken_artifacts(
@@ -494,7 +514,7 @@ fn write_broken_artifacts(
 /// The broken-visual section (issue #60), rendered in both human modes after
 /// the reachability findings: like the auto date/time section, a different
 /// verdict (written references, not reachability) — and advisory, so it
-/// survives even a clean "No unused objects." scan. The `--broken` flag is
+/// survives even a clean "No unused objects" scan. The `--broken` flag is
 /// what turns it into a gate.
 fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) -> io::Result<()> {
     if report.broken.is_empty() {
@@ -539,7 +559,7 @@ pub(crate) fn reason_phrase(binding: &BrokenOut) -> String {
 
 /// The auto date/time section, rendered in both human modes after the
 /// reachability findings: a different verdict (report bindings, not
-/// reachability), so it survives even a clean "No unused objects." scan.
+/// reachability), so it survives even a clean "No unused objects" scan.
 fn write_auto_date_time(
     out: &mut dyn io::Write,
     palette: &Palette,
@@ -671,8 +691,6 @@ pub fn human_summary(
     report: &ScanOutput,
     broken_only: bool,
 ) -> io::Result<()> {
-    write_summary(out, palette, report)?;
-
     if !report.findings.is_empty() {
         for (kind, label) in GROUPS {
             let count = report
@@ -685,8 +703,6 @@ pub fn human_summary(
             }
         }
         write_worst_tables(out, palette, &report.findings)?;
-    } else if let Some(line) = clean_line(report, broken_only) {
-        writeln!(out, "{line}")?;
     }
     if !report.broken.is_empty() {
         writeln!(
@@ -715,9 +731,19 @@ pub fn human_summary(
             writeln!(out, "  {}", palette.warn(FIXED_CAVEAT))?;
         }
     }
-    if report.auto_date_time.is_empty() {
-        return Ok(());
+    if !report.auto_date_time.is_empty() {
+        write_auto_date_time_summary(out, palette, report)?;
     }
+    writeln!(out)?;
+    write_verdict(out, palette, report, broken_only)
+}
+
+/// The `Auto date/time: …` line of `--summary`.
+fn write_auto_date_time_summary(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
     let mut counts = Vec::new();
     for (verdict, label) in [
         ("in_use", "in use"),
@@ -763,24 +789,30 @@ fn date_column_count(rows: &[AutoDateTimeRow]) -> usize {
         .len()
 }
 
-/// The summary line both human modes open with, plus the `[scan].ignore`
-/// note when anything was suppressed.
-fn write_summary(
+/// The verdict both human modes close with: `✓ No unused objects` or
+/// `✗ 12 unused objects`, the reachability counts beside it, then — indented
+/// under it — the unused storage and the suppression notes that explain the
+/// arithmetic.
+fn write_verdict(
     out: &mut dyn io::Write,
     palette: &Palette,
     report: &ScanOutput,
+    broken_only: bool,
 ) -> io::Result<()> {
-    let unused_text = if report.findings.is_empty() {
-        palette.ok("0 unused")
+    let (headline, clean) = headline(report, broken_only);
+    let mark = if clean {
+        palette.ok(&format!("\u{2713} {headline}"))
     } else {
-        palette.warn(&format!("{} unused", report.findings.len()))
+        palette.warn(&format!("\u{2717} {headline}"))
     };
+    let elapsed = report
+        .elapsed
+        .map(|elapsed| format!("  {}", palette.dim(&format_elapsed(elapsed))))
+        .unwrap_or_default();
     writeln!(
         out,
-        "{} objects, {} reachable from {} roots, {unused_text}",
-        palette.bold(&report.objects.to_string()),
-        palette.bold(&report.reachable.to_string()),
-        palette.bold(&report.roots.to_string()),
+        "{mark}   {} of {} reachable from {} roots{elapsed}",
+        report.reachable, report.objects, report.roots,
     )?;
     if let Some(storage) = &report.unused_storage {
         let of = report
@@ -802,7 +834,7 @@ fn write_summary(
         };
         writeln!(
             out,
-            "Unused storage: {approx} {}{of} {place} ({} objects with size data{note})",
+            "  Unused storage: {approx} {}{of} {place} ({} objects with size data{note})",
             palette.bold(&format_bytes(storage.bytes)),
             storage.objects,
         )?;
@@ -859,9 +891,20 @@ fn write_summary(
         ));
     }
     for note in &notes {
-        writeln!(out, "{}", palette.muted(note))?;
+        writeln!(out, "  {}", palette.muted(note))?;
     }
-    writeln!(out)
+    Ok(())
+}
+
+/// `0.8s`, `12.4s`, `2m 05s`.
+pub fn format_elapsed(elapsed: Duration) -> String {
+    let secs = elapsed.as_secs_f64();
+    if secs < 60.0 {
+        format!("{secs:.1}s")
+    } else {
+        let whole = elapsed.as_secs();
+        format!("{}m {:02}s", whole / 60, whole % 60)
+    }
 }
 
 /// `  (1.2 MB)` after a finding's id, when its size is known.
@@ -1483,6 +1526,7 @@ mod tests {
             unused_storage: None,
             stats_source: None,
             compare: None,
+            elapsed: None,
         }
     }
 
@@ -1747,11 +1791,40 @@ mod tests {
             text.contains("Broken visual bindings (1)\n  'Sales'[Color]\n    ← field not found in the model — field well 'Values' — card visual 'Revenue' (id 'V1') on page 'Overview' (id 'P1') in report 'Mini'\n"),
             "the section names the field, the reason, and the site:\n{text}"
         );
-        assert!(text.contains("No unused objects."));
+        assert!(
+            text.ends_with("\u{2713} No unused objects   0 of 0 reachable from 0 roots\n"),
+            "the verdict is the last line:\n{text}"
+        );
     }
 
-    /// Under a lone `--broken` the placeholder speaks for the scope the flag
-    /// asked about: nothing flags reads "No broken reports or artifacts.", never the
+    /// The verdict closes the report, after every section, so a terminal
+    /// leaves it in view; with findings it counts them.
+    #[test]
+    fn the_verdict_is_the_last_line_and_counts_the_findings() {
+        let mut output = scan_output(vec![sized(4096, SizeBasis::Files)]);
+        output.objects = 7;
+        output.reachable = 6;
+        output.roots = 2;
+
+        let mut out = Vec::new();
+        human(&mut out, &Palette::plain(), &output, false, false).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        let verdict = text
+            .lines()
+            .position(|line| {
+                line.starts_with("\u{2717} 1 unused object   6 of 7 reachable from 2 roots")
+            })
+            .unwrap_or_else(|| panic!("no verdict line:\n{text}"));
+        let rest: Vec<&str> = text.lines().skip(verdict + 1).collect();
+        assert!(
+            rest.iter().all(|line| line.starts_with("  ")),
+            "only the verdict's own indented details follow it:\n{text}"
+        );
+    }
+
+    /// Under a lone `--broken` the verdict speaks for the scope the flag
+    /// asked about: nothing flags reads "No broken reports or artifacts", never the
     /// reachability phrasing — the empty findings list is the filter's doing.
     #[test]
     fn a_broken_only_clean_scan_places_the_no_broken_reports_line() {
@@ -1767,20 +1840,20 @@ mod tests {
 
         let text = String::from_utf8(out).unwrap();
         assert!(
-            text.contains("No broken reports or artifacts."),
-            "the placeholder names the scope:\n{text}"
+            text.contains("\u{2713} No broken reports or artifacts"),
+            "the verdict names the scope:\n{text}"
         );
         assert!(
-            !text.contains("No unused objects."),
+            !text.contains("No unused objects"),
             "the run never scoped reachability:\n{text}"
         );
     }
 
-    /// With rows in the section, the placeholder line is dropped entirely —
-    /// "No unused objects." stacked above the bindings read like a verdict
-    /// the flag never asked for.
+    /// With rows in the section, the verdict counts them — "No unused
+    /// objects" under the bindings would read like a verdict the flag never
+    /// asked for.
     #[test]
-    fn a_broken_only_scan_with_rows_prints_no_placeholder() {
+    fn a_broken_only_scan_with_rows_counts_them_in_the_verdict() {
         let mut output = scan_output(vec![]);
         output.broken = vec![broken("'Sales'[Color]", "field_not_found", None)];
 
@@ -1789,14 +1862,15 @@ mod tests {
 
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("Broken visual bindings (1)"), ":\n{text}");
-        assert!(!text.contains("No unused objects."), ":\n{text}");
+        assert!(text.contains("\u{2717} 1 broken binding"), ":\n{text}");
+        assert!(!text.contains("No unused objects"), ":\n{text}");
         assert!(
-            !text.contains("No broken reports or artifacts."),
+            !text.contains("No broken reports or artifacts"),
             ":\n{text}"
         );
     }
 
-    /// `--summary` shares the placeholder: one phrasing per scope, both human
+    /// `--summary` shares the verdict: one phrasing per scope, both human
     /// modes.
     #[test]
     fn the_summary_shares_the_broken_only_placeholder() {
@@ -1804,10 +1878,7 @@ mod tests {
         human_summary(&mut out, &Palette::plain(), &scan_output(vec![]), true).unwrap();
 
         let text = String::from_utf8(out).unwrap();
-        assert!(
-            text.contains("No broken reports or artifacts."),
-            ":\n{text}"
-        );
+        assert!(text.contains("No broken reports or artifacts"), ":\n{text}");
     }
 
     /// The propagated reason names the artifact: the visual is what a user

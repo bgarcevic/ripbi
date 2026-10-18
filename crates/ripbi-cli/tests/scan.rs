@@ -49,7 +49,7 @@ mod output_modes {
         let (code, stdout, _) = run_scan(&ScanArgs::default(), &temp.0, "");
         assert_eq!(code, 0, "{stdout}");
         assert!(
-            stdout.contains("6 objects, 6 reachable from 1 roots, 0 unused"),
+            stdout.contains("No unused objects   6 of 6 reachable from 1 roots"),
             "{stdout}"
         );
 
@@ -83,10 +83,10 @@ mod output_modes {
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
         assert_eq!(code, 0, "{stdout}{stderr}");
         assert!(
-            stdout.contains("6 objects, 6 reachable from 1 roots, 0 unused"),
+            stdout.contains("No unused objects   6 of 6 reachable from 1 roots"),
             "{stdout}"
         );
-        assert!(stderr.contains("Note: 3 logged queries"), "{stderr}");
+        assert!(stderr.contains("· 3 logged queries"), "{stderr}");
 
         let args = ScanArgs {
             json: true,
@@ -134,7 +134,7 @@ mod output_modes {
         };
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
         assert_eq!(code, 0, "{stdout}{stderr}");
-        assert!(stdout.contains("0 unused"), "{stdout}");
+        assert!(stdout.contains("No unused objects"), "{stdout}");
 
         // A log without this model is the no-log baseline, not a failure…
         let mut args = ScanArgs {
@@ -165,7 +165,7 @@ mod output_modes {
 
         assert_eq!(code, 1, "unused objects found");
         assert!(
-            stdout.contains("6 objects, 4 reachable from 1 roots, 2 unused"),
+            stdout.contains("2 unused objects   4 of 6 reachable from 1 roots"),
             "summary line missing:\n{stdout}"
         );
         assert!(stdout.contains("Measures (1)"), "group header:\n{stdout}");
@@ -179,10 +179,13 @@ mod output_modes {
             ),
             "chain annotation:\n{stdout}"
         );
-        assert!(stderr.contains("Scanning"), "announce missing:\n{stderr}");
         assert!(
-            stderr.contains("external consumers (thin reports, Excel, XMLA) are invisible"),
-            "caveat missing:\n{stderr}"
+            stderr.contains(".SemanticModel · "),
+            "announce missing:\n{stderr}"
+        );
+        assert!(
+            stderr.contains("check thin reports, Excel and XMLA clients before removing"),
+            "consumer hint missing:\n{stderr}"
         );
     }
 
@@ -196,7 +199,10 @@ mod output_modes {
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
 
         assert_eq!(code, 1);
-        assert!(stderr.contains("Scanning"), "announcements stay on stderr");
+        assert!(
+            stderr.contains(".SemanticModel · "),
+            "announcements stay on stderr"
+        );
 
         let payload: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
         assert_eq!(payload["schema_version"], 1);
@@ -279,7 +285,7 @@ mod output_modes {
 
         assert_eq!(code, 1);
         assert!(
-            stdout.contains("6 objects, 4 reachable from 1 roots, 2 unused"),
+            stdout.contains("2 unused objects   4 of 6 reachable from 1 roots"),
             "summary line:\n{stdout}"
         );
         assert!(stdout.contains("Measures: 1"), "count line:\n{stdout}");
@@ -443,14 +449,14 @@ mod type_filters {
 
         assert_eq!(code, 0, "the exit code describes what was reported");
         assert!(
-            stdout.contains("6 objects, 4 reachable from 1 roots, 0 unused"),
+            stdout.contains("No unused objects   4 of 6 reachable from 1 roots"),
             "model-wide counts stand, findings do not:\n{stdout}"
         );
         assert!(
             stdout.contains("(2 unused hidden by type filters)"),
             "hidden note:\n{stdout}"
         );
-        assert!(stdout.contains("No unused objects."));
+        assert!(stdout.contains("No unused objects"));
     }
 
     #[test]
@@ -937,8 +943,35 @@ mod config {
             stdout.contains("2 findings suppressed by [scan].ignore"),
             "suppressed note:\n{stdout}"
         );
-        assert!(stdout.contains("No unused objects."));
-        assert!(stderr.contains("Scanning"), "still announces:\n{stderr}");
+        assert!(stdout.contains("No unused objects"));
+        assert!(
+            stderr.contains(".SemanticModel · "),
+            "still announces:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("before removing"),
+            "a clean scan has nothing to check before removing:\n{stderr}"
+        );
+    }
+
+    /// The consumer hint sits under a verdict with findings; a team that
+    /// vouches nothing outside the reports reads the model turns it off.
+    #[test]
+    fn external_consumers_none_drops_the_consumer_hint() {
+        let temp = TempDir::new("config-consumers");
+        project_into(&temp.0, "Mini");
+        temp.write("ripbi.toml", "target = \"Mini.SemanticModel\"\n");
+        let (code, _, stderr) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 1);
+        assert!(stderr.contains("before removing"), "{stderr}");
+
+        temp.write(
+            "ripbi.toml",
+            "target = \"Mini.SemanticModel\"\n\n[scan]\nexternal_consumers = \"none\"\n",
+        );
+        let (code, _, stderr) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 1);
+        assert!(!stderr.contains("before removing"), "{stderr}");
     }
 
     #[test]
@@ -996,7 +1029,7 @@ mod search_folders {
 
         assert_eq!(code, 1, "the mini model keeps its dead chain");
         assert!(
-            stderr.contains("with 2 report(s): X.Report, A.Report"),
+            stderr.contains("2 reports: X.Report, A.Report"),
             "--verbose names the convention sibling and the walked report:\n{stderr}"
         );
         assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
@@ -1026,7 +1059,7 @@ mod search_folders {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("Note:")
+            stderr.contains("  ! ")
                 && stderr.contains(
                     "1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales Model'): Thin.Report"
                 ),
@@ -1053,7 +1086,7 @@ mod search_folders {
 
         assert_eq!(code, 1, "bound-elsewhere reports never fail the scan");
         assert!(
-            stderr.contains("Ignored 1 report(s) bound to other models: HR.Report"),
+            stderr.contains("ignored 1 report(s) bound to other models: HR.Report"),
             "the exclusion is announced like in model mode:\n{stderr}"
         );
     }
@@ -1192,7 +1225,7 @@ mod search_folders {
 
         assert_eq!(code, 1);
         assert!(
-            stderr.contains("with 2 report(s): X.Report, A.Report"),
+            stderr.contains("2 reports: X.Report, A.Report"),
             "config values flow through the same resolution:\n{stderr}"
         );
     }
@@ -1244,7 +1277,7 @@ mod extras {
             "the change-detection measure must not be flagged:\n{stdout}"
         );
         assert!(
-            stdout.contains("0 unused"),
+            stdout.contains("No unused objects"),
             "nothing is left to report:\n{stdout}"
         );
     }
@@ -1769,7 +1802,7 @@ mod derivation {
 
         assert_eq!(code, 1, "{stdout}\n{stderr}");
         assert!(
-            stderr.contains("Sales.SemanticModel") && stderr.contains("with 1 report(s)"),
+            stderr.contains("Sales.SemanticModel") && stderr.contains("1 report"),
             "the derived model is announced with only the passed report:\n{stderr}"
         );
         assert!(stdout.contains("2 unused"), "findings:\n{stdout}");
@@ -1835,7 +1868,7 @@ mod derivation {
 {stderr}"
         );
         assert!(
-            stderr.contains("Sales.SemanticModel") && stderr.contains("with 1 report(s)"),
+            stderr.contains("Sales.SemanticModel") && stderr.contains("1 report"),
             "the report's dataset name picked the model:
 {stderr}"
         );

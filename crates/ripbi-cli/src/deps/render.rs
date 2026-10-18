@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::io;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -95,6 +96,82 @@ pub(crate) struct FocusedOut {
     /// True for a `--consumer visual` run: the Impact view belongs to the
     /// report bindings, so the Model section stays out entirely.
     pub model_hidden: bool,
+}
+
+impl DepsOutput {
+    /// Whether the view includes an Impact section — the one whose meaning
+    /// depends on consumers ripbi cannot see.
+    pub(crate) fn shows_impact(&self) -> bool {
+        matches!(self, Self::Focused(focused) if focused.impact.is_some())
+    }
+}
+
+/// The closing line of the human and `--graph` views, last because a
+/// terminal leaves it in view: what the selection uses and what uses it,
+/// e.g. `'Sales'[Profit %]   uses 12 objects · used by 0 objects, 3 report
+/// bindings`. The overview is its own summary and ends with its `Try:` list;
+/// it gets only the wall time, on a terminal.
+///
+/// # Errors
+/// Propagates stream write failures.
+pub fn closing(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    output: &DepsOutput,
+    elapsed: Option<Duration>,
+) -> io::Result<()> {
+    let elapsed = elapsed.map(|elapsed| palette.dim(&crate::render::format_elapsed(elapsed)));
+    let focused = match output {
+        DepsOutput::Overview(_) => {
+            if let Some(elapsed) = elapsed {
+                writeln!(out, "{elapsed}")?;
+            }
+            return Ok(());
+        }
+        DepsOutput::Focused(focused) => focused,
+    };
+    let subject = match focused.roots.as_slice() {
+        [only] => only.to_string(),
+        roots => count(roots.len(), "object"),
+    };
+    // A slice holds its root; everything else in it is the answer.
+    let reached = |slices: &[DepSlice]| -> usize {
+        slices
+            .iter()
+            .map(|slice| slice.nodes.len().saturating_sub(1))
+            .sum()
+    };
+    let mut parts = Vec::new();
+    if let Some(slices) = &focused.dependencies {
+        parts.push(format!("uses {}", count(reached(slices), "object")));
+    }
+    if let Some(slices) = &focused.impact {
+        let bindings: usize = focused.bindings.iter().map(Vec::len).sum();
+        let mut used_by = Vec::new();
+        if !focused.model_hidden {
+            used_by.push(count(reached(slices), "object"));
+        }
+        used_by.push(count(bindings, "report binding"));
+        parts.push(format!("used by {}", used_by.join(", ")));
+    }
+    let elapsed = elapsed
+        .map(|elapsed| format!("  {elapsed}"))
+        .unwrap_or_default();
+    writeln!(
+        out,
+        "\n{}   {}{elapsed}",
+        palette.bold(&subject),
+        parts.join(" · ")
+    )
+}
+
+/// `1 object`, `3 objects`.
+fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
 }
 
 /// Writes the human-readable output: the object header, then one tree

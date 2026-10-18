@@ -326,7 +326,7 @@ fn the_broken_only_human_output_speaks_for_its_scope() {
         "the bindings are listed:\n{stdout}"
     );
     assert!(
-        !stdout.contains("No unused objects."),
+        !stdout.contains("No unused objects"),
         "no reachability verdict in a breakage-scoped run:\n{stdout}"
     );
 
@@ -339,10 +339,10 @@ fn the_broken_only_human_output_speaks_for_its_scope() {
 
     assert_eq!(code, 0, "nothing broken in the machinery fixture");
     assert!(
-        stdout.contains("No broken reports or artifacts."),
+        stdout.contains("No broken reports or artifacts"),
         "the clean placeholder names the scope:\n{stdout}"
     );
-    assert!(!stdout.contains("No unused objects."), ":\n{stdout}");
+    assert!(!stdout.contains("No unused objects"), ":\n{stdout}");
 }
 
 /// The advisory default: a `--broken`-less run over the same fixture exits

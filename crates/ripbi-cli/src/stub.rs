@@ -49,7 +49,7 @@ pub fn run(args: &StubReportArgs, streams: &mut Streams<'_>) -> i32 {
 #[must_use = "the return value is the process exit code"]
 pub fn run_in(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
     let palette = Palette::detect(streams.stderr_is_tty, args.no_color);
-    match stub(args, cwd, streams) {
+    match stub(args, cwd, streams, &palette) {
         Ok(()) => EXIT_CLEAN,
         Err(error) => {
             if !args.quiet {
@@ -63,7 +63,16 @@ pub fn run_in(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> i
     }
 }
 
-fn stub(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> Result<(), ScanError> {
+/// Output follows the other commands' tiers: a header naming the model,
+/// `!`/`·` notes under it, then the result as the last line with the next
+/// step under it. The `.pbip` path is the result for scripts, alone on
+/// stdout.
+fn stub(
+    args: &StubReportArgs,
+    cwd: &Path,
+    streams: &mut Streams<'_>,
+    palette: &Palette,
+) -> Result<(), ScanError> {
     let model = normalize(&match &args.path {
         Some(path) => model_folder(&cwd.join(path))?,
         None => sole_model_in(cwd)?,
@@ -121,14 +130,24 @@ fn stub(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> Result<
     // The path is the result, alone on stdout, so scripts can open it.
     if !args.quiet {
         writeln!(streams.out, "{}", pbip.display())?;
-        writeln!(
-            streams.err,
-            "Created a report stub for {folder_name} (one empty page, no visuals)."
-        )?;
+        writeln!(streams.err, "{} · report stub", palette.bold(&folder_name))?;
         if !model.join("definition.pbism").is_file() {
             writeln!(
                 streams.err,
-                "Note: {folder_name} has no definition.pbism; Power BI Desktop needs one to open the project."
+                "{}",
+                palette.warn_note(&format!(
+                    "{folder_name} has no definition.pbism; Power BI Desktop needs one to open the project"
+                ))
+            )?;
+        }
+        if args.out.is_some() {
+            writeln!(
+                streams.err,
+                "{}",
+                palette.info_note(&format!(
+                    ".pbi/ is usually gitignored; keep the stub local too by adding \
+                     \"{name}.Report/\" and \"{name}.pbip\" to .gitignore"
+                ))
             )?;
         }
     }
@@ -137,35 +156,42 @@ fn stub(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> Result<
             Ok(()) => true,
             Err(error) => {
                 if !args.quiet {
-                    writeln!(streams.err, "Note: cannot open {}: {error}", pbip.display())?;
+                    writeln!(
+                        streams.err,
+                        "{}",
+                        palette.warn_note(&format!("cannot open {}: {error}", pbip.display()))
+                    )?;
                 }
                 false
             }
         };
     if !args.quiet {
         let step = if opened {
-            format!("Opening {name}.pbip in Power BI Desktop. Refresh, then save")
+            "Desktop is opening it: refresh, then save"
         } else {
-            format!("Open {name}.pbip in Power BI Desktop, refresh, then save")
+            "open it in Power BI Desktop, refresh, then save"
         };
+        writeln!(streams.err)?;
         writeln!(
             streams.err,
-            "{step}: Desktop writes {folder_name}/.pbi/cache.abf, which `ripbi scan` reads storage sizes from."
+            "{}   {}",
+            palette.ok(&format!("\u{2713} Created {name}.pbip")),
+            palette.dim("one empty page, no visuals")
         )?;
-        if args.out.is_some() {
-            writeln!(
-                streams.err,
-                "Tip: .pbi/ is usually gitignored; keep the stub local too by adding \
-                 \"{name}.Report/\" and \"{name}.pbip\" to .gitignore."
-            )?;
-        }
+        writeln!(
+            streams.err,
+            "  {}",
+            palette.dim(&format!(
+                "next: {step}; ripbi scan reads sizes from {folder_name}/.pbi/cache.abf"
+            ))
+        )?;
     }
 
     if args.wait {
         if !args.quiet {
             writeln!(
                 streams.err,
-                "Waiting for Desktop to save {folder_name}/.pbi/cache.abf (Ctrl-C to stop)…"
+                "\nWaiting for Desktop to save {folder_name}/.pbi/cache.abf (Ctrl-C to stop)…"
             )?;
         }
         let bytes = wait_for_save(&cache, baseline, POLL)?;
@@ -176,16 +202,25 @@ fn stub(args: &StubReportArgs, cwd: &Path, streams: &mut Streams<'_>) -> Result<
                 .map_or_else(|| folder_name.clone(), |path| path.display().to_string());
             writeln!(
                 streams.err,
-                "Saved {} ({}).\nNext: ripbi scan --model \"{typed}\"  \
-                 (add --report <path> for reports kept elsewhere)",
-                cache.display(),
-                format_bytes(bytes)
+                "{}   {}",
+                palette.ok(&format!("\u{2713} Saved {folder_name}/.pbi/cache.abf")),
+                palette.dim(&format_bytes(bytes))
+            )?;
+            writeln!(
+                streams.err,
+                "  {}",
+                palette.dim(&format!(
+                    "next: ripbi scan --model \"{typed}\" (add --report <path> for reports kept elsewhere)"
+                ))
             )?;
             if args.out.is_none() {
                 writeln!(
                     streams.err,
-                    "The stub in {} can be deleted once Desktop is closed.",
-                    out.display()
+                    "{}",
+                    palette.info_note(&format!(
+                        "the stub in {} can be deleted once Desktop is closed",
+                        out.display()
+                    ))
                 )?;
             }
         }

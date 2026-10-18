@@ -84,8 +84,9 @@ which static analysis deliberately ignores.
   `.abf`, or a model-bearing PBIT/PBIX). An `.abf` is model-only, like
   `model.bim`.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
-  (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; scan prints this
-  caveat on every run. Mark what they read with a `ripbi_keep` annotation
+  (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; a scan with
+  findings says so in a hint under its verdict (`[scan].external_consumers = "none"`
+  in [`ripbi.toml`](../config.md) drops the hint for a model nothing else reads). Mark what they read with a `ripbi_keep` annotation
   ([Keeping objects on purpose](keep.md)), or add what they
   actually queried from a workspace-monitoring log with `--queries-from`
   ([Logged queries](queries.md)).

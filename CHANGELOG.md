@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`scan` output puts the verdict last and ranks its notes.** The scan now opens with
+  the model's name and report count, lists its notes as indented `!` lines (they change
+  how to read the result: stale or partial stats, a by-name pairing) or dim `·` lines
+  (background), and closes with the verdict as the last line of the output:
+  `✓ No unused objects` or `✗ 56 unused objects`, then `74 of 130 reachable from 51
+  roots`. Full paths, and the stats note when coverage is complete, appear only with
+  `--verbose`. The note that external consumers are invisible now appears only when there
+  are findings, as a hint under the verdict to check thin reports, Excel and XMLA
+  clients before removing anything. Skip notices print above the report instead of
+  after it. `--json`, `--plain`, SARIF and the Markdown summary are unchanged.
+- **`report` and `deps` share the layout.** Both open with the same model-name header
+  and tiered notes, and end with a closing line: `report` with `✓ All bindings
+  resolve` or `✗ 2 unresolved bindings` and what it read, `deps` with what the
+  selection uses and what uses it. `deps` drops the every-run caveat that external
+  consumers are invisible; the hint now appears only under a view with an Impact
+  section. The stage ticker no longer prints a `✓ scanned … in 1.4s` line; the wall
+  time sits at the end of each command's closing line.
+- **`stub-report` and `update` share the layout too.** `stub-report` opens with the
+  model's name, lists its notes as `!`/`·` lines, and ends with `✓ Created X.pbip` and
+  the next step under it (`✓ Saved …/.pbi/cache.abf` under `--wait`); the `.pbip` path
+  is still alone on stdout. `update` ends with `✓ Updated ripbi 0.9.1 → v0.9.2` or
+  `✓ ripbi 0.9.1 is up to date`, and the daily new-version notice is a dim `·` line.
+
+### Added
+
+- **`[scan].external_consumers = "none"`** in `ripbi.toml` says nothing outside the
+  scanned reports reads the model, and drops the check-before-removing hint.
+
 ## [0.9.1] - 2026-10-16
 
 ### Fixed

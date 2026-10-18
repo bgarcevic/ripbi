@@ -127,7 +127,7 @@ pub fn after_command_in(context: &NotifyContext, streams: &mut Streams<'_>) {
     let _ = writeln!(
         streams.err,
         "{}",
-        palette.dim(&notice(&latest, &current, channel))
+        palette.info_note(&notice(&latest, &current, channel))
     );
     mark_notified(&context.state_path, context.now, &latest);
 }
