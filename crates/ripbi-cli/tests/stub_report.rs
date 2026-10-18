@@ -257,7 +257,7 @@ fn scan_refuses_a_model_whose_only_report_is_a_stub() {
     let (code, _, stderr) = run_scan(&args, &temp.0, "");
     assert_eq!(code, 2, "{stderr}");
     assert!(
-        stderr.contains("Note: Central.Report is a ripbi stub (no bindings)."),
+        stderr.contains("· Central.Report is a ripbi stub (no bindings)"),
         "{stderr}"
     );
     assert!(stderr.contains("has only ripbi stub reports"), "{stderr}");

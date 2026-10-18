@@ -73,7 +73,7 @@ catalog`. A scan with no connected reports refuses with exit `2` and per-categor
 counts — unless `--allow-no-reports` turns the refusal into a skip: a
 `Skipped …: no connected reports (…)` notice on stderr and exit `0`, with no stdout
 output. A report written by `ripbi stub-report` binds nothing, so scan prints
-`Note: X.Report is a ripbi stub (no bindings).` for it, and a model whose only
+`· X.Report is a ripbi stub (no bindings)` for it, and a model whose only
 reports are stubs gets the same refusal or skip (issue #130).
 
 With `--report` alone — no PATH, no `--model`, no config `target` — the model is
@@ -89,11 +89,11 @@ reports.
 |---|---|---|
 | Findings, summary, JSON, plain records, SARIF, `##vso` commands, `--emit` lines | stdout | the machine-readable side |
 | `--sarif-file`, `--json-file`, `--markdown-file` | the named file | written whatever stdout shows, `-q` included (see [Several outputs from one scan](ci-formats.md#several-outputs-from-one-scan)) |
-| Discovery/selection announce, scanning line | stderr | one line each; the scanning line counts the bound reports (`--verbose` names them) |
-| Pairings made by a walk (`Note:` by-name matches, `Ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
-| Coverage caveat | stderr | once per run |
-| Storage source notes (coverage, staleness, an unreadable `.pbi/cache.abf`) | stderr | only when a storage source applies; informational, never `--strict`-fatal (see [Storage sizes](storage.md)) |
-| Skip notices (parser drift, stale saved state, unresolved dataset references, opaque native-query sources) | stderr | grouped under one header; suppressed in `--json` mode, where the JSON carries them |
+| Discovery/selection announce, header line | stderr | one line each; the header names the model and counts the bound reports (`--verbose` gives the full path and names them) |
+| Pairings made by a walk (`!` by-name matches, `· ignored … bound to other models` exclusions) | stderr | informational, never `--strict`-fatal; both collapse to one capped line each (`--verbose` lists every report) |
+| Storage source notes (partial coverage, staleness, an unreadable `.pbi/cache.abf`) | stderr | only when a storage source applies; informational, never `--strict`-fatal (see [Storage sizes](storage.md)) |
+| Skip notices (parser drift, stale saved state, unresolved dataset references, opaque native-query sources) | stderr | grouped under one header, above the report; suppressed in `--json` mode, where the JSON carries them |
+| Consumer hint | stderr | under a verdict with findings, except `--json`; see [Human output](human-output.md) |
 | Errors + hints | stderr | `error: …` / `hint: …` |
 
 `-q/--quiet` suppresses everything on both streams; the exit code is the only output.
@@ -108,27 +108,27 @@ pairings that would otherwise be invisible are summarized on stderr (all suppres
 per-report audit trail:
 
 ```text
-Scanning models/Sales.SemanticModel with 3 report(s)
-Note: 1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin.Report
-Ignored 1 report(s) bound to other models: HR.Report
+Sales.SemanticModel · 3 reports
+  ! 1 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin.Report
+  · ignored 1 report(s) bound to other models: HR.Report
 ```
 
-- The scanning line counts the connected reports — direct `--report` items included.
-  `--verbose` appends the report folder names, in ingestion order: under `--model`,
+- The header counts the connected reports — direct `--report` items included.
+  `--verbose` shows the model's full path and appends the report folder names, in ingestion order: under `--model`,
   walked reports by canonical path, then explicitly passed ones; under a model-naming
   PATH, the convention siblings and explicit items first, then the walked ones.
-- The `Note:` line flags reports connected by dataset *name* rather than by path or stem,
+- The `!` line flags reports connected by dataset *name* rather than by path or stem,
   because that pairing is weaker than the written `definition.pbir` path — a wrong
   pairing means wrong findings, so the fact always shows. One line per `initial catalog`,
   with the count and up to three names; when a tail is capped, the line points at
   `--verbose`:
 
   ```text
-  Note: 26 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin1.Report, Thin2.Report, Thin3.Report, … and 23 more — rerun with --verbose to list them
+    ! 26 report(s) matched by dataset name only (byConnection 'initial catalog' = 'Sales'): Thin1.Report, Thin2.Report, Thin3.Report, … and 23 more — rerun with --verbose to list them
   ```
 
   `--verbose` lists one line per report instead, with its full path.
-- The `Ignored …` line counts report items under the search folders that resolve to a
+- The `· ignored …` line counts report items under the search folders that resolve to a
   different existing model, with up to three names — capped the same way, with the same
   `--verbose` pointer; the flag lists every one. It is informational: those reports are
   not ingested, they

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`scan` output puts the verdict last and ranks its notes.** The scan now opens with
+  the model's name and report count, lists its notes as indented `!` lines (they change
+  how to read the result: stale or partial stats, a by-name pairing) or dim `·` lines
+  (background), and closes with the verdict as the last line of the output:
+  `✓ No unused objects` or `✗ 56 unused objects`, then `74 of 130 reachable from 51
+  roots`. Full paths, and the stats note when coverage is complete, appear only with
+  `--verbose`. The note that external consumers are invisible now appears only when there
+  are findings, as a hint under the verdict to check thin reports, Excel and XMLA
+  clients before removing anything. Skip notices print above the report instead of
+  after it. `--json`, `--plain`, SARIF and the Markdown summary are unchanged.
+
+### Added
+
+- **`[scan].external_consumers = "none"`** in `ripbi.toml` says nothing outside the
+  scanned reports reads the model, and drops the check-before-removing hint.
+
 ## [0.9.1] - 2026-10-16
 
 ### Fixed

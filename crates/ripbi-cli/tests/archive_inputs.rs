@@ -383,7 +383,18 @@ fn scan_pbix_human_output_shows_sizes() {
     };
     let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    let total = stdout.lines().nth(1).unwrap();
+    let total = stdout
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("  ")
+                .filter(|rest| rest.starts_with("Unused storage"))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "no storage line under the verdict:
+{stdout}"
+            )
+        });
     assert!(
         total.starts_with("Unused storage: \u{2248} ") && total.contains(" KB on disk ("),
         "{total}"
@@ -482,7 +493,7 @@ fn pbip_cache_abf_attaches_sizes_automatically() {
 
     let (code, before, stderr) = run_scan(&json_scan(pbip.clone()), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    assert!(!stderr.contains("Note: stats"), "{stderr}");
+    assert!(!stderr.contains("stats from"), "{stderr}");
     let summary = &json_payload(&before)["summary"];
     for key in ["unused_bytes", "model_bytes", "stats_source"] {
         assert!(summary.get(key).is_none(), "{key} without a cache");
@@ -491,8 +502,9 @@ fn pbip_cache_abf_attaches_sizes_automatically() {
     let cache = save_cache(&temp.0);
     let (code, stdout, stderr) = run_scan(&json_scan(pbip), &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
+    // Full coverage is the expected case: silent unless --verbose.
     assert!(
-        stderr.contains("cover 78 of 78 tables and columns"),
+        !stderr.contains("cover 78 of 78 tables and columns"),
         "{stderr}"
     );
     let payload = json_payload(&stdout);
@@ -545,7 +557,7 @@ fn explicit_storage_beats_the_cache_and_none_turns_it_off() {
     };
     let (code, stdout, stderr) = run_scan(&off, &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
-    assert!(!stderr.contains("Note: stats"), "{stderr}");
+    assert!(!stderr.contains("stats from"), "{stderr}");
     assert!(
         json_payload(&stdout)["summary"]
             .get("unused_bytes")
@@ -734,8 +746,9 @@ fn a_vpax_attaches_engine_sizes_to_a_pbip() {
     };
     let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
     assert_eq!(code, 1, "{stderr}");
+    // Full coverage is the expected case: silent unless --verbose.
     assert!(
-        stderr.contains("cover 78 of 78 tables and columns"),
+        !stderr.contains("cover 78 of 78 tables and columns"),
         "{stderr}"
     );
     let payload = json_payload(&stdout);

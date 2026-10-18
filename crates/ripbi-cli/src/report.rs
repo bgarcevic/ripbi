@@ -154,7 +154,10 @@ fn inventory(
             // The pairing *facts* always show — a by-name match is the weakest
             // pairing and a wrong pairing means a wrong inventory.
             if let Some(walk) = &walk {
-                announce.extend(collapse_name_matched(&walk.bound.name_matched));
+                announce.extend(collapse_name_matched(
+                    &walk.bound.name_matched,
+                    crate::scan::Notes::Flat,
+                ));
                 if !walk.bound.ignored_elsewhere.is_empty() {
                     let names: Vec<String> = walk
                         .bound

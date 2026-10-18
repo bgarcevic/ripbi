@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::render::format_elapsed;
 use crate::scan::Streams;
 use crate::style::Palette;
 
@@ -144,6 +145,13 @@ impl Progress {
         if let Some(active) = &self.active {
             lock(&active.state).stage = stage.min(active.pipeline.stages.len() - 1);
         }
+    }
+
+    /// Time since the ticker started; `None` when it never ran (piped
+    /// output, `-q`, machine modes), so captured output stays stable.
+    #[must_use]
+    pub fn elapsed(&self) -> Option<Duration> {
+        self.active.as_ref().map(|active| active.started.elapsed())
     }
 
     /// A stderr writer that erases the ticker line before each write.
@@ -321,17 +329,6 @@ pub fn item_label(path: &Path) -> String {
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     )
-}
-
-/// `0.8s`, `12.4s`, `2m 05s`.
-fn format_elapsed(elapsed: Duration) -> String {
-    let secs = elapsed.as_secs_f64();
-    if secs < 60.0 {
-        format!("{secs:.1}s")
-    } else {
-        let whole = elapsed.as_secs();
-        format!("{}m {:02}s", whole / 60, whole % 60)
-    }
 }
 
 #[cfg(test)]

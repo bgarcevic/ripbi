@@ -155,7 +155,10 @@ fn explore(
                         names.join(", ")
                     ));
                 } else {
-                    announce.extend(scan::collapse_name_matched(&walk.bound.name_matched));
+                    announce.extend(scan::collapse_name_matched(
+                        &walk.bound.name_matched,
+                        scan::Notes::Flat,
+                    ));
                 }
             }
             if !walk.bound.ignored_elsewhere.is_empty() {
@@ -233,6 +236,7 @@ fn explore(
         scan::query_log_item(args.queries_item.as_deref(), config.as_ref()),
         &paired.model,
         args.quiet,
+        scan::Notes::Flat,
         streams.err,
         &mut skips,
     )?;

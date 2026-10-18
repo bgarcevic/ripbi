@@ -48,7 +48,7 @@ ripbi scan --compare-root ../base
   object failed to parse rather than because it was removed: the list then carries a
   caveat, and `compare.fixed_uncertain` is `true`.
 - **Nothing to compare.** When the scan cannot run in `DIR` (a model this change
-  adds, say), a `Note: nothing to compare in …` on stderr says why, and every
+  adds, say), a `! nothing to compare in …` note on stderr says why, and every
   finding is new. A `DIR` that is not a folder is exit `2`.
 - **The keep hint.** When new unused objects are reported, every mode but `--json`
   ends with a `hint:` on stderr pointing at the `ripbi_keep` annotation, the answer

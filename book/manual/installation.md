@@ -34,7 +34,7 @@ ripbi scan "samples/AdventureWorks Sales.pbip"
 Output from the committed AdventureWorks sample (trimmed):
 
 ```text
-130 objects, 74 reachable from 51 roots, 56 unused
+AdventureWorks Sales.SemanticModel · 1 report
 
 Measures (11)
   'Sales'[Average Sales per Order]
@@ -43,10 +43,13 @@ Columns (28)
   'Customer'[City]
     ← only used by hierarchy 'Customer'[Geography] — hierarchy level (also unused)
   …
+
+✗ 56 unused objects   74 of 130 reachable from 51 roots
+  check thin reports, Excel and XMLA clients before removing; ripbi can't see them
 ```
 
-The summary line counts the model's objects, how many the reports reach, and
-how many are unused. Each finding says why it is dead: nothing references it,
+The last line is the verdict: how many objects are unused, and how many of the
+model's objects the reports reach. Each finding says why it is dead: nothing references it,
 or its only consumer is itself unused.
 
 `ripbi scan` discovers the project itself: pass a `.pbip` file, a project

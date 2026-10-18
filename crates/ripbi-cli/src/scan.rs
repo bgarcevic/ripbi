@@ -134,7 +134,12 @@ fn scan(
     let config = loaded.map(|loaded| loaded.config);
     // The comparison runs first, so a mistyped root fails before a long scan.
     let before = match &args.compare_root {
-        Some(root) => Some(scan_before(args, &cwd.join(root), streams.err)?),
+        Some(root) => Some(scan_before(
+            args,
+            &cwd.join(root),
+            Notes::Tiered(*palette_err),
+            streams.err,
+        )?),
         None => None,
     };
 
@@ -200,7 +205,12 @@ fn scan(
         ));
     }
 
+    let notes = Notes::Tiered(*palette_err);
     if !args.quiet {
+        // The header names the model and its report count; every line under
+        // it is a tiered note — `!` when it changes how to read the result,
+        // `·` for background — so the verdict, last, is what stands out.
+        let header = scan_header(palette_err, &paired.model, report_paths.len(), args.verbose);
         match &model_scan {
             Some(scan) => {
                 // The count is the signal; the names are auditability, on
@@ -212,25 +222,16 @@ fn scan(
                 if args.verbose {
                     let names: Vec<String> =
                         report_paths.iter().map(|path| report_name(path)).collect();
-                    announce.push(format!(
-                        "Scanning {} with {} report(s): {}",
-                        paired.model.display(),
-                        report_paths.len(),
-                        names.join(", ")
-                    ));
+                    announce.push(format!("{header}: {}", names.join(", ")));
                     for (path, catalog) in &scan.bound.name_matched {
-                        announce.push(format!(
-                            "Note: {} matched by dataset name only (byConnection 'initial catalog' = '{catalog}').",
+                        announce.push(notes.warn(&format!(
+                            "{} matched by dataset name only (byConnection 'initial catalog' = '{catalog}')",
                             path.display()
-                        ));
+                        )));
                     }
                 } else {
-                    announce.push(format!(
-                        "Scanning {} with {} report(s)",
-                        paired.model.display(),
-                        report_paths.len()
-                    ));
-                    announce.extend(collapse_name_matched(&scan.bound.name_matched));
+                    announce.push(header);
+                    announce.extend(collapse_name_matched(&scan.bound.name_matched, notes));
                 }
                 if !scan.bound.ignored_elsewhere.is_empty() {
                     let count = scan.bound.ignored_elsewhere.len();
@@ -241,10 +242,10 @@ fn scan(
                             .iter()
                             .map(|path| report_name(path))
                             .collect();
-                        announce.push(format!(
-                            "Ignored {count} report(s) bound to other models: {}",
+                        announce.push(notes.info(&format!(
+                            "ignored {count} report(s) bound to other models: {}",
                             names.join(", ")
-                        ));
+                        )));
                     } else {
                         let names: Vec<String> = scan
                             .bound
@@ -253,33 +254,21 @@ fn scan(
                             .map(|path| report_name(path))
                             .collect();
                         let mut line = format!(
-                            "Ignored {count} report(s) bound to other models: {}",
+                            "ignored {count} report(s) bound to other models: {}",
                             capped_names(&names)
                         );
                         if count > 3 {
                             line.push_str(VERBOSE_POINTER);
                         }
-                        announce.push(line);
+                        announce.push(notes.info(&line));
                     }
                 }
             }
-            None => announce.push(format!(
-                "Scanning {} with {} report(s)",
-                paired.model.display(),
-                report_paths.len()
-            )),
+            None => announce.push(header),
         }
         for line in &announce {
             writeln!(streams.err, "{line}").map_err(ScanError::from)?;
         }
-        writeln!(
-            streams.err,
-            "{}",
-            coverage_caveat(
-                query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some()
-            )
-        )
-        .map_err(ScanError::from)?;
     }
 
     // Ingest: the model, then every report as a root.
@@ -296,7 +285,8 @@ fn scan(
         &paired.model,
         setting,
         args.stats_from.is_some(),
-        args.quiet,
+        (!args.quiet).then_some(notes),
+        args.verbose,
         streams.err,
     )?;
     progress.stage(2);
@@ -310,8 +300,11 @@ fn scan(
         if ingested.value.stub && !args.quiet {
             writeln!(
                 streams.err,
-                "Note: {} is a ripbi stub (no bindings).",
-                report_name(path)
+                "{}",
+                notes.info(&format!(
+                    "{} is a ripbi stub (no bindings)",
+                    report_name(path)
+                ))
             )
             .map_err(ScanError::from)?;
         }
@@ -367,6 +360,7 @@ fn scan(
         query_log_item(args.queries_item.as_deref(), config.as_ref()),
         &paired.model,
         args.quiet,
+        notes,
         streams.err,
         &mut skips,
     )?;
@@ -613,9 +607,12 @@ fn scan(
         if storage.is_empty() && !args.quiet {
             writeln!(
                 streams.err,
-                "Note: {} has no storage statistics (pass --stats-from with an .abf or \
-                 .pbix export); --sort size keeps name order.",
-                paired.model.display()
+                "{}",
+                notes.info(&format!(
+                    "{} has no storage statistics (pass --stats-from with an .abf or \
+                     .pbix export); --sort size keeps name order",
+                    report_name(&paired.model)
+                ))
             )
             .map_err(ScanError::from)?;
         }
@@ -766,6 +763,7 @@ fn scan(
         model_bytes: model.value.storage_bytes,
         unused_storage,
         stats_source: stats_source.map(|path| path.display().to_string()),
+        elapsed: progress.elapsed(),
         compare: before
             .as_ref()
             .zip(args.compare_root.as_ref())
@@ -780,14 +778,25 @@ fn scan(
             }),
     };
 
-    let scanned = progress::item_label(&paired.model);
+    // The header already named the model; the elapsed time rides on the
+    // verdict line, so the ticker just clears.
     progress
-        .finish(streams.err, Some(&scanned))
+        .finish(streams.err, None)
         .map_err(ScanError::from)?;
 
     write_side_outputs(args, cwd, &output, &kept_existing, locator.as_ref())?;
 
+    let human =
+        !(args.json || args.plain || args.sarif || args.azure_devops || args.emit.is_some());
     if !args.quiet {
+        // Notices are stderr's job in text modes; --json carries them itself.
+        // They print above the report, so the verdict stays the last line.
+        if !args.json {
+            write_skip_notices(streams.err, &output.skips)?;
+        }
+        if human {
+            writeln!(streams.err).map_err(ScanError::from)?;
+        }
         if args.json {
             render::json(streams.out, &output).map_err(ScanError::from)?;
         } else if let Some(locator) = locator.as_ref().filter(|_| args.sarif || args.azure_devops) {
@@ -816,10 +825,17 @@ fn scan(
             )
             .map_err(ScanError::from)?;
         }
-        // Notices are stderr's job in text modes; --json carries them itself.
-        if !args.json {
-            write_skip_notices(streams.err, &output.skips)?;
-            if output.compare.is_some() && !output.findings.is_empty() {
+        if !args.json && !output.findings.is_empty() {
+            let vouched = config
+                .as_ref()
+                .is_some_and(|config| config.no_external_consumers);
+            if !vouched {
+                let hint = consumer_hint(
+                    query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some(),
+                );
+                writeln!(streams.err, "  {}", palette_err.dim(hint))?;
+            }
+            if output.compare.is_some() {
                 writeln!(streams.err, "hint: {}", render::KEEP_HINT)?;
             }
         }
@@ -1250,7 +1266,10 @@ pub(crate) fn report_name(path: &Path) -> String {
 /// The by-name pairing notes collapsed to one line per `initial catalog`,
 /// in first-appearance order. Names are listed up to three per catalog; a
 /// longer tail becomes `… and N more` so the line stays one line (issue #65).
-pub(crate) fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<String> {
+pub(crate) fn collapse_name_matched(
+    name_matched: &[(PathBuf, String)],
+    notes: Notes,
+) -> Vec<String> {
     let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
     let mut positions: HashMap<&str, usize> = HashMap::new();
     for (path, catalog) in name_matched {
@@ -1266,7 +1285,7 @@ pub(crate) fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<S
         .into_iter()
         .map(|(catalog, names)| {
             let mut line = format!(
-                "Note: {} report(s) matched by dataset name only \
+                "{} report(s) matched by dataset name only \
                  (byConnection 'initial catalog' = '{catalog}'): {}",
                 names.len(),
                 capped_names(&names)
@@ -1274,7 +1293,7 @@ pub(crate) fn collapse_name_matched(name_matched: &[(PathBuf, String)]) -> Vec<S
             if names.len() > 3 {
                 line.push_str(VERBOSE_POINTER);
             }
-            line
+            notes.warn(&line)
         })
         .collect()
 }
@@ -1478,7 +1497,58 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// The on-disk cost of the reported findings (issue #122): each file once, so
 /// a column or relationship whose owning table is itself reported is covered
 /// by the table's size. `None` when no finding carries a size.
-/// The stderr coverage caveat `scan` and `deps` print once per run. A query
+/// How a command prints its stderr notes. `scan` tiers them under its header
+/// — `!` for what changes how to read the result, `·` for background — so
+/// the verdict stands out; `deps` and `report` keep the flat `Note:` line.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Notes {
+    Tiered(Palette),
+    Flat,
+}
+
+impl Notes {
+    /// Background context. `text` carries no trailing period.
+    pub(crate) fn info(self, text: &str) -> String {
+        match self {
+            Self::Tiered(palette) => palette.info_note(text),
+            Self::Flat => format!("Note: {text}."),
+        }
+    }
+
+    /// A note that changes how to read the result.
+    pub(crate) fn warn(self, text: &str) -> String {
+        match self {
+            Self::Tiered(palette) => palette.warn_note(text),
+            Self::Flat => format!("Note: {text}."),
+        }
+    }
+}
+
+/// `scan`'s first stderr line: the model and its report count, the full
+/// path only under `--verbose`.
+fn scan_header(palette: &Palette, model: &Path, reports: usize, verbose: bool) -> String {
+    let name = if verbose {
+        model.display().to_string()
+    } else {
+        report_name(model)
+    };
+    let noun = if reports == 1 { "report" } else { "reports" };
+    format!("{} · {reports} {noun}", palette.bold(&name))
+}
+
+/// The hint under a verdict with findings: ripbi sees only the ingested
+/// reports (and the query log's window), so a finding is a candidate until
+/// the consumers it cannot see are checked. `[scan].external_consumers =
+/// "none"` vouches there are none.
+pub(crate) fn consumer_hint(with_query_log: bool) -> &'static str {
+    if with_query_log {
+        "check consumers outside the query log's window before removing; ripbi can't see them"
+    } else {
+        "check thin reports, Excel and XMLA clients before removing; ripbi can't see them"
+    }
+}
+
+/// The stderr coverage caveat `deps` prints once per run. A query
 /// log narrows the blind spot to the consumers outside its window.
 pub(crate) fn coverage_caveat(with_query_log: bool) -> &'static str {
     if with_query_log {
@@ -1529,6 +1599,7 @@ pub(crate) fn load_query_log(
     item: Option<&str>,
     model_path: &Path,
     quiet: bool,
+    style: Notes,
     err: &mut dyn io::Write,
     skips: &mut Vec<SkipNoticeOut>,
 ) -> Result<QueryLog, ScanError> {
@@ -1558,7 +1629,7 @@ pub(crate) fn load_query_log(
                 let dropped = log.retain_item(key);
                 notes.push(format!(
                     "the query log covers {} models; ignored {dropped} of {total} queries \
-                     logged against the others.",
+                     logged against the others",
                     log.item_names.len(),
                 ));
             }
@@ -1611,13 +1682,16 @@ pub(crate) fn load_query_log(
     };
     writeln!(
         err,
-        "Note: {} logged queries{window} from {} count as consumers.",
-        log.queries.len(),
-        path.display()
+        "{}",
+        style.info(&format!(
+            "{} logged queries{window} from {} count as consumers",
+            log.queries.len(),
+            path.display()
+        ))
     )
     .map_err(ScanError::from)?;
     for note in notes {
-        writeln!(err, "Note: {note}").map_err(ScanError::from)?;
+        writeln!(err, "{}", style.warn(&note)).map_err(ScanError::from)?;
     }
     Ok(log)
 }
@@ -1652,7 +1726,7 @@ fn model_name(model_path: &Path) -> Option<String> {
 
 /// Attaches storage sizes from outside the model (issue #129): the explicit
 /// `--stats-from`/`[scan].stats_from` source, else a PBIP's `.pbi/cache.abf`.
-/// Returns the source used, if any.
+/// Returns the source used, if any. `notes` is `None` under `-q`.
 ///
 /// A model with its own catalog (PBIX, `.abf`) keeps it: `--stats-from` on one is
 /// a usage error, and the config setting is ignored. An explicit source that
@@ -1664,7 +1738,8 @@ fn attach_storage(
     model_path: &Path,
     setting: Option<config::StatsSetting>,
     from_flag: bool,
-    quiet: bool,
+    notes: Option<Notes>,
+    verbose: bool,
     err: &mut dyn io::Write,
 ) -> Result<Option<PathBuf>, ScanError> {
     if model.storage_bytes.is_some() {
@@ -1697,11 +1772,14 @@ fn attach_storage(
             ));
         }
         Err(error) => {
-            if !quiet {
+            if let Some(notes) = notes {
                 writeln!(
                     err,
-                    "Note: cannot read stats from {}: {error}; continuing without sizes.",
-                    source.display()
+                    "{}",
+                    notes.warn(&format!(
+                        "cannot read stats from {}: {error}; continuing without sizes",
+                        source_label(&source, model_path, verbose)
+                    ))
                 )
                 .map_err(ScanError::from)?;
             }
@@ -1709,35 +1787,59 @@ fn attach_storage(
         }
     };
     let coverage = model.attach_storage(&stats);
-    if !quiet {
-        writeln!(
-            err,
-            "Note: stats from {} cover {} of {} tables and columns.",
-            source.display(),
-            coverage.matched,
-            coverage.total
-        )
-        .map_err(ScanError::from)?;
+    if let Some(notes) = notes {
+        let label = source_label(&source, model_path, verbose);
+        // Full coverage is the expected case: it earns a line only on request.
+        // Partial coverage leaves some sizes blank, which changes the totals.
+        if coverage.matched < coverage.total || verbose {
+            let line = format!(
+                "stats from {label} cover {} of {} tables and columns",
+                coverage.matched, coverage.total
+            );
+            let line = if coverage.matched < coverage.total {
+                notes.warn(&line)
+            } else {
+                notes.info(&line)
+            };
+            writeln!(err, "{line}").map_err(ScanError::from)?;
+        }
         if is_older_than_model(&source, model_path) {
             writeln!(
                 err,
-                "Note: {} is older than the model's files; stats may be stale.",
-                source.display()
+                "{}",
+                notes.warn(&format!(
+                    "stats may be stale: {label} is older than the model files"
+                ))
             )
             .map_err(ScanError::from)?;
         }
         if holds_no_data(model) {
             writeln!(
                 err,
-                "Note: {} has no rows in any table loaded by Power Query; was the \
-                 model refreshed before it was saved or exported? Sizes are the \
-                 engine's empty minimums.",
-                source.display()
+                "{}",
+                notes.warn(&format!(
+                    "{label} has no rows in any table loaded by Power Query; was the \
+                     model refreshed before it was saved or exported? Sizes are the \
+                     engine's empty minimums"
+                ))
             )
             .map_err(ScanError::from)?;
         }
     }
     Ok(Some(source))
+}
+
+/// A stats source as notes name it: relative to the model folder when it
+/// lives inside it (`.pbi/cache.abf`), else as given; the full path under
+/// `--verbose`.
+fn source_label(source: &Path, model_path: &Path, verbose: bool) -> String {
+    if verbose {
+        return source.display().to_string();
+    }
+    source
+        .strip_prefix(model_path)
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| source.display().to_string())
 }
 
 /// Whether the tables that load data (Power Query or a source query) got
@@ -1833,6 +1935,7 @@ fn unused_storage(
 fn scan_before(
     args: &ScanArgs,
     root: &Path,
+    notes: Notes,
     err: &mut dyn io::Write,
 ) -> Result<Detected, ScanError> {
     if !root.is_dir() {
@@ -1887,9 +1990,12 @@ fn scan_before(
         if !args.quiet {
             writeln!(
                 err,
-                "Note: nothing to compare in {}: {}; every finding counts as new.",
-                root.display(),
-                error.message
+                "{}",
+                notes.warn(&format!(
+                    "nothing to compare in {}: {}; every finding counts as new",
+                    root.display(),
+                    error.message
+                ))
             )
             .map_err(ScanError::from)?;
         }

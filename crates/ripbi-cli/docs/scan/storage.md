@@ -9,19 +9,19 @@ own; they get sizes from a storage source (below), and without one their output 
 unchanged.
 
 ```text
-99 objects, 62 reachable from 41 roots, 37 unused
-Unused storage: ≈ 165.6 KB of 318.5 KB on disk (35 objects with size data)
-
 Columns (35)
   'Opportunity'[Name]  (25.3 KB)
     ← nothing references it
+
+✗ 37 unused objects   62 of 99 reachable from 41 roots
+  Unused storage: ≈ 165.6 KB of 318.5 KB on disk (35 objects with size data)
 ```
 
 - Tables, columns, and relationships carry a size; measures and the other kinds
   never do. A column's size is its dictionary, segments, and attribute hierarchy;
   a table's is every file of its own, its columns, and the relationships whose
   "from" side it is.
-- The `Unused storage:` line (both human modes) totals the reported findings,
+- The `Unused storage:` line under the verdict (both human modes) totals the reported findings,
   each file once: a column or relationship whose table is itself a finding is
   covered by the table's size. `of …` is the whole model's data. It prints only
   when some finding has a size.
@@ -57,11 +57,12 @@ cache was saved — has no size; nothing is guessed across renames. `of …` on 
 line is the source's data, which may include objects the model no longer has.
 
 ```text
-Note: stats from Sales.SemanticModel/.pbi/cache.abf cover 212 of 240 tables and columns.
-Note: Sales.SemanticModel/.pbi/cache.abf is older than the model's files; stats may be stale.
+  ! stats from .pbi/cache.abf cover 212 of 240 tables and columns
+  ! stats may be stale: .pbi/cache.abf is older than the model files
 ```
 
-The coverage note prints whenever a source is attached; the staleness note when the
+The coverage note prints when the source leaves some tables or columns without a size
+(`--verbose` prints it for full coverage too); the staleness note when the
 source was written before the newest file of the model (the `.pbi/` folder aside).
 A third note flags a source with no rows in any table loaded by Power Query (or a
 source query) — a model saved or exported before its first refresh, such as a PBIP
@@ -69,8 +70,9 @@ opened in Desktop and exported to `.vpax` straight away; its sizes are the engin
 empty minimums. Calculated tables are left out: the engine fills them without a refresh.
 An explicit source that cannot be read, or has no storage catalog (a TMDL folder,
 `model.bim`, a PBIT, a thin PBIX), fails the scan with exit `2`. An auto-detected
-cache that cannot be read only prints `Note: cannot read stats from …; continuing
-without sizes.` Neither note is a skip notice, so `--strict` does not gate on them;
+cache that cannot be read only prints `! cannot read stats from …; continuing
+without sizes`. A source inside the model folder is named relative to it
+(`.pbi/cache.abf`); `--verbose` gives full paths. Neither note is a skip notice, so `--strict` does not gate on them;
 `--quiet` silences them. `--json` names the source in `summary.stats_source`.
 
 ### Model-only projects: `ripbi stub-report`
