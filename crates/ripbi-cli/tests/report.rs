@@ -21,12 +21,36 @@ fn sample_pbip() -> PathBuf {
 
 /// The human tree walks every level: report header, page with display name,
 /// visual with its type, and the field with its binding site.
+/// The view's own lines: everything above the blank line before the closing
+/// line.
+fn table_lines(stdout: &str) -> usize {
+    stdout.lines().take_while(|line| !line.is_empty()).count()
+}
+
+/// Nothing but the closing line: the filters matched nothing.
+fn only_closing(stdout: &str) -> bool {
+    stdout.lines().count() == 1 && stdout.contains(" report")
+}
+
 #[test]
 fn human_prints_the_mini_fixture_tree() {
     let (code, stdout, stderr) = report_path(&mini_pbip().join("Mini.pbip"), &std::env::temp_dir());
 
     assert_eq!(code, 0, "the inventory is informational:\n{stderr}");
-    assert!(stderr.contains("Reading"), "announcements stay on stderr");
+    assert!(
+        stderr.contains("Mini.SemanticModel · 1 report"),
+        "announcements stay on stderr"
+    );
+    assert!(
+        stdout.ends_with(
+            "
+
+✓ All bindings resolve   1 report · 1 page · 1 visual
+"
+        ),
+        "the closing line is last:
+{stdout}"
+    );
     assert!(stdout.contains("Mini.Report — 1 page, 1 visual"));
     assert!(stdout.contains("  Pages"));
     assert!(stdout.contains("Overview (P1) — 1 visual"));
@@ -261,8 +285,9 @@ fn the_visuals_view_rolls_up_per_visual() {
         stdout.contains("Overview  V4      kpi   1       0\n"),
         "{stdout}"
     );
+    assert!(stdout.contains("✗ 2 unresolved bindings"), "{stdout}");
     assert!(
-        stderr.contains("2 unresolved — see: ripbi report --broken"),
+        stderr.contains("see them with: ripbi report --broken"),
         "{stderr}"
     );
 }
@@ -285,7 +310,7 @@ fn the_fields_view_narrows_by_visual() {
     );
     assert!(stdout.contains("'Sales'[Total]"), "{stdout}");
     assert_eq!(
-        stdout.lines().count(),
+        table_lines(&stdout),
         3,
         "header, dashes, one row:\n{stdout}"
     );
@@ -304,7 +329,7 @@ fn the_match_filter_finds_every_site_of_a_field() {
     let (code, stdout, stderr) = run_report(&args, &std::env::temp_dir(), "");
 
     assert_eq!(code, 0, "{stderr}");
-    assert_eq!(stdout.lines().count(), 3, "{stdout}");
+    assert_eq!(table_lines(&stdout), 3, "{stdout}");
 
     let args = ReportArgs {
         matches: vec!["'Sales'[Total]".to_string()],
@@ -351,7 +376,7 @@ fn the_broken_filter_yields_only_the_broken_rows() {
 
     assert_eq!(code, 0, "breakage is listed, never failed on:\n{stderr}");
     assert_eq!(
-        stdout.lines().skip(2).count(),
+        table_lines(&stdout).saturating_sub(2),
         2,
         "exactly the V2 and V3 rows:\n{stdout}"
     );
@@ -376,7 +401,7 @@ fn an_empty_filter_prints_a_note_and_exits_zero() {
     let (code, stdout, stderr) = run_report(&args, &std::env::temp_dir(), "");
 
     assert_eq!(code, 0, "{stderr}");
-    assert!(stdout.is_empty());
+    assert!(only_closing(&stdout), "{stdout}");
     assert!(stderr.contains("no pages match Nope*"), "{stderr}");
 }
 
@@ -481,7 +506,7 @@ fn the_visual_filter_still_matches_the_hash() {
     assert_eq!(code, 0, "{stderr}");
     assert!(stdout.contains("11a03bbd46fd39147235"), "{stdout}");
     assert_eq!(
-        stdout.lines().count(),
+        table_lines(&stdout),
         6,
         "header, dashes, four rows:\n{stdout}"
     );
@@ -518,7 +543,7 @@ fn the_kind_filter_selects_rows() {
     assert_eq!(code, 0, "{stderr}");
     assert!(stdout.contains("measure"), "{stdout}");
     assert_eq!(
-        stdout.lines().count(),
+        table_lines(&stdout),
         3,
         "header, dashes, one row:\n{stdout}"
     );
@@ -571,7 +596,7 @@ fn the_kind_filter_keeps_whole_filter_blocks() {
         "binding rows are gone:\n{stdout}"
     );
     assert_eq!(
-        stdout.lines().count(),
+        table_lines(&stdout),
         6,
         "header, dashes, four rows:\n{stdout}"
     );
@@ -591,7 +616,7 @@ fn intersecting_filters_empty_output_names_the_note() {
     let (code, stdout, stderr) = run_report(&args, &std::env::temp_dir(), "");
 
     assert_eq!(code, 0, "{stderr}");
-    assert!(stdout.is_empty(), "{stdout}");
+    assert!(only_closing(&stdout), "{stdout}");
     assert!(
         stderr.contains("no bindings match the given filters"),
         "{stderr}"
@@ -676,7 +701,7 @@ fn an_empty_used_filter_names_the_note() {
     let (code, stdout, stderr) = run_report(&args, &std::env::temp_dir(), "");
 
     assert_eq!(code, 0);
-    assert!(stdout.is_empty(), "{stdout}");
+    assert!(only_closing(&stdout), "{stdout}");
     assert!(
         stderr.contains("no used objects match the given filters"),
         "{stderr}"
@@ -826,7 +851,8 @@ mod allow_no_model {
 
         assert_eq!(code, 0, "{stderr}");
         assert!(
-            stderr.contains("No semantic model paired"),
+            stderr.contains("Solo.Report · no model")
+                && stderr.contains("no semantic model paired"),
             "the model-less note is announced:\n{stderr}"
         );
         assert!(

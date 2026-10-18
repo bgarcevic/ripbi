@@ -1,8 +1,8 @@
 //! The stage ticker `scan`, `report`, and `deps` share: one transient stderr
 //! line that names the command's pipeline — `◐ discover · model · reports ·
 //! graph · findings  0.8s` — with finished stages muted, the live one in the accent,
-//! and upcoming ones dim. It closes into a single `✓ scanned <model> in 1.4s`
-//! line, the verb and stages coming from the command's [`Pipeline`].
+//! and upcoming ones dim. It clears when the run ends; each command puts the
+//! wall time ([`Progress::elapsed`]) on its own closing line instead.
 //!
 //! Motion follows `docs/cli-ux-guidelines.md`: only when both stdout and
 //! stderr are terminals, the stderr palette is on (so `NO_COLOR`, `TERM=dumb`,
@@ -30,29 +30,25 @@ use crate::scan::Streams;
 use crate::style::Palette;
 
 /// One command's ticker vocabulary: its stages in pipeline order (target
-/// resolution first), and the past-tense verb of the closing line.
+/// resolution first).
 #[derive(Debug, Clone, Copy)]
 pub struct Pipeline {
     pub stages: &'static [&'static str],
-    pub verb: &'static str,
 }
 
 /// `ripbi scan`.
 pub const SCAN: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "findings"],
-    verb: "scanned",
 };
 
 /// `ripbi report`. A model-less inventory simply never lights `model`.
 pub const REPORT: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "inventory"],
-    verb: "inventoried",
 };
 
 /// `ripbi deps`.
 pub const DEPS: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "slice"],
-    verb: "traced",
 };
 
 /// How long a scan runs before the ticker shows up.
@@ -80,7 +76,6 @@ struct Active {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
     started: Instant,
-    palette: Palette,
 }
 
 /// A running (or disabled) stage ticker. Disabled tickers are inert: every
@@ -135,7 +130,6 @@ impl Progress {
                 handle: Some(handle),
                 pipeline,
                 started,
-                palette,
             }),
         }
     }
@@ -164,29 +158,14 @@ impl Progress {
         }
     }
 
-    /// Stops the ticker and erases its line; with `done`, prints the closing
-    /// `✓ <verb> <what> in <elapsed>` line in its place.
-    pub fn finish(mut self, err: &mut dyn Write, done: Option<&str>) -> io::Result<()> {
+    /// Stops the ticker and erases its line.
+    pub fn finish(mut self, err: &mut dyn Write) -> io::Result<()> {
         let Some(active) = self.active.take() else {
             return Ok(());
         };
-        let elapsed = active.started.elapsed();
-        let palette = active.palette;
-        let verb = active.pipeline.verb;
-        let drawn = active.shut_down();
-        // Like a frame, one write: the check line overwrites the ticker in
-        // place instead of blanking it first.
-        let mut text = String::from(if drawn { "\r" } else { "" });
-        if let Some(what) = done {
-            text.push_str(&format!(
-                "{} {verb} {what} {}\x1b[K\n",
-                palette.ok("✓"),
-                palette.dim(&format!("in {}", format_elapsed(elapsed)))
-            ));
-        } else if drawn {
-            text.push_str("\x1b[K");
+        if active.shut_down() {
+            err.write_all(CLEAR.as_bytes())?;
         }
-        err.write_all(text.as_bytes())?;
         err.flush()
     }
 }
@@ -340,7 +319,7 @@ mod tests {
         let progress = Progress::disabled();
         let mut buffer = Vec::new();
         writeln!(progress.writer(&mut buffer), "Note: hello").unwrap();
-        progress.finish(&mut buffer, Some("Sales")).unwrap();
+        progress.finish(&mut buffer).unwrap();
         assert_eq!(String::from_utf8(buffer).unwrap(), "Note: hello\n");
     }
 

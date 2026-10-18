@@ -4,6 +4,7 @@
 //! schema) lives in `docs/report.md` beside this crate.
 
 use std::io;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -209,6 +210,58 @@ pub(crate) fn human(
         }
     }
     Ok(())
+}
+
+/// The closing line every human view ends with, last because a terminal
+/// leaves it in view: `✓ All bindings resolve` or `✗ 3 unresolved bindings`,
+/// then what was read — `1 report · 1 page · 17 visuals` — and, on a
+/// terminal, the wall time. Model-less, nothing was checked, so no verdict.
+///
+/// # Errors
+/// Propagates stream write failures.
+pub(crate) fn closing(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    inventory: &Inventory,
+    has_model: bool,
+    elapsed: Option<Duration>,
+) -> io::Result<()> {
+    let pages: usize = inventory
+        .reports
+        .iter()
+        .map(|report| report.pages.iter().filter(|page| !page.mobile).count())
+        .sum();
+    let visuals: usize = inventory
+        .reports
+        .iter()
+        .flat_map(|report| &report.pages)
+        .map(|page| page.visuals.len())
+        .sum();
+    let unresolved: usize = inventory
+        .reports
+        .iter()
+        .map(|report| report.unresolved_count)
+        .sum();
+    let verdict = if !has_model {
+        palette.dim("Not checked against a model")
+    } else if unresolved == 0 {
+        palette.ok("\u{2713} All bindings resolve")
+    } else {
+        palette.warn(&format!(
+            "\u{2717} {}",
+            plural(unresolved, "unresolved binding")
+        ))
+    };
+    let elapsed = elapsed
+        .map(|elapsed| format!("  {}", palette.dim(&crate::render::format_elapsed(elapsed))))
+        .unwrap_or_default();
+    writeln!(
+        out,
+        "{verdict}   {} · {} · {}{elapsed}",
+        plural(inventory.reports.len(), "report"),
+        plural(pages, "page"),
+        plural(visuals, "visual"),
+    )
 }
 
 /// One section's pages as connected subtrees.

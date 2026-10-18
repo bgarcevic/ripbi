@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are findings, as a hint under the verdict to check thin reports, Excel and XMLA
   clients before removing anything. Skip notices print above the report instead of
   after it. `--json`, `--plain`, SARIF and the Markdown summary are unchanged.
+- **`report` and `deps` share the layout.** Both open with the same model-name header
+  and tiered notes, and end with a closing line: `report` with `✓ All bindings
+  resolve` or `✗ 2 unresolved bindings` and what it read, `deps` with what the
+  selection uses and what uses it. `deps` drops the every-run caveat that external
+  consumers are invisible; the hint now appears only under a view with an Impact
+  section. The stage ticker no longer prints a `✓ scanned … in 1.4s` line; the wall
+  time sits at the end of each command's closing line.
 
 ### Added
 

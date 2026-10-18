@@ -20,15 +20,15 @@ use crate::config;
 use crate::discover;
 use crate::error::ScanError;
 use crate::glob;
-use crate::progress::{self, Progress, item_label};
+use crate::progress::{self, Progress};
 use crate::render::SkipNoticeOut;
 use crate::report::render::{
     FieldNode, FilterNode, Inventory, PageNode, ReportNode, UnresolvedNode, UsedRow, VisualNode,
 };
 use crate::scan::Streams;
 use crate::scan::{
-    TargetInput, capped_names, collapse_name_matched, dedupe, report_name, resolve_target,
-    skip_notice_out, write_skip_notices,
+    Notes, TargetInput, dedupe, pairing_announce, report_name, resolve_target, skip_notice_out,
+    write_skip_notices,
 };
 use crate::style::Palette;
 
@@ -104,6 +104,7 @@ fn inventory(
     };
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
+    let notes = Notes(*palette_err);
 
     // Report anchors: --report flags replace the config's `reports` — the
     // same inputs-are-not-filters rule as scan and deps. `[scan].ignore`
@@ -146,32 +147,13 @@ fn inventory(
                 .with_hint("pass a .pbip project, a .Report folder, or a project folder"));
             }
             let mut announce = announce;
-            announce.push(format!(
-                "Reading {} with {} report(s)",
-                paired.model.display(),
-                report_paths.len()
+            announce.extend(pairing_announce(
+                notes,
+                &paired.model,
+                &report_paths,
+                walk.as_ref().map(|walk| &walk.bound),
+                None,
             ));
-            // The pairing *facts* always show — a by-name match is the weakest
-            // pairing and a wrong pairing means a wrong inventory.
-            if let Some(walk) = &walk {
-                announce.extend(collapse_name_matched(
-                    &walk.bound.name_matched,
-                    crate::scan::Notes::Flat,
-                ));
-                if !walk.bound.ignored_elsewhere.is_empty() {
-                    let names: Vec<String> = walk
-                        .bound
-                        .ignored_elsewhere
-                        .iter()
-                        .map(|path| report_name(path))
-                        .collect();
-                    announce.push(format!(
-                        "Ignored {} report(s) bound to other models: {}",
-                        walk.bound.ignored_elsewhere.len(),
-                        capped_names(&names)
-                    ));
-                }
-            }
             (Some(paired.model), report_paths, announce)
         }
         Err(error) if args.allow_no_model && error.is_no_model() => {
@@ -195,11 +177,17 @@ fn inventory(
                         .with_hint("pass a .Report folder or a .pbip project"),
                 );
             }
-            let announce = vec![format!(
-                "No semantic model paired — listing {} report(s) as written, \
-                 not checked against a model",
-                report_paths.len()
-            )];
+            let label = match report_paths.as_slice() {
+                [only] => report_name(only),
+                paths => format!("{} reports", paths.len()),
+            };
+            let announce = vec![
+                format!("{} · no model", palette_err.bold(&label)),
+                notes.warn(
+                    "no semantic model paired; references are listed as written, \
+                     not checked against a model",
+                ),
+            ];
             (None, report_paths, announce)
         }
         Err(error) => return Err(error),
@@ -308,72 +296,80 @@ fn inventory(
         let graph = graph.as_ref().expect("--used is refused without a model");
         output.used = used_rows(graph, args);
     }
-    let inventoried = match (&model_item, report_paths.as_slice()) {
-        (Some(model), _) => item_label(model),
-        (None, [only]) => item_label(only),
-        (None, paths) => format!("{} reports", paths.len()),
-    };
-    progress
-        .finish(streams.err, Some(&inventoried))
-        .map_err(ScanError::from)?;
+    // The header already named what was read; the elapsed time rides on the
+    // closing line, so the ticker just clears.
+    let elapsed = progress.elapsed();
+    progress.finish(streams.err).map_err(ScanError::from)?;
 
     if !args.quiet {
+        // Notices and notes are stderr's job in text modes; --json carries
+        // the notices itself. They print above the inventory, so the closing
+        // line stays last.
+        if !args.json {
+            write_skip_notices(streams.err, &output.skips)?;
+            write_empty_note(args, &output, notes, streams.err)?;
+        }
+        if !args.json && !args.plain {
+            writeln!(streams.err).map_err(ScanError::from)?;
+        }
         if args.json {
             render::json(streams.out, &output).map_err(ScanError::from)?;
         } else if args.plain {
             render::plain(streams.out, &output).map_err(ScanError::from)?;
         } else {
+            // The views render into a buffer first, so an empty one (filters
+            // that matched nothing) leaves no stray blank line above the
+            // closing line.
+            let stdout = &mut *streams.out;
+            let mut body: Vec<u8> = Vec::new();
+            let streams_out: &mut dyn std::io::Write = &mut body;
             let mut table = false;
             if args.pages {
-                render::pages_view(streams.out, &output).map_err(ScanError::from)?;
+                render::pages_view(streams_out, &output).map_err(ScanError::from)?;
                 table = true;
             }
             if args.visuals {
                 if table {
-                    writeln!(streams.out).map_err(ScanError::from)?;
+                    writeln!(streams_out).map_err(ScanError::from)?;
                 }
-                render::visuals_view(streams.out, &output).map_err(ScanError::from)?;
+                render::visuals_view(streams_out, &output).map_err(ScanError::from)?;
                 table = true;
             }
             if args.fields {
                 if table {
-                    writeln!(streams.out).map_err(ScanError::from)?;
+                    writeln!(streams_out).map_err(ScanError::from)?;
                 }
-                render::fields_view(streams.out, &output).map_err(ScanError::from)?;
+                render::fields_view(streams_out, &output).map_err(ScanError::from)?;
                 table = true;
             }
             if args.used {
                 if table {
-                    writeln!(streams.out).map_err(ScanError::from)?;
+                    writeln!(streams_out).map_err(ScanError::from)?;
                 }
-                render::used_view(streams.out, &output).map_err(ScanError::from)?;
+                render::used_view(streams_out, &output).map_err(ScanError::from)?;
                 table = true;
             }
             if !table {
-                render::human(streams.out, &palette_out, &output).map_err(ScanError::from)?;
+                render::human(streams_out, &palette_out, &output).map_err(ScanError::from)?;
             }
+            stdout.write_all(&body).map_err(ScanError::from)?;
+            if !body.is_empty() {
+                writeln!(stdout).map_err(ScanError::from)?;
+            }
+            render::closing(stdout, &palette_out, &output, model_item.is_some(), elapsed)
+                .map_err(ScanError::from)?;
             // The next-command suggestion is stderr's job, and it comes after
             // every stdout line: the streams can buffer independently.
-            if args.visuals {
-                let unresolved: usize = output.reports.iter().map(|r| r.unresolved_count).sum();
-                if unresolved > 0 {
-                    writeln!(
-                        streams.err,
-                        "{}",
-                        palette_err.dim(&format!(
-                            "{unresolved} unresolved — see: ripbi report --broken"
-                        ))
-                    )
-                    .map_err(ScanError::from)?;
-                }
+            let unresolved: usize = output.reports.iter().map(|r| r.unresolved_count).sum();
+            if unresolved > 0 && !args.broken {
+                writeln!(
+                    streams.err,
+                    "  {}",
+                    palette_err.dim("see them with: ripbi report --broken")
+                )
+                .map_err(ScanError::from)?;
             }
         }
-        // Notices and notes are stderr's job in text modes; --json carries
-        // the notices itself.
-        if !args.json {
-            write_skip_notices(streams.err, &output.skips)?;
-        }
-        write_empty_note(args, &output, streams.err)?;
     }
     Ok(EXIT_OK)
 }
@@ -384,6 +380,7 @@ fn inventory(
 fn write_empty_note(
     args: &ReportArgs,
     output: &Inventory,
+    notes: Notes,
     err: &mut dyn std::io::Write,
 ) -> Result<(), ScanError> {
     let rows_requested =
@@ -435,7 +432,7 @@ fn write_empty_note(
         None
     };
     if let Some(message) = message {
-        writeln!(err, "{message}").map_err(ScanError::from)?;
+        writeln!(err, "{}", notes.warn(&message)).map_err(ScanError::from)?;
     }
     Ok(())
 }

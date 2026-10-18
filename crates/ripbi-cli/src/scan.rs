@@ -137,7 +137,7 @@ fn scan(
         Some(root) => Some(scan_before(
             args,
             &cwd.join(root),
-            Notes::Tiered(*palette_err),
+            Notes(*palette_err),
             streams.err,
         )?),
         None => None,
@@ -205,67 +205,18 @@ fn scan(
         ));
     }
 
-    let notes = Notes::Tiered(*palette_err);
+    let notes = Notes(*palette_err);
     if !args.quiet {
         // The header names the model and its report count; every line under
         // it is a tiered note — `!` when it changes how to read the result,
         // `·` for background — so the verdict, last, is what stands out.
-        let header = scan_header(palette_err, &paired.model, report_paths.len(), args.verbose);
-        match &model_scan {
-            Some(scan) => {
-                // The count is the signal; the names are auditability, on
-                // request. The pairing *facts* always show — the by-name
-                // match is the weakest pairing and a wrong pairing means
-                // wrong findings — but capped, so a hundred thin reports
-                // read as one line each instead of a wall (issue #65, and
-                // the same capping for the ignored list).
-                if args.verbose {
-                    let names: Vec<String> =
-                        report_paths.iter().map(|path| report_name(path)).collect();
-                    announce.push(format!("{header}: {}", names.join(", ")));
-                    for (path, catalog) in &scan.bound.name_matched {
-                        announce.push(notes.warn(&format!(
-                            "{} matched by dataset name only (byConnection 'initial catalog' = '{catalog}')",
-                            path.display()
-                        )));
-                    }
-                } else {
-                    announce.push(header);
-                    announce.extend(collapse_name_matched(&scan.bound.name_matched, notes));
-                }
-                if !scan.bound.ignored_elsewhere.is_empty() {
-                    let count = scan.bound.ignored_elsewhere.len();
-                    if args.verbose {
-                        let names: Vec<String> = scan
-                            .bound
-                            .ignored_elsewhere
-                            .iter()
-                            .map(|path| report_name(path))
-                            .collect();
-                        announce.push(notes.info(&format!(
-                            "ignored {count} report(s) bound to other models: {}",
-                            names.join(", ")
-                        )));
-                    } else {
-                        let names: Vec<String> = scan
-                            .bound
-                            .ignored_elsewhere
-                            .iter()
-                            .map(|path| report_name(path))
-                            .collect();
-                        let mut line = format!(
-                            "ignored {count} report(s) bound to other models: {}",
-                            capped_names(&names)
-                        );
-                        if count > 3 {
-                            line.push_str(VERBOSE_POINTER);
-                        }
-                        announce.push(notes.info(&line));
-                    }
-                }
-            }
-            None => announce.push(header),
-        }
+        announce.extend(pairing_announce(
+            notes,
+            &paired.model,
+            &report_paths,
+            model_scan.as_ref().map(|scan| &scan.bound),
+            Some(args.verbose),
+        ));
         for line in &announce {
             writeln!(streams.err, "{line}").map_err(ScanError::from)?;
         }
@@ -780,9 +731,7 @@ fn scan(
 
     // The header already named the model; the elapsed time rides on the
     // verdict line, so the ticker just clears.
-    progress
-        .finish(streams.err, None)
-        .map_err(ScanError::from)?;
+    progress.finish(streams.err).map_err(ScanError::from)?;
 
     write_side_outputs(args, cwd, &output, &kept_existing, locator.as_ref())?;
 
@@ -832,8 +781,9 @@ fn scan(
             if !vouched {
                 let hint = consumer_hint(
                     query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some(),
+                    "removing",
                 );
-                writeln!(streams.err, "  {}", palette_err.dim(hint))?;
+                writeln!(streams.err, "  {}", palette_err.dim(&hint))?;
             }
             if output.compare.is_some() {
                 writeln!(streams.err, "hint: {}", render::KEEP_HINT)?;
@@ -1269,6 +1219,7 @@ pub(crate) fn report_name(path: &Path) -> String {
 pub(crate) fn collapse_name_matched(
     name_matched: &[(PathBuf, String)],
     notes: Notes,
+    has_verbose: bool,
 ) -> Vec<String> {
     let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
     let mut positions: HashMap<&str, usize> = HashMap::new();
@@ -1290,7 +1241,7 @@ pub(crate) fn collapse_name_matched(
                 names.len(),
                 capped_names(&names)
             );
-            if names.len() > 3 {
+            if names.len() > 3 && has_verbose {
                 line.push_str(VERBOSE_POINTER);
             }
             notes.warn(&line)
@@ -1497,66 +1448,109 @@ pub(crate) fn dedupe(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// The on-disk cost of the reported findings (issue #122): each file once, so
 /// a column or relationship whose owning table is itself reported is covered
 /// by the table's size. `None` when no finding carries a size.
-/// How a command prints its stderr notes. `scan` tiers them under its header
-/// — `!` for what changes how to read the result, `·` for background — so
-/// the verdict stands out; `deps` and `report` keep the flat `Note:` line.
+/// How every model command prints its stderr notes, tiered under its
+/// header: `!` for what changes how to read the result, `·` for background,
+/// so the closing line stands out.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Notes {
-    Tiered(Palette),
-    Flat,
-}
+pub(crate) struct Notes(pub(crate) Palette);
 
 impl Notes {
     /// Background context. `text` carries no trailing period.
     pub(crate) fn info(self, text: &str) -> String {
-        match self {
-            Self::Tiered(palette) => palette.info_note(text),
-            Self::Flat => format!("Note: {text}."),
-        }
+        self.0.info_note(text)
     }
 
     /// A note that changes how to read the result.
     pub(crate) fn warn(self, text: &str) -> String {
-        match self {
-            Self::Tiered(palette) => palette.warn_note(text),
-            Self::Flat => format!("Note: {text}."),
-        }
+        self.0.warn_note(text)
     }
 }
 
-/// `scan`'s first stderr line: the model and its report count, the full
-/// path only under `--verbose`.
-fn scan_header(palette: &Palette, model: &Path, reports: usize, verbose: bool) -> String {
-    let name = if verbose {
+/// The header and pairing notes `scan`, `report`, and `deps` open with: the
+/// model and its report count, then the pairing facts a walk made. The count
+/// is the signal; the names are auditability, on request. The pairing facts
+/// always show — the by-name match is the weakest pairing and a wrong pairing
+/// means wrong results — but capped, so a hundred thin reports read as one
+/// line each instead of a wall (issue #65, and the same capping for the
+/// ignored list). `verbose` is `None` for a command without `--verbose`.
+pub(crate) fn pairing_announce(
+    notes: Notes,
+    model: &Path,
+    reports: &[PathBuf],
+    bound: Option<&discover::BoundReports>,
+    verbose: Option<bool>,
+) -> Vec<String> {
+    let full = verbose == Some(true);
+    let mut lines = Vec::new();
+    let name = if full {
         model.display().to_string()
     } else {
         report_name(model)
     };
-    let noun = if reports == 1 { "report" } else { "reports" };
-    format!("{} · {reports} {noun}", palette.bold(&name))
-}
-
-/// The hint under a verdict with findings: ripbi sees only the ingested
-/// reports (and the query log's window), so a finding is a candidate until
-/// the consumers it cannot see are checked. `[scan].external_consumers =
-/// "none"` vouches there are none.
-pub(crate) fn consumer_hint(with_query_log: bool) -> &'static str {
-    if with_query_log {
-        "check consumers outside the query log's window before removing; ripbi can't see them"
+    let count = match reports.len() {
+        0 => "no reports".to_string(),
+        1 => "1 report".to_string(),
+        n => format!("{n} reports"),
+    };
+    let header = format!("{} · {count}", notes.0.bold(&name));
+    if full && !reports.is_empty() {
+        let names: Vec<String> = reports.iter().map(|path| report_name(path)).collect();
+        lines.push(format!("{header}: {}", names.join(", ")));
     } else {
-        "check thin reports, Excel and XMLA clients before removing; ripbi can't see them"
+        lines.push(header);
     }
+    let Some(bound) = bound else {
+        return lines;
+    };
+    if full {
+        for (path, catalog) in &bound.name_matched {
+            lines.push(notes.warn(&format!(
+                "{} matched by dataset name only (byConnection 'initial catalog' = '{catalog}')",
+                path.display()
+            )));
+        }
+    } else {
+        lines.extend(collapse_name_matched(
+            &bound.name_matched,
+            notes,
+            verbose.is_some(),
+        ));
+    }
+    if !bound.ignored_elsewhere.is_empty() {
+        let count = bound.ignored_elsewhere.len();
+        let names: Vec<String> = bound
+            .ignored_elsewhere
+            .iter()
+            .map(|path| report_name(path))
+            .collect();
+        let mut line = format!(
+            "ignored {count} report(s) bound to other models: {}",
+            if full {
+                names.join(", ")
+            } else {
+                capped_names(&names)
+            }
+        );
+        if count > 3 && verbose == Some(false) {
+            line.push_str(VERBOSE_POINTER);
+        }
+        lines.push(notes.info(&line));
+    }
+    lines
 }
 
-/// The stderr coverage caveat `deps` prints once per run. A query
-/// log narrows the blind spot to the consumers outside its window.
-pub(crate) fn coverage_caveat(with_query_log: bool) -> &'static str {
+/// The hint under a result whose meaning depends on consumers ripbi cannot
+/// see: `scan`'s findings ("before removing"), `deps`'s Impact view ("before
+/// changing it"). A query log narrows the blind spot to the consumers
+/// outside its window. `[scan].external_consumers = "none"` vouches there
+/// are none.
+pub(crate) fn consumer_hint(with_query_log: bool, action: &str) -> String {
     if with_query_log {
-        "Note: analysis covers the ingested reports and the logged queries; \
-         consumers outside the log's time window are invisible."
+        format!(
+            "check consumers outside the query log's window before {action}; ripbi can't see them"
+        )
     } else {
-        "Note: analysis covers only the ingested reports; \
-         external consumers (thin reports, Excel, XMLA) are invisible."
+        format!("check thin reports, Excel and XMLA clients before {action}; ripbi can't see them")
     }
 }
 
