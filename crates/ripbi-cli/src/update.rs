@@ -176,7 +176,7 @@ pub fn run_in_with_home(
     streams: &mut Streams<'_>,
 ) -> i32 {
     let palette = Palette::detect(streams.stderr_is_tty, args.no_color);
-    match update(args, client, exe, cargo_home, streams) {
+    match update(args, client, exe, cargo_home, streams, &palette) {
         Ok(code) => code,
         Err(error) => {
             if !args.quiet {
@@ -197,6 +197,7 @@ fn update(
     exe: &Path,
     cargo_home: Option<&Path>,
     streams: &mut Streams<'_>,
+    palette: &Palette,
 ) -> Result<i32, ScanError> {
     // 1. Channel: cargo and source builds never self-replace or go online.
     let channel = detect_channel(exe, cargo_home);
@@ -216,17 +217,15 @@ fn update(
     match plan(&release.tag, &current, args.check) {
         Plan::UpToDate => {
             if !args.quiet {
-                if release.tag < current {
-                    writeln!(
-                        streams.err,
-                        "ripbi {current} is newer than the latest release {}.",
+                let line = if release.tag < current {
+                    format!(
+                        "\u{2713} ripbi {current} is newer than the latest release {}",
                         release.tag
                     )
-                    .map_err(ScanError::from)?;
                 } else {
-                    writeln!(streams.err, "ripbi {current} is up to date.")
-                        .map_err(ScanError::from)?;
-                }
+                    format!("\u{2713} ripbi {current} is up to date")
+                };
+                writeln!(streams.err, "{}", palette.ok(&line)).map_err(ScanError::from)?;
             }
             Ok(EXIT_OK)
         }
@@ -237,7 +236,7 @@ fn update(
             }
             Ok(EXIT_AVAILABLE)
         }
-        Plan::Update => self_update(args, client, exe, &current, &release, streams),
+        Plan::Update => self_update(args, client, exe, &current, &release, streams, palette),
     }
 }
 
@@ -270,6 +269,7 @@ fn self_update(
     current: &Version,
     release: &ReleaseInfo,
     streams: &mut Streams<'_>,
+    palette: &Palette,
 ) -> Result<i32, ScanError> {
     // The target triple is only needed here, so `--check` works anywhere.
     let target = target_triple()?;
@@ -328,9 +328,12 @@ fn self_update(
     if !args.quiet {
         writeln!(
             streams.err,
-            "Updated ripbi {current} → {} at {}",
-            release.tag,
-            exe.display()
+            "\n{}   {}",
+            palette.ok(&format!(
+                "\u{2713} Updated ripbi {current} → {}",
+                release.tag
+            )),
+            palette.dim(&exe.display().to_string())
         )
         .map_err(ScanError::from)?;
     }

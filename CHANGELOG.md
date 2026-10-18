@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumers are invisible; the hint now appears only under a view with an Impact
   section. The stage ticker no longer prints a `✓ scanned … in 1.4s` line; the wall
   time sits at the end of each command's closing line.
+- **`stub-report` and `update` share the layout too.** `stub-report` opens with the
+  model's name, lists its notes as `!`/`·` lines, and ends with `✓ Created X.pbip` and
+  the next step under it (`✓ Saved …/.pbi/cache.abf` under `--wait`); the `.pbip` path
+  is still alone on stdout. `update` ends with `✓ Updated ripbi 0.9.1 → v0.9.2` or
+  `✓ ripbi 0.9.1 is up to date`, and the daily new-version notice is a dim `·` line.
 
 ### Added
 
