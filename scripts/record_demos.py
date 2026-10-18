@@ -168,7 +168,8 @@ def span_svg(span: Span) -> str:
 
 def render(title: str, steps: list[Step]) -> str:
     """One animated terminal window: each step types its command, then prints."""
-    rows: list[tuple[str, int, int | None]] = []  # (svg text, appear ms, typed chars)
+    # (svg text, columns, appear ms, typed chars)
+    rows: list[tuple[str, int, int, int | None]] = []
     t = 400
     for step in steps:
         typed = len(step.display)
@@ -177,10 +178,11 @@ def render(title: str, steps: list[Step]) -> str:
             f'<tspan fill="{THEME["prompt"]}">$ </tspan>'
             f'<tspan fill="{THEME["bold"]}">{html.escape(step.display, quote=False)}</tspan>'
         )
-        rows.append((prompt, t, typed))
+        rows.append((prompt, typed + 2, t, typed))
         t += typed * per_char + AFTER_TYPE_MS
         for line in step.output:
-            rows.append(("".join(span_svg(span) for span in line), t, None))
+            text = "".join(span_svg(span) for span in line)
+            rows.append((text, sum(len(span.text) for span in line), t, None))
             t += LINE_MS
         t += AFTER_STEP_MS
     total = t + HOLD_MS
@@ -196,26 +198,33 @@ def render(title: str, steps: list[Step]) -> str:
         return f"{ms / total * 100:.3f}%"
 
     styles, body = [], []
-    for i, (text, appear, typed) in enumerate(rows):
+    for i, (text, cols, appear, typed) in enumerate(rows):
         y = TITLE_H + PAD + (i + 1) * LINE_H - 5
         styles.append(
             f"@keyframes a{i}{{0%,{pct(appear)}{{opacity:0}}"
             f"{pct(appear + 1)},100%{{opacity:1}}}}"
             f".a{i}{{animation:a{i} {total}ms linear infinite both}}"
         )
-        body.append(f'<text class="r a{i}" x="{PAD}" y="{y}">{text}</text>')
+        # textLength pins every line to the grid CHAR_W assumes, whatever
+        # monospace font the viewer has: a wider one would otherwise run past
+        # the right edge and outlast the typing cover below.
+        fit = f' textLength="{cols * CHAR_W:.2f}"' if cols else ""
+        body.append(f'<text class="r a{i}" x="{PAD}" y="{y}"{fit}>{text}</text>')
         if typed:
             # A background-colored cover slides off the command one character
             # at a time: the typing effect, without per-character elements.
+            # It vanishes once typed, so a renderer that mis-sizes or skips the
+            # slide still shows the whole command.
             per_char = min(TYPE_MS, TYPE_CAP_MS // typed)
             start = appear
             end = appear + typed * per_char
             shift = round(typed * CHAR_W, 2)
             left = round(PAD + 2 * CHAR_W, 2)
             styles.append(
-                f"@keyframes c{i}{{0%,{pct(start)}{{transform:translateX(0);"
+                f"@keyframes c{i}{{0%,{pct(start)}{{transform:translateX(0);opacity:1;"
                 f"animation-timing-function:steps({typed},end)}}"
-                f"{pct(end)},100%{{transform:translateX({shift}px)}}}}"
+                f"{pct(end)}{{transform:translateX({shift}px);opacity:1}}"
+                f"{pct(end + 1)},100%{{transform:translateX({shift}px);opacity:0}}}}"
                 f".c{i}{{animation:c{i} {total}ms linear infinite both}}"
             )
             body.append(
