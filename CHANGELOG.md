@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A clean `scan --summary` no longer prints two blank lines above the verdict.** The
+  blank line under the notes already separates them, so the summary adds its own only
+  when it has counts to separate from the verdict.
+
 ## [0.10.0] - 2026-10-18
 
 ### Changed

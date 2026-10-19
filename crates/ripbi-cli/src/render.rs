@@ -734,7 +734,16 @@ pub fn human_summary(
     if !report.auto_date_time.is_empty() {
         write_auto_date_time_summary(out, palette, report)?;
     }
-    writeln!(out)?;
+    // The blank line separates the counts from the verdict; with no counts
+    // the one stderr already wrote under the notes is the separator.
+    let has_counts = !report.findings.is_empty()
+        || !report.broken.is_empty()
+        || !report.broken_artifacts.is_empty()
+        || report.compare.as_ref().is_some_and(|c| !c.fixed.is_empty())
+        || !report.auto_date_time.is_empty();
+    if has_counts {
+        writeln!(out)?;
+    }
     write_verdict(out, palette, report, broken_only)
 }
 
@@ -1879,6 +1888,29 @@ mod tests {
 
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("No broken reports or artifacts"), ":\n{text}");
+    }
+
+    /// A clean `--summary` is the verdict alone: the blank line stderr writes
+    /// under the notes already separates it, so stdout adds no second one.
+    /// With counts, one blank line still separates them from the verdict.
+    #[test]
+    fn the_summary_separates_the_verdict_once() {
+        let mut out = Vec::new();
+        human_summary(&mut out, &Palette::plain(), &scan_output(vec![]), false).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.starts_with("\u{2713} No unused objects"), ":\n{text}");
+
+        let mut out = Vec::new();
+        human_summary(
+            &mut out,
+            &Palette::plain(),
+            &scan_output(vec![finding(None)]),
+            false,
+        )
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("\n\n\u{2717} 1 unused object"), ":\n{text}");
+        assert!(!text.contains("\n\n\n"), ":\n{text}");
     }
 
     /// The propagated reason names the artifact: the visual is what a user
