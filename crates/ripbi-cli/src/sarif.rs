@@ -15,8 +15,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::compare::{Entry, Key};
-use crate::render::{AutoDateTimeRow, BrokenArtifactOut, BrokenOut, Finding, ScanOutput};
+use crate::compare::{Coverage, Entry, Key};
+use crate::render::{
+    AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
+};
 use crate::scan::report_name;
 
 const SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
@@ -366,24 +368,55 @@ pub fn write(
             })
         })
         .collect();
+    let mut run = json!({
+        "tool": {
+            "driver": {
+                "name": "ripbi",
+                "version": env!("CARGO_PKG_VERSION"),
+                "informationUri": INFORMATION_URI,
+                "rules": rules,
+            }
+        },
+        "columnKind": "unicodeCodePoints",
+        "results": results,
+    });
+    // An incomplete baseline is a fact about the run, not about any result:
+    // a tool notification says so, and the unverified findings stay out of
+    // `results` — they are neither new nor "already in" the baseline.
+    if let Some(text) = report.compare.as_ref().and_then(coverage_notice) {
+        run["invocations"] = json!([{
+            "executionSuccessful": true,
+            "toolExecutionNotifications": [{
+                "level": "warning",
+                "message": { "text": text },
+            }],
+        }]);
+    }
     let log = Log {
         schema: SCHEMA,
         version: "2.1.0",
-        runs: [json!({
-            "tool": {
-                "driver": {
-                    "name": "ripbi",
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "informationUri": INFORMATION_URI,
-                    "rules": rules,
-                }
-            },
-            "columnKind": "unicodeCodePoints",
-            "results": results,
-        })],
+        runs: [run],
     };
     serde_json::to_writer_pretty(&mut *out, &log)?;
     writeln!(out)
+}
+
+/// The run notification for a `--compare-root` baseline that is not fully
+/// comparable; `None` for a scanned one.
+fn coverage_notice(compare: &CompareOut) -> Option<String> {
+    match compare.coverage {
+        Coverage::Scanned => None,
+        Coverage::Skipped => Some(format!(
+            "baseline skipped: the model had no connected reports in {}; {} unused findings \
+             on objects that already existed there are unverified and not reported",
+            compare.label,
+            compare.unverified.len()
+        )),
+        Coverage::Unavailable => Some(format!(
+            "no baseline: the scan could not run in {}; every finding counts as new",
+            compare.label
+        )),
+    }
 }
 
 #[derive(Serialize)]

@@ -66,5 +66,6 @@ For PBIX and `.abf` models, an unused finding with a size gains a third field, i
 bytes on disk (`column	'Opportunity'[Name]	25887`); the first two fields never change.
 
 Under `--compare-root`, one `fixed:<type>\t<id>` record follows per finding of the
-other checkout that is gone here (see
+other checkout that is gone here, then one `unverified:<type>	<id>` record per unused
+finding a skipped baseline could not judge (see
 [Comparing against another checkout](compare.md)).

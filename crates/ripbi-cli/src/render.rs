@@ -10,7 +10,7 @@ use std::time::Duration;
 use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
 use serde::Serialize;
 
-use crate::compare::Entry;
+use crate::compare::{Coverage, Entry};
 use crate::style::Palette;
 
 /// Everything a scan wants to say on stdout, as presentation-ready data.
@@ -125,9 +125,18 @@ pub struct CompareOut {
     pub root: String,
     /// What the output calls it: `--compare-label`, else `root`.
     pub label: String,
+    /// How far the other checkout's scan can be trusted: `Skipped` when its
+    /// model had no connected reports, `Unavailable` when it could not run.
+    pub coverage: Coverage,
+    /// Why coverage is incomplete; `None` for a scanned baseline.
+    pub coverage_detail: Option<String>,
     /// Reportable findings that already existed there: left out of every
     /// list and of the exit code.
     pub existing: usize,
+    /// Under a skipped baseline: unused findings on objects that existed
+    /// there, whose usage there was never checked. Not findings: listed
+    /// apart, never gating.
+    pub unverified: Vec<Entry>,
     /// Findings of the other checkout this scan no longer detects at all.
     pub fixed: Vec<Entry>,
 }
@@ -433,6 +442,16 @@ pub(crate) const FIXED_CAVEAT: &str = "(this scan skipped model objects it could
 pub(crate) const KEEP_HINT: &str = "Remove the new unused objects, or if something outside \
                             these reports reads one (an Excel pivot, another workspace's \
                             report), mark it in the model: `annotation ripbi_keep = <reason>`";
+
+/// The count of unused findings a skipped baseline could not judge, worded
+/// as incomplete coverage rather than as findings.
+pub(crate) fn unverified_note(compare: &CompareOut) -> String {
+    format!(
+        "({} unused unverified — no connected reports in {}, so their usage there is unknown)",
+        compare.unverified.len(),
+        compare.label
+    )
+}
 
 /// Whether a `Fixed since` list may be parse damage: some finding vanished,
 /// and this scan's ingest recorded an `unknown_object` skip — the one kind
@@ -854,6 +873,9 @@ fn write_verdict(
             "({} findings already in {})",
             compare.existing, compare.label
         ));
+        if compare.coverage == Coverage::Skipped {
+            notes.push(unverified_note(compare));
+        }
     }
     if report.ignored > 0 {
         notes.push(format!(
@@ -1030,6 +1052,9 @@ pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
         for entry in &compare.fixed {
             writeln!(out, "fixed:{}\t{}", entry.kind, entry.id)?;
         }
+        for entry in &compare.unverified {
+            writeln!(out, "unverified:{}\t{}", entry.kind, entry.id)?;
+        }
     }
     Ok(())
 }
@@ -1120,7 +1145,10 @@ pub fn json(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
         },
         compare: report.compare.as_ref().map(|compare| JsonCompare {
             root: compare.root.clone(),
+            baseline: compare.coverage,
+            baseline_detail: compare.coverage_detail.clone(),
             existing: compare.existing,
+            unverified: compare.unverified.clone(),
             fixed: compare.fixed.clone(),
             fixed_uncertain: fixed_uncertain(report),
         }),
@@ -1152,8 +1180,18 @@ struct JsonReport {
 #[derive(Serialize)]
 struct JsonCompare {
     root: String,
+    /// `scanned`, `skipped` (the model had no connected reports there), or
+    /// `unavailable` (the scan could not run there).
+    baseline: Coverage,
+    /// Why the baseline is `skipped` or `unavailable`; absent when scanned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_detail: Option<String>,
     /// Findings that already existed there, left out of every array above.
     existing: usize,
+    /// Under a `skipped` baseline: unused findings on objects that existed
+    /// there, whose usage there is unknown. Left out of every array above and
+    /// of the exit code.
+    unverified: Vec<Entry>,
     /// Findings of the other checkout this scan no longer detects.
     fixed: Vec<Entry>,
     /// `true` when `fixed` is non-empty and this scan's ingest recorded an
