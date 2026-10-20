@@ -6,6 +6,7 @@
 use std::io;
 use std::path::Path;
 
+use crate::compare::Coverage;
 use crate::render::{self, GROUPS, ScanOutput};
 
 /// Rows each findings list shows before it is cut short: a PR comment is
@@ -37,13 +38,39 @@ fn headline(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     let total = report.reported();
     let noun = if total == 1 { "finding" } else { "findings" };
     match &report.compare {
-        Some(compare) => writeln!(
-            out,
-            "**{total} new {noun}** · {} fixed · {} already in {}",
-            compare.fixed.len(),
-            compare.existing,
-            code(&compare.label)
-        )?,
+        Some(compare) => {
+            writeln!(
+                out,
+                "**{total} new {noun}** · {} fixed · {} already in {}",
+                compare.fixed.len(),
+                compare.existing,
+                code(&compare.label)
+            )?;
+            match compare.coverage {
+                Coverage::Scanned => {}
+                Coverage::Skipped => {
+                    writeln!(out)?;
+                    writeln!(
+                        out,
+                        "> **Baseline skipped:** the model had no connected reports in {}, so \
+                         its usage there was never checked. {} unused objects that already \
+                         existed there are unverified and do not gate; only objects this change \
+                         adds are compared.",
+                        code(&compare.label),
+                        compare.unverified.len()
+                    )?;
+                }
+                Coverage::Unavailable => {
+                    writeln!(out)?;
+                    writeln!(
+                        out,
+                        "> **No baseline:** the scan could not run in {}, so every finding counts \
+                         as new.",
+                        code(&compare.label)
+                    )?;
+                }
+            }
+        }
         None => writeln!(out, "**{total} {noun}**")?,
     }
     writeln!(out)

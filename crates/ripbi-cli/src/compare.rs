@@ -8,7 +8,7 @@
 //! compare cleanly. Matching is case-insensitive, like the engine's own name
 //! comparison. The contract lives in `docs/scan/compare.md`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::Serialize;
 
@@ -125,20 +125,142 @@ pub fn insert(detected: &mut Detected, entry: &Entry) {
     detected.entry(entry.key()).or_insert_with(|| entry.clone());
 }
 
-/// The findings `before` detected that `after` no longer detects at all, in
-/// key order.
-#[must_use]
-pub fn fixed(before: &Detected, after: &Detected) -> Vec<Entry> {
-    before
-        .iter()
-        .filter(|(key, _)| !after.contains_key(key))
-        .map(|(_, entry)| entry.clone())
-        .collect()
+impl Entry {
+    /// Whether the finding is a fact about report usage — an unused object or
+    /// an auto date/time verdict — rather than about breakage, which the model
+    /// alone decides. Only usage findings need connected reports to be judged.
+    #[must_use]
+    pub fn about_usage(&self) -> bool {
+        !matches!(self.kind.as_str(), "broken_visual" | "broken_artifact")
+    }
+
+    /// The object a usage finding is about — kind and id, folded, without the
+    /// verdict, which itself depends on usage.
+    fn subject(&self) -> String {
+        format!("{}\u{1f}{}", self.kind, self.id).to_lowercase()
+    }
+}
+
+/// How much of the other checkout's scan the comparison can trust.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Coverage {
+    /// The scan ran against connected reports: every finding compares.
+    Scanned,
+    /// The model was there, but no report was connected to it (or only
+    /// `stub-report` stubs), so its usage was never checked: an unused object
+    /// that existed there is unverified, not new.
+    Skipped,
+    /// The scan could not run there at all (a model this change adds): every
+    /// finding is new.
+    Unavailable,
+}
+
+/// One finding's standing against the baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// Not in the baseline: reported, and gates.
+    New,
+    /// Detected by the baseline too: dropped, counted in `existing`.
+    Existing,
+    /// A usage finding on an object the baseline had but could not judge:
+    /// listed apart from the findings, never gates.
+    Unverified,
+}
+
+/// What the other checkout's scan detected, and how far that can be trusted.
+#[derive(Debug, Clone)]
+pub struct Baseline {
+    pub coverage: Coverage,
+    /// Why coverage is incomplete; `None` for a scanned baseline.
+    pub detail: Option<String>,
+    detected: Detected,
+    /// Under `Skipped`: the objects the baseline's usage findings were about.
+    /// Its analysis ran with no report roots, so every object it had shows up
+    /// here unless something else (a `ripbi_keep`, a logged query) kept it.
+    subjects: HashSet<String>,
+}
+
+impl Baseline {
+    /// A baseline whose scan ran against connected reports.
+    #[must_use]
+    pub fn scanned(detected: Detected) -> Self {
+        Self {
+            coverage: Coverage::Scanned,
+            detail: None,
+            detected,
+            subjects: HashSet::new(),
+        }
+    }
+
+    /// A baseline whose model had no connected reports: `detected` is its
+    /// analysis with no report roots.
+    #[must_use]
+    pub fn skipped(detected: Detected, detail: String) -> Self {
+        let subjects = detected
+            .values()
+            .filter(|entry| entry.about_usage())
+            .map(Entry::subject)
+            .collect();
+        Self {
+            coverage: Coverage::Skipped,
+            detail: Some(detail),
+            detected,
+            subjects,
+        }
+    }
+
+    /// A baseline where the scan could not run.
+    #[must_use]
+    pub fn unavailable(detail: String) -> Self {
+        Self {
+            coverage: Coverage::Unavailable,
+            detail: Some(detail),
+            detected: Detected::new(),
+            subjects: HashSet::new(),
+        }
+    }
+
+    /// Where `entry` stands: a skipped baseline vouches for breakage and for
+    /// which objects existed, never for whether they were used.
+    #[must_use]
+    pub fn classify(&self, entry: &Entry) -> Status {
+        if self.coverage == Coverage::Skipped && entry.about_usage() {
+            return if self.subjects.contains(&entry.subject()) {
+                Status::Unverified
+            } else {
+                Status::New
+            };
+        }
+        if self.detected.contains_key(&entry.key()) {
+            Status::Existing
+        } else {
+            Status::New
+        }
+    }
+
+    /// The findings the baseline detected that `after` no longer detects at
+    /// all, in key order. A skipped baseline's usage findings are left out:
+    /// with no reports there, every object read as unused, and an object a
+    /// report now binds was never a finding to fix.
+    #[must_use]
+    pub fn fixed(&self, after: &Detected) -> Vec<Entry> {
+        self.detected
+            .iter()
+            .filter(|(_, entry)| self.coverage != Coverage::Skipped || !entry.about_usage())
+            .filter(|(key, _)| !after.contains_key(key))
+            .map(|(_, entry)| entry.clone())
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixed(before: &Detected, after: &Detected) -> Vec<Entry> {
+        Baseline::scanned(before.clone()).fixed(after)
+    }
 
     fn detected(entries: &[Entry]) -> Detected {
         let mut detected = Detected::new();
@@ -171,5 +293,40 @@ mod tests {
         let gone_a = Entry::unused("column", "'Sales'[A gone]");
         let before = detected(&[gone_b.clone(), kept.clone(), gone_a.clone()]);
         assert_eq!(fixed(&before, &detected(&[kept])), vec![gone_a, gone_b]);
+    }
+
+    #[test]
+    fn a_skipped_baseline_vouches_for_existence_not_usage() {
+        let old = Entry::unused("measure", "'Sales'[Old]");
+        let broken = Entry::broken_artifact("'Sales'[Bad]", None);
+        let adt = Entry::auto_date_time("'LocalDateTable_1'", "unused_by_reports");
+        let baseline = Baseline::skipped(
+            detected(&[old.clone(), broken.clone(), adt]),
+            "no connected reports".to_string(),
+        );
+        assert_eq!(baseline.classify(&old), Status::Unverified);
+        assert_eq!(
+            baseline.classify(&Entry::auto_date_time("'LocalDateTable_1'", "dead")),
+            Status::Unverified,
+            "the verdict itself depends on usage"
+        );
+        assert_eq!(
+            baseline.classify(&Entry::unused("measure", "'Sales'[Added]")),
+            Status::New
+        );
+        assert_eq!(baseline.classify(&broken), Status::Existing);
+        assert_eq!(
+            baseline.fixed(&Detected::new()),
+            vec![broken],
+            "usage findings of a skipped baseline are never fixed"
+        );
+    }
+
+    #[test]
+    fn an_unavailable_baseline_makes_everything_new() {
+        let baseline = Baseline::unavailable("model not found".to_string());
+        let entry = Entry::unused("measure", "'Sales'[Old]");
+        assert_eq!(baseline.classify(&entry), Status::New);
+        assert!(baseline.fixed(&Detected::new()).is_empty());
     }
 }

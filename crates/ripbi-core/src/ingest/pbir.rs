@@ -593,8 +593,13 @@ fn visual(value: &Value, folder: &str, ctx: &mut Ctx) -> Option<Visual> {
     // A visual container's own filters sit beside `visual`, not under it; the
     // formatting objects contribute more still — a persisted automatic filter
     // — and their remaining fields are conditional formatting.
-    let (mut filters, conditional_formatting) =
+    let (mut filters, mut conditional_formatting) =
         visual_objects(inner.get("objects"), ctx, "/visual/objects");
+    conditional_formatting.extend(container_formatting(
+        inner.get("visualContainerObjects"),
+        ctx,
+        "/visual/visualContainerObjects",
+    ));
     filters.extend(filter_config(
         value.get("filterConfig"),
         ctx,
@@ -1724,6 +1729,47 @@ fn visual_objects(
         }
     }
     (filters, conditional_formatting)
+}
+
+/// Collects the conditional formatting of a visual's *container*
+/// (`visualContainerObjects`): the background, border, title, subtitle, and
+/// header properties Power BI draws around the visual. A rule there binds a
+/// measure exactly like one in `objects` — a background colour driven by a
+/// measure, a title whose text is a measure — and that measure is often bound
+/// nowhere else on the visual. `altText` is skipped: it is its own binding
+/// site ([`alt_text_targets`]).
+fn container_formatting(
+    objects: Option<&Value>,
+    ctx: &mut Ctx,
+    location: &str,
+) -> Vec<FieldTarget> {
+    let mut out = Vec::new();
+    let Some(map) = objects.and_then(Value::as_object) else {
+        return out;
+    };
+    for (group, definitions) in map {
+        let Some(list) = definitions.as_array() else {
+            continue;
+        };
+        for (index, definition) in list.iter().enumerate() {
+            let Some(properties) = definition.get("properties").and_then(Value::as_object) else {
+                continue;
+            };
+            for (property, value) in properties {
+                if property == "altText" {
+                    continue;
+                }
+                collect_fields(
+                    value,
+                    &Aliases::new(),
+                    ctx,
+                    &format!("{location}/{group}/{index}/properties/{property}"),
+                    &mut out,
+                );
+            }
+        }
+    }
+    out
 }
 
 /// Reads a visual's accessibility alt text

@@ -47,9 +47,38 @@ ripbi scan --compare-root ../base
   recorded an `unknown_object` skip notice, a finding may have vanished because its
   object failed to parse rather than because it was removed: the list then carries a
   caveat, and `compare.fixed_uncertain` is `true`.
-- **Nothing to compare.** When the scan cannot run in `DIR` (a model this change
-  adds, say), a `! nothing to compare in …` note on stderr says why, and every
-  finding is new. A `DIR` that is not a folder is exit `2`.
+- **Baseline coverage.** Every comparison records how far the other checkout's scan
+  can be trusted, as `compare.baseline` in `--json`:
+  - `scanned`: the scan ran there against connected reports, and every finding
+    compares as described above.
+  - `skipped`: the model was there, but no report was connected to it (or only
+    `stub-report` stubs), typically because this change connects the model's
+    first report. Usage was never checked there, so the comparison does not read
+    that as "zero findings". A `! baseline skipped in …` note on stderr says so,
+    with or without `--allow-no-reports`. Objects still compare by identity:
+    - An unused object (or a not-in-use auto date/time table) **this change adds**
+      did not exist there, so it is new, reported, and gates as usual.
+    - An unused object that **already existed** there is **unverified**: left out
+      of the findings and of the exit code, and never "fixed". The human modes
+      count them under the summary line: `(118 unused unverified — no connected
+      reports in main, …)`. `--plain` prints one `unverified:<type>\t<id>` record
+      each, `--json` lists them under `compare.unverified`, and the Markdown
+      summary opens with a **Baseline skipped** note. SARIF leaves them out of
+      `results` and records the gap as a run-level
+      `invocations[0].toolExecutionNotifications` warning.
+    - Breakage (`broken_visual`, `broken_artifact`) does not depend on usage and
+      compares exactly.
+  - `unavailable`: the scan could not run in `DIR` at all (a model this change
+    adds, say). A `! nothing to compare in …` note on stderr says why, and every
+    finding is new. SARIF records it as a run-level notification too.
+
+  Exit codes follow the reported findings only. Unverified findings never fail the
+  run, and incomplete coverage is not a skip notice, so `--strict` does not gate
+  on it either. Once the change merges, the base branch has a connected report,
+  and the next comparison is `scanned` again. Until then, an object that is
+  unused for real gets the same answer as any finding: remove it, or keep it with
+  `ripbi_keep`.
+- A `DIR` that is not a folder is exit `2`.
 - **The keep hint.** When new unused objects are reported, every mode but `--json`
   ends with a `hint:` on stderr pointing at the `ripbi_keep` annotation, the answer
   for an object a consumer ripbi cannot see reads.

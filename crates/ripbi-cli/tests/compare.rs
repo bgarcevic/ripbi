@@ -256,6 +256,135 @@ fn a_base_without_the_model_makes_every_finding_new() {
     assert!(stdout.contains("(0 findings already in"), "{stdout}");
 }
 
+/// A base checkout with the model but no report connected to it.
+fn without_reports(name: &str) -> Checkouts {
+    let checkouts = Checkouts::of(name, &mini_pbip());
+    fs::remove_dir_all(checkouts.base().join("Mini.Report")).expect("drop base report");
+    fs::remove_file(checkouts.base().join("Mini.pbip")).expect("drop base project");
+    checkouts
+}
+
+impl Checkouts {
+    /// The CI command line, run by the real binary from `head/`: the model as
+    /// a relative PATH and a report search folder, so both resolve against
+    /// each checkout exactly as they do in a pipeline.
+    fn ci_scan(&self, extra: &[&str]) -> (i32, String, String) {
+        let output = assert_cmd::Command::cargo_bin("ripbi")
+            .expect("the ripbi binary")
+            .current_dir(self.head())
+            .args(["scan", "Mini.SemanticModel", "--report", "."])
+            .arg("--compare-root")
+            .arg(self.base())
+            .args(["--no-input", "--no-color"])
+            .args(extra)
+            .env("NO_COLOR", "1")
+            .env("RIPBI_NO_UPDATE_CHECK", "1")
+            .output()
+            .expect("run ripbi");
+        (
+            output.status.code().expect("exit code"),
+            String::from_utf8(output.stdout).expect("utf-8 stdout"),
+            String::from_utf8(output.stderr).expect("utf-8 stderr"),
+        )
+    }
+}
+
+/// The first report connected to an existing model: the base skipped the
+/// model, so its dead objects are unverified — never "new", never clean —
+/// with or without `--allow-no-reports`.
+#[test]
+fn a_base_without_connected_reports_is_a_skipped_baseline_not_a_clean_one() {
+    for flags in [&["--strict", "--allow-no-reports"][..], &["--strict"][..]] {
+        let checkouts = without_reports(&format!("compare-skipped-{}", flags.len()));
+        let (code, stdout, stderr) = checkouts.ci_scan(flags);
+
+        assert_eq!(
+            code, 0,
+            "unverified findings never gate:\n{stdout}\n{stderr}"
+        );
+        assert!(stdout.contains("No unused objects"), "{stdout}");
+        assert!(stdout.contains("(2 unused unverified"), "{stdout}");
+        assert!(stderr.contains("! baseline skipped in"), "{stderr}");
+        assert!(stderr.contains("no connected reports"), "{stderr}");
+        assert!(!stdout.contains("Fixed since"), "{stdout}");
+    }
+}
+
+#[test]
+fn a_skipped_baseline_is_explicit_in_machine_readable_output() {
+    let checkouts = without_reports("compare-skipped-json");
+    let (code, stdout, _) = checkouts.ci_scan(&["--json"]);
+    assert_eq!(code, 0, "{stdout}");
+    let payload = json_payload(&stdout);
+    assert!(payload["unused"].as_array().expect("unused").is_empty());
+    assert_eq!(payload["compare"]["baseline"], "skipped");
+    assert_eq!(payload["compare"]["existing"], 0);
+    assert!(
+        payload["compare"]["baseline_detail"]
+            .as_str()
+            .expect("detail")
+            .contains("no connected reports"),
+        "{stdout}"
+    );
+    let unverified: Vec<&str> = payload["compare"]["unverified"]
+        .as_array()
+        .expect("unverified")
+        .iter()
+        .map(|entry| entry["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(unverified, ["'Sales'[Legacy]", "'Sales'[Legacy Total]"]);
+
+    let (_, plain, _) = checkouts.ci_scan(&["--plain"]);
+    assert_eq!(
+        plain,
+        "unverified:column\t'Sales'[Legacy]\nunverified:measure\t'Sales'[Legacy Total]\n"
+    );
+
+    let markdown = checkouts.temp.0.join("summary.md");
+    checkouts.ci_scan(&["--markdown-file", markdown.to_str().expect("utf-8 path")]);
+    let markdown = fs::read_to_string(markdown).expect("markdown written");
+    assert!(markdown.contains("**Baseline skipped:**"), "{markdown}");
+}
+
+/// Objects the change adds are still compared against a skipped baseline:
+/// identity says they did not exist there, so they are new and gate.
+#[test]
+fn a_new_dead_measure_still_gates_against_a_skipped_baseline() {
+    let checkouts = without_reports("compare-skipped-new");
+    checkouts.edit("head", SALES, "\tcolumn Amount", DEAD_MEASURE);
+
+    let (code, stdout, _) = checkouts.ci_scan(&["--strict", "--allow-no-reports"]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("1 unused object "), "{stdout}");
+    assert!(stdout.contains("'Sales'[Draft KPI]"), "{stdout}");
+    assert!(!stdout.contains("'Sales'[Legacy Total]"), "{stdout}");
+}
+
+#[test]
+fn comparable_baselines_say_so_and_missing_ones_too() {
+    let checkouts = Checkouts::of("compare-coverage", &mini_pbip());
+    let json = || ScanArgs {
+        json: true,
+        ..ScanArgs::default()
+    };
+    let (_, stdout, _) = checkouts.scan(json());
+    let payload = json_payload(&stdout);
+    assert_eq!(payload["compare"]["baseline"], "scanned");
+    assert!(payload["compare"].get("baseline_detail").is_none());
+    assert!(
+        payload["compare"]["unverified"]
+            .as_array()
+            .expect("unverified")
+            .is_empty()
+    );
+
+    fs::remove_dir_all(checkouts.base()).expect("clear base");
+    fs::create_dir_all(checkouts.base()).expect("empty base");
+    let (code, stdout, _) = checkouts.scan(json());
+    assert_eq!(code, 1, "{stdout}");
+    assert_eq!(json_payload(&stdout)["compare"]["baseline"], "unavailable");
+}
+
 #[test]
 fn unchanged_breakage_does_not_gate_under_broken() {
     let checkouts = Checkouts::of("compare-broken", &broken_visual_pbip());

@@ -42,6 +42,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KPIs, 100% stacked charts, buttons, navigators and the newer slicers and cards no
   longer raise `unknown_object` notices; their fields were already counted.
 
+## [0.10.1] - 2026-10-20
+
+### Fixed
+
+- **`scan --compare-root` no longer reports a model's existing findings as new when the
+  other checkout had no connected reports.** Connecting a model's first report used to
+  compare against a skipped baseline as if it were clean, so every existing unused
+  object failed the gate. The comparison now records the baseline as `skipped`: unused
+  objects that already existed there are *unverified* (counted under the summary line,
+  `unverified:` records in `--plain`, `compare.unverified` in `--json`) and never gate,
+  while objects the change adds are still new. `--json` reports every baseline's
+  coverage as `compare.baseline` (`scanned`, `skipped`, or `unavailable`); the Markdown
+  summary and SARIF note an incomplete baseline too.
+- **Measures used only in a visual container's conditional formatting are no longer
+  reported unused.** A PBIR background, border, or title rule driven by a measure
+  (`visualContainerObjects`) now binds that measure, like a rule in the visual's own
+  formatting.
+- **A clean `scan --summary` no longer prints two blank lines above the verdict.** The
+  blank line under the notes already separates them, so the summary adds its own only
+  when it has counts to separate from the verdict.
+
 ## [0.10.0] - 2026-10-18
 
 ### Changed
@@ -867,7 +888,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/bgarcevic/ripbi/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bgarcevic/ripbi/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/bgarcevic/ripbi/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/bgarcevic/ripbi/compare/v0.8.1...v0.9.0

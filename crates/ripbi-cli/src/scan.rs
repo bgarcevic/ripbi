@@ -13,7 +13,7 @@ use ripbi_core::usage::{self, QueryLog};
 use ripbi_core::{NameKey, ObjectId, PartitionSource, ReportModel, SizeBasis, StorageStats};
 
 use crate::cli::{EmitFormat, ScanArgs, SortKey};
-use crate::compare::{self, Detected, Entry};
+use crate::compare::{self, Baseline, Detected, Entry, Status};
 use crate::config;
 use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
@@ -99,13 +99,16 @@ pub fn run_in(args: &ScanArgs, cwd: &Path, streams: &mut Streams<'_>) -> i32 {
 
 /// One scan. With `probe`, this is the silent "before" pass of
 /// `--compare-root` (issue #141): nothing is rendered, and every finding the
-/// scan detects is written to `probe` instead.
+/// scan detects is written to `probe` instead. A model with no connected
+/// reports is not skipped there: its analysis runs with no report roots and
+/// the baseline is marked skipped, so the comparison still knows which
+/// objects existed without vouching for their usage.
 fn scan(
     args: &ScanArgs,
     cwd: &Path,
     streams: &mut Streams<'_>,
     palette_err: &Palette,
-    probe: Option<&mut Detected>,
+    probe: Option<&mut Baseline>,
 ) -> Result<i32, ScanError> {
     let palette_out = Palette::detect(streams.stdout_is_tty, args.no_color);
     // The stage ticker (human mode on a terminal only), started before
@@ -174,7 +177,15 @@ fn scan(
     progress.stage(1);
     let report_paths = dedupe(paired.reports);
 
-    if report_paths.is_empty() {
+    // The "before" pass when the model had no connected reports: why its
+    // usage is unknown. Outside a probe this is the refusal or the skip.
+    let mut uncovered: Option<String> = None;
+    if report_paths.is_empty() && probe.is_some() {
+        uncovered = Some(format!(
+            "{} had no connected reports there",
+            paired.model.display()
+        ));
+    } else if report_paths.is_empty() {
         if args.allow_no_reports {
             // The skip carries the walk's per-category counts, exactly like
             // the refusal: "no reports" is a fact about the folder, and the
@@ -265,7 +276,12 @@ fn scan(
     // A `stub-report` stub binds nothing (issue #130): alone, it would turn
     // every object into a finding. It opens the project in Desktop; it is not
     // a consumer, so a model with only stubs is a model with no reports.
-    if reports.iter().all(|report| report.stub) {
+    if uncovered.is_none() && reports.iter().all(|report| report.stub) && probe.is_some() {
+        uncovered = Some(format!(
+            "{} had only ripbi stub reports there",
+            paired.model.display()
+        ));
+    } else if uncovered.is_none() && reports.iter().all(|report| report.stub) {
         if args.allow_no_reports {
             if !args.quiet {
                 writeln!(
@@ -425,11 +441,15 @@ fn scan(
     } else {
         None
     };
-    let existed = |entry: &Entry| {
+    let status = |entry: &Entry| {
         before
             .as_ref()
-            .is_some_and(|before| before.contains_key(&entry.key()))
+            .map_or(Status::New, |before| before.classify(entry))
     };
+    let existed = |entry: &Entry| status(entry) == Status::Existing;
+    // Usage findings on objects a skipped baseline had but could not judge:
+    // listed apart from the findings, never gating.
+    let mut unverified: Vec<Entry> = Vec::new();
     let mut auto_date_time: Vec<AutoDateTimeRow> = Vec::new();
     let mut row_by_table: HashMap<&ObjectId, usize> = HashMap::new();
     // Tables whose row already existed: their own dead-table finding goes
@@ -455,13 +475,21 @@ fn scan(
             source_column: verdict.source_column.as_ref().map(ToString::to_string),
             finding: None,
         };
-        if entry.as_ref().is_some_and(existed) {
-            existing += 1;
-            existing_tables.insert(&verdict.id);
-            if sarif_mode {
-                kept_existing.auto_date_time.push(row);
+        match entry.as_ref().map(status) {
+            Some(Status::Existing) => {
+                existing += 1;
+                existing_tables.insert(&verdict.id);
+                if sarif_mode {
+                    kept_existing.auto_date_time.push(row);
+                }
+                continue;
             }
-            continue;
+            Some(Status::Unverified) => {
+                unverified.extend(entry);
+                existing_tables.insert(&verdict.id);
+                continue;
+            }
+            _ => {}
         }
         row_by_table.insert(&verdict.id, auto_date_time.len());
         auto_date_time.push(row);
@@ -506,7 +534,12 @@ fn scan(
             filtered_out += 1;
             continue;
         }
-        let is_existing = entry.as_ref().is_some_and(existed);
+        let status = entry.as_ref().map_or(Status::New, status);
+        if status == Status::Unverified {
+            unverified.extend(entry);
+            continue;
+        }
+        let is_existing = status == Status::Existing;
         if is_existing {
             existing += 1;
             if !sarif_mode {
@@ -683,7 +716,10 @@ fn scan(
     }
 
     if let Some(probe) = probe {
-        *probe = detected;
+        *probe = match uncovered {
+            Some(detail) => Baseline::skipped(detected, detail),
+            None => Baseline::scanned(detected),
+        };
         return Ok(EXIT_CLEAN);
     }
 
@@ -726,8 +762,11 @@ fn scan(
                     .compare_label
                     .clone()
                     .unwrap_or_else(|| root.display().to_string()),
+                coverage: before.coverage,
+                coverage_detail: before.detail.clone(),
                 existing,
-                fixed: compare::fixed(before, &detected),
+                unverified,
+                fixed: before.fixed(&detected),
             }),
     };
 
@@ -1950,13 +1989,15 @@ fn unused_storage(
 /// silently in `root` — its own `ripbi.toml`, discovery, and pairing, with
 /// relative flag paths rebased onto it — returning every finding it detects.
 /// A checkout where the scan cannot run (a model this change adds, say) has
-/// nothing to compare against: that is a note, and every finding is new.
+/// nothing to compare against: that is a note, and every finding is new. A
+/// checkout where the model had no connected reports is a skipped baseline:
+/// also a note, and the usage findings on objects it had are unverified.
 fn scan_before(
     args: &ScanArgs,
     root: &Path,
     notes: Notes,
     err: &mut dyn io::Write,
-) -> Result<Detected, ScanError> {
+) -> Result<Baseline, ScanError> {
     if !root.is_dir() {
         return Err(
             ScanError::new(format!("--compare-root {} is not a folder", root.display())).with_hint(
@@ -1997,13 +2038,13 @@ fn scan_before(
         stdout_is_tty: false,
         stderr_is_tty: false,
     };
-    let mut detected = Detected::new();
+    let mut baseline = Baseline::scanned(Detected::new());
     let result = scan(
         &before_args,
         root,
         &mut streams,
         &Palette::plain(),
-        Some(&mut detected),
+        Some(&mut baseline),
     );
     if let Err(error) = result {
         if !args.quiet {
@@ -2018,9 +2059,21 @@ fn scan_before(
             )
             .map_err(ScanError::from)?;
         }
-        return Ok(Detected::new());
+        return Ok(Baseline::unavailable(error.message));
     }
-    Ok(detected)
+    if let (Some(detail), false) = (&baseline.detail, args.quiet) {
+        writeln!(
+            err,
+            "{}",
+            notes.warn(&format!(
+                "baseline skipped in {}: {detail}; unused findings on objects that existed \
+                 there are unverified and do not gate",
+                root.display()
+            ))
+        )
+        .map_err(ScanError::from)?;
+    }
+    Ok(baseline)
 }
 
 /// Writes the `--sarif-file`, `--json-file`, and `--markdown-file` outputs:
