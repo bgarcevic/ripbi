@@ -2953,6 +2953,7 @@ dependencies = [
  "clap",
  "flate2",
  "ripbi-core",
+ "ripbi-service",
  "semver",
  "serde",
  "serde_json",
@@ -2990,6 +2991,17 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+]
+
+[[package]]
+name = "ripbi-service"
+version = "0.10.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ureq",
 ]
 
 [[package]]

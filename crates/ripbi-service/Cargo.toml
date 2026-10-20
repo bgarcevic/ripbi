@@ -1,0 +1,24 @@
+[package]
+name = "ripbi-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+description = "Power BI / Fabric REST client for ripbi: semantic model discovery, downstream reports, and item definitions"
+keywords = ["powerbi", "fabric", "rest", "semantic-model"]
+categories = ["api-bindings", "development-tools"]
+
+[dependencies]
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Test doubles (`ripbi_service::fake`) for the CLI's tests; never in a release.
+fake = []

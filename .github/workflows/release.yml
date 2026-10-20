@@ -263,6 +263,10 @@ jobs:
       - name: Publish ripbi-xpress9
         if: env.CARGO_REGISTRY_TOKEN != ''
         run: cargo publish --locked -p ripbi-xpress9
+      - name: Publish ripbi-service
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        # No ripbi dependencies: nothing to wait for on the index.
+        run: cargo publish --locked -p ripbi-service
       - name: Publish ripbi-core
         if: env.CARGO_REGISTRY_TOKEN != ''
         shell: bash
@@ -280,7 +284,7 @@ jobs:
         if: env.CARGO_REGISTRY_TOKEN != ''
         shell: bash
         run: |
-          # ripbi depends on ripbi-core; the sparse index may not serve the
+          # ripbi depends on ripbi-core and ripbi-service; the sparse index may not serve the
           # version published seconds ago, so retry a few times before giving up.
           for attempt in 1 2 3 4; do
             if cargo publish --locked -p ripbi; then

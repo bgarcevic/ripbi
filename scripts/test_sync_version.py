@@ -39,6 +39,7 @@ class VersionSyncTests(unittest.TestCase):
         manifest_text = manifest.read_text()
         self.assertIn('ripbi-core = { path = "crates/ripbi-core", version = "9.8.7" }', manifest_text)
         self.assertIn('ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "9.8.7" }', manifest_text)
+        self.assertIn('ripbi-service = { path = "crates/ripbi-service", version = "9.8.7" }', manifest_text)
         install_doc = (self.root / "book/manual/installation.md").read_text(encoding="utf-8")
         self.assertIn("RIPBI_VERSION=v9.8.7 sh", install_doc)
         self.assertIn("$env:RIPBI_VERSION = 'v9.8.7'", install_doc)

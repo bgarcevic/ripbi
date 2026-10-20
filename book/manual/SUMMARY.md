@@ -32,6 +32,7 @@
   - [Validation and known boundaries](scan/boundaries.md)
 - [ripbi deps](deps.md)
 - [ripbi report](report.md)
+- [ripbi fetch](fetch.md)
 - [ripbi.toml](config.md)
 
 # Internals

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ripbi fetch` downloads a model and every report built on it.** Point it at a
+  semantic model (a portal link, `--workspace`/`--model`, or the pickers) and it
+  finds every downstream report across workspaces, skips org-app copies, and prints
+  which reports you can read before downloading anything — a scan that sees only some
+  of a model's reports flags whatever only the missing ones use as unused. An incomplete
+  set asks first on a terminal and refuses (exit `2`) in CI unless
+  `--allow-incomplete`. The model (TMDL) and the reports (PBIR) land in a folder with
+  a `ripbi.toml`, so `ripbi scan` runs there with no flags (`--scan` does it for
+  you), and `.ripbi/source.json` records where everything came from and what is
+  missing. Signs in with the Azure CLI, an environment token, or a service principal;
+  `--dry-run` forecasts only, `--verify` cross-checks the beta relations API.
+- **`scan` warns about an incomplete fetch.** Scanning a fetched folder whose
+  `source.json` lists reports that could not be downloaded emits an
+  `incomplete_report_set` skip notice naming them, so `--strict` fails on it.
+
 ## [0.10.0] - 2026-10-18
 
 ### Changed

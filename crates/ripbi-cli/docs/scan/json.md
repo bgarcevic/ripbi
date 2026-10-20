@@ -192,7 +192,9 @@ Pretty-printed JSON, stable field order, additive schema:
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
   `stale_state` (also: a `--queries-from` log that does not identify the model),
   `opaque_source` (an M partition calls `Value.NativeQuery` or
-  `Odbc.Query`; SQL text is not analyzed), and — when reports are discovered by walking search folders —
+  `Odbc.Query`; SQL text is not analyzed), `incomplete_report_set` (the model was
+  fetched by `ripbi fetch` and its `.ripbi/source.json` lists downstream reports that
+  could not be downloaded; see [fetch](../fetch.md)), and — when reports are discovered by walking search folders —
   `unresolved_dataset_reference` (a report item
   under a search folder with no usable `datasetReference`) and `malformed_report_item`
   (an anchor-less `.Report` folder the search walk pruned). Under `--strict`,

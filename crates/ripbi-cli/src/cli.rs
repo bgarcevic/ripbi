@@ -31,6 +31,10 @@ pub enum Command {
     #[command(after_help = DEPS_EXAMPLES)]
     Deps(DepsArgs),
 
+    /// Download a semantic model and every report built on it from a Power BI tenant.
+    #[command(after_help = FETCH_EXAMPLES)]
+    Fetch(FetchArgs),
+
     /// Write an empty report bound to a model-only project so Desktop can open and save it.
     #[command(after_help = STUB_REPORT_EXAMPLES)]
     StubReport(StubReportArgs),
@@ -189,6 +193,89 @@ pub struct DepsArgs {
     /// Never prompt; fail where a picker would appear.
     #[arg(long)]
     pub no_input: bool,
+}
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const FETCH_EXAMPLES: &str = "\
+Examples:
+  ripbi fetch                       # pick a workspace, then a model
+  ripbi fetch \"https://app.powerbi.com/groups/<ws>/datasets/<id>/details\"
+  ripbi fetch \"https://app.powerbi.com/groups/<ws>/reports/<id>\"  # a report's model
+  ripbi fetch --workspace Finance --model Sales -o ./sales
+  ripbi fetch --model Sales --dry-run  # who can read what; download nothing
+  ripbi fetch --model Sales --allow-incomplete  # CI: fetch what is readable
+  ripbi fetch --model Sales --scan  # fetch, then scan the folder
+
+Signs in with the Azure CLI (az login) unless RIPBI_FABRIC_TOKEN, or
+AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET, are set.";
+
+/// `ripbi fetch` arguments.
+#[derive(Args, Debug, Default)]
+pub struct FetchArgs {
+    /// A Power BI or Fabric link to a semantic model or a report.
+    pub link: Option<String>,
+
+    /// The workspace, by name or id.
+    #[arg(long, value_name = "NAME|ID", conflicts_with = "link")]
+    pub workspace: Option<String>,
+
+    /// The semantic model, by name or id; searches every workspace without --workspace.
+    #[arg(long = "model", value_name = "NAME|ID", conflicts_with = "link")]
+    pub model_name: Option<String>,
+
+    /// Write the project into DIR; defaults to a folder named after the model.
+    #[arg(short = 'o', long, value_name = "DIR")]
+    pub out: Option<PathBuf>,
+
+    /// Print who can read what, and download nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Download what is readable when some reports are not, instead of refusing (exit 2).
+    #[arg(long)]
+    pub allow_incomplete: bool,
+
+    /// Cross-check the downstream list against every workspace's report listing.
+    #[arg(long)]
+    pub verify: bool,
+
+    /// Scan the folder after fetching it.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub scan: bool,
+
+    /// Write into a non-empty DIR that is not an earlier fetch of this model.
+    #[arg(short = 'f', long)]
+    pub force: bool,
+
+    /// How to sign in.
+    #[arg(long, value_enum, value_name = "HOW", default_value_t)]
+    pub auth: AuthMode,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Never prompt; fail where a picker or confirmation would appear.
+    #[arg(long)]
+    pub no_input: bool,
+}
+
+/// Where `fetch` gets its tokens.
+#[derive(ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AuthMode {
+    /// RIPBI_FABRIC_TOKEN, else AZURE_CLIENT_SECRET & co, else the Azure CLI.
+    #[default]
+    Auto,
+    /// The Azure CLI's signed-in account (az login).
+    Az,
+    /// RIPBI_FABRIC_TOKEN (and RIPBI_POWERBI_TOKEN, if set).
+    Env,
+    /// A service principal: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET.
+    Sp,
 }
 
 /// Trailing examples for both `-h` and `--help` (clap falls back).

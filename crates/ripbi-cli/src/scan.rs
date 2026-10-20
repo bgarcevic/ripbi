@@ -315,6 +315,7 @@ fn scan(
         streams.err,
         &mut skips,
     )?;
+    skips.extend(fetch_completeness(&cwd.join(&paired.model)));
     dedupe_opaque_skips(&mut skips);
 
     // Analysis: entirely core's job.
@@ -1325,6 +1326,48 @@ fn discover_target(
             Ok((paired, vec![format!("Selected '{}'.", candidate.label)]))
         }
     }
+}
+
+/// A model fetched by `ripbi fetch` whose manifest (`.ripbi/source.json`
+/// beside it) lists downstream reports that could not be downloaded. The
+/// scan cannot see their bindings, so objects only they use come back as
+/// unused: an `incomplete_report_set` skip notice, which `--strict` fails on.
+fn fetch_completeness(model_path: &Path) -> Option<SkipNoticeOut> {
+    const SHOWN: usize = 5;
+    let root = model_path.parent()?;
+    let manifest = crate::fetch::Manifest::load(root)?;
+    let folder = model_path.file_name()?.to_str()?;
+    if !manifest.model.path.eq_ignore_ascii_case(folder) {
+        return None;
+    }
+    let missing: Vec<String> = manifest
+        .reports
+        .iter()
+        .filter(|report| report.status != crate::fetch::ReportStatus::Downloaded)
+        .map(|report| format!("'{}' ({})", report.name, report.workspace_name))
+        .collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let mut named = missing
+        .iter()
+        .take(SHOWN)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if missing.len() > SHOWN {
+        named.push_str(&format!(" and {} more", missing.len() - SHOWN));
+    }
+    Some(SkipNoticeOut {
+        path: root.join(crate::fetch::MANIFEST_PATH).display().to_string(),
+        location: None,
+        kind: "incomplete_report_set",
+        detail: format!(
+            "{} of {} downstream reports could not be fetched, so objects only they use show as unused: {named}",
+            missing.len(),
+            manifest.reports.len()
+        ),
+    })
 }
 
 /// The interactive project picker: a numbered list on stderr, a choice read

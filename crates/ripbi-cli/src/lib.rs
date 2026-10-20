@@ -9,6 +9,7 @@ pub mod deps;
 pub mod discover;
 pub mod entry;
 pub mod error;
+pub mod fetch;
 pub mod glob;
 pub mod markdown;
 pub mod notify;
