@@ -62,6 +62,9 @@ the other modes. They carry
 code scanning expects: the pull request annotates only new findings, and existing alerts
 stay tracked. Only unsuppressed findings gate the exit code. The `Fixed since` list has no
 SARIF form; code scanning closes an alert itself when its fingerprint stops appearing.
+When the baseline is `skipped` or `unavailable`, the run carries one
+`invocations[0].toolExecutionNotifications` warning saying so; a skipped baseline's
+unverified findings are left out of `results` (see [Baseline coverage](compare.md)).
 
 ### Uploading
 
@@ -138,7 +141,8 @@ GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
 
 - **Headline.** `**N findings**`, the `summary.findings` count. Under `--compare-root`:
   `**N new findings** · F fixed · E already in <DIR>`, with `--compare-label`'s name
-  in place of `DIR` when given.
+  in place of `DIR` when given. A `skipped` or `unavailable` baseline adds a quoted
+  **Baseline skipped** or **No baseline** note under it.
 - **Counts.** One row per finding type with findings, in the human output's order,
   then auto date/time tables, broken visual bindings, and broken artifacts.
 - **Findings.** One row each, the same findings the other modes report: type, object,

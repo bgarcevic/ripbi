@@ -179,7 +179,12 @@ Pretty-printed JSON, stable field order, additive schema:
   one is attached); `summary.stats_source` is that source's path (issue #129),
   absent for a PBIX or `.abf` model's own catalog.
 - `compare` (issue #141) is present only under `--compare-root`:
-  `{"root", "existing", "fixed", "fixed_uncertain"}`. `root` is the other checkout as given; `existing`
+  `{"root", "baseline", "baseline_detail"?, "existing", "unverified", "fixed", "fixed_uncertain"}`.
+  `root` is the other checkout as given; `baseline` is `scanned`, `skipped` (the model had
+  no connected reports there), or `unavailable` (the scan could not run there), with
+  `baseline_detail` saying why when it is not `scanned`; `unverified` lists, under a
+  `skipped` baseline, the unused findings on objects that already existed there, as
+  `{type, id}` (absent from every array above and from the exit code; empty otherwise); `existing`
   counts the reportable findings that already existed there, which are absent from
   every array above and from the summary counts that mirror them; `fixed` lists the
   other checkout's findings this scan no longer detects, as `{type, id}` plus
