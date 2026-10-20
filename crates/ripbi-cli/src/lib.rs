@@ -13,6 +13,7 @@ pub mod fetch;
 pub mod glob;
 pub mod markdown;
 pub mod notify;
+pub mod picker;
 pub mod progress;
 pub mod render;
 pub mod report;

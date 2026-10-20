@@ -33,6 +33,7 @@ tar.workspace = true
 flate2.workspace = true
 zip.workspace = true
 tempfile.workspace = true
+dialoguer.workspace = true
 
 [dev-dependencies]
 ripbi-service = { workspace = true, features = ["fake"] }

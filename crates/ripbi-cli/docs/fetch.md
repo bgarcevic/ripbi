@@ -37,9 +37,11 @@ The model is resolved from, in order:
 - `--workspace NAME|ID` and `--model NAME|ID`. Names match case-insensitively; an id
   always works. `--model` without `--workspace` searches every workspace you can see
   and refuses, listing the candidates, when more than one model matches.
-- On an interactive terminal, a numbered picker for whatever is missing: a workspace,
-  then a model. `--no-input` (or a non-interactive stdin) turns the pickers into an
-  error with a hint.
+- On an interactive terminal, a picker for whatever is missing: a workspace, then a
+  model. Type to filter the list (fuzzy, case-insensitive), move with the arrow keys,
+  Enter to choose, Esc to cancel. When stderr is not a terminal, the picker is a
+  numbered list answered on stdin. `--no-input` (or a non-interactive stdin) turns
+  the pickers into an error with a hint.
 
 ## Signing in
 
@@ -90,9 +92,13 @@ non-interactive one refuses with exit `2` unless `--allow-incomplete` is given.
 
 ## Downloading
 
-Every export starts at once, then all are polled together, so the service's ~20 s
-per-export wait overlaps: 34 reports take about a minute, not ten. Throttled answers
-are retried after their `Retry-After`. The roles forecast is checked against the real
+Every export starts at once, then all are polled together, so the waits overlap
+instead of adding up. The service asks for 20 s before the first poll whatever the
+item, but most exports are ready in a few seconds: each is polled after 1 s, then
+after twice the last wait, never longer than the service's hint. Throttled answers
+are retried after their `Retry-After`. On a terminal a ticker keeps the wait visible
+(`◐ export · write  3/5 definitions  21.0s`), under the same rules as `scan`'s.
+The roles forecast is checked against the real
 answer: a report the forecast called readable that still answers `404` (item-level
 permissions) is recorded as `no_access`, and the run exits `2` unless
 `--allow-incomplete` (or the interactive confirmation) accepted a partial set.
@@ -162,7 +168,7 @@ naming them — so `--strict` fails on an incomplete set, like any other skip no
 
 ## Streams
 
-The forecast, notes, the download counter (on a terminal), and the summary go to
+The forecast, notes, the download ticker (on a terminal), and the summary go to
 stderr. stdout carries one line: the output folder, as you would type it. `-q` prints
 nothing. With `--scan`, the scan's own output follows on the same streams.
 

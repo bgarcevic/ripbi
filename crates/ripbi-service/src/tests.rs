@@ -359,9 +359,62 @@ fn definitions_are_fired_first_then_polled_together() {
             .count(),
         3
     );
-    // The waits overlap: one 20 s wait and one 5 s re-poll (the Running
-    // answer names no Retry-After), not 2 × 25 s.
-    assert_eq!(clock.slept(), Duration::from_secs(25));
+    // The waits overlap, and the server's `Retry-After: 20` is not waited
+    // out: a first poll at 1 s (Running), a second 2 s later (Succeeded).
+    assert_eq!(clock.slept(), Duration::from_secs(3));
+}
+
+#[test]
+fn a_slow_export_backs_off_to_the_server_hint() {
+    let transport = FakeTransport::new();
+    let clock = Rc::new(FakeClock::default());
+    transport.reply_with(
+        "POST",
+        &format!("{FABRIC}/workspaces/{MODEL_WS}/semanticModels/{MODEL}/getDefinition"),
+        202,
+        &[
+            ("Location", &format!("{REGIONAL}/op-7")),
+            ("Retry-After", "20"),
+        ],
+        "",
+    );
+    for _ in 0..6 {
+        transport.reply_with(
+            "GET",
+            &format!("{REGIONAL}/op-7"),
+            200,
+            &[("Retry-After", "20")],
+            r#"{"status":"Running"}"#,
+        );
+    }
+    transport.reply(
+        "GET",
+        &format!("{REGIONAL}/op-7"),
+        200,
+        r#"{"status":"Succeeded"}"#,
+    );
+    transport.reply(
+        "GET",
+        &format!("{REGIONAL}/op-7/result"),
+        200,
+        &definition_body("model.tmdl"),
+    );
+    let results = service(&transport, &clock).fetch_definitions(
+        &[DefinitionRequest {
+            kind: DefinitionKind::SemanticModel,
+            workspace_id: MODEL_WS.to_string(),
+            item_id: MODEL.to_string(),
+            format: None,
+        }],
+        FetchOptions::default(),
+        &mut |_, _| {},
+    );
+    assert!(results[0].is_ok());
+    // 1 + 2 + 4 + 8 + 16, then the 20 s hint caps the doubling.
+    assert_eq!(
+        clock.slept(),
+        Duration::from_secs(1 + 2 + 4 + 8 + 16 + 20 + 20)
+    );
 }
 
 #[test]

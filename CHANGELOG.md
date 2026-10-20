@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`ripbi fetch` downloads a model and every report built on it.** Point it at a
-  semantic model (a portal link, `--workspace`/`--model`, or the pickers) and it
+  semantic model (a portal link, `--workspace`/`--model`, or type-to-filter pickers) and it
   finds every downstream report across workspaces, skips org-app copies, and prints
   which reports you can read before downloading anything — a scan that sees only some
   of a model's reports flags whatever only the missing ones use as unused. An incomplete
@@ -23,6 +23,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`scan` warns about an incomplete fetch.** Scanning a fetched folder whose
   `source.json` lists reports that could not be downloaded emits an
   `incomplete_report_set` skip notice naming them, so `--strict` fails on it.
+
+### Changed
+
+- **Pickers filter as you type.** On a terminal, the project picker (`scan`, `report`,
+  and `deps` in a folder with several projects) and the `fetch` workspace and model
+  pickers are one shared list: type to filter, arrows to move, Enter to choose, Esc to
+  cancel. Piped input still gets the numbered list.
+
+### Fixed
+
+- **Legacy `.Report` folders are read.** A report folder with no `definition/` (saved
+  without the PBIR preview, or downloaded by `fetch` from a report the service stores
+  in the older format) keeps its layout in a root `report.json`. It was parsed as a
+  PBIR file: `unknown_property` notices for `config`, `sections` and `theme`, and none
+  of its visuals counted, so fields only that report used were flagged unused.
+- **Legacy layouts know every built-in visual.** The matrix (`pivotTable`), shapes,
+  KPIs, 100% stacked charts, buttons, navigators and the newer slicers and cards no
+  longer raise `unknown_object` notices; their fields were already counted.
 
 ## [0.10.0] - 2026-10-18
 

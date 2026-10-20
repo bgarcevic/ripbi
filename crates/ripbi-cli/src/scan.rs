@@ -4,7 +4,7 @@
 //! core and *what to say* — no analysis logic lives in this crate.
 
 use std::collections::{HashMap, HashSet};
-use std::io::{self, BufRead};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use ripbi_core::graph::{BrokenReason, DependencyGraph};
@@ -19,6 +19,7 @@ use crate::discover::{self, Candidate, Resolution};
 use crate::error::ScanError;
 use crate::glob;
 use crate::markdown;
+use crate::picker;
 use crate::progress::{self, Progress};
 use crate::render::{
     self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
@@ -1370,45 +1371,26 @@ fn fetch_completeness(model_path: &Path) -> Option<SkipNoticeOut> {
     })
 }
 
-/// The interactive project picker: a numbered list on stderr, a choice read
-/// from stdin. Only reached on a TTY stdin.
+/// The interactive project picker (the shared [`picker`]). Only reached on a
+/// TTY stdin.
 fn pick(
     mut candidates: Vec<Candidate>,
     dir: &Path,
     streams: &mut Streams<'_>,
     palette_err: &Palette,
 ) -> Result<Candidate, ScanError> {
-    writeln!(
-        streams.err,
-        "{}",
-        palette_err.bold(&format!("Multiple projects in {}:", dir.display()))
-    )
-    .map_err(ScanError::from)?;
-    for (index, candidate) in candidates.iter().enumerate() {
-        writeln!(streams.err, "  {}. {}", index + 1, candidate.label).map_err(ScanError::from)?;
-    }
-    let mut reader = io::BufReader::new(&mut *streams.input);
-    loop {
-        write!(streams.err, "Select a project [1-{}]: ", candidates.len())
-            .map_err(ScanError::from)?;
-        streams.err.flush().map_err(ScanError::from)?;
-        let mut line = String::new();
-        let read = reader.read_line(&mut line).map_err(ScanError::from)?;
-        if read == 0 {
-            return Err(ScanError::new("no project selected"));
-        }
-        match line.trim().parse::<usize>() {
-            Ok(choice) if (1..=candidates.len()).contains(&choice) => {
-                return Ok(candidates.remove(choice - 1));
-            }
-            _ => writeln!(
-                streams.err,
-                "Enter a number between 1 and {}.",
-                candidates.len()
-            )
-            .map_err(ScanError::from)?,
-        }
-    }
+    let labels: Vec<String> = candidates
+        .iter()
+        .map(|candidate| candidate.label.clone())
+        .collect();
+    let choice = picker::pick(
+        &format!("Multiple projects in {}:", dir.display()),
+        "Select a project",
+        &labels,
+        streams,
+        palette_err,
+    )?;
+    Ok(candidates.swap_remove(choice))
 }
 
 fn ambiguous_error(dir: &Path, candidates: &[Candidate]) -> ScanError {

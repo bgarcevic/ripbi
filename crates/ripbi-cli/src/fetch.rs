@@ -13,7 +13,6 @@ mod layout;
 mod render;
 
 use std::collections::HashMap;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -27,6 +26,8 @@ use ripbi_service::{Error as ServiceError, Service};
 
 use crate::cli::{AuthMode, FetchArgs, ScanArgs};
 use crate::error::ScanError;
+use crate::picker::{confirm, pick};
+use crate::progress::{self, Progress};
 use crate::scan::{self, Streams};
 use crate::style::Palette;
 
@@ -221,9 +222,18 @@ fn fetch(
     let root = layout::output_dir(cwd, args.out.as_deref(), &model);
     let plan = layout::prepare(&root, &model, args.force)?;
 
-    let downloads = download(service, &found, streams, args.quiet)?;
+    // Most of the wall time is the service preparing the exports, so the
+    // ticker keeps the wait visible.
+    let progress = Progress::start(
+        Progress::wanted(streams, palette, args.quiet, false),
+        *palette,
+        progress::FETCH,
+    );
+    let downloads = download(service, &found, &progress)?;
+    progress.stage(1);
     let manifest = layout::manifest(&found, tenant, &downloads, verification.as_ref());
     let written = layout::write(&plan, &found, &downloads, manifest)?;
+    progress.finish(streams.err)?;
 
     let failed = written.manifest.unreadable_count();
     let exit = if failed > unreadable && !accepted_incomplete {
@@ -266,8 +276,7 @@ pub(crate) struct Downloads {
 fn download(
     service: &Service,
     found: &Downstream,
-    streams: &mut Streams<'_>,
-    quiet: bool,
+    progress: &Progress,
 ) -> Result<Downloads, ScanError> {
     let readable: Vec<&ReportRef> = found
         .reports
@@ -286,20 +295,12 @@ fn download(
         item_id: report.id.clone(),
         format: None,
     }));
-    let live = streams.stderr_is_tty && !quiet;
-    let err = &mut *streams.err;
+    progress.detail(format!("0/{} definitions", requests.len()));
     let mut results = service
         .fetch_definitions(&requests, FetchOptions::default(), &mut |done, total| {
-            if live {
-                let _ = write!(err, "\r  Downloading definitions {done}/{total}…");
-                let _ = err.flush();
-            }
+            progress.detail(format!("{done}/{total} definitions"));
         })
         .into_iter();
-    if live {
-        // Clear the counter line: the summary replaces it.
-        write!(streams.err, "\r\x1b[2K")?;
-    }
     let model = results
         .next()
         .unwrap_or_else(|| Err(ServiceError::Timeout("the model".to_string())))
@@ -525,62 +526,6 @@ fn one_model(
         ))
         .with_hint("pass --workspace, or the model id")),
     }
-}
-
-/// A numbered list on stderr, a choice read from stdin.
-fn pick(
-    title: &str,
-    prompt: &str,
-    labels: &[String],
-    streams: &mut Streams<'_>,
-    palette: &Palette,
-) -> Result<usize, ScanError> {
-    if labels.is_empty() {
-        return Err(ScanError::new(format!("nothing to pick from: {title}")));
-    }
-    writeln!(streams.err, "{}", palette.bold(title))?;
-    for (index, label) in labels.iter().enumerate() {
-        writeln!(streams.err, "  {}. {label}", index + 1)?;
-    }
-    loop {
-        write!(streams.err, "{prompt} [1-{}]: ", labels.len())?;
-        streams.err.flush()?;
-        let Some(line) = read_line(streams.input)? else {
-            return Err(ScanError::new("nothing selected"));
-        };
-        match line.trim().parse::<usize>() {
-            Ok(choice) if (1..=labels.len()).contains(&choice) => return Ok(choice - 1),
-            _ => writeln!(
-                streams.err,
-                "Enter a number between 1 and {}.",
-                labels.len()
-            )?,
-        }
-    }
-}
-
-/// A `[y/N]` question; anything but y/yes is no.
-fn confirm(streams: &mut Streams<'_>, question: &str) -> Result<bool, ScanError> {
-    write!(streams.err, "{question}")?;
-    streams.err.flush()?;
-    let line = read_line(streams.input)?.unwrap_or_default();
-    Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
-}
-
-/// One line from `input`, without reading past it: a buffered reader would
-/// swallow the answer to the next prompt. `None` at end of input.
-fn read_line(input: &mut dyn io::Read) -> io::Result<Option<String>> {
-    let mut bytes = Vec::new();
-    let mut byte = [0u8; 1];
-    loop {
-        match input.read(&mut byte)? {
-            0 if bytes.is_empty() => return Ok(None),
-            0 => break,
-            _ if byte[0] == b'\n' => break,
-            _ => bytes.push(byte[0]),
-        }
-    }
-    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// `--scan`: the bare `ripbi scan` a user would type next, run from inside

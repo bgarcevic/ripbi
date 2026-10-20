@@ -224,41 +224,66 @@ fn visual(
     }
 }
 
+/// Power BI's built-in `visualType` names, as the Layout writes them (the
+/// matrix is `pivotTable`). Anything else is a custom visual or a newer type:
+/// its fields are still read, with a notice.
+const BUILT_IN_VISUALS: &[&str] = &[
+    "actionButton",
+    "advancedSlicerVisual",
+    "aiNarratives",
+    "areaChart",
+    "azureMap",
+    "barChart",
+    "basicShape",
+    "bookmarkNavigator",
+    "card",
+    "cardVisual",
+    "clusteredBarChart",
+    "clusteredColumnChart",
+    "columnChart",
+    "comboChart",
+    "decompositionTreeVisual",
+    "donutChart",
+    "filledMap",
+    "funnel",
+    "gauge",
+    "hundredPercentStackedAreaChart",
+    "hundredPercentStackedBarChart",
+    "hundredPercentStackedColumnChart",
+    "image",
+    "keyDriversVisual",
+    "kpi",
+    "lineChart",
+    "lineClusteredColumnComboChart",
+    "lineStackedColumnComboChart",
+    "listSlicer",
+    "map",
+    "matrix",
+    "multiRowCard",
+    "pageNavigator",
+    "pieChart",
+    "pivotTable",
+    "pythonVisual",
+    "qnaVisual",
+    "ribbonChart",
+    "scatterChart",
+    "scriptVisual",
+    "shape",
+    "shapeMap",
+    "slicer",
+    "stackedAreaChart",
+    "stackedBarChart",
+    "stackedColumnChart",
+    "table",
+    "tableEx",
+    "textSlicer",
+    "textbox",
+    "treemap",
+    "waterfallChart",
+];
+
 fn known_visual_type(name: &str) -> bool {
-    matches!(
-        name,
-        "areaChart"
-            | "barChart"
-            | "card"
-            | "clusteredBarChart"
-            | "clusteredColumnChart"
-            | "columnChart"
-            | "comboChart"
-            | "decompositionTreeVisual"
-            | "donutChart"
-            | "filledMap"
-            | "funnel"
-            | "gauge"
-            | "image"
-            | "lineChart"
-            | "lineClusteredColumnComboChart"
-            | "lineStackedColumnComboChart"
-            | "map"
-            | "matrix"
-            | "multiRowCard"
-            | "pieChart"
-            | "ribbonChart"
-            | "scatterChart"
-            | "slicer"
-            | "stackedAreaChart"
-            | "stackedBarChart"
-            | "stackedColumnChart"
-            | "table"
-            | "tableEx"
-            | "textbox"
-            | "treemap"
-            | "waterfallChart"
-    )
+    BUILT_IN_VISUALS.contains(&name)
 }
 
 fn filters(
@@ -482,4 +507,22 @@ fn written(table: Option<&str>, name: &str) -> FieldTarget {
 
 fn string(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::known_visual_type;
+
+    #[test]
+    fn built_in_visuals_are_known_by_their_layout_names() {
+        for name in [
+            "pivotTable",
+            "shape",
+            "hundredPercentStackedColumnChart",
+            "kpi",
+        ] {
+            assert!(known_visual_type(name), "{name}");
+        }
+        assert!(!known_visual_type("futureVisual"));
+    }
 }

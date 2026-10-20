@@ -26,6 +26,10 @@ const DEFAULT_POLL: Duration = Duration::from_secs(5);
 /// Poll waits are capped tighter than throttling waits: the server's
 /// `Retry-After: 20` is a hint, not a floor.
 const MAX_POLL: Duration = Duration::from_secs(30);
+/// The first poll of an export. The service says `Retry-After: 20` whatever
+/// the item, but most exports finish in a few seconds; the wait then doubles
+/// up to the server's hint, so a slow export costs only a few polls.
+const FIRST_POLL: Duration = Duration::from_secs(1);
 /// Pages followed before a list is declared runaway.
 const MAX_PAGES: usize = 1000;
 
@@ -437,8 +441,10 @@ impl Service {
     }
 
     /// Downloads many definitions at once: every export is started first
-    /// (up to `max_in_flight`), then all are polled together, so the server's
-    /// per-operation wait overlaps instead of adding up. Results come back in
+    /// (up to `max_in_flight`), then all are polled together, so the waits
+    /// overlap instead of adding up. Each export is polled after 1 s, then
+    /// after twice its last wait, never longer than the server's hint
+    /// (1, 2, 4, 8, 16, 20 s against `Retry-After: 20`). Results come back in
     /// request order; `progress(done, total)` runs after each one finishes.
     pub fn fetch_definitions(
         &self,
@@ -451,6 +457,7 @@ impl Service {
             Pending {
                 location: String,
                 due: Instant,
+                interval: Duration,
                 started: Instant,
             },
             Done(Result<Definition>),
@@ -474,9 +481,11 @@ impl Service {
                         retry_after,
                     }) => {
                         in_flight += 1;
+                        let interval = FIRST_POLL.min(retry_after).min(MAX_POLL);
                         Slot::Pending {
                             location,
-                            due: now + retry_after.min(MAX_POLL),
+                            due: now + interval,
+                            interval,
                             started: now,
                         }
                     }
@@ -509,6 +518,7 @@ impl Service {
                 let Slot::Pending {
                     location,
                     due,
+                    interval,
                     started,
                 } = slot
                 else {
@@ -525,8 +535,9 @@ impl Service {
                     ))))
                 } else {
                     match self.poll_definition(location) {
-                        Ok(Polled::Running(wait)) => {
-                            *due = now + wait;
+                        Ok(Polled::Running(hint)) => {
+                            *interval = (*interval * 2).min(hint);
+                            *due = now + *interval;
                             None
                         }
                         Ok(Polled::Done(definition)) => Some(Ok(definition)),

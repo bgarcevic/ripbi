@@ -49,6 +49,7 @@ Recorded in the module docs and tests; the short version:
 - `getDefinition` answers `404`, never `403`, for a Viewer, for no access, and for an
   app copy. Roles predict it exactly.
 - `getDefinition` is `202` + `Location` on a regional host + `Retry-After: 20`; poll,
-  then `GET {Location}/result`. Parts are `InlineBase64`.
+  then `GET {Location}/result`. The `20` is the same for every item, so the first poll
+  goes at 1 s and the wait doubles up to it. Parts are `InlineBase64`.
 - The Power BI `Export` API (`.pbix`) refuses service principals even as Contributor; it
   is not a fallback.

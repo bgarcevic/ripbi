@@ -231,6 +231,13 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     if path.is_file() {
         return archive::report(path);
     }
+    if let Some(layout) = legacy_report_layout(path)? {
+        let mut skips = Vec::new();
+        let mut value = legacy::load(&layout, &path.join("report.json"), &mut skips)?;
+        value.name = platform_display_name(path);
+        value.dataset = pbir::dataset_reference(path, &mut skips);
+        return Ok(Ingested { value, skips });
+    }
     let definition = locate_report_definition(path)?;
     // `.platform` (which carries the display name) sits beside `definition/`.
     let item_root = definition.parent().unwrap_or(path);
@@ -388,6 +395,25 @@ pub fn locate_definition(path: &Path) -> Result<PathBuf> {
         "not a semantic model: no definition/ or model.tmdl under {}",
         path.display()
     )))
+}
+
+/// The bytes of a PBIR-Legacy item's `report.json`, if `path` is one.
+///
+/// A `.Report` folder saved without the PBIR preview, or exported by the
+/// service as `PBIR-Legacy`, has no `definition/`; its root `report.json` is
+/// the PBIX `Report/Layout` document. It is told apart from a PBIR
+/// `report.json` (whose folder was given directly) by its `sections` or
+/// `config`, which PBIR never writes.
+fn legacy_report_layout(path: &Path) -> Result<Option<Vec<u8>>> {
+    let file = path.join("report.json");
+    if !path.is_dir() || path.join("definition").join("report.json").is_file() || !file.is_file() {
+        return Ok(None);
+    }
+    let bytes = fs::read(&file)?;
+    let text = decode_json_text(&bytes, "report.json")?;
+    let root: serde_json::Value = serde_json::from_str(&text)?;
+    let legacy = root.get("sections").is_some() || root.get("config").is_some();
+    Ok(legacy.then_some(bytes))
 }
 
 /// Resolves the `definition/` folder of a PBIR report item.

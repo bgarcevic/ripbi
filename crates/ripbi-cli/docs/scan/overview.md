@@ -52,8 +52,9 @@ rescue a model-less project: `X.pbip` (or its project folder) with only `X.Repor
 beside it pairs with the model that report's reference names. Without PATH
 (and without `target` in `ripbi.toml`), scan discovers projects in the current
 directory: one candidate is announced and scanned,
-several prompt with a numbered picker (on a TTY stdin only — otherwise the scan fails
-listing them), none is an error. When PATH (or the `ripbi.toml` `target`) names a
+several prompt with a picker (on a TTY stdin only — otherwise the scan fails
+listing them; on a terminal you type to filter and choose with the arrow keys, with
+piped input it is a numbered list), none is an error. When PATH (or the `ripbi.toml` `target`) names a
 semantic model itself, plain `--report` folders are search folders exactly as with
 `--model`; any other target accepts report items only.
 
