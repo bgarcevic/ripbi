@@ -2986,7 +2986,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "clap",
  "dialoguer",
@@ -3006,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-core"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "flate2",
  "petgraph",
@@ -3022,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-desktop"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "ripbi",
  "serde",
@@ -3034,7 +3034,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-service"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -3045,7 +3045,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-xpress9"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "cc",
 ]
