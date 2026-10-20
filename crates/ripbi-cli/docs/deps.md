@@ -42,7 +42,7 @@ and `--report`.
 The target ladder is scan's: `--model PATH` first, else the `ripbi.toml` `target`, else
 derivation from the `--report` anchors alone (every anchor must pair with the same
 model), else current-directory discovery (one candidate announced, several prompt with
-the numbered picker on a TTY stdin, none is an error). `--report PATH` (repeatable) adds
+the picker on a TTY stdin, none is an error). `--report PATH` (repeatable) adds
 reports as binding sources the same way scan takes them, search folders included; a
 `.pbip` value expands to its project's reports.
 

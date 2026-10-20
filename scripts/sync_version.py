@@ -51,7 +51,7 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
             updates[path] = new
 
     synced = manifest
-    for name in ("ripbi-core", "ripbi-xpress9"):
+    for name in ("ripbi-core", "ripbi-service", "ripbi-xpress9"):
         synced = replace_once(
             synced, rf'^({re.escape(name)}\s*=\s*\{{[^\n]*version\s*=\s*")[^"]+("[^\n]*\}})$', version
         )
@@ -72,8 +72,8 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
     remember(desktop_manifest, old, replace_once(old, r'^(version\s*=\s*")[^"]+("\s*)$', version))
 
     for relative, names in (
-        ("Cargo.lock", ("ripbi", "ripbi-core", "ripbi-xpress9")),
-        ("desktop/src-tauri/Cargo.lock", ("ripbi", "ripbi-core", "ripbi-xpress9", "ripbi-desktop")),
+        ("Cargo.lock", ("ripbi", "ripbi-core", "ripbi-service", "ripbi-xpress9")),
+        ("desktop/src-tauri/Cargo.lock", ("ripbi", "ripbi-core", "ripbi-service", "ripbi-xpress9", "ripbi-desktop")),
     ):
         path = root / relative
         old = path.read_text(encoding="utf-8")

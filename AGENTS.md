@@ -28,8 +28,9 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | Power Query (M) lexing / column & table references | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Same lexer shape as DAX; M names columns (supply chain, not consumers) and keeps merge-source tables/expressions alive (issue #39) |
 | Dependency graph / reachability | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | `petgraph` DAG, BFS from report roots |
 | CLI flags, output, exit codes | [crates/ripbi-cli/](crates/ripbi-cli/) | [ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) | All printing lives here, never in core |
+| Tenant access (`fetch`: sign-in, downstream reports, definitions) | [crates/ripbi-service/](crates/ripbi-service/) | [ripbi-service/CONTEXT.MD](crates/ripbi-service/CONTEXT.MD) | The only crate on the network; `ripbi-core` stays offline. Contract: [fetch.md](crates/ripbi-cli/docs/fetch.md) |
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |
-| Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Three-crate workspace |
+| Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Four-crate workspace |
 | GitHub Action (`bgarcevic/ripbi-action`) | [ci/github-action/](ci/github-action/) | [ci/github-action/README.md](ci/github-action/README.md) | Composite action mirrored to its own repo on release; tested by `.github/workflows/action.yml` |
 | Azure Pipelines template | [templates/](templates/) | [ripbi-scan.yml](templates/ripbi-scan.yml) header | Steps template; tested under `scripts/run_ado_template.py` by `.github/workflows/action.yml`, so keep to the expressions that emulator knows |
 | Desktop UI (Tauri) | [desktop/](desktop/) | [desktop/README.md](desktop/README.md) | Separate native package; reuses CLI scan orchestration |

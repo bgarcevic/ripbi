@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ripbi-core", "crates/ripbi-cli", "crates/ripbi-xpress9"]
+members = ["crates/ripbi-core", "crates/ripbi-cli", "crates/ripbi-service", "crates/ripbi-xpress9"]
 exclude = ["desktop/src-tauri"]
 
 [workspace.package]
@@ -12,6 +12,7 @@ repository = "https://github.com/bgarcevic/ripbi"
 [workspace.dependencies]
 ripbi-core = { path = "crates/ripbi-core", version = "0.10.1" }
 ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.10.1" }
+ripbi-service = { path = "crates/ripbi-service", version = "0.10.1" }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "serialize"] }
 quick-xml = "0.42"
 tempfile = "3"
@@ -32,6 +33,9 @@ semver = "1"
 tar = "0.4"
 flate2 = "1"
 jsonschema = { version = "0.58", default-features = false }
+base64 = "0.22"
+# `fetch` pickers: type to filter, arrows to move. No editor/password prompts.
+dialoguer = { version = "0.12", default-features = false, features = ["fuzzy-select"] }
 
 # Ch2 of the Rust best-practices handbook: declare lints here so a local
 # `cargo clippy` matches CI. `redundant_clone` and `needless_collect` are nursery

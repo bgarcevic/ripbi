@@ -1,8 +1,9 @@
-//! The stage ticker `scan`, `report`, and `deps` share: one transient stderr
+//! The stage ticker `scan`, `report`, `deps`, and `fetch` share: one transient stderr
 //! line that names the command's pipeline — `◐ discover · model · reports ·
 //! graph · findings  0.8s` — with finished stages muted, the live one in the accent,
 //! and upcoming ones dim. It clears when the run ends; each command puts the
-//! wall time ([`Progress::elapsed`]) on its own closing line instead.
+//! wall time ([`Progress::elapsed`]) on its own closing line instead. A
+//! [`Progress::detail`] adds a counter after the stages (`fetch`: `3/5 definitions`).
 //!
 //! Motion follows `docs/cli-ux-guidelines.md`: only when both stdout and
 //! stderr are terminals, the stderr palette is on (so `NO_COLOR`, `TERM=dumb`,
@@ -14,9 +15,10 @@
 //! ticker thread draws on the process's stderr directly; each command swaps
 //! its stderr for [`Progress::writer`] for the whole run, which erases the
 //! transient line before every write, so notes and the ticker never
-//! interleave. A write that leaves a line open — the project picker's
-//! `Select a project [1-N]: ` prompt — holds the ticker off until a later
-//! write ends the line, so it never draws over the user's typing.
+//! interleave. A write that leaves a line open — the numbered picker's
+//! `Select a project [1-N]: ` prompt, or the bare `\r` the terminal picker
+//! writes first — holds the ticker off until a later write ends the line, so
+//! it never draws over the user's typing or the picker's list.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -51,6 +53,12 @@ pub const DEPS: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "slice"],
 };
 
+/// `ripbi fetch`, from the exports to the files on disk. Most of the wait is the
+/// service preparing the definitions, so `export` carries a `3/5` detail.
+pub const FETCH: Pipeline = Pipeline {
+    stages: &["export", "write"],
+};
+
 /// How long a scan runs before the ticker shows up.
 const DELAY: Duration = Duration::from_millis(120);
 /// Redraw interval.
@@ -68,6 +76,8 @@ struct State {
     /// The scan's last stderr write did not end a line; drawing now would
     /// split it, so the ticker waits.
     mid_line: bool,
+    /// Shown after the stages, e.g. `3/5 definitions`.
+    detail: String,
 }
 
 struct Active {
@@ -115,6 +125,7 @@ impl Progress {
             stage: 0,
             drawn: false,
             mid_line: false,
+            detail: String::new(),
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let started = Instant::now();
@@ -138,6 +149,13 @@ impl Progress {
     pub fn stage(&self, stage: usize) {
         if let Some(active) = &self.active {
             lock(&active.state).stage = stage.min(active.pipeline.stages.len() - 1);
+        }
+    }
+
+    /// Sets the text shown after the stages; empty hides it.
+    pub fn detail(&self, detail: impl Into<String>) {
+        if let Some(active) = &self.active {
+            lock(&active.state).detail = detail.into();
         }
     }
 
@@ -261,7 +279,7 @@ fn tick(
         // tail the previous (longer) frame may have left.
         let frame_text = format!(
             "\r{}\x1b[K",
-            render_line(stages, state.stage, frame, elapsed, &palette)
+            render_line(stages, state.stage, &state.detail, frame, elapsed, &palette)
         );
         let mut err = io::stderr().lock();
         if err
@@ -279,6 +297,7 @@ fn tick(
 fn render_line(
     stages: &[&str],
     stage: usize,
+    detail: &str,
     frame: usize,
     elapsed: Duration,
     palette: &Palette,
@@ -292,8 +311,13 @@ fn render_line(
             std::cmp::Ordering::Greater => palette.dim(name),
         })
         .collect();
+    let detail = if detail.is_empty() {
+        String::new()
+    } else {
+        format!("  {detail}")
+    };
     format!(
-        "{} {}  {}",
+        "{} {}{detail}  {}",
         palette.accent(FRAMES[frame]),
         stages.join(&palette.dim(" · ")),
         palette.dim(&format_elapsed(elapsed))
@@ -328,6 +352,7 @@ mod tests {
         let line = render_line(
             SCAN.stages,
             1,
+            "",
             0,
             Duration::from_millis(800),
             &Palette::plain(),
@@ -339,11 +364,25 @@ mod tests {
     }
 
     #[test]
+    fn a_detail_follows_the_stages() {
+        let line = render_line(
+            FETCH.stages,
+            0,
+            "3/5 definitions",
+            0,
+            Duration::from_secs(21),
+            &Palette::plain(),
+        );
+        assert_eq!(line, "◐ export · write  3/5 definitions  21.0s");
+    }
+
+    #[test]
     fn a_write_erases_a_drawn_line_first() {
         let state = Arc::new(Mutex::new(State {
             stage: 0,
             drawn: true,
             mid_line: false,
+            detail: String::new(),
         }));
         let mut buffer = Vec::new();
         {

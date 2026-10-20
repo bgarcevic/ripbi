@@ -162,3 +162,72 @@ fn thin_report_pbix_has_no_embedded_model() {
         "{error}"
     );
 }
+
+/// A `.Report` folder without `definition/` (saved without the PBIR preview,
+/// or exported by the service as `PBIR-Legacy`) carries the Layout document
+/// as its root `report.json`, in UTF-8. It parses as a legacy Layout, not as
+/// a PBIR `report.json` with no pages.
+#[test]
+fn a_legacy_report_folder_parses_its_layout() {
+    use std::io::Read;
+
+    let mut zip =
+        zip::ZipArchive::new(std::fs::File::open(fixture("legacy-layout.pbix")).unwrap()).unwrap();
+    let mut utf16 = Vec::new();
+    zip.by_name("Report/Layout")
+        .unwrap()
+        .read_to_end(&mut utf16)
+        .unwrap();
+    let units: Vec<u16> = utf16
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .collect();
+    let layout = String::from_utf16(&units).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let item = dir.path().join("Sales.Report");
+    std::fs::create_dir(&item).unwrap();
+    std::fs::write(
+        item.join("report.json"),
+        layout.trim_start_matches('\u{feff}'),
+    )
+    .unwrap();
+    std::fs::write(
+        item.join("definition.pbir"),
+        r#"{"version":"1.0","datasetReference":{"byPath":{"path":"../Sales.SemanticModel"}}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        item.join(".platform"),
+        r#"{"metadata":{"type":"Report","displayName":"Sales"}}"#,
+    )
+    .unwrap();
+
+    let parsed = report(&item).unwrap();
+    assert!(
+        !parsed
+            .skips
+            .iter()
+            .any(|notice| notice.kind == SkipKind::UnknownProperty),
+        "{:?}",
+        parsed.skips
+    );
+    assert_eq!(parsed.value.name.as_deref(), Some("Sales"));
+    assert_eq!(
+        parsed.value.dataset,
+        ripbi_core::report::DatasetReference::ByPath {
+            path: "../Sales.SemanticModel".to_string()
+        }
+    );
+    assert_eq!(parsed.value.pages.len(), 1);
+    assert_eq!(parsed.value.pages[0].visuals.len(), 3);
+    assert!(
+        parsed
+            .value
+            .bindings()
+            .iter()
+            .any(|binding| binding.target.to_string() == "'Sales'[Amount]")
+    );
+}

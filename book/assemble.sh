@@ -42,6 +42,7 @@ for f in \
   crates/ripbi-cli/docs/scan/tx-rm.md \
   crates/ripbi-cli/docs/deps.md \
   crates/ripbi-cli/docs/report.md \
+  crates/ripbi-cli/docs/fetch.md \
   crates/ripbi-cli/docs/config.md \
   crates/ripbi-core/docs/graph.md \
   crates/ripbi-core/docs/formats.md \
