@@ -63,6 +63,42 @@ mod output_modes {
         assert_eq!(json["summary"]["unused"], 0);
     }
 
+    /// A measure referenced only by the visual container's conditional
+    /// formatting (`visualContainerObjects` — here a background colour rule)
+    /// is used, and so is the column it reads.
+    #[test]
+    fn a_container_formatting_rule_keeps_its_measure_alive() {
+        let temp = TempDir::new("container-formatting");
+        project_into(&temp.0, "Mini");
+        let visual = temp
+            .0
+            .join("Mini.Report/definition/pages/P1/visuals/V1/visual.json");
+        let text = std::fs::read_to_string(&visual).expect("read visual.json");
+        let anchor = "\"drillFilterOtherVisuals\": true";
+        assert_eq!(text.matches(anchor).count(), 1);
+        let rule = r#""visualContainerObjects": {
+      "background": [{ "properties": { "color": { "solid": { "color": { "expr": {
+        "Conditional": { "Cases": [{
+          "Condition": { "Comparison": {
+            "ComparisonKind": 0,
+            "Left": { "Measure": {
+              "Expression": { "SourceRef": { "Entity": "Sales" } },
+              "Property": "Legacy Total"
+            } },
+            "Right": { "Literal": { "Value": "'red'" } }
+          } },
+          "Value": { "Literal": { "Value": "'#B51947'" } }
+        }] }
+      } } } } } }]
+    },
+    "drillFilterOtherVisuals": true"#;
+        std::fs::write(&visual, text.replace(anchor, rule)).expect("write visual.json");
+
+        let (code, stdout, stderr) = run_scan(&ScanArgs::default(), &temp.0, "");
+        assert_eq!(code, 0, "{stdout}\n{stderr}");
+        assert!(stdout.contains("No unused objects"), "{stdout}");
+    }
+
     /// Workspace monitoring: an Excel query logged against `[Legacy Total]`
     /// makes it — and the column it reads — live; the JSON summary counts
     /// the queried objects.
