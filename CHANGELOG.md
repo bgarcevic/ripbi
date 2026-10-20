@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-20
+
 ### Added
 
 - **`ripbi fetch` downloads a model and every report built on it.** Point it at a
@@ -888,7 +890,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/bgarcevic/ripbi/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/bgarcevic/ripbi/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bgarcevic/ripbi/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/bgarcevic/ripbi/compare/v0.9.0...v0.9.1
