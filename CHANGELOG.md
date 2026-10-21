@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON
+  lines are now `\uXXXX` escapes, so the output is pure ASCII. Windows PowerShell
+  re-encodes text piped between native commands and mangled names like `Salg æøå` on
+  the way to `tx rm --from -`; ASCII passes through unchanged and `tx` decodes the
+  escapes back to the same name.
+
 ## [0.11.0] - 2026-10-20
 
 ### Added

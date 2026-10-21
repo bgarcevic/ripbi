@@ -31,6 +31,11 @@ $ ripbi scan --emit tx-rm | tx rm --from - ./Model.SemanticModel --save
   `dead`). An auto date/time table still `in_use` or `unused_by_reports` is advice, not a
   removal: switch the setting off in Desktop instead. Report measures and bookmarks live in
   the report, not the model: they are `# skipped` comment lines, which `tx` skips.
+- **Encoding.** The JSON lines are pure ASCII: every non-ASCII character in a name is a
+  JSON `\uXXXX` escape (`"Salg \u00e6\u00f8\u00e5"`), which `tx` decodes back to the same
+  name. Windows PowerShell re-encodes text piped between programs with its console code
+  page; ASCII passes through that, and every other shell, unchanged. Comment lines are
+  not escaped — `tx` skips them.
 - **Order.** None needed. Lines follow ripbi's identity order; a dead table's members are
   listed beside it and `tx` reports them as `subsumed`.
 - **Cascades.** When the set would also change objects that stay — a relationship to a live
