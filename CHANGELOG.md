@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Power Query parameters used inside a record are no longer reported as unused.** A
+  name passed as a record value, such as `Source{[Schema = SchemaParam, Item = "t"]}` or
+  `Headers = [Key = TokenParam]`, was skipped, so the expression it names was flagged as
+  unused even though removing it breaks refresh.
+
 ## [0.11.0] - 2026-10-20
 
 ### Added

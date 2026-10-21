@@ -365,18 +365,19 @@ fn bracket_field<'a>(
         None => start + 1,
         // `[]`, the empty record, names nothing.
         Some(close) if inner.is_empty() => close + 1,
-        Some(close) => {
-            if generalized {
-                let first = inner[0];
-                let last = inner[inner.len() - 1];
-                out.push(RawRef::Field {
-                    table,
-                    name: &text[first.start..last.end()],
-                    span: tokens[start].start..tokens[close].end(),
-                });
-            }
+        Some(close) if generalized => {
+            let first = inner[0];
+            let last = inner[inner.len() - 1];
+            out.push(RawRef::Field {
+                table,
+                name: &text[first.start..last.end()],
+                span: tokens[start].start..tokens[close].end(),
+            });
             close + 1
         }
+        // A record literal: its values are expressions (`[Schema = Param]`)
+        // and must be walked, or the names in them go unseen.
+        Some(_) => start + 1,
     }
 }
 
@@ -562,6 +563,17 @@ mod tests {
         // `[K = 1][Nope]` is a field access *on the record*; the walker cannot
         // tell that from a column access, so it conservatively keeps `Nope` —
         // the same over-marking every bare word gets.
+    }
+
+    #[test]
+    fn names_inside_a_record_literal_are_candidates() {
+        // A navigation step passes a parameter as a record value; skipping
+        // the record would report the parameter as unused.
+        let text = r#"Source{[Schema = SchemaParam, Item = "t"]}[Data]"#;
+        assert!(names(text).contains(&"SchemaParam"));
+        assert!(!fields(text).contains(&(None, "Schema")));
+        // Nested records are walked too.
+        assert!(names("[Outer = [Inner = DeepParam]]").contains(&"DeepParam"));
     }
 
     #[test]
