@@ -253,6 +253,7 @@ fn golden_report() -> ReportModel {
             expression: "DIVIDE([Sales], [Budget])".to_string(),
             format_string: Some("0.0%".to_string()),
         }],
+        code: Vec::new(),
         stub: false,
     }
 }

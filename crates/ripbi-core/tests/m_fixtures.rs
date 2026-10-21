@@ -69,6 +69,7 @@ fn report_binding(table: &str, column: &str) -> ReportModel {
         mobile_pages: Vec::new(),
         bookmarks: Vec::new(),
         measures: Vec::new(),
+        code: Vec::new(),
         stub: false,
     }
 }

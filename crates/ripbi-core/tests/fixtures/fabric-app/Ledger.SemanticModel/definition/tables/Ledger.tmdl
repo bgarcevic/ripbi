@@ -1,0 +1,27 @@
+table Ledger
+
+	column Year
+		dataType: int64
+		sourceColumn: Year
+
+	column Account
+		dataType: string
+		sourceColumn: Account
+
+	/// Live through [Revenue], which the app's query names.
+	column Value
+		dataType: double
+		sourceColumn: Value
+
+	/// Dead: only a test file and a comment name it.
+	column Quarter
+		dataType: int64
+		sourceColumn: Quarter
+
+	partition Ledger = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Year", "Account", "Value", "Quarter"}, {})
+				in
+				    Source

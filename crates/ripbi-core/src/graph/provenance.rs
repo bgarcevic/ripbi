@@ -267,6 +267,7 @@ impl BindingSite {
             BindingSite::Drillthrough => "drillthrough",
             BindingSite::ConditionalFormatting => "conditional_formatting",
             BindingSite::AltText => "alt_text",
+            BindingSite::Code { .. } => "app_code",
         }
     }
 }
@@ -348,6 +349,13 @@ pub enum BindingSite {
     ConditionalFormatting,
     /// A visual's accessibility alt text.
     AltText,
+    /// A string literal in a Fabric app's source that names the object.
+    Code {
+        /// The source file, relative to the app folder.
+        file: String,
+        /// 1-based line of the literal.
+        line: usize,
+    },
 }
 
 fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
@@ -360,6 +368,7 @@ fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
         BindingSite::Drillthrough => f.write_str("drillthrough parameter"),
         BindingSite::ConditionalFormatting => f.write_str("conditional formatting"),
         BindingSite::AltText => f.write_str("alt text"),
+        BindingSite::Code { file, line } => write!(f, "code at {file}:{line}"),
     }
 }
 

@@ -47,6 +47,12 @@ pub struct ReportModel {
     /// Report-level measures (PBIR `reportExtensions.json`): DAX that lives in the
     /// report, not the model.
     pub measures: Vec<ReportMeasure>,
+    /// The string literals of a code-first consumer — a Fabric app whose
+    /// TypeScript composes DAX at run time. Empty for PBIR and
+    /// Layout reports. The graph resolves them against the model as soft
+    /// roots: what matches stays alive, what does not is ordinary text, never
+    /// a broken binding.
+    pub code: Vec<CodeLiteral>,
     /// A ripbi-generated stub (issue #130): `report.json` carries the
     /// [`STUB_ANNOTATION`](crate::stub::STUB_ANNOTATION) annotation. A stub
     /// binds nothing; callers use the flag to name it instead of counting it
@@ -283,6 +289,28 @@ pub struct ReportMeasure {
     pub expression: String,
     /// Dynamic format string (DAX).
     pub format_string: Option<String>,
+}
+
+/// One string literal from a code-first consumer's source (a Fabric app's
+/// `.ts`/`.tsx`/`.js`), with where it was written.
+///
+/// An app builds its DAX from pieces — `'${table}'[${column}]` over a config
+/// object naming `'P&L Rows'` and `'Year'` — so no single literal need be a
+/// query. Each literal is kept as text and resolved by the graph two ways: as
+/// DAX (`'Sales'[Amount]`, `[Total Sales]` inside a query string) and, when
+/// the literal is [`whole`](Self::whole), as a bare object name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CodeLiteral {
+    /// The source file, relative to the app folder, with `/` separators.
+    pub file: String,
+    /// 1-based line the literal starts on.
+    pub line: usize,
+    /// The literal's decoded text; for a template literal, one text run
+    /// between `${…}` interpolations.
+    pub text: String,
+    /// The text is the entire literal — not a run of an interpolated
+    /// template — so it can be a name on its own.
+    pub whole: bool,
 }
 
 /// A model-object reference as written in a report binding, before resolution.

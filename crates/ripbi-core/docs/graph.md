@@ -104,6 +104,17 @@ page's: a field bound only by a `definition.mobile/` visual is live, because pho
 users see it, and its roots carry the `mobile` marker so an audit can tell the two
 layouts apart.
 
+**Fabric-app literals.** A Fabric app's `ReportModel::code` literals are roots too,
+with a `BindingSite::Code { file, line }` site. A literal carrying `[` or `EVALUATE`
+resolves as a DAX query (the query-log binder); a whole literal also resolves as a bare
+name — a table, a measure, or a column. Bare column names are scoped: they bind the
+same-named columns of the tables the app names anywhere (as a literal or inside its
+DAX), falling back to every same-named column in the model when no named table has
+one, because an app composing `'${table}'[${column}]` writes the column name with no
+table beside it. A literal that matches nothing is text — a label, a route — and never
+a `BrokenBinding`: the precision bar is the report one inverted, since the app's
+literals over-approximate what it reads, never the other way round.
+
 **Date-hierarchy bindings over a variation.** A visual's date hierarchy under auto
 date/time is written against the *varied* (base) table — `HierarchyLevel` with a
 `PropertyVariationSource` — but the hierarchy lives on the engine's hidden

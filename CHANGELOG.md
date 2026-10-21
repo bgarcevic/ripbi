@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Fabric apps count as report consumers.** Pass a Fabric app folder (one holding
+  `fabric.yaml`) with `--report`, and the model objects its TypeScript names stay
+  alive: DAX written in a string (`'Sales'[Amount]`, `[Total Sales]`), and table,
+  column and measure names the app builds its queries from at run time. Each one
+  shows where it was written, e.g. `code at src/config.ts:14`. A `--report` search
+  folder also picks up the apps inside it, and names them on stderr. Tests, comments,
+  `node_modules`, and `.agents/` skill kits are not read. The app needs `--model` (or
+  a model PATH), because `fabric.yaml` names its model by a service ID that ripbi
+  cannot match against local files.
+
 ### Fixed
 
 - **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON

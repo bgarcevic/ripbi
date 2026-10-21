@@ -15,6 +15,7 @@
 //! ignore list, lives in `docs/formats.md`.
 
 mod abf;
+mod app;
 mod archive;
 mod legacy;
 mod pbir;
@@ -227,9 +228,16 @@ pub fn source_locations(path: &Path) -> Result<Vec<SourceLocation>> {
 /// [`Ingested::skips`]; an unreadable or malformed `report.json`, or an
 /// unreadable report directory, fails. A missing or anchor-less
 /// phone layout is the common case and is silent.
+///
+/// A Fabric app folder — one with a `fabric.yaml` at its root — is read as a
+/// code-first consumer: its JavaScript/TypeScript string literals become
+/// [`ReportModel::code`], which the graph resolves against the model.
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
     if path.is_file() {
         return archive::report(path);
+    }
+    if app::is_app(path) {
+        return app::load(path);
     }
     if let Some(layout) = legacy_report_layout(path)? {
         let mut skips = Vec::new();
@@ -248,6 +256,14 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
         value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips)?;
     }
     Ok(Ingested { value, skips })
+}
+
+/// Whether `path` is a Fabric app folder: a directory with a `fabric.yaml`
+/// (or `fabric.yml`) at its root, which [`report`] reads as a code-first
+/// consumer.
+#[must_use]
+pub fn is_fabric_app(path: &Path) -> bool {
+    app::is_app(path)
 }
 
 /// Whether a ZIP archive embeds a semantic model: a TMSL `DataModelSchema`

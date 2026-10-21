@@ -605,7 +605,13 @@ pub fn query_references(
     targets
 }
 
-fn dax_references(db: &TabularDatabase, index: &ModelIndex, text: &str) -> Vec<ObjectId> {
+/// Every model object a DAX query text references directly — shared by
+/// logged queries and Fabric-app code literals.
+pub(crate) fn dax_references(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    text: &str,
+) -> Vec<ObjectId> {
     let mut targets = Vec::new();
     for raw in dax::references(text) {
         // A qualified name can also address a hierarchy: `ISINSCOPE('Date'[Calendar])`.

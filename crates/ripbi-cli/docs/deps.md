@@ -285,7 +285,8 @@ queried	'Sales'[Legacy Total]	2	2026-09-30 09:45:00.0000000	1	Excel
 - `dependency` — graph orientation: consumer, what it uses, provenance key.
 - `impact` — the queried-object side first, then what uses it.
 - `binding` — object, report, page, visual, and the binding role (`Values`) or machine
-  kind (`filter`, `sort`, `drillthrough`, `conditional_formatting`, `alt_text`); `-`
+  kind (`filter`, `sort`, `drillthrough`, `conditional_formatting`, `alt_text`,
+  `app_code`); `-`
   for an absent level.
 - `kept` — the kept object on the impact slice, the annotated object (itself, or its
   kept table), and the reason, with tabs and line breaks inside it turned into

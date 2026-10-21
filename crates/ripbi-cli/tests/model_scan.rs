@@ -63,6 +63,57 @@ mod happy_path {
     }
 
     #[test]
+    fn a_fabric_app_folder_is_a_report_root() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../ripbi-core/tests/fixtures/fabric-app");
+        let args = model_args(
+            fixture.join("Ledger.SemanticModel"),
+            vec![fixture.join("app")],
+        );
+        let (code, stdout, stderr) = run_scan(&args, &fixture, "");
+
+        assert_eq!(code, 1, "stderr:\n{stderr}");
+        assert!(stdout.contains("3 unused objects"), "findings:\n{stdout}");
+        assert!(stdout.contains("'Ledger'[Quarter]"), "findings:\n{stdout}");
+        assert!(!stdout.contains("'Ledger'[Year]"), "findings:\n{stdout}");
+        assert!(!stdout.contains("[Revenue]"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn a_search_folder_includes_the_fabric_apps_beside_its_reports() {
+        let temp = TempDir::new("model-fabric-app-search");
+        model_into(&temp.0, "X");
+        report_into(
+            &temp.0,
+            "reports/A.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        temp.mkdir("reports/ledger-app/src");
+        fs::write(
+            temp.0.join("reports/ledger-app/fabric.yaml"),
+            "profiles: {}\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.0.join("reports/ledger-app/src/query.ts"),
+            "export const q = `EVALUATE ROW(\"t\", [Legacy Total])`;\n",
+        )
+        .unwrap();
+
+        let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "the app keeps the dead chain alive:\n{stdout}");
+        assert!(stderr.contains("2 reports"), "header:\n{stderr}");
+        assert!(
+            stderr.contains(
+                "included 1 Fabric app(s) from the search folder without pairing: ledger-app"
+            ),
+            "the unpaired app is announced:\n{stderr}"
+        );
+    }
+
+    #[test]
     fn json_lists_every_connected_report() {
         let temp = TempDir::new("model-happy-json");
         model_into(&temp.0, "X");

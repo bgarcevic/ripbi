@@ -26,7 +26,9 @@ schema, `DataModel`, report definition, and (when present) `DataMashup`
 members needed for analysis. A PBIX without either model member is a thin
 report: model ingestion fails with a "no embedded semantic model" error, and
 its report pairs with a separate model. TMSL and legacy Layout JSON may be
-UTF-8 or UTF-16, with or without a byte order mark.
+UTF-8 or UTF-16, with or without a byte order mark. A folder with a `fabric.yaml` (or
+`fabric.yml`) at its root is a Fabric app and reads as a code-first report — see
+[Fabric apps](#fabric-apps).
 
 Anything else is `Error::UnsupportedFormat`. The PBIP item's display name is read
 from `.platform` (`metadata.displayName`) beside `definition/` — TMDL itself
@@ -304,6 +306,39 @@ field, or an unknown property produces a notice.
   missed), and `highlight.selection` are deliberately unmodeled.
 - **Tooltip pages** are read from `section` expr literals; any other spelling
   yields a `MalformedValue` notice rather than a silent loss.
+
+## Fabric apps
+
+A Fabric app (the `@microsoft/fabric-app-data` / Rayfin template) is a
+TypeScript project that queries a semantic model with DAX it composes at run
+time; `fabric.yaml` at its root names the models it connects to. There is no
+declarative binding to parse, so `src/ingest/app.rs` reads the app as text: a
+`ReportModel` with no pages and one `CodeLiteral` per string literal in its
+`.ts`/`.tsx`/`.mts`/`.cts`/`.js`/`.jsx`/`.mjs`/`.cjs` sources. The graph decides
+which literals name model objects (see `graph.md`).
+
+- **What is read.** Every source under the app folder except dot-folders
+  (`.git`, and `.agents/` skill kits whose example queries name objects the app
+  never reads), `node_modules`, `dist`, `build`, `out`, `coverage`,
+  `__tests__`, `__mocks__`, `*.d.ts`, and `*.test.*` / `*.spec.*` files.
+  Comments and regular-expression literals are skipped. A template literal
+  yields one literal per text run between `${…}` interpolations; only an
+  interpolation-free template is `whole`.
+- **Name.** `rayfin/rayfin.yml`'s top-level `name:`, else `package.json`
+  `name`, else the folder name.
+- **Model pairing.** None: `fabric.yaml` names models by workspace and item
+  GUID, which a local scan cannot match, so the app's `dataset` is
+  `Unresolved` and it binds only when passed with `--model` (or a model PATH).
+  The CLI's search-folder walk includes every app it finds without pairing
+  and announces them: over-keeping beats missing a consumer.
+- **Drift.** The lexer separates literals from code without parsing
+  JavaScript. A quote it misreads — an apostrophe in JSX text — ends at the
+  line break, as an unterminated JavaScript string does. A source that is not
+  UTF-8 is a `MalformedValue` notice.
+- **Known gap.** Names that never appear as a literal — read from an
+  environment variable, a fetched config, or concatenated from fragments
+  (`'Sa' + 'les'`) — are invisible. Query logs (`--queries-from`) cover what
+  the app actually ran.
 
 ## Drift policy: two tiers of skipping
 

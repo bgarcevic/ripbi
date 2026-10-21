@@ -1,0 +1,544 @@
+//! Fabric apps as report consumers.
+//!
+//! A Fabric app (the `@microsoft/fabric-app-data` / Rayfin template) is a
+//! TypeScript project that queries a semantic model with DAX it composes at
+//! run time. It is recognized by the `fabric.yaml` at its root, which names
+//! the models it connects to. Nothing in the project is a declarative binding,
+//! so the app is read as text: every string literal in its JavaScript and
+//! TypeScript source becomes a [`CodeLiteral`], and the graph decides which of
+//! them name model objects.
+//!
+//! The lexer below only separates string literals from comments, regular
+//! expressions, and code — it does not parse JavaScript. Its failure mode is
+//! a missed or spurious literal, never an error: a quote it misreads (an
+//! apostrophe in JSX text) ends at the line break, as unterminated JavaScript
+//! strings do.
+
+use std::fs;
+use std::path::Path;
+
+use super::{Ingested, SkipKind, SkipNotice};
+use crate::Result;
+use crate::report::{CodeLiteral, ReportModel};
+
+/// The file that makes a folder a Fabric app.
+const MANIFESTS: [&str; 2] = ["fabric.yaml", "fabric.yml"];
+
+/// Source extensions read for literals.
+const EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+
+/// Folders that never hold the app's own runtime source: dependencies,
+/// build output, and test suites. Dot-folders (`.git`, `.agents`, …) are
+/// skipped too — agent skill kits there carry their own example queries.
+const SKIPPED_DIRS: [&str; 7] = [
+    "node_modules",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+    "__tests__",
+    "__mocks__",
+];
+
+/// Whether `path` is a Fabric app folder: a directory with `fabric.yaml`.
+pub(super) fn is_app(path: &Path) -> bool {
+    path.is_dir() && MANIFESTS.iter().any(|name| path.join(name).is_file())
+}
+
+/// Reads a Fabric app folder into a [`ReportModel`] carrying only
+/// [`ReportModel::code`].
+pub(super) fn load(path: &Path) -> Result<Ingested<ReportModel>> {
+    let mut skips = Vec::new();
+    let mut files = Vec::new();
+    collect_sources(path, &mut files)?;
+    files.sort();
+    let mut code = Vec::new();
+    for file in &files {
+        let relative = file
+            .strip_prefix(path)
+            .unwrap_or(file)
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        match fs::read(file) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(text) => code.extend(literals(&text, &relative)),
+                Err(_) => skips.push(SkipNotice {
+                    path: file.clone(),
+                    location: None,
+                    kind: SkipKind::MalformedValue,
+                    detail: "source file is not UTF-8; its literals were not read".to_string(),
+                }),
+            },
+            Err(error) => skips.push(SkipNotice {
+                path: file.clone(),
+                location: None,
+                kind: SkipKind::MalformedValue,
+                detail: format!("source file could not be read: {error}"),
+            }),
+        }
+    }
+    let value = ReportModel {
+        name: app_name(path),
+        code,
+        ..Default::default()
+    };
+    Ok(Ingested { value, skips })
+}
+
+fn collect_sources(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            if !name.starts_with('.') && !SKIPPED_DIRS.contains(&name.as_ref()) {
+                collect_sources(&path, out)?;
+            }
+        } else if kind.is_file() && is_source(&name) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// A runtime source file: a JS/TS extension, not a declaration file or a
+/// test.
+fn is_source(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let Some((stem, extension)) = lower.rsplit_once('.') else {
+        return false;
+    };
+    EXTENSIONS.contains(&extension)
+        && !stem.ends_with(".d")
+        && !stem.ends_with(".test")
+        && !stem.ends_with(".spec")
+}
+
+/// The app's name: Rayfin's `rayfin/rayfin.yml` `name:`, else `package.json`
+/// `name`, else the folder name.
+fn app_name(path: &Path) -> Option<String> {
+    let rayfin = fs::read_to_string(path.join("rayfin").join("rayfin.yml"))
+        .ok()
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                let value = line.strip_prefix("name:")?.trim();
+                let value = value.trim_matches(|c| c == '"' || c == '\'');
+                (!value.is_empty()).then(|| value.to_string())
+            })
+        });
+    let package = || {
+        let text = fs::read_to_string(path.join("package.json")).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+        json.get("name")?.as_str().map(str::to_string)
+    };
+    let folder = || {
+        let canonical = fs::canonicalize(path).ok();
+        canonical
+            .as_deref()
+            .unwrap_or(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    };
+    rayfin.or_else(package).or_else(folder)
+}
+
+/// Every string literal in one JavaScript/TypeScript source, in file order.
+///
+/// Quoted strings yield one literal each; a template literal yields one per
+/// text run between `${…}` interpolations (whose code is lexed in turn), and
+/// only an interpolation-free template is [`whole`](CodeLiteral::whole).
+/// Comments and regular-expression literals are skipped. Empty runs are
+/// dropped.
+pub(super) fn literals(source: &str, file: &str) -> Vec<CodeLiteral> {
+    let mut lexer = Lexer {
+        bytes: source.as_bytes(),
+        source,
+        file,
+        i: 0,
+        line: 1,
+        out: Vec::new(),
+    };
+    lexer.run();
+    lexer.out
+}
+
+struct Lexer<'a> {
+    bytes: &'a [u8],
+    source: &'a str,
+    file: &'a str,
+    i: usize,
+    line: usize,
+    out: Vec<CodeLiteral>,
+}
+
+impl Lexer<'_> {
+    fn run(&mut self) {
+        // Brace depth inside each open `${…}`, innermost last.
+        let mut interpolations: Vec<usize> = Vec::new();
+        // Whether a `/` here starts a regular expression rather than dividing.
+        let mut regex_ok = true;
+        while let Some(&byte) = self.bytes.get(self.i) {
+            match byte {
+                b'\n' => {
+                    self.line += 1;
+                    self.i += 1;
+                }
+                b'/' if self.bytes.get(self.i + 1) == Some(&b'/') => {
+                    while self.bytes.get(self.i).is_some_and(|&b| b != b'\n') {
+                        self.i += 1;
+                    }
+                }
+                b'/' if self.bytes.get(self.i + 1) == Some(&b'*') => {
+                    let end = self.source[self.i + 2..]
+                        .find("*/")
+                        .map_or(self.bytes.len(), |end| self.i + 2 + end + 2);
+                    self.advance_to(end);
+                }
+                b'/' if regex_ok => {
+                    self.regex();
+                    regex_ok = false;
+                }
+                b'\'' | b'"' => {
+                    self.quoted(byte);
+                    regex_ok = false;
+                }
+                b'`' => {
+                    self.i += 1;
+                    if self.template(true) {
+                        interpolations.push(0);
+                        regex_ok = true;
+                    } else {
+                        regex_ok = false;
+                    }
+                }
+                b'{' => {
+                    if let Some(depth) = interpolations.last_mut() {
+                        *depth += 1;
+                    }
+                    self.i += 1;
+                    regex_ok = true;
+                }
+                b'}' => {
+                    self.i += 1;
+                    match interpolations.last_mut() {
+                        Some(0) => {
+                            interpolations.pop();
+                            if self.template(false) {
+                                interpolations.push(0);
+                                regex_ok = true;
+                            } else {
+                                regex_ok = false;
+                            }
+                        }
+                        Some(depth) => {
+                            *depth -= 1;
+                            regex_ok = true;
+                        }
+                        None => regex_ok = true,
+                    }
+                }
+                b')' | b']' => {
+                    self.i += 1;
+                    regex_ok = false;
+                }
+                b if b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80 => {
+                    let start = self.i;
+                    while self.bytes.get(self.i).is_some_and(|&b| {
+                        b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80
+                    }) {
+                        self.i += 1;
+                    }
+                    regex_ok = matches!(
+                        &self.source[start..self.i],
+                        "return"
+                            | "typeof"
+                            | "case"
+                            | "in"
+                            | "of"
+                            | "new"
+                            | "delete"
+                            | "void"
+                            | "throw"
+                            | "instanceof"
+                            | "yield"
+                            | "await"
+                            | "else"
+                            | "do"
+                    );
+                }
+                b if b.is_ascii_whitespace() => self.i += 1,
+                _ => {
+                    self.i += 1;
+                    regex_ok = true;
+                }
+            }
+        }
+    }
+
+    /// Moves to `end`, counting the line breaks passed.
+    fn advance_to(&mut self, end: usize) {
+        let end = end.min(self.bytes.len());
+        self.line += self.bytes[self.i..end]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .count();
+        self.i = end;
+    }
+
+    /// A `'…'` or `"…"` string starting at `self.i`. An unterminated string
+    /// ends at the line break and yields nothing.
+    fn quoted(&mut self, quote: u8) {
+        let line = self.line;
+        self.i += 1;
+        let mut text = String::new();
+        loop {
+            match self.bytes.get(self.i) {
+                None | Some(b'\n') => return,
+                Some(&b) if b == quote => {
+                    self.i += 1;
+                    self.push(line, text, true);
+                    return;
+                }
+                Some(b'\\') => self.escape(&mut text),
+                Some(_) => self.char_into(&mut text),
+            }
+        }
+    }
+
+    /// One template text run, starting just after a backtick (`open`) or
+    /// after an interpolation's closing brace. Returns whether it stopped at
+    /// a `${`, leaving the lexer inside an interpolation.
+    fn template(&mut self, open: bool) -> bool {
+        let line = self.line;
+        let mut text = String::new();
+        loop {
+            match self.bytes.get(self.i) {
+                None => {
+                    self.push(line, text, false);
+                    return false;
+                }
+                Some(b'`') => {
+                    self.i += 1;
+                    self.push(line, text, open);
+                    return false;
+                }
+                Some(b'$') if self.bytes.get(self.i + 1) == Some(&b'{') => {
+                    self.i += 2;
+                    self.push(line, text, false);
+                    return true;
+                }
+                Some(b'\\') => self.escape(&mut text),
+                Some(b'\n') => {
+                    self.line += 1;
+                    self.i += 1;
+                    text.push('\n');
+                }
+                Some(_) => self.char_into(&mut text),
+            }
+        }
+    }
+
+    /// A regular-expression literal starting at `self.i`. One that does not
+    /// close on its line was a division after all: only the `/` is consumed.
+    fn regex(&mut self) {
+        let mut j = self.i + 1;
+        let mut class = false;
+        loop {
+            match self.bytes.get(j) {
+                None | Some(b'\n') => {
+                    self.i += 1;
+                    return;
+                }
+                Some(b'\\') => j += 2,
+                Some(b'[') => {
+                    class = true;
+                    j += 1;
+                }
+                Some(b']') => {
+                    class = false;
+                    j += 1;
+                }
+                Some(b'/') if !class => break,
+                Some(_) => j += 1,
+            }
+        }
+        j += 1;
+        while self.bytes.get(j).is_some_and(u8::is_ascii_alphabetic) {
+            j += 1;
+        }
+        self.i = j;
+    }
+
+    /// Decodes the escape sequence at `self.i` (a backslash) into `text`.
+    fn escape(&mut self, text: &mut String) {
+        self.i += 1;
+        let Some(&b) = self.bytes.get(self.i) else {
+            return;
+        };
+        let simple = match b {
+            b'n' => Some('\n'),
+            b't' => Some('\t'),
+            b'r' => Some('\r'),
+            b'b' => Some('\u{8}'),
+            b'f' => Some('\u{c}'),
+            b'v' => Some('\u{b}'),
+            b'0' if !self.bytes.get(self.i + 1).is_some_and(u8::is_ascii_digit) => Some('\0'),
+            _ => None,
+        };
+        if let Some(c) = simple {
+            text.push(c);
+            self.i += 1;
+            return;
+        }
+        match b {
+            // A line continuation contributes nothing.
+            b'\n' => {
+                self.line += 1;
+                self.i += 1;
+            }
+            b'\r' => {
+                self.i += 1;
+                if self.bytes.get(self.i) == Some(&b'\n') {
+                    self.line += 1;
+                    self.i += 1;
+                }
+            }
+            b'x' => self.hex(text, 1, 2),
+            b'u' if self.bytes.get(self.i + 1) == Some(&b'{') => {
+                let close = self.source[self.i..].find('}').map(|p| self.i + p);
+                let code = close
+                    .and_then(|close| u32::from_str_radix(&self.source[self.i + 2..close], 16).ok())
+                    .and_then(char::from_u32);
+                match (code, close) {
+                    (Some(c), Some(close)) => {
+                        text.push(c);
+                        self.i = close + 1;
+                    }
+                    _ => self.char_into(text),
+                }
+            }
+            b'u' => self.hex(text, 1, 4),
+            _ => self.char_into(text),
+        }
+    }
+
+    /// A fixed-width hex escape: `width` digits after `skip` bytes. A
+    /// malformed one is kept as its letter, as browsers did before ES2018.
+    fn hex(&mut self, text: &mut String, skip: usize, width: usize) {
+        let start = self.i + skip;
+        let code = self
+            .source
+            .get(start..start + width)
+            .and_then(|digits| u32::from_str_radix(digits, 16).ok())
+            .and_then(char::from_u32);
+        match code {
+            Some(c) => {
+                text.push(c);
+                self.i = start + width;
+            }
+            None => self.char_into(text),
+        }
+    }
+
+    /// Copies the character at `self.i` into `text`.
+    fn char_into(&mut self, text: &mut String) {
+        let c = self.source[self.i..].chars().next().unwrap_or('\u{fffd}');
+        text.push(c);
+        self.i += c.len_utf8().max(1);
+    }
+
+    fn push(&mut self, line: usize, text: String, whole: bool) {
+        if !text.is_empty() {
+            self.out.push(CodeLiteral {
+                file: self.file.to_string(),
+                line,
+                text,
+                whole,
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::literals;
+
+    fn texts(source: &str) -> Vec<(String, bool)> {
+        literals(source, "a.ts")
+            .into_iter()
+            .map(|literal| (literal.text, literal.whole))
+            .collect()
+    }
+
+    #[test]
+    fn quoted_strings_decode_escapes() {
+        assert_eq!(
+            texts(r#"const a = 'P&L Rows'; const b = "it\"s"; const c = 'Bob\'s!';"#),
+            [
+                ("P&L Rows".to_string(), true),
+                ("it\"s".to_string(), true),
+                ("Bob's!".to_string(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn templates_split_at_interpolations() {
+        let source = "const q = `EVALUATE ${t}[${c}]`; const w = `'Sales'[Amount]`;";
+        assert_eq!(
+            texts(source),
+            [
+                ("EVALUATE ".to_string(), false),
+                ("[".to_string(), false),
+                ("]".to_string(), false),
+                ("'Sales'[Amount]".to_string(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn interpolations_lex_their_own_strings_and_nested_templates() {
+        let source = "`a${ f({ k: 'X' }) }b${ `in${y}ner` }c`";
+        assert_eq!(
+            texts(source),
+            [
+                ("a".to_string(), false),
+                ("X".to_string(), true),
+                ("b".to_string(), false),
+                ("in".to_string(), false),
+                ("ner".to_string(), false),
+                ("c".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn comments_and_regexes_are_skipped() {
+        let source = "// 'Date'[Month]\n/* [Total] */ s.replace(/'/g, \"''\"); x = a / b / 'c';";
+        assert_eq!(
+            texts(source),
+            [("''".to_string(), true), ("c".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn an_unterminated_quote_ends_at_the_line_break() {
+        let source = "<p>Don't panic</p>\nconst t = 'Sales';";
+        let found = literals(source, "a.tsx");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text, "Sales");
+        assert_eq!(found[0].line, 2);
+    }
+
+    #[test]
+    fn lines_count_through_multiline_templates() {
+        let source = "const q = `EVALUATE\n  'T'[C]`;\nconst n = 'N';";
+        let found = literals(source, "a.ts");
+        assert_eq!(found[0].line, 1);
+        assert_eq!(found[1].line, 3);
+    }
+}

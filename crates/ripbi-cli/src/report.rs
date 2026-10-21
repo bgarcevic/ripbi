@@ -776,7 +776,8 @@ fn kind_of(target: &FieldTarget) -> &'static str {
 }
 
 /// The binding-site vocabulary of the inventory: `field_well:<role>`, `filter`,
-/// `sort`, `drillthrough`, `conditional_formatting`, `alt_text`.
+/// `sort`, `drillthrough`, `conditional_formatting`, `alt_text`,
+/// `app_code:<file>:<line>`.
 fn site_of(site: &BindingSite) -> String {
     match site {
         BindingSite::FieldWell { role } => format!("field_well:{role}"),
@@ -785,6 +786,7 @@ fn site_of(site: &BindingSite) -> String {
         BindingSite::Drillthrough => "drillthrough".to_string(),
         BindingSite::ConditionalFormatting => "conditional_formatting".to_string(),
         BindingSite::AltText => "alt_text".to_string(),
+        BindingSite::Code { file, line } => format!("app_code:{file}:{line}"),
     }
 }
 

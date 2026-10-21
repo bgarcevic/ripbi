@@ -63,6 +63,7 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
     builder.add_m_edges(db, &index);
     for (report_index, report) in reports.iter().enumerate() {
         builder.add_roots(db, &index, report, report_index);
+        builder.add_code_roots(db, &index, report);
         builder.add_stale_bookmark_edges(db, &index, report, report_index);
     }
 
@@ -734,6 +735,99 @@ impl Builder {
                     }
                 }
             }
+        }
+    }
+
+    /// A Fabric app's string literals as roots. A literal reads two ways:
+    ///
+    /// - as DAX, when it carries a field reference (`[`) or an `EVALUATE` —
+    ///   a query written out, `'Sales'[Amount]`, `[Total Sales]`;
+    /// - when it is a whole literal, as a bare name: a table, a measure, or a
+    ///   column. An app composing `'${table}'[${column}]` from a config writes
+    ///   the table and column names as separate literals, so a column name
+    ///   binds the same-named columns of every table the app names; when none
+    ///   of those has it, every same-named column in the model.
+    ///
+    /// Text is not a binding: a literal that resolves to nothing is a UI
+    /// label, never a broken binding. Everything here over-keeps, never
+    /// under-keeps — an app's literals are the only record of what it reads.
+    fn add_code_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
+        if report.code.is_empty() {
+            return;
+        }
+        let report_name = report.name.as_ref().map(NameKey::new);
+        let mut found: Vec<(usize, ObjectId)> = Vec::new();
+        let mut named_tables: HashSet<NameKey> = HashSet::new();
+        let mut bare_columns: Vec<(usize, &str)> = Vec::new();
+        for (position, literal) in report.code.iter().enumerate() {
+            let text = literal.text.as_str();
+            let looks_like_dax =
+                text.contains('[') || text.to_ascii_uppercase().contains("EVALUATE");
+            if looks_like_dax {
+                for id in crate::usage::dax_references(db, index, text) {
+                    found.push((position, id));
+                }
+            }
+            if !literal.whole || text.contains('\n') {
+                continue;
+            }
+            if let Some(table) = index.resolve_table(text).and_then(|h| db.table(h)) {
+                found.push((
+                    position,
+                    ObjectId::Table {
+                        table: NameKey::new(table.name.as_str()),
+                    },
+                ));
+            }
+            if let Some(id) = index
+                .resolve_unqualified(text, None)
+                .measure
+                .and_then(|h| db.object_id(Resolved::Measure(h)))
+            {
+                found.push((position, id));
+            }
+            bare_columns.push((position, text));
+        }
+        for (_, id) in &found {
+            match id {
+                ObjectId::Table { table } | ObjectId::Column { table, .. } => {
+                    named_tables.insert(table.clone());
+                }
+                _ => {}
+            }
+        }
+        for (position, text) in bare_columns {
+            let columns: Vec<ObjectId> = index
+                .resolve_columns(text)
+                .into_iter()
+                .filter_map(|h| db.object_id(Resolved::Column(h)))
+                .collect();
+            let scoped: Vec<&ObjectId> = columns
+                .iter()
+                .filter(|id| matches!(id, ObjectId::Column { table, .. } if named_tables.contains(table)))
+                .collect();
+            if scoped.is_empty() {
+                found.extend(columns.into_iter().map(|id| (position, id)));
+            } else {
+                found.extend(scoped.into_iter().map(|id| (position, id.clone())));
+            }
+        }
+        for (position, target) in found {
+            let literal = &report.code[position];
+            let provenance = Provenance::Binding(Box::new(BindingEdge {
+                kind: BindingSite::Code {
+                    file: literal.file.clone(),
+                    line: literal.line,
+                },
+                report: report_name.clone(),
+                page: None,
+                visual: None,
+                bookmark: None,
+                mobile: false,
+                labels: SiteLabels::default(),
+            }));
+            self.root(target.clone(), provenance.clone());
+            self.add_selection_edges(db, &target, provenance);
         }
     }
 
