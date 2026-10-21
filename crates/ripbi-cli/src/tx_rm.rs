@@ -10,6 +10,12 @@
 //! ignores it but echoes the line back as the target's `input`, so a result
 //! traces back to its finding. Report measures and bookmarks live in the
 //! report, not the model: they are `#` comment lines, which `tx` skips.
+//!
+//! The JSON lines are pure ASCII: every non-ASCII character is a `\uXXXX`
+//! escape. A shell that re-encodes a pipe (Windows PowerShell decodes native
+//! output with its console code page and re-encodes it for the next command)
+//! would otherwise mangle a name like `Salg æøå`; ASCII passes through every
+//! shell unchanged, and `tx` decodes the escapes back to the same name.
 
 use std::io::{self, Write};
 
@@ -52,7 +58,8 @@ pub fn write(
     for id in findings {
         match tx_target(id, db) {
             Some(line) => {
-                serde_json::to_writer(&mut *out, &line)?;
+                let mut json = serde_json::Serializer::with_formatter(&mut *out, AsciiFormatter);
+                line.serialize(&mut json)?;
                 writeln!(out)?;
                 targets += 1;
             }
@@ -131,6 +138,28 @@ fn tx_target<'a>(id: &'a ObjectId, db: &'a TabularDatabase) -> Option<Target<'a>
         }
         ObjectId::ReportMeasure { .. } | ObjectId::Bookmark { .. } => return None,
     })
+}
+
+/// Compact JSON with every non-ASCII character escaped as `\uXXXX` (a UTF-16
+/// surrogate pair beyond the BMP), so a line survives any pipe encoding.
+struct AsciiFormatter;
+
+impl serde_json::ser::Formatter for AsciiFormatter {
+    fn write_string_fragment<W: ?Sized + Write>(
+        &mut self,
+        writer: &mut W,
+        fragment: &str,
+    ) -> io::Result<()> {
+        let mut ascii_from = 0;
+        for (at, ch) in fragment.char_indices().filter(|(_, ch)| !ch.is_ascii()) {
+            writer.write_all(&fragment.as_bytes()[ascii_from..at])?;
+            for unit in ch.encode_utf16(&mut [0; 2]) {
+                write!(writer, "\\u{unit:04x}")?;
+            }
+            ascii_from = at + ch.len_utf8();
+        }
+        writer.write_all(&fragment.as_bytes()[ascii_from..])
+    }
 }
 
 /// A column name inside DAX brackets: `]` doubles.
@@ -259,6 +288,28 @@ mod tests {
             assert_eq!(target["id"], id.to_string());
         }
         assert_eq!(targets.len(), names.len());
+    }
+
+    #[test]
+    fn non_ascii_names_are_escaped_and_round_trip() {
+        let names = ["Salg æøå", "Größe", "売上", "Revenue 📈"];
+        let findings: Vec<ObjectId> = names.iter().map(|name| column("Fakta", name)).collect();
+        let output = render(&TabularDatabase::default(), &findings);
+        let lines: Vec<&str> = output.lines().filter(|l| !l.starts_with('#')).collect();
+        assert!(lines.iter().all(|line| line.is_ascii()), "{output}");
+        let esc = |hex: &str| format!("{}u{hex}", '\\');
+        let expected = format!(
+            r#""name":"Salg {}{}{}""#,
+            esc("00e6"),
+            esc("00f8"),
+            esc("00e5")
+        );
+        assert!(lines[0].contains(&expected), "{output}");
+        let chart = format!("{}{}", esc("d83d"), esc("dcc8"));
+        assert!(lines[3].contains(&chart), "{output}");
+        for (target, name) in targets(&output).iter().zip(names) {
+            assert_eq!(target["name"], name);
+        }
     }
 
     #[test]
