@@ -307,7 +307,10 @@ pub fn report_items_without_model(path: &Path) -> Result<Vec<PathBuf>, ScanError
     }
     if path.is_dir() {
         let lower = file_name(path).to_lowercase();
-        if lower.ends_with(".report") || path.join("report.json").is_file() {
+        if lower.ends_with(".report")
+            || path.join("report.json").is_file()
+            || ingest::is_fabric_app(path)
+        {
             return Ok(vec![path.to_path_buf()]);
         }
         let stems = project_stems(path);
@@ -373,6 +376,11 @@ pub struct BoundReports {
     /// The connected reports matched by `byConnection`'s `initial catalog`
     /// rather than by path or stem, each with the catalog that matched.
     pub name_matched: Vec<(PathBuf, String)>,
+    /// The connected Fabric app folders (`fabric.yaml`). An app names its
+    /// models by service workspace and item ID, which no local model folder
+    /// records, so an app found under a search folder is included unpaired —
+    /// over-keeping beats missing a consumer — and announced as such.
+    pub apps: Vec<PathBuf>,
     /// Report items bound to a different existing model — informational, and
     /// deliberately never fatal, so a healthy multi-model folder can be
     /// scanned with `--strict`.
@@ -495,6 +503,11 @@ pub fn discover_bound_reports(
 
     let mut bound = BoundReports::default();
     for item in items {
+        if ingest::is_fabric_app(&item) {
+            bound.apps.push(item.clone());
+            bound.reports.push(item);
+            continue;
+        }
         let (dataset, skips) = ingest::dataset_reference(&item);
         match classify_binding(model, &item, &dataset, &model_root, &model_definition) {
             Binding::Connected { catalog } => {
@@ -664,11 +677,14 @@ fn walk_report_items(
 }
 
 /// True when `path` is a folder that makes a report item: one directly
-/// holding `report.json` or `definition/report.json`.
+/// holding `report.json` or `definition/report.json`, or a Fabric app folder
+/// (`fabric.yaml`) — whose `node_modules` and sources the walk then never
+/// descends into.
 fn is_report_item(path: &Path) -> bool {
     path.is_dir()
         && (path.join("report.json").is_file()
-            || path.join("definition").join("report.json").is_file())
+            || path.join("definition").join("report.json").is_file()
+            || ingest::is_fabric_app(path))
 }
 
 /// Resolves a report's `byPath` against the report item root.

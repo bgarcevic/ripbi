@@ -1481,8 +1481,12 @@ fn file_name_lower(path: &Path) -> String {
 
 /// True when `path` is a folder directly holding a report anchor — the same
 /// property core's report locator accepts (a folder that is a report item,
-/// whatever it is named).
+/// whatever it is named), or a Fabric app folder (`fabric.yaml`), which core
+/// reads as a code-first consumer.
 fn is_report_item(path: &Path) -> bool {
+    if ingest::is_fabric_app(path) {
+        return true;
+    }
     if path.is_file() {
         return (file_name_lower(path).ends_with(".pbix")
             || file_name_lower(path).ends_with(".pbit"))
@@ -1579,6 +1583,19 @@ pub(crate) fn pairing_announce(
             notes,
             verbose.is_some(),
         ));
+    }
+    if !bound.apps.is_empty() {
+        let names: Vec<String> = bound.apps.iter().map(|path| report_name(path)).collect();
+        lines.push(notes.info(&format!(
+            "included {} Fabric app(s) from the search folder without pairing: {} — \
+             fabric.yaml names models by service ID, which a local model does not record",
+            names.len(),
+            if full {
+                names.join(", ")
+            } else {
+                capped_names(&names)
+            }
+        )));
     }
     if !bound.ignored_elsewhere.is_empty() {
         let count = bound.ignored_elsewhere.len();

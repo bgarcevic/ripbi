@@ -1,0 +1,7 @@
+activeProfile: default
+profiles:
+  default:
+    semanticModels:
+      ledger:
+        workspaceId: 00000000-0000-4000-8000-000000000001
+        itemId: 00000000-0000-4000-8000-000000000002

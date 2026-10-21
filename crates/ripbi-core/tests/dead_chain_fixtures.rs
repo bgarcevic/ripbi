@@ -146,6 +146,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
             expression: "SUM('Sales'[Old Amount])".to_string(),
             format_string: None,
         }],
+        code: Vec::new(),
         stub: false,
     };
     (db, report)

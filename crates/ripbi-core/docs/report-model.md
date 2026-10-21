@@ -11,7 +11,10 @@ Modeled: report identity and its dataset link, pages (filters, drillthrough/tool
 bindings, visuals), visuals (field wells, filters, sort-by, conditional formatting,
 tooltip-page references), bookmarks (saved filters and active projections),
 report-level measures (`reportExtensions.json`), and the phone layout's pages
-(`definition.mobile/`, issue #49).
+(`definition.mobile/`, issue #49). A Fabric app — a code-first consumer with no page
+tree — is a `ReportModel` whose only content is `code`: the string literals of its
+JavaScript/TypeScript source, kept as text with their file and line and resolved by
+the graph (see [formats.md](formats.md#fabric-apps)).
 
 Deliberately absent: page order and the active/landing page (`pages.json` — the
 one exception, `pageOrder`, is read at ingest as a bookmark-section liveness

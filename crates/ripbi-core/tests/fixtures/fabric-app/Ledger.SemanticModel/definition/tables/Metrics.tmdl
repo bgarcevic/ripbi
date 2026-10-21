@@ -1,0 +1,14 @@
+table Metrics
+
+	measure Revenue = SUM(Ledger[Value])
+
+	/// Dead: only the agent kit under .agents/ names it.
+	measure 'Kit Example' = 1
+
+	partition Metrics = m
+		mode: import
+		source =
+				let
+				    Source = #table({}, {})
+				in
+				    Source

@@ -1,0 +1,19 @@
+table Date
+
+	/// Dead: the app writes 'Year', but it names Ledger, which has a Year.
+	column Year
+		dataType: int64
+		sourceColumn: Year
+
+	/// Live: the app writes 'Month' and no table it names has one.
+	column Month
+		dataType: int64
+		sourceColumn: Month
+
+	partition Date = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Year", "Month"}, {})
+				in
+				    Source
