@@ -14,6 +14,7 @@ pub mod config;
 pub mod deps;
 pub mod discover;
 pub mod error;
+pub mod fetch;
 pub mod glob;
 pub mod json;
 pub mod locate;

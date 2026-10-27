@@ -14,18 +14,9 @@ use std::time::Duration;
 
 use ripbi_service::downstream::{Access, Downstream, Verification};
 
-use super::layout::{ReportStatus, Written};
-use crate::style::Palette;
+use ripbi_app::fetch::{ReportStatus, Written};
 
-/// How a forecast reads in a sentence.
-#[must_use]
-pub fn access_phrase(access: Access) -> &'static str {
-    match access {
-        Access::Downloadable => "you can download it",
-        Access::Viewer => "you are a Viewer",
-        Access::NoAccess => "you are not a member",
-    }
-}
+use crate::style::Palette;
 
 /// The forecast block.
 ///

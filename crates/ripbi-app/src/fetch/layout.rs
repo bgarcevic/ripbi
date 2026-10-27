@@ -23,7 +23,7 @@ use ripbi_service::downstream::{Access, Downstream, ItemRef, ModelRef, Verificat
 
 use super::Downloads;
 use crate::error::ScanError;
-pub use ripbi_app::manifest::{
+pub use crate::manifest::{
     MANIFEST_PATH, Manifest, ManifestItem, ManifestModel, ManifestRelation, ManifestReport,
     ManifestVerification, ReportStatus, SCHEMA_VERSION,
 };
@@ -89,6 +89,7 @@ pub fn prepare(root: &Path, model: &ModelRef, force: bool) -> Result<Plan, ScanE
 }
 
 /// What [`write`] put on disk.
+#[derive(Debug, Clone)]
 pub struct Written {
     /// The manifest as written, paths and statuses final.
     pub manifest: Manifest,

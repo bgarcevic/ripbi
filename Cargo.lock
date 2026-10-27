@@ -1265,6 +1265,7 @@ name = "ripbi-app"
 version = "0.11.1"
 dependencies = [
  "ripbi-core",
+ "ripbi-service",
  "rstest",
  "serde",
  "serde_json",

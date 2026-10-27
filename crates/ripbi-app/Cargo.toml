@@ -12,6 +12,7 @@ categories = ["development-tools"]
 [dependencies]
 ripbi-core.workspace = true
 serde.workspace = true
+ripbi-service.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 toml.workspace = true
