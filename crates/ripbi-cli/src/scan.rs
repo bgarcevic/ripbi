@@ -13,6 +13,7 @@ use ripbi_app::scan::{
     SkipReason, Stage, Target, Verdict,
 };
 use ripbi_core::ObjectId;
+use ripbi_core::ingest;
 
 use crate::cli::{EmitFormat, ScanArgs, SortKey};
 use crate::discover::{self, Candidate};
@@ -170,6 +171,7 @@ fn scan(
         removable,
         model,
         config,
+        workbooks,
         ..
     } = outcome;
     output.elapsed = progress.elapsed();
@@ -225,6 +227,7 @@ fn scan(
             if !vouched {
                 let hint = consumer_hint(
                     query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some(),
+                    workbooks,
                     "removing",
                 );
                 writeln!(streams.err, "  {}", notes.0.dim(&hint))?;
@@ -529,6 +532,23 @@ pub(crate) fn pairing_announce(
     } else {
         lines.push(header);
     }
+    let workbooks: Vec<String> = reports
+        .iter()
+        .filter(|path| path.is_file() && ingest::is_workbook(path))
+        .map(|path| report_name(path))
+        .collect();
+    if !workbooks.is_empty() {
+        lines.push(notes.info(&format!(
+            "read {} Excel workbook(s): {} — every OLAP connection in them counts as \
+             querying this model",
+            workbooks.len(),
+            if full {
+                workbooks.join(", ")
+            } else {
+                capped_names(&workbooks)
+            }
+        )));
+    }
     let Some(bound) = bound else {
         return lines;
     };
@@ -587,10 +607,18 @@ pub(crate) fn pairing_announce(
 /// changing it"). A query log narrows the blind spot to the consumers
 /// outside its window. `[scan].external_consumers = "none"` vouches there
 /// are none.
-pub(crate) fn consumer_hint(with_query_log: bool, action: &str) -> String {
+///
+/// Workbooks passed as reports narrow the hint to the workbooks that were
+/// not (issue #172).
+pub(crate) fn consumer_hint(with_query_log: bool, with_workbooks: bool, action: &str) -> String {
     if with_query_log {
         format!(
             "check consumers outside the query log's window before {action}; ripbi can't see them"
+        )
+    } else if with_workbooks {
+        format!(
+            "check thin reports, other Excel workbooks and XMLA clients before {action}; \
+             ripbi can't see them"
         )
     } else {
         format!("check thin reports, Excel and XMLA clients before {action}; ripbi can't see them")

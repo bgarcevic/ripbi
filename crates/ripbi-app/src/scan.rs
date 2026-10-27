@@ -235,6 +235,9 @@ pub struct ScanOutcome {
     pub config: Option<Config>,
     /// The kinds selected for reporting; `None` reports everything.
     pub selected: Option<HashSet<&'static str>>,
+    /// Whether an Excel workbook was among the reports read (issue #172):
+    /// the consumer hint then names only the workbooks that were not.
+    pub workbooks: bool,
 }
 
 /// What a finished scan means for a gate: the CLI's exit code, a GUI's
@@ -397,6 +400,7 @@ fn analyze(
     let paired = resolved.paired;
     let model_scan = resolved.walk;
     let report_paths = dedupe(paired.reports);
+    let workbooks = has_workbooks(&report_paths);
 
     // The "before" pass when the model had no connected reports: why its
     // usage is unknown. Outside a probe this is the refusal or the skip.
@@ -948,6 +952,7 @@ fn analyze(
         model: model.value,
         config,
         selected,
+        workbooks,
     }))))
 }
 
@@ -1051,6 +1056,18 @@ fn derive_model_from_reports(extras: &[PathBuf]) -> Result<discover::Paired, Sca
     let mut model: Option<PathBuf> = None;
     let mut reports = Vec::new();
     for extra in extras {
+        if is_binary_workbook(extra) {
+            return Err(binary_workbook_error(extra));
+        }
+        if extra.is_file() && ingest::is_workbook(extra) {
+            return Err(ScanError::new(format!(
+                "--report {} is a workbook, which cannot name its model",
+                extra.display()
+            ))
+            .with_hint(
+                "its connections name a dataset in the service, not a local model; pass --model",
+            ));
+        }
         let paired = match discover::resolve_path(extra)? {
             Resolution::Paired(paired) => paired,
             Resolution::Ambiguous { dir, candidates } => {
@@ -1157,6 +1174,9 @@ fn attach_extras(
     let mut direct = Vec::new();
     let mut search_roots = Vec::new();
     for extra in extras {
+        if is_binary_workbook(extra) {
+            return Err(binary_workbook_error(extra));
+        }
         if is_report_item(extra) {
             direct.push(extra.clone());
             continue;
@@ -1236,6 +1256,9 @@ pub fn partition_report_value(
     direct: &mut Vec<PathBuf>,
     search_roots: &mut Vec<PathBuf>,
 ) -> Result<(), ScanError> {
+    if is_binary_workbook(path) {
+        return Err(binary_workbook_error(path));
+    }
     if is_report_item(path) {
         direct.push(path.to_path_buf());
         return Ok(());
@@ -1457,6 +1480,31 @@ fn ambiguous_error(dir: &Path, candidates: &[Candidate]) -> ScanError {
         .with_hint("pass a PATH to scan one project; --no-input keeps this non-interactive")
 }
 
+/// Whether any scanned report is an Excel workbook.
+pub fn has_workbooks(reports: &[PathBuf]) -> bool {
+    reports
+        .iter()
+        .any(|path| path.is_file() && ingest::is_workbook(path))
+}
+
+/// Whether `path` names a binary Excel workbook (`.xls`, `.xlsb`, `.xlt`),
+/// which ripbi cannot read: only Open XML workbooks are report inputs.
+fn is_binary_workbook(path: &Path) -> bool {
+    let name = file_name_lower(path);
+    [".xls", ".xlsb", ".xlt"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
+
+/// The refusal for a binary workbook passed to `--report` (exit `2`).
+fn binary_workbook_error(path: &Path) -> ScanError {
+    ScanError::new(format!(
+        "--report {} is a binary workbook, which ripbi cannot read",
+        path.display()
+    ))
+    .with_hint("save it as .xlsx (or .xlsm) in Excel and pass that instead")
+}
+
 /// The error for a `.Report`-named folder without a report anchor.
 fn malformed_report_folder_error(path: &Path) -> ScanError {
     ScanError::new(format!(
@@ -1500,7 +1548,7 @@ fn file_name_lower(path: &Path) -> String {
 /// whatever it is named), or a Fabric app folder (`fabric.yaml`), which core
 /// reads as a code-first consumer.
 fn is_report_item(path: &Path) -> bool {
-    if ingest::is_fabric_app(path) {
+    if ingest::is_fabric_app(path) || path.is_file() && ingest::is_workbook(path) {
         return true;
     }
     if path.is_file() {
@@ -1989,6 +2037,7 @@ pub fn skip_kind_out(kind: SkipKind) -> &'static str {
         SkipKind::UnresolvedAlias => "unresolved_alias",
         SkipKind::StaleState => "stale_state",
         SkipKind::OpaqueSource => "opaque_source",
+        SkipKind::NotAnalyzed => "not_analyzed",
     }
 }
 

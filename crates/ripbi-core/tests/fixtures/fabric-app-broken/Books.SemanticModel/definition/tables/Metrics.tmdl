@@ -1,0 +1,14 @@
+table Metrics
+
+	measure Revenue = SUM(Ledger[Value])
+
+	/// Broken: [Cost] was removed from the model.
+	measure 'Stale Margin' = [Revenue] - [Cost]
+
+	partition Metrics = m
+		mode: import
+		source =
+				let
+				    Source = #table({}, {})
+				in
+				    Source

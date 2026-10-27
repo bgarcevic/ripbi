@@ -35,6 +35,9 @@ a path resolved against the file's directory, or `none` to turn off
 `.pbi/cache.abf` auto-detection. The flag replaces it. It is ignored when the
 scanned model carries its own storage catalog (a PBIX or `.abf`).
 
+`reports` may list Excel workbooks (`.xlsx`, `.xlsm`) beside report folders; their
+pivots and CUBE formulas then count as consumers, as with `--report book.xlsx`.
+
 `external_consumers = "none"` says nothing outside the scanned reports reads the
 model — no thin reports in other workspaces, Analyze in Excel, or XMLA clients — and
 drops the check-before-removing hint a scan with findings prints under its verdict.

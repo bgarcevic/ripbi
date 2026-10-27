@@ -75,6 +75,9 @@ pub struct DepsOutcome {
     pub skips: Vec<SkipNoticeOut>,
     /// Whether a query log was read — it narrows which consumers stay unseen.
     pub query_logged: bool,
+    /// Whether an Excel workbook was among the reports read: the consumer
+    /// hint then names only the workbooks that were not.
+    pub workbooks: bool,
 }
 
 /// Runs one exploration. Observer calls, in order: `pick` (discovery),
@@ -124,6 +127,7 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
     let paired = resolved.paired;
     let walk = resolved.walk;
     let report_paths = dedupe(paired.reports);
+    let workbooks = crate::scan::has_workbooks(&report_paths);
     observer.resolved(&Target {
         model: &paired.model,
         reports: &report_paths,
@@ -198,6 +202,7 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
         output,
         skips,
         query_logged,
+        workbooks,
     })
 }
 

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Excel workbooks count as report consumers** (#172). Pass a workbook connected to
+  the model (Analyze in Excel, or any MSOLAP connection) with `--report book.xlsx`, or
+  list it in `ripbi.toml`'s `reports`, and the fields its PivotTables, slicers,
+  timelines, CUBE formulas and DAX query tables use stay alive. Each one says where it
+  is used, e.g. `field well 'Rows' — visual 'Sales Model' on page 'Sheet2' in report
+  'book.xlsx'`, and a pivot field the model no longer has is a broken binding. Only
+  fields placed in a pivot count, not every field the pivot could offer. A CUBE
+  argument ripbi cannot evaluate (a cell reference, a computed string) and a
+  connection that does not query an OLAP model are `not_analyzed` skip notices, never
+  guesses. The scan names the workbooks it read on stderr, and the
+  check-before-removing hint then asks about *other* Excel workbooks. Pass the model
+  with `--model` (a workbook names its model by a service ID); search folders never
+  pick up workbooks; binary `.xls`/`.xlsb` workbooks are refused with exit code 2.
 - **Fabric apps count as report consumers.** Pass a Fabric app folder (one holding
   `fabric.yaml`) with `--report`, and the model objects its TypeScript names stay
   alive: DAX written in a string (`'Sales'[Amount]`, `[Total Sales]`), and table,
@@ -18,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `node_modules`, and `.agents/` skill kits are not read. The app needs `--model` (or
   a model PATH), because `fabric.yaml` names its model by a service ID that ripbi
   cannot match against local files.
+- **`--broken` checks Fabric app queries.** When a model change breaks a query an
+  app writes, the missing column or measure (or one that now resolves onto a broken
+  measure) is reported at the line that writes it, e.g. `'Sales'[Region]` ← field
+  not found in the model — `code at src/queries.ts:9`. A string counts as a query
+  only when at least one of its references still resolves, so labels and CSS
+  selectors like `[data-id]` are never flagged. Column names the app's queries
+  introduce, such as `"Total"` read back as `[Total]`, resolve across the whole app.
 
 ### Removed
 
@@ -31,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connects to its model live (`byConnection`) and has no model folder beside it
   failed with "no semantic model for project". It now counts as the report, like
   its `.Report` folder.
+- **`RETURN [Column]` and `ORDER BY [Column]` no longer read the keyword as a
+  table.** The DAX lexer took `RETURN` or `BY` before a bracketed name for an
+  unquoted table qualifier. That made a calculated column ending in
+  `RETURN [Column]` a false broken artifact. A keyword now never qualifies a name.
 - **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON
   lines are now `\uXXXX` escapes, so the output is pure ASCII. Windows PowerShell
   re-encodes text piped between native commands and mangled names like `Salg æøå` on

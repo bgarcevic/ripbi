@@ -83,7 +83,7 @@ pub use model::{
 pub use report::{
     BindingKind, BindingRef, Bookmark, BookmarkSection, BookmarkVisual, CodeLiteral,
     DatasetReference, DrillthroughParameter, FieldTarget, FieldWell, Filter, Page, PageBinding,
-    PageBindingKind, Projection, ReportMeasure, ReportModel, Visual,
+    PageBindingKind, Projection, ReportMeasure, ReportModel, ReportQuery, Visual,
 };
 pub use stub::{STUB_ANNOTATION, StubFile, report_stub};
 pub use usage::{LoggedQuery, QueriedObject, QueryLanguage, QueryLog, QuerySource};

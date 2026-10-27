@@ -64,6 +64,7 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
     for (report_index, report) in reports.iter().enumerate() {
         builder.add_roots(db, &index, report, report_index);
         builder.add_code_roots(db, &index, report);
+        builder.add_query_roots(db, &index, report);
         builder.add_stale_bookmark_edges(db, &index, report, report_index);
     }
 
@@ -748,22 +749,44 @@ impl Builder {
     ///   binds the same-named columns of every table the app names; when none
     ///   of those has it, every same-named column in the model.
     ///
-    /// Text is not a binding: a literal that resolves to nothing is a UI
-    /// label, never a broken binding. Everything here over-keeps, never
-    /// under-keeps — an app's literals are the only record of what it reads.
+    /// Everything here over-keeps, never under-keeps — an app's literals are
+    /// the only record of what it reads. Text is not a binding: a literal that
+    /// resolves to nothing is a UI label, never a broken binding. Breakage is
+    /// claimed only inside a DAX literal anchored to the model by a reference
+    /// that does resolve ([`broken::code_breakage`]).
     fn add_code_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
         if report.code.is_empty() {
             return;
         }
         let report_name = report.name.as_ref().map(NameKey::new);
+        let code_edge = |position: usize| {
+            let literal = &report.code[position];
+            BindingEdge {
+                kind: BindingSite::Code {
+                    file: literal.file.clone(),
+                    line: literal.line,
+                },
+                report: report_name.clone(),
+                page: None,
+                visual: None,
+                bookmark: None,
+                mobile: false,
+                labels: SiteLabels::default(),
+            }
+        };
+        for breakage in broken::code_breakage(db, index, report, &self.broken_artifacts) {
+            self.broken.push(BrokenBinding {
+                edge: code_edge(breakage.position),
+                target: breakage.target,
+                reason: breakage.reason,
+            });
+        }
         let mut found: Vec<(usize, ObjectId)> = Vec::new();
         let mut named_tables: HashSet<NameKey> = HashSet::new();
         let mut bare_columns: Vec<(usize, &str)> = Vec::new();
         for (position, literal) in report.code.iter().enumerate() {
             let text = literal.text.as_str();
-            let looks_like_dax =
-                text.contains('[') || text.to_ascii_uppercase().contains("EVALUATE");
-            if looks_like_dax {
+            if broken::looks_like_dax(text) {
                 for id in crate::usage::dax_references(db, index, text) {
                     found.push((position, id));
                 }
@@ -813,11 +836,48 @@ impl Builder {
             }
         }
         for (position, target) in found {
-            let literal = &report.code[position];
+            let provenance = Provenance::Binding(Box::new(code_edge(position)));
+            self.root(target.clone(), provenance.clone());
+            self.add_selection_edges(db, &target, provenance);
+        }
+    }
+
+    /// A consumer's queries as roots — an Excel workbook's DAX query tables.
+    /// Each resolves the way a logged query does
+    /// ([`crate::usage::query_references`]): query-local definitions name
+    /// nothing, an ambiguous name keeps every candidate, and a miss is never
+    /// a broken binding. A queried table returns every column, so it keeps
+    /// its columns too, as a query-log table does.
+    fn add_query_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
+        let report_name = report.name.as_ref().map(NameKey::new);
+        for query in &report.queries {
+            let mut targets = match crate::usage::sniff_language(&query.text) {
+                crate::usage::QueryLanguage::Dax => {
+                    crate::usage::dax_references(db, index, &query.text)
+                }
+                crate::usage::QueryLanguage::Mdx => {
+                    crate::usage::mdx_references(db, index, &query.text)
+                }
+            };
+            let columns: Vec<ObjectId> = targets
+                .iter()
+                .filter_map(|id| match id {
+                    ObjectId::Table { table } => table_struct(db, index, table.as_str()),
+                    _ => None,
+                })
+                .flat_map(|t| {
+                    t.columns.iter().map(|column| ObjectId::Column {
+                        table: NameKey::new(&t.name),
+                        column: NameKey::new(&column.name),
+                    })
+                })
+                .collect();
+            targets.extend(columns);
+            targets.sort();
+            targets.dedup();
             let provenance = Provenance::Binding(Box::new(BindingEdge {
-                kind: BindingSite::Code {
-                    file: literal.file.clone(),
-                    line: literal.line,
+                kind: BindingSite::Query {
+                    connection: query.connection.clone(),
                 },
                 report: report_name.clone(),
                 page: None,
@@ -826,8 +886,10 @@ impl Builder {
                 mobile: false,
                 labels: SiteLabels::default(),
             }));
-            self.root(target.clone(), provenance.clone());
-            self.add_selection_edges(db, &target, provenance);
+            for target in targets {
+                self.root(target.clone(), provenance.clone());
+                self.add_selection_edges(db, &target, provenance.clone());
+            }
         }
     }
 
@@ -966,6 +1028,88 @@ impl Builder {
                 };
                 TargetOutcome::resolved(targets)
             }
+            FieldTarget::Mdx {
+                dimension,
+                hierarchy,
+                level,
+                exact,
+            } => self.mdx_outcome(
+                db,
+                index,
+                report,
+                dimension,
+                hierarchy.as_ref(),
+                level.as_ref(),
+                *exact,
+            ),
+        }
+    }
+
+    /// The outcome of an MDX unique name. In the MDX view of a tabular model
+    /// a table is a dimension, each column is an attribute hierarchy named
+    /// after it, and user hierarchies sit beside them; a name resolves to the
+    /// column when one matches, else to the user hierarchy (and the drilled
+    /// level's column). A scanned name ([`FieldTarget::Mdx::exact`] false)
+    /// may continue with a member instead of a level or hierarchy, so only a
+    /// missing table or measure breaks it.
+    #[allow(clippy::too_many_arguments)]
+    fn mdx_outcome(
+        &self,
+        db: &TabularDatabase,
+        index: &ModelIndex,
+        report: &ReportModel,
+        dimension: &NameKey,
+        hierarchy: Option<&NameKey>,
+        level: Option<&NameKey>,
+        exact: bool,
+    ) -> TargetOutcome {
+        if dimension.as_str().eq_ignore_ascii_case("Measures") {
+            let Some(measure) = hierarchy else {
+                return TargetOutcome::resolved(Vec::new());
+            };
+            let measure = FieldTarget::Measure {
+                home_table: None,
+                measure: measure.clone(),
+            };
+            return self.field_target_outcome(db, index, report, &measure);
+        }
+        let Some(t) = table_struct(db, index, dimension.as_str()) else {
+            return TargetOutcome::unresolved(Vec::new(), BrokenReason::TableNotFound);
+        };
+        let table_id = ObjectId::Table {
+            table: NameKey::new(&t.name),
+        };
+        let Some(name) = hierarchy else {
+            return TargetOutcome::resolved(vec![table_id]);
+        };
+        if let Some(column) = same_table_column(t, name.as_str()) {
+            return TargetOutcome::resolved(vec![column]);
+        }
+        if let Some(h) = t
+            .hierarchies
+            .iter()
+            .find(|h| NameKey::new(&h.name) == *name)
+        {
+            let Some(level) = level else {
+                return TargetOutcome::resolved(vec![ObjectId::Hierarchy {
+                    table: NameKey::new(&t.name),
+                    hierarchy: NameKey::new(&h.name),
+                }]);
+            };
+            let targets = hierarchy_targets(t, h, level);
+            let broken = (exact
+                && h.levels
+                    .iter()
+                    .find(|l| NameKey::new(&l.name) == *level)
+                    .and_then(|l| same_table_column(t, &l.column))
+                    .is_none())
+            .then_some(BrokenReason::LevelNotFound);
+            return TargetOutcome { targets, broken };
+        }
+        if exact {
+            TargetOutcome::unresolved(Vec::new(), BrokenReason::FieldNotFound)
+        } else {
+            TargetOutcome::resolved(vec![table_id])
         }
     }
 

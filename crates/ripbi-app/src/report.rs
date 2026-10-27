@@ -665,12 +665,13 @@ fn kind_of(target: &FieldTarget) -> &'static str {
         FieldTarget::HierarchyLevel { .. } => "hierarchy_level",
         FieldTarget::Aggregation { .. } => "aggregation",
         FieldTarget::Written(_) => "written",
+        FieldTarget::Mdx { .. } => "mdx",
     }
 }
 
 /// The binding-site vocabulary of the inventory: `field_well:<role>`, `filter`,
 /// `sort`, `drillthrough`, `conditional_formatting`, `alt_text`,
-/// `app_code:<file>:<line>`.
+/// `app_code:<file>:<line>`, `query:<connection>`.
 fn site_of(site: &BindingSite) -> String {
     match site {
         BindingSite::FieldWell { role } => format!("field_well:{role}"),
@@ -680,6 +681,7 @@ fn site_of(site: &BindingSite) -> String {
         BindingSite::ConditionalFormatting => "conditional_formatting".to_string(),
         BindingSite::AltText => "alt_text".to_string(),
         BindingSite::Code { file, line } => format!("app_code:{file}:{line}"),
+        BindingSite::Query { connection } => format!("query:{connection}"),
     }
 }
 

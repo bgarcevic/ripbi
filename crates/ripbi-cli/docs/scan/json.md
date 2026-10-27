@@ -137,7 +137,12 @@ Pretty-printed JSON, stable field order, additive schema:
   `mobile layout …` prefixed for phone-layout bindings — IDs only, so it stays a
   stable key (baselines compare on it) when a visual is retitled; `location` is
   the same site with the visual's type and title and the page's display name, for
-  people. Bindings suppressed by the
+  people. For an Excel workbook (`reports` lists its path like any report's) the
+  page is the sheet and the visual is the PivotTable (`pivotTable`), slicer
+  (`slicer`), timeline (`timeline`), or CUBE formula cell (`cubeFormula`, named
+  after the cell); the field well is `Rows`, `Columns`, `Filters`, `Values`,
+  `Calculated members`, `Field`, or the CUBE function's name; and `target` is the
+  MDX unique name as written, e.g. `[Product].[Category].[Category]`. Bindings suppressed by the
   clean-ingest bar or by `[scan].ignore` are absent entirely; the totals above keep
   the arithmetic.
 - `broken_artifacts` carries one row per DAX owner: `id`, object `type`, nullable
@@ -197,7 +202,10 @@ Pretty-printed JSON, stable field order, additive schema:
   one of `unknown_object`, `unknown_property`, `malformed_value`, `unresolved_alias`,
   `stale_state` (also: a `--queries-from` log that does not identify the model),
   `opaque_source` (an M partition calls `Value.NativeQuery` or
-  `Odbc.Query`; SQL text is not analyzed), `incomplete_report_set` (the model was
+  `Odbc.Query`; SQL text is not analyzed), `not_analyzed` (an Excel workbook input
+  ripbi cannot read statically: a CUBE formula argument computed at run time, a
+  connection that does not query an OLAP model, or the workbook's own Data Model),
+  `incomplete_report_set` (the model was
   fetched by `ripbi fetch` and its `.ripbi/source.json` lists downstream reports that
   could not be downloaded; see [fetch](../fetch.md)), and — when reports are discovered by walking search folders —
   `unresolved_dataset_reference` (a report item

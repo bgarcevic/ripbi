@@ -111,9 +111,40 @@ name — a table, a measure, or a column. Bare column names are scoped: they bin
 same-named columns of the tables the app names anywhere (as a literal or inside its
 DAX), falling back to every same-named column in the model when no named table has
 one, because an app composing `'${table}'[${column}]` writes the column name with no
-table beside it. A literal that matches nothing is text — a label, a route — and never
-a `BrokenBinding`: the precision bar is the report one inverted, since the app's
-literals over-approximate what it reads, never the other way round.
+table beside it. A literal that matches nothing is text — a label, a route, a CSS
+selector like `[data-id]` — and never a `BrokenBinding`: the app's literals
+over-approximate what it reads, never the other way round.
+
+Breakage is claimed only inside an *anchored* DAX literal: one carrying `[` or
+`EVALUATE` in which at least one field reference resolves against the model — the
+evidence that the literal is a query against this model at all. Every other field
+reference in it that does not resolve becomes a `BrokenBinding` at the literal's
+`Code` site (`TableNotFound`, `FieldNotFound`, or `MeasureNotFound` for an
+unqualified name), and one that resolves onto a broken artifact becomes
+`BoundArtifactBroken` (`graph/broken.rs`, `code_breakage`). The usual resolution
+allowances apply (`field_resolves`), with one difference: the query-time names are
+the whole app's. An app splits a query at its `${…}` interpolations, so a name one
+literal introduces (`SUMMARIZECOLUMNS(…, "Total", …)`) is often read in another
+(`ORDER BY [Total]`) or in another file, and every DAX string in every literal of the
+app counts. A literal whose references all fail has nothing to anchor it and is not
+read — an under-claim, as breakage must be.
+
+**Excel MDX names.** A workbook's pivot, slicer, timeline, and CUBE bindings are
+`FieldTarget::Mdx` unique names (issue #172). `[Measures].[X]` resolves as a
+`Measure` binding (KPI variants included). Any other dimension must be a table
+(`TableNotFound` otherwise); a table alone (`[Ship Date]`) roots the table. Its
+next segment is the column when one matches — every column is an attribute
+hierarchy in MDX — else a user hierarchy, whose third segment roots the level's
+column through `HierarchyLevel`'s rules. Only `exact` names (what Excel stored for
+a field) flag a missing hierarchy (`FieldNotFound`) or level (`LevelNotFound`); a
+name scanned out of MDX text may go on with a member name, so it claims only a
+missing table or measure and otherwise keeps the table.
+
+**Workbook queries.** `ReportModel::queries` — a workbook connection's DAX or MDX
+command — resolve with the query-log resolver and root with a
+`BindingSite::Query { connection }` site. A queried table also roots its columns,
+as a logged table query does, since `EVALUATE 'Sales'` returns every column. A miss
+is a query-local name, never a `BrokenBinding`.
 
 **Date-hierarchy bindings over a variation.** A visual's date hierarchy under auto
 date/time is written against the *varied* (base) table — `HierarchyLevel` with a

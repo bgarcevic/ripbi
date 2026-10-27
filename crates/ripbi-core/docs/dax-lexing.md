@@ -55,7 +55,10 @@ A reference is never a single token, so extraction merges adjacent tokens by sha
 (`src/dax/refs.rs`):
 
 1. `'Table'` + `[Name]` → qualified field reference.
-2. `Table` + `[Name]` → qualified field reference.
+2. `Table` + `[Name]` → qualified field reference — unless `Table` is a keyword that
+   can stand before a bracketed name (`RETURN`, `BY`, `ASC`, `DESC`, `IN`, `NOT`,
+   `AND`, `OR`, `EVALUATE`, `DEFINE`): `RETURN [Total]` and `ORDER BY [Year]` are
+   unqualified references. DAX makes a table named like a keyword be quoted.
 3. `Table` alone, quoted or bare → a **table use** (`COUNTROWS(Sales)`).
 4. `Name` + `(` → a **call** (function candidate).
 5. `[Name]` alone → unqualified field reference.

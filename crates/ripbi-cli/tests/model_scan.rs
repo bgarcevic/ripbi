@@ -80,6 +80,30 @@ mod happy_path {
     }
 
     #[test]
+    fn broken_reports_a_fabric_app_query_by_file_and_line() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../ripbi-core/tests/fixtures/fabric-app-broken");
+        let args = ScanArgs {
+            broken: true,
+            ..model_args(
+                fixture.join("Books.SemanticModel"),
+                vec![fixture.join("app")],
+            )
+        };
+        let (code, stdout, stderr) = run_scan(&args, &fixture, "");
+
+        assert_eq!(code, 1, "breakage gates:\n{stdout}\n{stderr}");
+        assert!(
+            stdout.contains(
+                "'Ledger'[Region]\n    ← field not found in the model — code at src/queries.ts:9 in report 'app'"
+            ),
+            "findings:\n{stdout}"
+        );
+        assert!(!stdout.contains("[Total]"), "a query-time name:\n{stdout}");
+        assert!(!stdout.contains("data-account"), "a selector:\n{stdout}");
+    }
+
+    #[test]
     fn a_search_folder_includes_the_fabric_apps_beside_its_reports() {
         let temp = TempDir::new("model-fabric-app-search");
         model_into(&temp.0, "X");
