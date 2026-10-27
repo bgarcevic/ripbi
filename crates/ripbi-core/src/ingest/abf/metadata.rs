@@ -184,7 +184,6 @@ impl Catalog {
             let columns: Rc<HashMap<String, usize>> = Rc::new(
                 statement
                     .column_names()
-                    .into_iter()
                     .enumerate()
                     .map(|(index, name)| (name.to_string(), index))
                     .collect(),
