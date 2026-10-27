@@ -53,6 +53,12 @@ pub struct ReportModel {
     /// roots: what matches stays alive, what does not is ordinary text, never
     /// a broken binding.
     pub code: Vec<CodeLiteral>,
+    /// Queries a consumer sends the model as written — an Excel workbook's
+    /// DAX query tables (an OLAP connection whose command is a query, not a
+    /// cube name). Empty for PBIR and Layout reports. The graph resolves each
+    /// with the query-log resolver: what it names stays alive, and a name it
+    /// cannot resolve is a query-local definition, never a broken binding.
+    pub queries: Vec<ReportQuery>,
     /// A ripbi-generated stub (issue #130): `report.json` carries the
     /// [`STUB_ANNOTATION`](crate::stub::STUB_ANNOTATION) annotation. A stub
     /// binds nothing; callers use the flag to name it instead of counting it
@@ -313,6 +319,16 @@ pub struct CodeLiteral {
     pub whole: bool,
 }
 
+/// One query a consumer sends the model, by the connection that sends it
+/// (an Excel workbook connection whose command is DAX or MDX).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReportQuery {
+    /// The connection's name as the consumer shows it.
+    pub connection: String,
+    /// The query text as written.
+    pub text: String,
+}
+
 /// A model-object reference as written in a report binding, before resolution.
 ///
 /// PBIR bindings are structured JSON entity trees (`Column`, `Measure`,
@@ -371,6 +387,28 @@ pub enum FieldTarget {
     /// unresolved query aliases. Kept anyway: a binding we cannot read is still a
     /// binding, and dropping it would under-count roots.
     Written(FieldRef),
+    /// An MDX unique name as an OLAP client wrote it — an Excel PivotTable
+    /// field, slicer, or timeline, or a name scanned out of a CUBE formula or
+    /// a pivot's calculated member. `[Measures].[Total Sales]` names a
+    /// measure; any other dimension is a table, whose next segment is a
+    /// column (its attribute hierarchy) or a user hierarchy, and whose third
+    /// segment is a level. Member keys (`&[West]`) are values and are dropped
+    /// by the parser. MDX does not say which kind of hierarchy a name is, so
+    /// the graph decides against the model.
+    Mdx {
+        /// The dimension: `Measures`, or a table.
+        dimension: NameKey,
+        /// The measure, or the table's column or user hierarchy.
+        hierarchy: Option<NameKey>,
+        /// A user hierarchy's level — or, in scanned MDX, a member name.
+        level: Option<NameKey>,
+        /// The name is a whole unique name the client stored for a field (a
+        /// pivot field, a slicer level). A name scanned out of MDX text may
+        /// continue with a member (`[Product].[Category].[Bikes]`, or the
+        /// `[Customer].[Bikes]` shorthand), so a segment there that the
+        /// model lacks is never claimed broken.
+        exact: bool,
+    },
 }
 
 impl fmt::Display for FieldTarget {
@@ -406,6 +444,19 @@ impl fmt::Display for FieldTarget {
                 None => write!(f, "Aggregation({inner})"),
             },
             FieldTarget::Written(reference) => write!(f, "{reference}"),
+            FieldTarget::Mdx {
+                dimension,
+                hierarchy,
+                level,
+                ..
+            } => {
+                let bracket = |name: &NameKey| format!("[{}]", name.as_str().replace(']', "]]"));
+                f.write_str(&bracket(dimension))?;
+                for segment in [hierarchy, level].into_iter().flatten() {
+                    write!(f, ".{}", bracket(segment))?;
+                }
+                Ok(())
+            }
         }
     }
 }

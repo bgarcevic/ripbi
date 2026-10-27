@@ -351,7 +351,7 @@ fn strip_wait_time(text: &str) -> &str {
 
 /// Guesses the language from the query's first keyword: MDX statements open
 /// with `SELECT`, `WITH`, or `DRILLTHROUGH`; everything else is taken as DAX.
-fn sniff_language(text: &str) -> QueryLanguage {
+pub(crate) fn sniff_language(text: &str) -> QueryLanguage {
     let head = text.trim_start();
     let word: String = head
         .chars()
@@ -635,7 +635,11 @@ pub(crate) fn dax_references(
 /// `[Table].[Column-or-Hierarchy].[Level]…` names the table and each segment
 /// that matches one of its columns or hierarchies; `[Measures].[Name]` names a
 /// measure. Member keys (`&[2024]`) are values and are skipped.
-fn mdx_references(db: &TabularDatabase, index: &ModelIndex, text: &str) -> Vec<ObjectId> {
+pub(crate) fn mdx_references(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    text: &str,
+) -> Vec<ObjectId> {
     let mut targets = Vec::new();
     for chain in mdx_chains(text) {
         let mut names = chain
@@ -691,13 +695,13 @@ fn hierarchy_id(
 
 /// One bracketed MDX name segment, as written (`]]` escapes intact).
 #[derive(Debug, PartialEq, Eq)]
-struct Segment<'a> {
-    name: &'a str,
+pub(crate) struct Segment<'a> {
+    pub(crate) name: &'a str,
     /// A member key (`&[…]`): a value, not an object name.
-    key: bool,
+    pub(crate) key: bool,
 }
 
-fn unescape_bracket(name: &str) -> Cow<'_, str> {
+pub(crate) fn unescape_bracket(name: &str) -> Cow<'_, str> {
     if name.contains("]]") {
         Cow::Owned(name.replace("]]", "]"))
     } else {
@@ -708,7 +712,7 @@ fn unescape_bracket(name: &str) -> Cow<'_, str> {
 /// Splits MDX text into dotted chains of bracketed segments, skipping string
 /// literals and comments. Unbracketed parts (`.Members`, `.Children`) end
 /// nothing and name nothing; only bracketed segments are kept.
-fn mdx_chains(text: &str) -> Vec<Vec<Segment<'_>>> {
+pub(crate) fn mdx_chains(text: &str) -> Vec<Vec<Segment<'_>>> {
     let bytes = text.as_bytes();
     let mut chains = Vec::new();
     let mut chain: Vec<Segment<'_>> = Vec::new();

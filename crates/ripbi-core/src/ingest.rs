@@ -22,6 +22,7 @@ mod pbir;
 mod tmdl;
 mod tmsl;
 mod vpax;
+mod xlsx;
 
 use std::fs;
 use std::io::Read;
@@ -107,6 +108,10 @@ pub enum SkipKind {
     StaleState,
     /// A source expression contains a native query whose SQL is not analyzed.
     OpaqueSource,
+    /// A consumer-side input ripbi cannot read statically, so nothing it uses
+    /// counts: a CUBE formula argument computed at run time, or a workbook
+    /// connection that does not query an OLAP model.
+    NotAnalyzed,
 }
 
 /// A parsed value plus everything unexpected the parser skipped on the way.
@@ -232,7 +237,17 @@ pub fn source_locations(path: &Path) -> Result<Vec<SourceLocation>> {
 /// A Fabric app folder — one with a `fabric.yaml` at its root — is read as a
 /// code-first consumer: its JavaScript/TypeScript string literals become
 /// [`ReportModel::code`], which the graph resolves against the model.
+///
+/// An Excel workbook (`.xlsx`, `.xlsm`) is read as an OLAP consumer: its
+/// sheets become pages, and its PivotTables, slicers, timelines, and CUBE
+/// formulas become visuals binding
+/// [`FieldTarget::Mdx`](crate::report::FieldTarget::Mdx) names; its DAX query
+/// tables become [`ReportModel::queries`]. A binary workbook (`.xls`,
+/// `.xlsb`) is refused with [`Error::UnsupportedFormat`].
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
+    if xlsx::is_workbook(path) || xlsx::is_binary_workbook(path) {
+        return xlsx::load(path);
+    }
     if path.is_file() {
         return archive::report(path);
     }
@@ -256,6 +271,13 @@ pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
         value.mobile_pages = pbir::load_mobile_pages(&mobile, &mut skips)?;
     }
     Ok(Ingested { value, skips })
+}
+
+/// Whether `path` names an Excel workbook [`report`] reads (`.xlsx`, `.xlsm`,
+/// `.xltx`, `.xltm`), by extension.
+#[must_use]
+pub fn is_workbook(path: &Path) -> bool {
+    xlsx::is_workbook(path)
 }
 
 /// Whether `path` is a Fabric app folder: a directory with a `fabric.yaml`

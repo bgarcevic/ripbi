@@ -1,8 +1,11 @@
 # Excel OLAP pivot fixtures
 
 Workbooks whose pivot tables are live-connected to an OLAP cube, for the Excel
-consumer ingest (pivot tables as report roots against a semantic model). No
-parser reads them yet.
+consumer ingest (pivot tables as report roots against a semantic model), read
+by `src/ingest/xlsx.rs` and pinned by `tests/xlsx_fixtures.rs`. `model.bim` is
+the invented semantic model the three synthetic workbooks query (it is not a
+workbook fixture; it carries a `Date` `Calendar` user hierarchy the workbooks
+don't use, for hierarchy-level resolution tests).
 
 The two Open XML SDK files are Analysis Services *multidimensional* cubes, not
 Power BI semantic models: the unique-name shapes (`[Measures].[X]`,

@@ -268,6 +268,7 @@ impl BindingSite {
             BindingSite::ConditionalFormatting => "conditional_formatting",
             BindingSite::AltText => "alt_text",
             BindingSite::Code { .. } => "app_code",
+            BindingSite::Query { .. } => "query",
         }
     }
 }
@@ -356,6 +357,12 @@ pub enum BindingSite {
         /// 1-based line of the literal.
         line: usize,
     },
+    /// A query a consumer sends the model — an Excel workbook connection's
+    /// DAX or MDX command.
+    Query {
+        /// The connection's name.
+        connection: String,
+    },
 }
 
 fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
@@ -369,6 +376,9 @@ fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
         BindingSite::ConditionalFormatting => f.write_str("conditional formatting"),
         BindingSite::AltText => f.write_str("alt text"),
         BindingSite::Code { file, line } => write!(f, "code at {file}:{line}"),
+        BindingSite::Query { connection } => {
+            write!(f, "query of connection {}", Quoted(connection.as_str()))
+        }
     }
 }
 

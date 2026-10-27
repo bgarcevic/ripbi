@@ -42,7 +42,8 @@ one a terminal leaves in view:
 - **The consumer hint** (stderr), under a verdict with findings only: ripbi sees the
   ingested reports, not thin reports in other workspaces, Analyze in Excel, or XMLA
   clients, so a finding is a candidate until those are checked. With a query log it
-  names the consumers outside the log's window instead. A clean scan has nothing to
+  names the consumers outside the log's window instead; with an Excel workbook among
+  the reports it says `other Excel workbooks`, since the ones passed are read. A clean scan has nothing to
   remove and prints no hint; `[scan].external_consumers = "none"` in
   [`ripbi.toml`](../config.md) drops it for a model nothing else reads.
 - Findings are grouped by object type (measures, columns, hierarchies, tables,

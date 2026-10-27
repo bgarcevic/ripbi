@@ -138,8 +138,8 @@ output mode.
 |---|---|---|
 | `--page <GLOB>` | page object name or display name | |
 | `--visual <GLOB>` | visual object name or **type** | a visual's only author-visible identity is its type — PBIR assigns folder names as object names — so `--visual donut*` matches the donut chart and `--visual <hash>` pins one; both are visible in the `--visuals` table |
-| `--site <GLOB>` | binding site: `field_well:<role>`, `sort`, `conditional_formatting`, `alt_text`, `filter`, `drillthrough`, `app_code:<file>:<line>` | |
-| `--kind <GLOB>` | row kind: `column`, `measure`, `hierarchy_level`, `aggregation`, `written`, `filter`, `filter_ref`, `unresolved` | |
+| `--site <GLOB>` | binding site: `field_well:<role>`, `sort`, `conditional_formatting`, `alt_text`, `filter`, `drillthrough`, `app_code:<file>:<line>`, `query:<connection>` | |
+| `--kind <GLOB>` | row kind: `column`, `measure`, `hierarchy_level`, `aggregation`, `written`, `mdx` (an Excel unique name), `filter`, `filter_ref`, `unresolved` | |
 | `--match <GLOB>` | the written target — `--match "'Sales'[Sales]"` lists every visual and site that touches the field | |
 | `--broken` | only the unresolved bindings | scan's selector; the precise form of `--kind unresolved` |
 

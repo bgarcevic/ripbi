@@ -32,7 +32,11 @@ No I/O to stdout/stderr, no `std::process::exit` — everything returns
   (`.Report/` PBIR, or a root `report.json` Layout for PBIR-Legacy, + `.SemanticModel/` TMDL), standalone TMDL folders, and TMSL
   `model.bim`, plus Fabric app folders (`fabric.yaml`; `ingest/app.rs` lexes the
   app's JS/TS string literals into `ReportModel::code`, which the graph resolves as
-  soft roots). All normalize into `TabularDatabase` + `ReportModel`. Source positions
+  soft roots), plus Excel workbooks (`.xlsx`/`.xlsm`, issue #172; `ingest/xlsx.rs`
+  reads PivotTables, slicers, timelines, and CUBE formula literals over OLAP
+  connections as pages/visuals binding `FieldTarget::Mdx` unique names, and DAX
+  query tables into `ReportModel::queries`; binary `.xls`/`.xlsb` are refused). All
+  normalize into `TabularDatabase` + `ReportModel`. Source positions
   are not on the AST: `ingest::source_locations` is a separate pass that maps each TMDL
   declaration to its file and header line (issue #142; empty for single-file formats). The XPress9
   codec lives in `crates/ripbi-xpress9`, the only crate allowed `unsafe` (FFI).

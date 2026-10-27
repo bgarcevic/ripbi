@@ -147,6 +147,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
             format_string: None,
         }],
         code: Vec::new(),
+        queries: Vec::new(),
         stub: false,
     };
     (db, report)

@@ -115,6 +115,23 @@ table beside it. A literal that matches nothing is text — a label, a route —
 a `BrokenBinding`: the precision bar is the report one inverted, since the app's
 literals over-approximate what it reads, never the other way round.
 
+**Excel MDX names.** A workbook's pivot, slicer, timeline, and CUBE bindings are
+`FieldTarget::Mdx` unique names (issue #172). `[Measures].[X]` resolves as a
+`Measure` binding (KPI variants included). Any other dimension must be a table
+(`TableNotFound` otherwise); a table alone (`[Ship Date]`) roots the table. Its
+next segment is the column when one matches — every column is an attribute
+hierarchy in MDX — else a user hierarchy, whose third segment roots the level's
+column through `HierarchyLevel`'s rules. Only `exact` names (what Excel stored for
+a field) flag a missing hierarchy (`FieldNotFound`) or level (`LevelNotFound`); a
+name scanned out of MDX text may go on with a member name, so it claims only a
+missing table or measure and otherwise keeps the table.
+
+**Workbook queries.** `ReportModel::queries` — a workbook connection's DAX or MDX
+command — resolve with the query-log resolver and root with a
+`BindingSite::Query { connection }` site. A queried table also roots its columns,
+as a logged table query does, since `EVALUATE 'Sales'` returns every column. A miss
+is a query-local name, never a `BrokenBinding`.
+
 **Date-hierarchy bindings over a variation.** A visual's date hierarchy under auto
 date/time is written against the *varied* (base) table — `HierarchyLevel` with a
 `PropertyVariationSource` — but the hierarchy lives on the engine's hidden

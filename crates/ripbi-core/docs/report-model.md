@@ -14,7 +14,11 @@ report-level measures (`reportExtensions.json`), and the phone layout's pages
 (`definition.mobile/`, issue #49). A Fabric app — a code-first consumer with no page
 tree — is a `ReportModel` whose only content is `code`: the string literals of its
 JavaScript/TypeScript source, kept as text with their file and line and resolved by
-the graph (see [formats.md](formats.md#fabric-apps)).
+the graph (see [formats.md](formats.md#fabric-apps)). An Excel workbook is a
+`ReportModel` like any other: sheets are pages, PivotTables, slicers, timelines, and
+CUBE formula cells are visuals, and their fields are `FieldTarget::Mdx` unique names
+the graph resolves against the model; its DAX query tables are `queries` (see
+[formats.md](formats.md#excel-workbooks)).
 
 Deliberately absent: page order and the active/landing page (`pages.json` — the
 one exception, `pageOrder`, is read at ingest as a bookmark-section liveness
@@ -121,7 +125,8 @@ slicing:
 | `bookmark` | a live binding, not saved state |
 
 The kind (`FieldWell { role }`, `Filter`, `Sort`, `Drillthrough`,
-`ConditionalFormatting`) says what the binding *does*; the role string preserves the
+`ConditionalFormatting`, and, outside the page tree, `Code` for a Fabric app literal
+and `Query` for a workbook connection's query) says what the binding *does*; the role string preserves the
 well's name as written (`"Category"`, `"Y"`, `"Tooltips"`). The `mobile` flag says
 which surface the binding lives on — the desktop tree or the phone layout
 (`definition.mobile/`); both bind identically, the flag exists so an audit of a

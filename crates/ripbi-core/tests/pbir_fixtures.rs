@@ -254,6 +254,7 @@ fn golden_report() -> ReportModel {
             format_string: Some("0.0%".to_string()),
         }],
         code: Vec::new(),
+        queries: Vec::new(),
         stub: false,
     }
 }
