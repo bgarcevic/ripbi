@@ -5,6 +5,11 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
 
+# Releases ship this binary as ripbi-desktop (desktop.yml).
+[[bin]]
+name = "ripbi-desktop"
+path = "src/main.rs"
+
 [dependencies]
 eframe = { version = "0.37", features = ["persistence"] }
 egui_extras = "0.37"

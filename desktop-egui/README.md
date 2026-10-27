@@ -5,6 +5,9 @@ An exploration of a pure-Rust desktop UI for ripbi using [egui](https://github.c
 
 ## Run
 
+Each release attaches `ripbi-desktop-<version>-<target>` archives for Windows,
+macOS (Apple silicon) and Linux; see the release notes. From source:
+
 ```sh
 cargo run --manifest-path desktop-egui/Cargo.toml
 ```
@@ -34,8 +37,9 @@ exactly what `ripbi scan --json` prints) under `result`.
 questions (workspace and model pickers, the incomplete-set confirmation) arrive
 as events and block the worker until the UI answers from a modal.
 `src/main.rs` is the immediate-mode UI. The package is
-standalone (its own `[workspace]`) so GUI dependencies stay out of CLI builds
-and CI.
+standalone (its own `[workspace]` and `Cargo.lock`) so GUI dependencies stay
+out of CLI builds; `.github/workflows/desktop.yml` checks it on Windows, macOS
+and Linux in CI and packages it on release.
 
 ```sh
 cargo clippy --manifest-path desktop-egui/Cargo.toml --all-targets -- -D warnings
@@ -54,8 +58,9 @@ RIPBI_WRITE_ICONS=1 cargo test --manifest-path desktop-egui/Cargo.toml
 
 - **Windows**: `build.rs` embeds `assets/ripbi.ico` in the exe (via `windres` or
   `rc.exe`), so Explorer, shortcuts and the taskbar show it.
-- **macOS**: a bare binary has no icon; `cargo bundle --release` (cargo-bundle)
-  builds `ripbi.app` with `assets/ripbi.icns`.
+- **macOS**: a bare binary has no icon; the release workflow wraps it in
+  `ripbi.app` with `assets/ripbi.icns`. Locally, `cargo bundle --release`
+  (cargo-bundle) does the same.
 - **Linux**: copy `assets/ripbi.png` to
   `~/.local/share/icons/hicolor/256x256/apps/` and `assets/ripbi.desktop` to
   `~/.local/share/applications/`; the window's app id `ripbi` ties them together.

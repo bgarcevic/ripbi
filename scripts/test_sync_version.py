@@ -16,7 +16,10 @@ class VersionSyncTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for relative in ("Cargo.toml", "Cargo.lock", "book/manual/installation.md"):
+        for relative in (
+            "Cargo.toml", "Cargo.lock", "desktop-egui/Cargo.toml",
+            "desktop-egui/Cargo.lock", "book/manual/installation.md",
+        ):
             destination = self.root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / relative, destination)
@@ -26,7 +29,7 @@ class VersionSyncTests(unittest.TestCase):
         manifest = self.root / "Cargo.toml"
         manifest.write_text(manifest.read_text().replace(f'version = "{version}"', 'version = "9.8.7"', 1))
         version, updates = planned_updates(self.root, "v9.8.7")
-        self.assertEqual(len(updates), 3)
+        self.assertEqual(len(updates), 5)
         for path, content in updates.items():
             path.write_text(content, encoding="utf-8")
         self.assertEqual(planned_updates(self.root), ("9.8.7", {}))
@@ -38,6 +41,9 @@ class VersionSyncTests(unittest.TestCase):
         install_doc = (self.root / "book/manual/installation.md").read_text(encoding="utf-8")
         self.assertIn("RIPBI_VERSION=v9.8.7 sh", install_doc)
         self.assertIn("$env:RIPBI_VERSION = 'v9.8.7'", install_doc)
+        desktop_lock = (self.root / "desktop-egui/Cargo.lock").read_text(encoding="utf-8")
+        self.assertIn('name = "ripbi-desktop-egui"\nversion = "9.8.7"', desktop_lock)
+        self.assertIn('name = "ripbi-app"\nversion = "9.8.7"', desktop_lock)
 
     def test_wrong_tag_fails_without_writing(self):
         before = (self.root / "Cargo.toml").read_bytes()

@@ -2,7 +2,7 @@
 Type=Application
 Name=ripbi
 Comment=Find unused objects in Power BI semantic models
-Exec=ripbi-desktop-egui
+Exec=ripbi-desktop
 Icon=ripbi
 StartupWMClass=ripbi
 Categories=Development;

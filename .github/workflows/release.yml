@@ -35,6 +35,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 scripts/sync_version.py --check --tag "$RELEASE_TAG"
 
+  desktop:
+    name: Build desktop
+    needs: versions
+    uses: ./.github/workflows/desktop.yml
+    permissions:
+      contents: read
+    with:
+      release: true
+
   build:
     name: Build ${{ matrix.target }}
     needs: versions
@@ -120,7 +129,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: build
+    needs: [build, desktop]
     runs-on: ubuntu-latest
     steps:
       # gh release create needs a git repository: it derives the repo from the

@@ -1,0 +1,138 @@
+name: Desktop
+
+# The egui desktop app (desktop-egui/) is a standalone package with its own
+# lock file, so the workspace jobs never build it. CI calls this to check it
+# on every platform; release.yml calls it with `release: true` to also package
+# it as ripbi-desktop-<version>-<target> archives, which the release's
+# `ripbi-*` checksum glob covers and `ripbi update` never matches.
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: Package release archives
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Desktop format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --manifest-path desktop-egui/Cargo.toml --check
+
+  build:
+    name: Desktop ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported LTS keeps the glibc 2.35 baseline (release.yml).
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-egui -> target
+          key: desktop-${{ matrix.target }}-v1
+      # winit's X11 backend links libxcb; xkbcommon handles keyboard layouts.
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+      # --locked also catches a lock file left stale by a workspace bump.
+      - run: cargo clippy --manifest-path desktop-egui/Cargo.toml --all-targets --locked -- -D warnings
+      - run: cargo test --manifest-path desktop-egui/Cargo.toml --locked
+
+      - name: Build release binary
+        if: inputs.release
+        run: cargo build --manifest-path desktop-egui/Cargo.toml --release --locked --target ${{ matrix.target }}
+
+      - name: Package (Linux)
+        if: inputs.release && runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          stage="dist/ripbi-desktop-${version}"
+          mkdir -p "$stage"
+          cp "desktop-egui/target/${{ matrix.target }}/release/ripbi-desktop" "$stage/"
+          cp desktop-egui/assets/ripbi.desktop desktop-egui/assets/ripbi.png "$stage/"
+          cp LICENSE-MIT LICENSE-APACHE "$stage/"
+          tar -czf "dist/ripbi-desktop-${version}-${{ matrix.target }}.tar.gz" -C dist "ripbi-desktop-${version}"
+          rm -rf "$stage"
+
+      # A plain .app bundle, ad-hoc signed: unsigned arm64 apps downloaded from
+      # the web are reported as damaged, ad-hoc signed ones as from an
+      # unidentified developer, which the user can allow.
+      - name: Package (macOS)
+        if: inputs.release && runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          app="dist/ripbi.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp "desktop-egui/target/${{ matrix.target }}/release/ripbi-desktop" "$app/Contents/MacOS/"
+          cp desktop-egui/assets/ripbi.icns "$app/Contents/Resources/"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>ripbi</string>
+            <key>CFBundleDisplayName</key><string>ripbi</string>
+            <key>CFBundleIdentifier</key><string>io.github.bgarcevic.ripbi</string>
+            <key>CFBundleExecutable</key><string>ripbi-desktop</string>
+            <key>CFBundleIconFile</key><string>ripbi</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>${version}</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$app"
+          ditto -c -k --keepParent "$app" "dist/ripbi-desktop-${version}-${{ matrix.target }}.zip"
+          rm -rf "$app"
+
+      - name: Package (Windows)
+        if: inputs.release && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $stage = "dist/ripbi-desktop-$version"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "desktop-egui/target/${{ matrix.target }}/release/ripbi-desktop.exe" $stage
+          Copy-Item LICENSE-MIT, LICENSE-APACHE $stage
+          Compress-Archive -Path $stage -DestinationPath "dist/ripbi-desktop-$version-${{ matrix.target }}.zip"
+          Remove-Item -Recurse -Force $stage
+
+      - uses: actions/upload-artifact@v7
+        if: inputs.release
+        with:
+          name: dist-desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error

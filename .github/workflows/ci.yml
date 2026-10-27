@@ -71,6 +71,10 @@ jobs:
       - run: cargo build --workspace
       - run: cargo test --workspace
 
+  desktop:
+    name: Desktop
+    uses: ./.github/workflows/desktop.yml
+
   lint-scripts:
     name: Lint scripts
     runs-on: ubuntu-latest

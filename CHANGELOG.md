@@ -39,11 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selectors like `[data-id]` are never flagged. Column names the app's queries
   introduce, such as `"Total"` read back as `[Total]`, resolve across the whole app.
 
-### Removed
+### Changed
 
-- **The Windows desktop installer is no longer published.** The Tauri desktop app
-  is gone; releases ship the CLI archives only. An experimental pure-Rust desktop
-  UI lives in `desktop-egui/` for building from source.
+- **The desktop app is rebuilt in pure Rust, for Windows, macOS and Linux.** The
+  Tauri app and its Windows installer are gone. Releases now attach an experimental
+  egui app as `ripbi-desktop-<version>-<target>` archives: `ripbi-desktop.exe` for
+  Windows x64, `ripbi.app` for macOS on Apple silicon, and `ripbi-desktop` for Linux
+  x64. It analyzes local files or fetches a model and its reports from a tenant, like
+  `ripbi fetch --scan`. The builds are unsigned, and updates are manual.
 
 ### Fixed
 

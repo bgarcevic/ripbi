@@ -66,18 +66,31 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
         raise ValueError(f"Expected two RIPBI_VERSION pins in {install_doc.relative_to(root)}")
     remember(install_doc, old, new)
 
-    lock = root / "Cargo.lock"
-    old = lock.read_text(encoding="utf-8")
-    new = old
-    packages = tomllib.loads(old)["package"]
-    for name in ("ripbi", "ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9"):
-        matching = [p for p in packages if p["name"] == name]
-        if len(matching) != 1 or "source" in matching[0]:
-            raise ValueError(f"Expected one local {name} package in Cargo.lock")
-        new = replace_once(
-            new, rf'(\[\[package\]\]\nname = "{re.escape(name)}"\nversion = ")[^"]+("\n)', version
-        )
-    remember(lock, old, new)
+    # The desktop app is a standalone package (its own [workspace]), versioned
+    # with the release it ships in.
+    desktop_manifest = root / "desktop-egui/Cargo.toml"
+    old = desktop_manifest.read_text(encoding="utf-8")
+    remember(desktop_manifest, old, replace_once(old, r'^(version\s*=\s*")[^"]+("\s*)$', version))
+
+    for relative, names in (
+        ("Cargo.lock", ("ripbi", "ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9")),
+        (
+            "desktop-egui/Cargo.lock",
+            ("ripbi-desktop-egui", "ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9"),
+        ),
+    ):
+        lock = root / relative
+        old = lock.read_text(encoding="utf-8")
+        new = old
+        packages = tomllib.loads(old)["package"]
+        for name in names:
+            matching = [p for p in packages if p["name"] == name]
+            if len(matching) != 1 or "source" in matching[0]:
+                raise ValueError(f"Expected one local {name} package in {relative}")
+            new = replace_once(
+                new, rf'(\[\[package\]\]\nname = "{re.escape(name)}"\nversion = ")[^"]+("\n)', version
+            )
+        remember(lock, old, new)
     return version, updates
 
 

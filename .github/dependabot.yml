@@ -12,6 +12,17 @@ updates:
     groups:
       cargo-dependencies:
         patterns: ["*"]
+  # Standalone package with its own lock file (desktop-egui/Cargo.toml).
+  - package-ecosystem: cargo
+    directory: /desktop-egui
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      desktop-cargo-dependencies:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
