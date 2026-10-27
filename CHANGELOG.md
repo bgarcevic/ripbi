@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ripbi fetch --scan`. The builds are unsigned. Like `ripbi update`, the app checks
   for newer releases, downloads and verifies one in the background, and offers
   "Restart to update"; `RIPBI_NO_UPDATE_CHECK` turns the check off.
+- **Dependency updates** (#210): rusqlite 0.41 (bundled SQLite used to read `.abf`
+  model metadata) and jsonschema 0.60, plus their transitive updates. No behavior
+  change.
 
 ### Fixed
 

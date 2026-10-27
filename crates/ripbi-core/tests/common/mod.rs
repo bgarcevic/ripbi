@@ -95,7 +95,7 @@ INSERT INTO "CalculationExpression" VALUES (404, 400, 'SELECTEDMEASURE()', 2, NU
 
 /// The fixture model's `metadata.sqlitedb` bytes, after `extra` SQL runs.
 pub fn metadata_db(extra: &str) -> Vec<u8> {
-    let connection = Connection::open_in_memory().unwrap();
+    let mut connection = Connection::open_in_memory().unwrap();
     connection.execute_batch(SCHEMA).unwrap();
     connection.execute_batch(ROWS).unwrap();
     connection.execute_batch(extra).unwrap();
