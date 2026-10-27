@@ -14,7 +14,7 @@ ripbi-core = { path = "crates/ripbi-core", version = "0.11.1" }
 ripbi-app = { path = "crates/ripbi-app", version = "0.11.1" }
 ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.11.1" }
 ripbi-service = { path = "crates/ripbi-service", version = "0.11.1" }
-rusqlite = { version = "0.40", default-features = false, features = ["bundled", "serialize"] }
+rusqlite = { version = "0.41", default-features = false, features = ["bundled", "serialize"] }
 quick-xml = "0.42"
 tempfile = "3"
 petgraph = "0.8"
@@ -33,7 +33,7 @@ sha2 = "0.11"
 semver = "1"
 tar = "0.4"
 flate2 = "1"
-jsonschema = { version = "0.59", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 base64 = "0.23"
 # `fetch` pickers: type to filter, arrows to move. No editor/password prompts.
 dialoguer = { version = "0.12", default-features = false, features = ["fuzzy-select"] }
