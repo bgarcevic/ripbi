@@ -3,6 +3,11 @@
 An exploration of a pure-Rust desktop UI for ripbi using [egui](https://github.com/emilk/egui)
 (`eframe`). No Node.js, no WebView: one native binary.
 
+![The desktop app analyzing the AdventureWorks sample](../docs/media/ripbi-desktop.gif)
+
+`src/demo.rs` records this GIF headlessly; see its header to re-record it
+after a UI change.
+
 ## Run
 
 Each release attaches `ripbi-desktop-<version>-<target>` archives for Windows,

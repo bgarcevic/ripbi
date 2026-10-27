@@ -3,6 +3,8 @@
 
 mod analysis;
 mod brand;
+#[cfg(test)]
+mod demo;
 mod fetching;
 mod update;
 
@@ -52,8 +54,7 @@ fn main() -> eframe::Result {
             // Earlier builds saved egui's memory, which eframe still loads:
             // drop its widget state so panels open at their default sizes.
             cc.egui_ctx.data_mut(|data| data.clear());
-            cc.egui_ctx.style_mut_of(egui::Theme::Light, legible_light);
-            cc.egui_ctx.style_mut_of(egui::Theme::Dark, legible_dark);
+            styled(&cc.egui_ctx);
             if let Some(theme) = cc
                 .storage
                 .and_then(|storage| eframe::get_value::<egui::ThemePreference>(storage, THEME))
@@ -66,6 +67,11 @@ fn main() -> eframe::Result {
             }))
         }),
     )
+}
+
+fn styled(ctx: &egui::Context) {
+    ctx.style_mut_of(egui::Theme::Light, legible_light);
+    ctx.style_mut_of(egui::Theme::Dark, legible_dark);
 }
 
 /// egui fades weak text to 60% and disabled widgets by a further half, which
@@ -893,10 +899,11 @@ impl App {
             card(&mut cols[0], |ui| {
                 ui.label(RichText::new("Usage at a glance").strong());
                 ui.add_space(4.0);
-                ui.add(
-                    ProgressBar::new(reachable)
-                        .fill(hue(ui, Tone::Good))
-                        .text(format!("{:.0}% reachable", reachable * 100.0)),
+                bar(
+                    ui,
+                    reachable,
+                    Tone::Good,
+                    format!("{:.0}% reachable", reachable * 100.0),
                 );
                 ui.add_space(4.0);
                 ui.label(
@@ -915,10 +922,11 @@ impl App {
                 let mut by_count: Vec<_> = counts.iter().collect();
                 by_count.sort_by(|a, b| b.1.cmp(a.1));
                 for (kind, count) in by_count.into_iter().take(5) {
-                    ui.add(
-                        ProgressBar::new(*count as f32 / max as f32)
-                            .fill(hue(ui, Tone::Warn))
-                            .text(format!("{}  ·  {count}", label(kind))),
+                    bar(
+                        ui,
+                        *count as f32 / max as f32,
+                        Tone::Warn,
+                        format!("{}  ·  {count}", label(kind)),
                     );
                 }
                 if counts.is_empty() {
@@ -1295,6 +1303,21 @@ fn welcome(ui: &mut egui::Ui, busy: bool, source: Source) {
         ui.add_space(20.0);
         ui.label(RichText::new("See what is really used  ·  Bring every report  ·  Find your next cleanup").weak());
     });
+}
+
+/// A labelled bar. Light mode's tones are dark for legible text, so there
+/// the fill is a pale tint under ordinary text; its label runs across both
+/// the fill and the track, and one text colour must read on each.
+fn bar(ui: &mut egui::Ui, fraction: f32, tone: Tone, text: String) {
+    let mut bar = ProgressBar::new(fraction);
+    if ui.visuals().dark_mode {
+        bar = bar.fill(hue(ui, tone)).text(text);
+    } else {
+        let tint = hue(ui, tone).gamma_multiply(0.3);
+        let color = ui.visuals().strong_text_color();
+        bar = bar.fill(tint).text(RichText::new(text).color(color));
+    }
+    ui.add(bar);
 }
 
 fn metric(ui: &mut egui::Ui, title: &str, value: usize, detail: &str, accent: Option<Tone>) {

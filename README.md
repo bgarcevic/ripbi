@@ -199,6 +199,15 @@ topology diagram; `--plain` and `--json` never truncate. The full contract is
 documented in the user guide's
 [deps chapter](https://bgarcevic.github.io/ripbi/deps.html).
 
+## Desktop app (experimental)
+
+The same analysis in a window, for Windows, macOS and Linux: pick a model (or
+fetch one from your tenant), then browse what is unused and why. Each release
+attaches it as `ripbi-desktop-<version>-<target>`, and it updates itself.
+See [desktop-egui](desktop-egui/README.md).
+
+![The ripbi desktop app analyzing the AdventureWorks sample: 56 unused objects, filtered to measures, one selected to show what references it, then the light theme and the update card](docs/media/ripbi-desktop.gif)
+
 ## Output
 
 Every flag and output format (human, `--summary`, `--plain`, `--json`, SARIF,

@@ -30,6 +30,13 @@ zip = "9"
 embed-resource = "3"
 
 [dev-dependencies]
+# The demo GIF (src/demo.rs): headless rendering and encoding.
+egui_kittest = { version = "0.37", features = ["eframe", "wgpu"] }
+# The emoji and symbols eframe draws from system fonts.
+egui_system_font_provider = "0.37"
+gif = "0.14"
+color_quant = "1.1"
+image = { version = "0.25", default-features = false }
 # Encodes the generated icon files; see brand.rs.
 png = "0.18"
 tempfile = "3"
