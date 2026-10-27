@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a model PATH), because `fabric.yaml` names its model by a service ID that ripbi
   cannot match against local files.
 
+### Removed
+
+- **The Windows desktop installer is no longer published.** The Tauri desktop app
+  is gone; releases ship the CLI archives only. An experimental pure-Rust desktop
+  UI lives in `desktop-egui/` for building from source.
+
 ### Fixed
 
 - **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON

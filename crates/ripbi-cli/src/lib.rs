@@ -3,14 +3,11 @@
 //! `ripbi-core`, and the only crate that prints or sets exit codes.
 
 pub mod cli;
-pub mod compare;
-pub mod config;
+pub use ripbi_app::{compare, config, discover, error, glob};
+
 pub mod deps;
-pub mod discover;
 pub mod entry;
-pub mod error;
 pub mod fetch;
-pub mod glob;
 pub mod markdown;
 pub mod notify;
 pub mod picker;
@@ -24,9 +21,6 @@ pub mod style;
 pub mod tx_rm;
 pub mod update;
 pub mod vso;
-
-#[cfg(test)]
-pub(crate) mod test_support;
 
 pub use cli::{Cli, Command};
 pub use scan::Streams;

@@ -1,0 +1,32 @@
+[package]
+name = "ripbi-desktop-egui"
+version = "0.11.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+eframe = "0.37"
+egui_extras = "0.37"
+rfd = "0.17"
+ripbi-app = { path = "../crates/ripbi-app" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+future_incompatible = "warn"
+nonstandard_style = "deny"
+
+[lints.clippy]
+all = "deny"
+redundant_clone = "deny"
+needless_collect = "deny"
+
+# Standalone: keeps native GUI dependencies out of CLI-only builds.
+[workspace]
+
+# `cargo run` builds debug, where the scan pipeline is ~8x slower than the
+# release CLI. Optimize every dependency (ripbi, ripbi-core, egui) but keep
+# this crate's own UI code quick to rebuild.
+[profile.dev.package."*"]
+opt-level = 3

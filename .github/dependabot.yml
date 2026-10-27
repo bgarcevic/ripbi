@@ -22,13 +22,3 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  # Security updates only (limit 0 stops version updates); the entry exists so
-  # those PRs get the conventional prefix too.
-  - package-ecosystem: npm
-    directory: /desktop
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    commit-message:
-      prefix: build
-      include: scope

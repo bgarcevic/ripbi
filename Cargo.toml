@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/ripbi-core", "crates/ripbi-cli", "crates/ripbi-service", "crates/ripbi-xpress9"]
-exclude = ["desktop/src-tauri"]
+members = ["crates/ripbi-core", "crates/ripbi-app", "crates/ripbi-cli", "crates/ripbi-service", "crates/ripbi-xpress9"]
+exclude = ["desktop-egui"]
 
 [workspace.package]
 version = "0.11.1"
@@ -11,6 +11,7 @@ repository = "https://github.com/bgarcevic/ripbi"
 
 [workspace.dependencies]
 ripbi-core = { path = "crates/ripbi-core", version = "0.11.1" }
+ripbi-app = { path = "crates/ripbi-app", version = "0.11.1" }
 ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.11.1" }
 ripbi-service = { path = "crates/ripbi-service", version = "0.11.1" }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "serialize"] }

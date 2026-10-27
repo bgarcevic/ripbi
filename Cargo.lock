@@ -1245,6 +1245,7 @@ dependencies = [
  "flate2",
  "jsonschema",
  "predicates",
+ "ripbi-app",
  "ripbi-core",
  "ripbi-service",
  "rstest",
@@ -1257,6 +1258,17 @@ dependencies = [
  "toml",
  "ureq",
  "zip",
+]
+
+[[package]]
+name = "ripbi-app"
+version = "0.11.1"
+dependencies = [
+ "ripbi-core",
+ "rstest",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]

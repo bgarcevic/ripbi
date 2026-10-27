@@ -230,7 +230,7 @@ fn fixed(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
         )?;
     }
     more(out, compare.fixed.len())?;
-    if render::fixed_uncertain(report) {
+    if report.fixed_uncertain() {
         writeln!(out)?;
         writeln!(
             out,

@@ -9,7 +9,7 @@ pub(crate) struct TempDir(pub(crate) PathBuf);
 impl TempDir {
     /// Creates `<tmp>/ripbi-cli-<pid>-<name>`.
     pub(crate) fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("ripbi-cli-{}-{name}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("ripbi-app-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("create temp dir");
         Self(path)

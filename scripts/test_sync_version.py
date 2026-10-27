@@ -1,6 +1,5 @@
 """Exercise version bumps in isolated copies of the real release metadata."""
 
-import json
 import contextlib
 import io
 from pathlib import Path
@@ -17,12 +16,7 @@ class VersionSyncTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for relative in (
-            "Cargo.toml", "Cargo.lock", "desktop/src-tauri/Cargo.toml",
-            "desktop/src-tauri/Cargo.lock", "desktop/package.json",
-            "desktop/package-lock.json", "desktop/src-tauri/tauri.conf.json",
-            "book/manual/installation.md",
-        ):
+        for relative in ("Cargo.toml", "Cargo.lock", "book/manual/installation.md"):
             destination = self.root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / relative, destination)
@@ -32,32 +26,18 @@ class VersionSyncTests(unittest.TestCase):
         manifest = self.root / "Cargo.toml"
         manifest.write_text(manifest.read_text().replace(f'version = "{version}"', 'version = "9.8.7"', 1))
         version, updates = planned_updates(self.root, "v9.8.7")
-        self.assertEqual(len(updates), 8)
+        self.assertEqual(len(updates), 3)
         for path, content in updates.items():
             path.write_text(content, encoding="utf-8")
         self.assertEqual(planned_updates(self.root), ("9.8.7", {}))
         manifest_text = manifest.read_text()
         self.assertIn('ripbi-core = { path = "crates/ripbi-core", version = "9.8.7" }', manifest_text)
         self.assertIn('ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "9.8.7" }', manifest_text)
+        self.assertIn('ripbi-app = { path = "crates/ripbi-app", version = "9.8.7" }', manifest_text)
         self.assertIn('ripbi-service = { path = "crates/ripbi-service", version = "9.8.7" }', manifest_text)
         install_doc = (self.root / "book/manual/installation.md").read_text(encoding="utf-8")
         self.assertIn("RIPBI_VERSION=v9.8.7 sh", install_doc)
         self.assertIn("$env:RIPBI_VERSION = 'v9.8.7'", install_doc)
-        lock = json.loads((self.root / "desktop/package-lock.json").read_text())
-        self.assertEqual(lock["packages"]["node_modules/vite"], json.loads((ROOT / "desktop/package-lock.json").read_text())["packages"]["node_modules/vite"])
-
-    def test_json_bump_changes_only_the_version_lines(self):
-        manifest = self.root / "Cargo.toml"
-        version, _ = planned_updates(self.root)
-        manifest.write_text(manifest.read_text().replace(f'version = "{version}"', 'version = "9.8.7"', 1))
-        _, updates = planned_updates(self.root)
-        for relative in ("desktop/package.json", "desktop/package-lock.json", "desktop/src-tauri/tauri.conf.json"):
-            before = (self.root / relative).read_text(encoding="utf-8").splitlines()
-            after = updates[self.root / relative].splitlines()
-            self.assertEqual(len(before), len(after), relative)
-            changed = [new for old, new in zip(before, after) if old != new]
-            self.assertTrue(changed, relative)
-            self.assertTrue(all('"version": "9.8.7"' in line for line in changed), relative)
 
     def test_wrong_tag_fails_without_writing(self):
         before = (self.root / "Cargo.toml").read_bytes()
@@ -65,20 +45,14 @@ class VersionSyncTests(unittest.TestCase):
             planned_updates(self.root, "v999.0.0")
         self.assertEqual((self.root / "Cargo.toml").read_bytes(), before)
 
-    def test_detects_npm_lock_root_drift(self):
-        path = self.root / "desktop/package-lock.json"
-        data = json.loads(path.read_text())
-        data["packages"][""]["version"] = "0.0.0"
-        path.write_text(json.dumps(data))
-        _, updates = planned_updates(self.root)
-        self.assertIn(path, updates)
-
     def test_check_is_read_only_and_write_repairs_drift(self):
-        path = self.root / "desktop/package.json"
-        data = json.loads(path.read_text())
-        data["version"] = "0.0.0"
-        path.write_text(json.dumps(data))
+        version, _ = planned_updates(self.root)
+        path = self.root / "Cargo.lock"
+        path.write_text(
+            path.read_text().replace(f'name = "ripbi-app"\nversion = "{version}"', 'name = "ripbi-app"\nversion = "0.0.0"', 1)
+        )
         before = path.read_bytes()
+        self.assertIn(path, planned_updates(self.root)[1])
         with patch("sync_version.ROOT", self.root), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             with patch("sys.argv", ["sync_version.py", "--check"]):
                 self.assertEqual(main(), 1)
@@ -92,8 +66,7 @@ class VersionSyncTests(unittest.TestCase):
             with patch("sys.argv", ["sync_version.py", "--set", "9.8.7"]):
                 self.assertEqual(main(), 0)
         self.assertEqual(planned_updates(self.root, "v9.8.7"), ("9.8.7", {}))
-        package = json.loads((self.root / "desktop/package.json").read_text())
-        self.assertEqual(package["version"], "9.8.7")
+        self.assertIn('name = "ripbi"\nversion = "9.8.7"', (self.root / "Cargo.lock").read_text())
 
     def test_set_rejects_an_invalid_version_without_writing(self):
         before = (self.root / "Cargo.toml").read_bytes()

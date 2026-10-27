@@ -35,15 +35,6 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 scripts/sync_version.py --check --tag "$RELEASE_TAG"
 
-  desktop:
-    name: Build Windows desktop
-    needs: versions
-    uses: ./.github/workflows/desktop.yml
-    permissions:
-      contents: read
-    with:
-      release: true
-
   build:
     name: Build ${{ matrix.target }}
     needs: versions
@@ -129,7 +120,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [build, desktop]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       # gh release create needs a git repository: it derives the repo from the
@@ -280,11 +271,24 @@ jobs:
             sleep 30
           done
           exit 1
+      - name: Publish ripbi-app
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        shell: bash
+        run: |
+          # ripbi-app depends on ripbi-core; wait for the sparse index.
+          for attempt in 1 2 3 4; do
+            if cargo publish --locked -p ripbi-app; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; ripbi-core may not be visible on the index yet"
+            sleep 30
+          done
+          exit 1
       - name: Publish ripbi
         if: env.CARGO_REGISTRY_TOKEN != ''
         shell: bash
         run: |
-          # ripbi depends on ripbi-core and ripbi-service; the sparse index may not serve the
+          # ripbi depends on ripbi-core, ripbi-app, and ripbi-service; the sparse index may not serve the
           # version published seconds ago, so retry a few times before giving up.
           for attempt in 1 2 3 4; do
             if cargo publish --locked -p ripbi; then

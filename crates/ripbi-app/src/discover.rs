@@ -724,7 +724,7 @@ fn initial_catalog(connection_string: &str) -> Option<String> {
 
 /// The canonical spelling of `path`, falling back to the path itself when it
 /// cannot be canonicalized (a missing path still gets a stable identity).
-pub(crate) fn canonical_key(path: &Path) -> PathBuf {
+pub fn canonical_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -921,7 +921,7 @@ pub fn archive_error(path: &Path) -> ScanError {
 
 /// True for a file `--model` accepts: `model.bim`, an `.abf` backup, or a
 /// PBIT/PBIX that embeds its model.
-pub(crate) fn is_model_file(path: &Path) -> bool {
+pub fn is_model_file(path: &Path) -> bool {
     let lower = file_name(path).to_lowercase();
     lower.ends_with(".bim")
         || lower.ends_with(".abf")
