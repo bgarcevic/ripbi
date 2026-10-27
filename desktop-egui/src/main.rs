@@ -40,7 +40,34 @@ fn main() -> eframe::Result {
             .with_min_inner_size([900.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("ripbi", options, Box::new(|_| Ok(Box::<App>::default())))
+    eframe::run_native(
+        "ripbi",
+        options,
+        Box::new(|cc| {
+            cc.egui_ctx.style_mut_of(egui::Theme::Light, legible_light);
+            cc.egui_ctx.style_mut_of(egui::Theme::Dark, legible_dark);
+            Ok(Box::<App>::default())
+        }),
+    )
+}
+
+/// egui fades weak text to 60% and disabled widgets by a further half, which
+/// washes out hints and not-yet-enabled buttons. Give both themes solid weak
+/// text and a lighter disabled fade so they stay readable.
+fn legible_light(style: &mut egui::Style) {
+    let visuals = &mut style.visuals;
+    visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(40);
+    visuals.widgets.inactive.fg_stroke.color = Color32::from_gray(30);
+    visuals.weak_text_color = Some(Color32::from_gray(100));
+    visuals.disabled_alpha = 0.7;
+}
+
+fn legible_dark(style: &mut egui::Style) {
+    let visuals = &mut style.visuals;
+    visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(190);
+    visuals.widgets.inactive.fg_stroke.color = Color32::from_gray(210);
+    visuals.weak_text_color = Some(Color32::from_gray(150));
+    visuals.disabled_alpha = 0.7;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
