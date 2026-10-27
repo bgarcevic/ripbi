@@ -39,7 +39,9 @@ fn main() -> eframe::Result {
             .with_title("ripbi")
             .with_inner_size([1280.0, 820.0])
             .with_min_inner_size([900.0, 560.0])
-            .with_icon(brand::icon(64)),
+            .with_icon(brand::icon(64))
+            // Matches StartupWMClass in assets/ripbi.desktop on Linux.
+            .with_app_id("ripbi"),
         ..Default::default()
     };
     eframe::run_native(

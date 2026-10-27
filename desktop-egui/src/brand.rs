@@ -116,6 +116,91 @@ fn distance(mark: &Mark, p: Pos2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    /// The icon files each platform reads from disk, generated from the
+    /// mark: the exe's embedded `.ico` (Windows), the bundle's `.icns`
+    /// (macOS) and the `.desktop` file's PNG (Linux). Fails when they drift
+    /// from the geometry; `RIPBI_WRITE_ICONS=1 cargo test` rewrites them.
+    #[test]
+    fn icon_files_match_the_mark() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        let files = [
+            ("ripbi.ico", ico(&[16, 24, 32, 48, 64, 256])),
+            (
+                "ripbi.icns",
+                icns(&[
+                    (*b"icp4", 16),
+                    (*b"icp5", 32),
+                    (*b"ic07", 128),
+                    (*b"ic08", 256),
+                    (*b"ic09", 512),
+                    (*b"ic10", 1024),
+                ]),
+            ),
+            ("ripbi.png", png(256)),
+        ];
+        let write = std::env::var_os("RIPBI_WRITE_ICONS").is_some();
+        for (name, bytes) in files {
+            let path = dir.join(name);
+            if write {
+                std::fs::write(&path, &bytes).unwrap();
+            } else {
+                assert!(
+                    std::fs::read(&path).ok() == Some(bytes),
+                    "assets/{name} is stale: run `RIPBI_WRITE_ICONS=1 cargo test`"
+                );
+            }
+        }
+    }
+
+    fn png(size: u32) -> Vec<u8> {
+        let icon = icon(size);
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, size, size);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&icon.rgba).unwrap();
+        writer.finish().unwrap();
+        out
+    }
+
+    /// An ICO of PNG images, which Windows reads since Vista.
+    fn ico(sizes: &[u32]) -> Vec<u8> {
+        let images: Vec<_> = sizes.iter().map(|&size| png(size)).collect();
+        let mut out = Vec::new();
+        out.extend(0u16.to_le_bytes());
+        out.extend(1u16.to_le_bytes()); // icon
+        out.extend((sizes.len() as u16).to_le_bytes());
+        let mut offset = 6 + 16 * sizes.len() as u32;
+        for (&size, image) in sizes.iter().zip(&images) {
+            let side = if size >= 256 { 0 } else { size as u8 }; // 0 means 256
+            out.extend([side, side, 0, 0]);
+            out.extend(1u16.to_le_bytes()); // planes
+            out.extend(32u16.to_le_bytes()); // bits per pixel
+            out.extend((image.len() as u32).to_le_bytes());
+            out.extend(offset.to_le_bytes());
+            offset += image.len() as u32;
+        }
+        images.iter().for_each(|image| out.extend(image));
+        out
+    }
+
+    /// An ICNS of PNG images, each under its size's type code.
+    fn icns(entries: &[([u8; 4], u32)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for &(kind, size) in entries {
+            let image = png(size);
+            body.extend(kind);
+            body.extend((image.len() as u32 + 8).to_be_bytes());
+            body.extend(image);
+        }
+        let mut out = b"icns".to_vec();
+        out.extend((body.len() as u32 + 8).to_be_bytes());
+        out.extend(body);
+        out
+    }
 
     fn pixel(icon: &egui::IconData, at: Pos2) -> [u8; 4] {
         let scale = icon.width as f32 / GRID;

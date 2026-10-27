@@ -1,3 +1,5 @@
+<img src="media/ripbi-mark.svg" alt="ripbi" width="64" height="64">
+
 # Introduction
 
 ripbi is static analysis, linting, and tree-shaking for Power BI semantic

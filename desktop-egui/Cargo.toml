@@ -14,6 +14,20 @@ ripbi-service = { path = "../crates/ripbi-service" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[build-dependencies]
+embed-resource = "3"
+
+[dev-dependencies]
+# Encodes the generated icon files; see brand.rs.
+png = "0.18"
+
+# `cargo bundle --release` on macOS builds ripbi.app with this icon.
+[package.metadata.bundle]
+name = "ripbi"
+identifier = "io.github.bgarcevic.ripbi"
+icon = ["assets/ripbi.icns"]
+category = "public.app-category.developer-tools"
+
 [lints.rust]
 future_incompatible = "warn"
 nonstandard_style = "deny"

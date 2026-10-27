@@ -28,6 +28,8 @@ for f in \
   "$MANUAL/unused.md" \
   "$MANUAL/inputs.md" \
   CHANGELOG.md \
+  docs/media/ripbi-mark.svg \
+  desktop-egui/assets/ripbi.png \
   crates/ripbi-cli/docs/scan/overview.md \
   crates/ripbi-cli/docs/scan/flags.md \
   crates/ripbi-cli/docs/scan/human-output.md \
@@ -63,6 +65,12 @@ cp "$MANUAL"/*.md "$SRC"/
 # at ../../../docs/media/; the book serves them from media/.
 cp -R docs/media "$SRC"/media
 cp CHANGELOG.md "$SRC"/changelog.md
+
+# The brand mark as the site favicon. mdBook reads it from book/theme/, which
+# is generated like book/src.
+mkdir -p book/theme
+cp docs/media/ripbi-mark.svg book/theme/favicon.svg
+cp desktop-egui/assets/ripbi.png book/theme/favicon.png
 
 # The canonical docs link repo files relatively — the cli docs' golden test
 # baselines and the core docs' source definitions ([`BindingRef`] et al).

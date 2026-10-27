@@ -41,3 +41,21 @@ and CI.
 cargo clippy --manifest-path desktop-egui/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path desktop-egui/Cargo.toml
 ```
+
+## Icon
+
+`src/brand.rs` defines the mark once. It paints the header logo and the
+running window's icon, and its tests generate the files each platform reads
+from disk into `assets/`. Change the geometry, then regenerate:
+
+```sh
+RIPBI_WRITE_ICONS=1 cargo test --manifest-path desktop-egui/Cargo.toml
+```
+
+- **Windows**: `build.rs` embeds `assets/ripbi.ico` in the exe (via `windres` or
+  `rc.exe`), so Explorer, shortcuts and the taskbar show it.
+- **macOS**: a bare binary has no icon; `cargo bundle --release` (cargo-bundle)
+  builds `ripbi.app` with `assets/ripbi.icns`.
+- **Linux**: copy `assets/ripbi.png` to
+  `~/.local/share/icons/hicolor/256x256/apps/` and `assets/ripbi.desktop` to
+  `~/.local/share/applications/`; the window's app id `ripbi` ties them together.

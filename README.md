@@ -1,4 +1,4 @@
-# ripbi
+# <img src="docs/media/ripbi-mark.svg" alt="" width="36" height="36"> ripbi
 
 [![CI](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/ripbi.svg)](https://crates.io/crates/ripbi)
