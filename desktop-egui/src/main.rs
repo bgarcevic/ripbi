@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod analysis;
+mod brand;
 mod fetching;
 
 use std::collections::BTreeMap;
@@ -37,7 +38,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("ripbi")
             .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([900.0, 560.0]),
+            .with_min_inner_size([900.0, 560.0])
+            .with_icon(brand::icon(64)),
         ..Default::default()
     };
     eframe::run_native(
@@ -203,6 +205,8 @@ impl eframe::App for App {
         egui::Panel::top("header").show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
+                let (logo, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), Sense::hover());
+                brand::paint(ui.painter(), logo);
                 ui.heading(RichText::new("ripbi").strong());
                 ui.label(RichText::new("DESKTOP").small().weak());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
