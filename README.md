@@ -1,4 +1,4 @@
-# ripbi
+# <img src="docs/media/ripbi-mark.svg" alt="" width="36" height="36"> ripbi
 
 [![CI](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml/badge.svg)](https://github.com/bgarcevic/ripbi/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/ripbi.svg)](https://crates.io/crates/ripbi)
@@ -24,8 +24,7 @@ It reads local PBIP projects, TMSL `model.bim` files, PBIT templates, PBIX
 files (the embedded model is decoded from its compressed `DataModel`; only
 metadata is read, never the data), and standalone `.abf` backups. A thin PBIX
 report pairs with a separate model. I plan to implement guided
-automated cleanup and tenant scanning. An experimental
-[desktop UI](desktop/README.md) provides guided model/report selection and usage metrics.
+automated cleanup and tenant scanning.
 
 ## Install
 
@@ -45,12 +44,6 @@ Both scripts verify the download against the release's sha256 checksums and
 install the binary into `~/.local/bin` as both `ripbi` and its short alias
 `rib` — the two names are the same tool, so `rib scan` works anywhere
 `ripbi scan` does. Or `cargo install ripbi`.
-
-**Desktop (experimental, Windows x64):** starting with the next release,
-the same [release page](https://github.com/bgarcevic/ripbi/releases) will also
-include a `ripbi-desktop-<version>-x86_64-pc-windows-msvc-setup.exe` installer.
-It shares the CLI version and checksums. Installers are unsigned and may trigger
-Windows trust warnings. See [desktop setup and updates](desktop/README.md#releases-experimental).
 
 ## Quickstart
 
@@ -205,6 +198,15 @@ The command is read-only and informational: it exits `0` on any produced view
 topology diagram; `--plain` and `--json` never truncate. The full contract is
 documented in the user guide's
 [deps chapter](https://bgarcevic.github.io/ripbi/deps.html).
+
+## Desktop app (experimental)
+
+The same analysis in a window, for Windows, macOS and Linux: pick a model (or
+fetch one from your tenant), then browse what is unused and why. Each release
+attaches it as `ripbi-desktop-<version>-<target>`, and it updates itself.
+See [desktop-egui](desktop-egui/README.md).
+
+![The ripbi desktop app analyzing the AdventureWorks sample: 56 unused objects, filtered to measures, one selected to show what references it, then the light theme and the update card](docs/media/ripbi-desktop.gif)
 
 ## Output
 

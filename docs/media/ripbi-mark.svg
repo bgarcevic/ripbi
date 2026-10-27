@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>ripbi</title>
+  <!-- Same geometry as desktop-egui/src/brand.rs. -->
+  <rect width="64" height="64" rx="14" fill="#2ea043"/>
+  <g stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none">
+    <line x1="32" y1="17" x2="19" y2="46"/>
+    <g opacity="0.45">
+      <line x1="32" y1="17" x2="36.42" y2="26.86"/>
+      <line x1="39.28" y1="33.24" x2="40.84" y2="36.72"/>
+      <circle cx="45" cy="46" r="6" stroke-width="3"/>
+    </g>
+  </g>
+  <circle cx="32" cy="17" r="6" fill="#fff"/>
+  <circle cx="19" cy="46" r="6" fill="#fff"/>
+</svg>

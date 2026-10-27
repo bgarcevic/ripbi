@@ -51,16 +51,19 @@ plain local `cargo clippy` already denies what CI denies.
 
 ## Where things live
 
-Two crates:
+The main crates:
 
 - [`crates/ripbi-core`](crates/ripbi-core) — the pure library: format
   ingestion, DAX lexing, graph reachability. It never prints and never exits.
+- [`crates/ripbi-app`](crates/ripbi-app) — the front-end neutral app layer:
+  discovery, config, and the `scan`/`report`/`deps` pipelines as typed results.
+  It never prints either.
 - [`crates/ripbi-cli`](crates/ripbi-cli) — the `ripbi` binary: a thin
-  orchestration layer over core. All printing lives here.
+  orchestration layer over `ripbi-app`. All printing lives here.
 
-The optional [Tauri desktop app](desktop/README.md) lives in `desktop/`, with
-its own frontend dependencies and Cargo package. It is excluded from CLI-only
-workspace builds; its README includes native prerequisites and checks.
+The experimental [egui desktop app](desktop-egui/README.md) lives in
+`desktop-egui/`, a standalone Cargo package over `ripbi-app`. It is excluded
+from workspace builds and CI.
 
 For anything deeper, follow the routing: [AGENTS.md](AGENTS.md) →
 [crates/ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) and
@@ -136,7 +139,7 @@ them.
   decides the next version (see [Versioning](#versioning)).
 - Add an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any
   change users can see: it becomes the release notes. PRs that touch shipped
-  code (`crates/*/src`, the desktop app, the GitHub Action, the Azure Pipelines
+  code (`crates/*/src`, the GitHub Action, the Azure Pipelines
   template) without one fail the check; a maintainer adds the `skip-changelog`
   label for changes users cannot see.
 - No AI attribution: PR descriptions and commits must not carry
@@ -160,7 +163,7 @@ Releases are automated by `.github/workflows/release-pr.yml` and
 - Polish the notes by editing `CHANGELOG.md` on that PR just before merging;
   the next merge to `main` rebuilds the branch and drops edits made there.
 - Merging it tags `vX.Y.Z` and starts `release.yml`: the CLI archives (each
-  run once on its native runner first), the Windows desktop installer, one
+  run once on its native runner first), one
   GitHub release whose body is the changelog section, then the GitHub Action
   mirror and crates.io.
 
@@ -178,11 +181,11 @@ deliberate 1.0.0, or when the titles undersell a release.
 
 ### Version metadata
 
-CLI and experimental Windows desktop releases use the same version and tag.
+Every crate and the CLI archives share one version and tag.
 The source of truth is `[workspace.package].version` in the root `Cargo.toml`.
 `python scripts/sync_version.py --write` (Python 3.11+) propagates it to the
-workspace dependency requirements, desktop Cargo/Tauri/npm metadata, local
-package versions in both Cargo lockfiles and the npm lockfile, and the pinned
+workspace dependency requirements, the local package versions in `Cargo.lock`,
+and the pinned
 install examples in `book/manual/installation.md`; `--set X.Y.Z` changes the
 workspace version first. Third-party dependency versions stay unchanged. CI
 rejects drift, and the release checks the tag against it before building.
@@ -190,12 +193,3 @@ rejects drift, and the release checks the tag against it before building.
 To release by hand (a release candidate, or if the bot is unavailable): run
 `--set`, cut the changelog section, merge, then push the `vX.Y.Z` tag
 yourself. A tag pushed by hand starts `release.yml` directly.
-
-The desktop build and installer checks also run on PRs via
-`.github/workflows/desktop.yml`. Windows uses MSVC. Desktop remains outside
-crates.io.
-
-The desktop installer is experimental and unsigned. Release notes disclose
-Windows trust prompts, the WebView2 download requirement, and manual updates.
-Code signing and a desktop updater need separate configuration before enabling
-them; neither uses the CLI's self-update mechanism.

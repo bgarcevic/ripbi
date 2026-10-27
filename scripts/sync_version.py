@@ -6,7 +6,6 @@ known local packages without resolving or changing third-party dependencies;
 """
 
 import argparse
-import json
 from pathlib import Path
 import re
 import sys
@@ -51,7 +50,7 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
             updates[path] = new
 
     synced = manifest
-    for name in ("ripbi-core", "ripbi-service", "ripbi-xpress9"):
+    for name in ("ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9"):
         synced = replace_once(
             synced, rf'^({re.escape(name)}\s*=\s*\{{[^\n]*version\s*=\s*")[^"]+("[^\n]*\}})$', version
         )
@@ -67,16 +66,21 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
         raise ValueError(f"Expected two RIPBI_VERSION pins in {install_doc.relative_to(root)}")
     remember(install_doc, old, new)
 
-    desktop_manifest = root / "desktop/src-tauri/Cargo.toml"
+    # The desktop app is a standalone package (its own [workspace]), versioned
+    # with the release it ships in.
+    desktop_manifest = root / "desktop-egui/Cargo.toml"
     old = desktop_manifest.read_text(encoding="utf-8")
     remember(desktop_manifest, old, replace_once(old, r'^(version\s*=\s*")[^"]+("\s*)$', version))
 
     for relative, names in (
-        ("Cargo.lock", ("ripbi", "ripbi-core", "ripbi-service", "ripbi-xpress9")),
-        ("desktop/src-tauri/Cargo.lock", ("ripbi", "ripbi-core", "ripbi-service", "ripbi-xpress9", "ripbi-desktop")),
+        ("Cargo.lock", ("ripbi", "ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9")),
+        (
+            "desktop-egui/Cargo.lock",
+            ("ripbi-desktop-egui", "ripbi-core", "ripbi-app", "ripbi-service", "ripbi-xpress9"),
+        ),
     ):
-        path = root / relative
-        old = path.read_text(encoding="utf-8")
+        lock = root / relative
+        old = lock.read_text(encoding="utf-8")
         new = old
         packages = tomllib.loads(old)["package"]
         for name in names:
@@ -86,27 +90,7 @@ def planned_updates(root: Path, tag: str | None = None) -> tuple[str, dict[Path,
             new = replace_once(
                 new, rf'(\[\[package\]\]\nname = "{re.escape(name)}"\nversion = ")[^"]+("\n)', version
             )
-        remember(path, old, new)
-
-    # The JSON files are edited as text so their hand formatting (tauri.conf.json's
-    # inline arrays) survives; the parse afterwards proves the right fields moved.
-    for relative, fields in (
-        ("desktop/package.json", 1),
-        ("desktop/package-lock.json", 2),
-        ("desktop/src-tauri/tauri.conf.json", 1),
-    ):
-        path = root / relative
-        old = path.read_text(encoding="utf-8")
-        expected = json.loads(old)
-        expected["version"] = version
-        if fields == 2:
-            expected["packages"][""]["version"] = version
-        new = re.sub(
-            r'("version"\s*:\s*")[^"]*(")', lambda m: m[1] + version + m[2], old, count=fields
-        )
-        if json.loads(new) != expected:
-            raise ValueError(f"Expected the first {fields} version field(s) in {relative} to be the local package's")
-        remember(path, old, new)
+        remember(lock, old, new)
     return version, updates
 
 

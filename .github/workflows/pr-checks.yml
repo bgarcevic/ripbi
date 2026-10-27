@@ -101,8 +101,8 @@ jobs:
             exit 0
           fi
           changed="$(git diff --name-only "${BASE}...${HEAD}")"
-          # What ships: the crates, the desktop app, the action, the ADO template.
-          shipped='^(crates/[^/]+/src/|desktop/src/|desktop/src-tauri/src/|ci/github-action/|templates/)'
+          # What ships: the crates, the action, the ADO template.
+          shipped='^(crates/[^/]+/src/|ci/github-action/|templates/)'
           if ! grep -qE "${shipped}" <<<"${changed}"; then
             echo "No user-facing changes."
             exit 0

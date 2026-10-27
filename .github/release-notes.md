@@ -1,8 +1,11 @@
 ### Downloads
 
 - **CLI:** the `ripbi-<version>-<target>.zip` / `.tar.gz` archives contain `ripbi` and `rib`.
-- **Desktop (experimental, Windows x64):** use `ripbi-desktop-<version>-x86_64-pc-windows-msvc-setup.exe` for the graphical interface. It shares this release's version and analysis engine.
+- **Desktop (experimental):** `ripbi-desktop-<version>-<target>` holds the graphical app, built on this release's analysis engine.
+  - Windows x64: `.zip` with `ripbi-desktop.exe`. It is unsigned, so SmartScreen may warn about an unknown publisher.
+  - macOS (Apple silicon): `.zip` with `ripbi.app`. It is not notarized: the first time, right-click it and choose Open, or allow it under System Settings → Privacy & Security.
+  - Linux x64: `.tar.gz` with `ripbi-desktop`, plus `ripbi.desktop` and `ripbi.png` for a launcher entry.
 
-The desktop installer is currently unsigned, so Windows may display an unknown-publisher or SmartScreen warning. It installs for the current user and downloads WebView2 if the runtime is missing (internet access required). Desktop updates are manual: download and run the installer from a newer release. `ripbi update` updates only the CLI.
+  The desktop app updates itself: it downloads and verifies a newer release in the background, then offers "Restart to update". `ripbi update` updates only the CLI.
 
-`sha256sums.txt` covers both the CLI archives and desktop installer.
+`sha256sums.txt` covers every archive.

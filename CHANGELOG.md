@@ -39,13 +39,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selectors like `[data-id]` are never flagged. Column names the app's queries
   introduce, such as `"Total"` read back as `[Total]`, resolve across the whole app.
 
+### Changed
+
+- **The desktop app is rebuilt in pure Rust, for Windows, macOS and Linux.** The
+  Tauri app and its Windows installer are gone. Releases now attach an experimental
+  egui app as `ripbi-desktop-<version>-<target>` archives: `ripbi-desktop.exe` for
+  Windows x64, `ripbi.app` for macOS on Apple silicon, and `ripbi-desktop` for Linux
+  x64. It analyzes local files or fetches a model and its reports from a tenant, like
+  `ripbi fetch --scan`. The builds are unsigned. Like `ripbi update`, the app checks
+  for newer releases, downloads and verifies one in the background, and offers
+  "Restart to update"; `RIPBI_NO_UPDATE_CHECK` turns the check off.
+
 ### Fixed
 
+- **`--report` accepts a thin report's `.pbip`.** A report-only project that
+  connects to its model live (`byConnection`) and has no model folder beside it
+  failed with "no semantic model for project". It now counts as the report, like
+  its `.Report` folder.
 - **`RETURN [Column]` and `ORDER BY [Column]` no longer read the keyword as a
   table.** The DAX lexer took `RETURN` or `BY` before a bracketed name for an
   unquoted table qualifier. That made a calculated column ending in
   `RETURN [Column]` a false broken artifact. A keyword now never qualifies a name.
-
 - **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON
   lines are now `\uXXXX` escapes, so the output is pure ASCII. Windows PowerShell
   re-encodes text piped between native commands and mangled names like `Salg æøå` on

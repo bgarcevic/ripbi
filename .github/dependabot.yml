@@ -12,6 +12,17 @@ updates:
     groups:
       cargo-dependencies:
         patterns: ["*"]
+  # Standalone package with its own lock file (desktop-egui/Cargo.toml).
+  - package-ecosystem: cargo
+    directory: /desktop-egui
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      desktop-cargo-dependencies:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -22,13 +33,3 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  # Security updates only (limit 0 stops version updates); the entry exists so
-  # those PRs get the conventional prefix too.
-  - package-ecosystem: npm
-    directory: /desktop
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    commit-message:
-      prefix: build
-      include: scope

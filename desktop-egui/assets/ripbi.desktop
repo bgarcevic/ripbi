@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ripbi
+Comment=Find unused objects in Power BI semantic models
+Exec=ripbi-desktop
+Icon=ripbi
+StartupWMClass=ripbi
+Categories=Development;

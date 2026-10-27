@@ -27,20 +27,21 @@ Always route through the table below; each `CONTEXT.MD` routes further down.
 | DAX lexing / reference discovery | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Zero-copy `&str` slices |
 | Power Query (M) lexing / column & table references | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | Same lexer shape as DAX; M names columns (supply chain, not consumers) and keeps merge-source tables/expressions alive (issue #39) |
 | Dependency graph / reachability | [crates/ripbi-core/src/](crates/ripbi-core/src/) | [ripbi-core/CONTEXT.MD](crates/ripbi-core/CONTEXT.MD) | `petgraph` DAG, BFS from report roots |
+| Front-end neutral app layer (scan/report/deps pipelines, discovery, config, typed results, the scan verdict, JSON/SARIF/Markdown/tx-rm writers) | [crates/ripbi-app/](crates/ripbi-app/) | [ripbi-app/CONTEXT.MD](crates/ripbi-app/CONTEXT.MD) | Never prints; front ends observe via `scan::Observer`. Start here for any new UI (GUI, web) |
 | CLI flags, output, exit codes | [crates/ripbi-cli/](crates/ripbi-cli/) | [ripbi-cli/CONTEXT.MD](crates/ripbi-cli/CONTEXT.MD) | All printing lives here, never in core |
-| Tenant access (`fetch`: sign-in, downstream reports, definitions) | [crates/ripbi-service/](crates/ripbi-service/) | [ripbi-service/CONTEXT.MD](crates/ripbi-service/CONTEXT.MD) | The only crate on the network; `ripbi-core` stays offline. Contract: [fetch.md](crates/ripbi-cli/docs/fetch.md) |
+| Tenant access (`fetch`: sign-in, downstream reports, definitions) | [crates/ripbi-service/](crates/ripbi-service/) | [ripbi-service/CONTEXT.MD](crates/ripbi-service/CONTEXT.MD) | The only crate on the network; `ripbi-app::fetch` orchestrates it, `ripbi-core` stays offline. Contract: [fetch.md](crates/ripbi-cli/docs/fetch.md) |
 | CLI UX design decisions | [docs/](docs/) | [cli-ux-guidelines.md](docs/cli-ux-guidelines.md) | Condensed from clig.dev |
-| Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Four-crate workspace |
+| Workspace / dependencies | [Cargo.toml](Cargo.toml) | [Cargo.toml](Cargo.toml) | Five-crate workspace |
 | GitHub Action (`bgarcevic/ripbi-action`) | [ci/github-action/](ci/github-action/) | [ci/github-action/README.md](ci/github-action/README.md) | Composite action mirrored to its own repo on release; tested by `.github/workflows/action.yml` |
 | Azure Pipelines template | [templates/](templates/) | [ripbi-scan.yml](templates/ripbi-scan.yml) header | Steps template; tested under `scripts/run_ado_template.py` by `.github/workflows/action.yml`, so keep to the expressions that emulator knows |
-| Desktop UI (Tauri) | [desktop/](desktop/) | [desktop/README.md](desktop/README.md) | Separate native package; reuses CLI scan orchestration |
+| Desktop UI (egui, experimental) | [desktop-egui/](desktop-egui/) | [desktop-egui/README.md](desktop-egui/README.md) | Standalone pure-Rust package; calls `ripbi-app` directly |
 | Project intro / positioning | [README.md](README.md) | [README.md](README.md) | User-facing overview |
 | Docs site (mdBook on Pages) | [book/](book/) | [CONTRIBUTING.md](CONTRIBUTING.md) | `book/src/` is generated — edit the canonical docs, never the projection |
 
 ## Coding standards
 
-1. **Strict library separation** — `ripbi-core` never prints to stdout/stderr and never
-   calls `std::process::exit`. It returns typed `Result<T, ripbi_core::Error>`.
+1. **Strict library separation** — `ripbi-core` and `ripbi-app` never print to stdout/stderr or
+   call `std::process::exit`. They return typed `Result<T, ripbi_core::Error>` / `ripbi_app::ScanError`.
 2. **Unified semantic graph** — every source format normalizes into the same
    `TabularDatabase` and `ReportModel` AST before graph construction.
 3. **Resilient JSON traversal** — Power BI schemas drift across versions; never panic on

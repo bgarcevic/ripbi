@@ -1,0 +1,3 @@
+// Embedded by build.rs: Explorer, shortcuts and the taskbar read the
+// icon from the exe itself. ripbi.ico is generated; see brand.rs.
+1 ICON "ripbi.ico"

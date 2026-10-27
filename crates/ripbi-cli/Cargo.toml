@@ -21,6 +21,7 @@ name = "ripbi_cli"
 
 [dependencies]
 ripbi-core.workspace = true
+ripbi-app.workspace = true
 ripbi-service.workspace = true
 clap.workspace = true
 serde.workspace = true

@@ -8,6 +8,8 @@ on:
     paths:
       - README.md
       - CHANGELOG.md
+      - docs/media/**
+      - desktop-egui/assets/ripbi.png
       - book/**
       - crates/ripbi-core/docs/**
       - crates/ripbi-cli/docs/**
@@ -17,6 +19,8 @@ on:
     paths:
       - README.md
       - CHANGELOG.md
+      - docs/media/**
+      - desktop-egui/assets/ripbi.png
       - book/**
       - crates/ripbi-core/docs/**
       - crates/ripbi-cli/docs/**

@@ -1,11 +1,7 @@
 # Rust / Cargo
 /target
-/desktop/node_modules/
-/desktop/dist/
-/desktop/dist-installer/
 __pycache__/
-/desktop/src-tauri/target/
-/desktop/src-tauri/gen/
+/desktop-egui/target/
 **/*.rs.bk
 *.pdb
 
@@ -32,9 +28,11 @@ tarpaulin-report.*
 *~
 
 # mdBook — book/src is assembled from the canonical crate docs by
-# book/assemble.sh; book/book is the built site. Both are generated.
+# book/assemble.sh, book/book is the built site, and book/theme holds the
+# favicon. All generated.
 /book/src/
 /book/book/
+/book/theme/
 
 # Environment
 .env
