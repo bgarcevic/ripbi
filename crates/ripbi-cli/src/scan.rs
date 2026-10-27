@@ -822,6 +822,7 @@ fn scan(
             if !vouched {
                 let hint = consumer_hint(
                     query_log_path(args.queries_from.as_deref(), config.as_ref()).is_some(),
+                    has_workbooks(&report_paths),
                     "removing",
                 );
                 writeln!(streams.err, "  {}", palette_err.dim(&hint))?;
@@ -939,6 +940,18 @@ fn derive_model_from_reports(extras: &[PathBuf]) -> Result<discover::Paired, Sca
     let mut model: Option<PathBuf> = None;
     let mut reports = Vec::new();
     for extra in extras {
+        if is_binary_workbook(extra) {
+            return Err(binary_workbook_error(extra));
+        }
+        if extra.is_file() && ingest::is_workbook(extra) {
+            return Err(ScanError::new(format!(
+                "--report {} is a workbook, which cannot name its model",
+                extra.display()
+            ))
+            .with_hint(
+                "its connections name a dataset in the service, not a local model; pass --model",
+            ));
+        }
         let paired = match discover::resolve_path(extra)? {
             Resolution::Paired(paired) => paired,
             Resolution::Ambiguous { dir, candidates } => {
@@ -1045,6 +1058,9 @@ fn attach_extras(
     let mut direct = Vec::new();
     let mut search_roots = Vec::new();
     for extra in extras {
+        if is_binary_workbook(extra) {
+            return Err(binary_workbook_error(extra));
+        }
         if is_report_item(extra) {
             direct.push(extra.clone());
             continue;
@@ -1152,6 +1168,9 @@ pub(crate) fn partition_report_value(
     direct: &mut Vec<PathBuf>,
     search_roots: &mut Vec<PathBuf>,
 ) -> Result<(), ScanError> {
+    if is_binary_workbook(path) {
+        return Err(binary_workbook_error(path));
+    }
     if is_report_item(path) {
         direct.push(path.to_path_buf());
         return Ok(());
@@ -1442,6 +1461,31 @@ fn ambiguous_error(dir: &Path, candidates: &[Candidate]) -> ScanError {
 }
 
 /// The error for a `.Report`-named folder without a report anchor.
+/// Whether any scanned report is an Excel workbook.
+pub(crate) fn has_workbooks(reports: &[PathBuf]) -> bool {
+    reports
+        .iter()
+        .any(|path| path.is_file() && ingest::is_workbook(path))
+}
+
+/// Whether `path` names a binary Excel workbook (`.xls`, `.xlsb`, `.xlt`),
+/// which ripbi cannot read: only Open XML workbooks are report inputs.
+fn is_binary_workbook(path: &Path) -> bool {
+    let name = file_name_lower(path);
+    [".xls", ".xlsb", ".xlt"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+}
+
+/// The refusal for a binary workbook passed to `--report` (exit `2`).
+fn binary_workbook_error(path: &Path) -> ScanError {
+    ScanError::new(format!(
+        "--report {} is a binary workbook, which ripbi cannot read",
+        path.display()
+    ))
+    .with_hint("save it as .xlsx (or .xlsm) in Excel and pass that instead")
+}
+
 fn malformed_report_folder_error(path: &Path) -> ScanError {
     ScanError::new(format!(
         "malformed report folder '{}': missing report.json",
@@ -1484,7 +1528,7 @@ fn file_name_lower(path: &Path) -> String {
 /// whatever it is named), or a Fabric app folder (`fabric.yaml`), which core
 /// reads as a code-first consumer.
 fn is_report_item(path: &Path) -> bool {
-    if ingest::is_fabric_app(path) {
+    if ingest::is_fabric_app(path) || path.is_file() && ingest::is_workbook(path) {
         return true;
     }
     if path.is_file() {
@@ -1567,6 +1611,23 @@ pub(crate) fn pairing_announce(
     } else {
         lines.push(header);
     }
+    let workbooks: Vec<String> = reports
+        .iter()
+        .filter(|path| path.is_file() && ingest::is_workbook(path))
+        .map(|path| report_name(path))
+        .collect();
+    if !workbooks.is_empty() {
+        lines.push(notes.info(&format!(
+            "read {} Excel workbook(s): {} — every OLAP connection in them counts as \
+             querying this model",
+            workbooks.len(),
+            if full {
+                workbooks.join(", ")
+            } else {
+                capped_names(&workbooks)
+            }
+        )));
+    }
     let Some(bound) = bound else {
         return lines;
     };
@@ -1625,10 +1686,18 @@ pub(crate) fn pairing_announce(
 /// changing it"). A query log narrows the blind spot to the consumers
 /// outside its window. `[scan].external_consumers = "none"` vouches there
 /// are none.
-pub(crate) fn consumer_hint(with_query_log: bool, action: &str) -> String {
+///
+/// Workbooks passed as reports narrow the hint to the workbooks that were
+/// not (issue #172).
+pub(crate) fn consumer_hint(with_query_log: bool, with_workbooks: bool, action: &str) -> String {
     if with_query_log {
         format!(
             "check consumers outside the query log's window before {action}; ripbi can't see them"
+        )
+    } else if with_workbooks {
+        format!(
+            "check thin reports, other Excel workbooks and XMLA clients before {action}; \
+             ripbi can't see them"
         )
     } else {
         format!("check thin reports, Excel and XMLA clients before {action}; ripbi can't see them")
@@ -2255,6 +2324,7 @@ pub(crate) fn skip_kind_out(kind: SkipKind) -> &'static str {
         SkipKind::UnresolvedAlias => "unresolved_alias",
         SkipKind::StaleState => "stale_state",
         SkipKind::OpaqueSource => "opaque_source",
+        SkipKind::NotAnalyzed => "not_analyzed",
     }
 }
 

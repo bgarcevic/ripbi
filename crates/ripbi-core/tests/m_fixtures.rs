@@ -70,6 +70,7 @@ fn report_binding(table: &str, column: &str) -> ReportModel {
         bookmarks: Vec::new(),
         measures: Vec::new(),
         code: Vec::new(),
+        queries: Vec::new(),
         stub: false,
     }
 }

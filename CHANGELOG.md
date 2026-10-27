@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Excel workbooks count as report consumers** (#172). Pass a workbook connected to
+  the model (Analyze in Excel, or any MSOLAP connection) with `--report book.xlsx`, or
+  list it in `ripbi.toml`'s `reports`, and the fields its PivotTables, slicers,
+  timelines, CUBE formulas and DAX query tables use stay alive. Each one says where it
+  is used, e.g. `field well 'Rows' — visual 'Sales Model' on page 'Sheet2' in report
+  'book.xlsx'`, and a pivot field the model no longer has is a broken binding. Only
+  fields placed in a pivot count, not every field the pivot could offer. A CUBE
+  argument ripbi cannot evaluate (a cell reference, a computed string) and a
+  connection that does not query an OLAP model are `not_analyzed` skip notices, never
+  guesses. The scan names the workbooks it read on stderr, and the
+  check-before-removing hint then asks about *other* Excel workbooks. Pass the model
+  with `--model` (a workbook names its model by a service ID); search folders never
+  pick up workbooks; binary `.xls`/`.xlsb` workbooks are refused with exit code 2.
 - **Fabric apps count as report consumers.** Pass a Fabric app folder (one holding
   `fabric.yaml`) with `--report`, and the model objects its TypeScript names stay
   alive: DAX written in a string (`'Sales'[Amount]`, `[Total Sales]`), and table,

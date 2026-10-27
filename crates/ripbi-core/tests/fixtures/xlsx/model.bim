@@ -1,0 +1,70 @@
+{
+  "compatibilityLevel": 1606,
+  "model": {
+    "culture": "en-US",
+    "tables": [
+      {
+        "name": "Customer",
+        "columns": [
+          { "name": "Customer Key", "dataType": "string", "sourceColumn": "Customer Key" },
+          { "name": "Country", "dataType": "string", "sourceColumn": "Country" },
+          { "name": "Segment", "dataType": "string", "sourceColumn": "Segment" }
+        ]
+      },
+      {
+        "name": "Date",
+        "columns": [
+          { "name": "Date", "dataType": "dateTime", "sourceColumn": "Date" },
+          { "name": "Month", "dataType": "string", "sourceColumn": "Month" },
+          { "name": "Year", "dataType": "int64", "sourceColumn": "Year" }
+        ],
+        "hierarchies": [
+          {
+            "name": "Calendar",
+            "levels": [
+              { "name": "Year", "ordinal": 0, "column": "Year" },
+              { "name": "Month", "ordinal": 1, "column": "Month" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Product",
+        "columns": [
+          { "name": "Product Key", "dataType": "string", "sourceColumn": "Product Key" },
+          { "name": "Category", "dataType": "string", "sourceColumn": "Category" },
+          { "name": "Legacy Code", "dataType": "string", "sourceColumn": "Legacy Code", "isHidden": true },
+          { "name": "Size", "dataType": "string", "sourceColumn": "Size" }
+        ]
+      },
+      {
+        "name": "Sales",
+        "columns": [
+          { "name": "Amount", "dataType": "double", "sourceColumn": "Amount" },
+          { "name": "Order Date", "dataType": "dateTime", "sourceColumn": "Order Date", "isHidden": true },
+          { "name": "Quantity", "dataType": "int64", "sourceColumn": "Quantity" },
+          { "name": "Unit Price", "dataType": "double", "sourceColumn": "Unit Price" }
+        ],
+        "measures": [
+          { "name": "Total Sales", "expression": "SUM(Sales[Amount])" },
+          { "name": "Order Count", "expression": "COUNTROWS(Sales)" },
+          { "name": "Debug Helper", "expression": "1", "isHidden": true },
+          { "name": "Unassigned Helper", "expression": "2", "isHidden": true }
+        ]
+      },
+      {
+        "name": "Ship Date",
+        "columns": [
+          { "name": "Date", "dataType": "dateTime", "sourceColumn": "Date" }
+        ]
+      },
+      {
+        "name": "Key Measures",
+        "measures": [
+          { "name": "Average Price", "expression": "AVERAGE(Sales[Unit Price])" },
+          { "name": "Margin %", "expression": "DIVIDE([Total Sales], SUM(Sales[Quantity]))", "isHidden": true }
+        ]
+      }
+    ]
+  }
+}

@@ -243,7 +243,11 @@ fn explore(
         // Impact lists what ripbi sees; a consumer it cannot see is exactly
         // the one an empty or short Impact view would hide.
         if human && output.shows_impact() {
-            let hint = scan::consumer_hint(query_logged, "changing it");
+            let hint = scan::consumer_hint(
+                query_logged,
+                scan::has_workbooks(&report_paths),
+                "changing it",
+            );
             writeln!(streams.err, "  {}", palette_err.dim(&hint)).map_err(ScanError::from)?;
         }
     }

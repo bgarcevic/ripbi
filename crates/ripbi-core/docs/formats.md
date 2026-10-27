@@ -28,7 +28,10 @@ report: model ingestion fails with a "no embedded semantic model" error, and
 its report pairs with a separate model. TMSL and legacy Layout JSON may be
 UTF-8 or UTF-16, with or without a byte order mark. A folder with a `fabric.yaml` (or
 `fabric.yml`) at its root is a Fabric app and reads as a code-first report — see
-[Fabric apps](#fabric-apps).
+[Fabric apps](#fabric-apps). A file named `.xlsx`, `.xlsm`, `.xltx`, or `.xltm`
+is an Excel workbook and reads as an OLAP consumer — see
+[Excel workbooks](#excel-workbooks); a binary `.xls`, `.xlsb`, or `.xlt` is
+refused with `Error::UnsupportedFormat`.
 
 Anything else is `Error::UnsupportedFormat`. The PBIP item's display name is read
 from `.platform` (`metadata.displayName`) beside `definition/` — TMDL itself
@@ -339,6 +342,58 @@ which literals name model objects (see `graph.md`).
   environment variable, a fetched config, or concatenated from fragments
   (`'Sa' + 'les'`) — are invisible. Query logs (`--queries-from`) cover what
   the app actually ran.
+
+## Excel workbooks
+
+An Excel workbook connected to a semantic model (Analyze in Excel, or any
+MSOLAP connection — `pbiazure://`, `powerbi://`, an on-premises server) reads as
+a report (issue #172): `src/ingest/xlsx.rs` turns each sheet into a page and
+each PivotTable, slicer, timeline, and CUBE formula cell into a visual whose
+wells hold `FieldTarget::Mdx` unique names. The graph resolves those against
+the model (see `graph.md`), so a pivot field the model no longer has is a broken
+binding, and the reason a kept object is kept names the workbook, the sheet,
+and the pivot, slicer, or cell.
+
+Parts are found through relationships (`_rels/*.rels`), never by path, and
+elements and attributes are matched by local name, so ISO/IEC 29500 Strict
+workbooks read like transitional ones.
+
+| Part | What binds | Visual |
+|---|---|---|
+| `xl/connections.xml` | Nothing directly. Only OLAP connections (`olapPr`, or an MSOLAP provider) count; the rest are `not_analyzed` notices. | — |
+| `xl/pivotTables/pivotTable*.xml` + its cache | `rowFields`/`colFields` (`x`, `-2` = Values skipped), `pageFields` (`fld`), `dataFields` (`fld`), all indexes into the cache's `cacheFields`. A value filter's `iMeasureHier`/`iMeasureFld` binds its measure. | `pivotTable`, wells `Rows`, `Columns`, `Filters`, `Values` |
+| Implicit measures | A data field whose cache field is not a unique name (`Unsupported0`) binds `Aggregation(<subtotal or sum>, <column>)` over the cache field its `xxpim:dataFieldFutureData@sourceField` names. | in `Values` |
+| `calculatedMembers` of a pivot's cache | The names each `mdx` formula scans to (a quoted set formula is unquoted first). The calculated member's or set's own name is workbook-local and binds nothing anywhere. | well `Calculated members` |
+| `xl/slicerCaches/`, `xl/timelineCaches/` | Each OLAP cache's `level` unique names (`(All)` excepted), else its `sourceName`. A cache over a range pivot (a plain `sourceName`) is skipped. | `slicer`/`timeline` on the sheet that draws it (`xl/slicers/`, `xl/timelines/`); a cache no sheet draws becomes a report filter |
+| `<f>` cells | String-literal member and set arguments of `CUBEVALUE` (args 2+), `CUBEMEMBER`, `CUBESET` (set and sort-by), `CUBERANKEDMEMBER`, `CUBEMEMBERPROPERTY`, and `CUBEKPIMEMBER` (a KPI name is `[Measures].[name]`), nested calls included. | `cubeFormula` named after the cell, one well per function |
+| A connection's `dbPr@command` | A DAX or MDX query (not `commandType="1"`, a cube name) is a `ReportQuery`, resolved like a logged query. | — (`ReportModel::queries`) |
+
+**Names.** A unique name splits into `dimension` / `hierarchy` / `level`; member
+keys (`&[West]`) are values and are dropped. Names Excel stores whole for a
+field (pivot fields, slicer levels) are `exact`; names scanned out of MDX text
+(CUBE literals, calculated-member formulas) are not, because their later
+segments may be member names (`[Product].[Category].[Bikes]`), so only a
+missing table or measure breaks them. The cache's `cacheHierarchies` list every
+hierarchy and measure in the model and are never read as roots.
+
+**What is not guessed.** A CUBE argument that refers to another CUBE cell, is a
+nested CUBE call, or names a slicer or timeline is covered where that is
+defined. Any other computed argument (a cell without a CUBE formula, a defined
+name, a concatenation) is a `not_analyzed` notice at `Sheet!Cell`, and only the
+complete bracketed string literals inside it are read. A CUBE call whose
+connection literal names a non-OLAP or embedded connection is a notice and is
+not read.
+
+**Model pairing.** None: a `pbiazure://` connection names a dataset GUID that
+a local model does not record, so the workbook's `dataset` is `Unresolved`, and
+every OLAP connection in a workbook passed explicitly is treated as targeting
+the scanned model. That over-keeps, which is the safe direction.
+
+**Not read.** Binary workbooks (refused); the workbook's own Data Model
+(`$Embedded$` / `ThisWorkbookDataModel`, a model rather than a consumer, a
+`not_analyzed` notice); macros; formula evaluation. A part that is not
+well-formed XML is a `MalformedValue` notice and the rest of the workbook is
+still read.
 
 ## Drift policy: two tiers of skipping
 

@@ -86,7 +86,10 @@ which static analysis deliberately ignores.
 - Analysis covers only the ingested reports. External consumers — thin reports, Excel
   (Analyze in Excel), XMLA reads, other datasets' DAX — are invisible; a scan with
   findings says so in a hint under its verdict (`[scan].external_consumers = "none"`
-  in [`ripbi.toml`](../config.md) drops the hint for a model nothing else reads). Mark what they read with a `ripbi_keep` annotation
+  in [`ripbi.toml`](../config.md) drops the hint for a model nothing else reads). Excel
+  workbooks you have can be scanned directly: `--report book.xlsx` reads their
+  PivotTables, slicers, CUBE formulas, and DAX query tables (issue #172); workbooks
+  you don't pass stay invisible. Mark what they read with a `ripbi_keep` annotation
   ([Keeping objects on purpose](keep.md)), or add what they
   actually queried from a workspace-monitoring log with `--queries-from`
   ([Logged queries](queries.md)).

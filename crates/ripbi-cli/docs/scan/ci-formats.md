@@ -40,7 +40,8 @@ code: without `--broken`, breakage is reported but does not gate.
 - **`.pbix`, `.pbit`, `.abf`, `model.bim`:** the model file, with no region.
 - **Report-side findings** (broken visual bindings, report measures, bookmarks, and
   report-level broken artifacts): the report's `definition/report.json`, or the report
-  archive itself.
+  archive or Excel workbook itself. A workbook's broken binding names its sheet and
+  PivotTable, slicer, or CUBE cell in the message (`… in report 'book.xlsx'`).
 
 Every result also carries a `logicalLocations` entry: the finding's display id as
 `fullyQualifiedName` and its kind as `kind`. A path under the working directory is
