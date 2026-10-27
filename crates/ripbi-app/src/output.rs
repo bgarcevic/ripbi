@@ -3,7 +3,7 @@
 //! and the desktop UIs. The JSON contract built from it lives in
 //! `crates/ripbi-cli/docs/scan/json.md`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use ripbi_core::{NameKey, ObjectId, StorageStats};
@@ -276,7 +276,7 @@ pub struct SkipNoticeOut {
 /// The machine kind vocabulary every type-selecting flag speaks: the keys
 /// [`kind_of`] returns and `--plain`/`--json` emit, and what `scan --type`
 /// and `deps --type`/`--consumer` validate against. Deliberately not the
-/// `GROUPS` (the CLI's `render.rs`) keys: breakage kinds are selected by scan's `--broken`, not
+/// [`GROUPS`] keys: breakage kinds are selected by scan's `--broken`, not
 /// object types.
 pub const KINDS: &[&str] = &[
     "table",
@@ -340,6 +340,100 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
         }
     }
     labels
+}
+
+/// Group order and labels: the fixed section order of human output.
+pub const GROUPS: &[(&str, &str)] = &[
+    ("measure", "Measures"),
+    ("column", "Columns"),
+    ("hierarchy", "Hierarchies"),
+    ("table", "Tables"),
+    ("partition", "Partitions"),
+    ("relationship", "Relationships"),
+    ("calculation_item", "Calculation items"),
+    ("expression", "Expressions"),
+    ("function", "Functions"),
+    ("report_measure", "Report measures"),
+    ("bookmark", "Bookmarks"),
+    ("broken_visual", "Broken visual bindings"),
+];
+
+/// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
+/// on purpose — the section answers "where do I start", which a top-10 list does
+/// without another flag.
+pub const WORST_TABLES_LIMIT: usize = 10;
+
+/// The worst-tables breakdown of `--summary` (issue #38).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorstTables {
+    /// `(table display name, surviving finding count)`, count descending then
+    /// table name, capped at [`WORST_TABLES_LIMIT`] rows.
+    pub rows: Vec<(String, usize)>,
+    /// Tables with findings beyond the shown rows.
+    pub more: usize,
+}
+
+/// What to do about new unused findings under `--compare-root`: remove them,
+/// or keep one a consumer ripbi cannot see reads (issue #151). Stderr and the
+/// Markdown summary carry it; the gate is where authors meet the annotation.
+pub const KEEP_HINT: &str = "Remove the new unused objects, or if something outside \
+                            these reports reads one (an Excel pivot, another workspace's \
+                            report), mark it in the model: `annotation ripbi_keep = <reason>`";
+
+/// The human phrase for one broken binding's reason: what the engine would
+/// render as an error state, said statically.
+pub fn reason_phrase(binding: &BrokenOut) -> String {
+    match (binding.reason, binding.bound_artifact.as_deref()) {
+        ("bound_artifact_broken", Some(artifact)) => {
+            format!("bound artifact {artifact} has unresolvable references")
+        }
+        (reason, _) => format!(
+            "{} not found in the model",
+            reason
+                .strip_suffix("_not_found")
+                .unwrap_or(reason)
+                .replace('_', " ")
+        ),
+    }
+}
+
+/// Groups findings by their model table: where does the bloat concentrate.
+/// Table-less findings (report measures, shared expressions, functions) belong to
+/// no table and are skipped; relationships count under their "from" side. Count
+/// descending, then table name folded (case-insensitively, like every other
+/// ordering), so the output is deterministic across runs.
+pub fn worst_tables(findings: &[Finding]) -> WorstTables {
+    let mut counts: HashMap<&NameKey, usize> = HashMap::new();
+    for finding in findings {
+        if let Some(table) = &finding.table {
+            *counts.entry(table).or_default() += 1;
+        }
+    }
+    let mut ranked: Vec<(&NameKey, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let more = ranked.len().saturating_sub(WORST_TABLES_LIMIT);
+    let rows = ranked
+        .into_iter()
+        .take(WORST_TABLES_LIMIT)
+        .map(|(table, count)| (table.quoted().to_string(), count))
+        .collect();
+    WorstTables { rows, more }
+}
+
+/// Bytes in 1024-based units, the way VertiPaq Analyzer and DAX Studio show
+/// model sizes: `512 B`, `1.2 KB`, `4.2 MB`, `1.0 GB`.
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
 }
 
 #[cfg(test)]

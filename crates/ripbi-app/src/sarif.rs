@@ -14,12 +14,12 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::compare::{Coverage, Entry};
-use crate::render::{
+use crate::output::{
     AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
 };
 use crate::scan::report_name;
 
-pub use ripbi_app::locate::{Existing, Locator, Site};
+pub use crate::locate::{Existing, Locator, Site};
 
 const SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 const INFORMATION_URI: &str = "https://bgarcevic.github.io/ripbi/";
@@ -388,7 +388,7 @@ impl<'a> Context<'a> {
         let message = format!(
             "Broken visual binding {}: {} ({}).",
             binding.target,
-            crate::render::reason_phrase(binding),
+            crate::output::reason_phrase(binding),
             binding.location
         );
         self.issue(&entry, "broken_visual", message, &binding.target)
@@ -485,7 +485,7 @@ fn append_size(message: &mut String, finding: &Finding) {
     if let Some(bytes) = finding.storage.and_then(|stats| stats.bytes) {
         message.push_str(&format!(
             " It holds {} of storage.",
-            crate::render::format_bytes(bytes)
+            crate::output::format_bytes(bytes)
         ));
     }
 }
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn every_finding_kind_has_a_rule() {
-        for kind in crate::render::KINDS {
+        for kind in crate::output::KINDS {
             rule_index(kind);
         }
         for kind in ["broken_visual", "broken_artifact", "auto_date_time"] {

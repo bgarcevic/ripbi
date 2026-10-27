@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use ripbi_app::scan::{
     CompareRequest, Discovered, Note, NoteLevel, Observer, Scan, ScanOutcome, ScanRequest,
-    SkipReason, Stage, Target,
+    SkipReason, Stage, Target, Verdict,
 };
 use ripbi_core::ObjectId;
 
@@ -161,6 +161,8 @@ fn scan(
             return Ok(EXIT_CLEAN);
         }
     };
+    let verdict = outcome.verdict(args.strict);
+    let broken_only = outcome.broken_only();
     let ScanOutcome {
         mut output,
         existing: kept_existing,
@@ -168,22 +170,9 @@ fn scan(
         removable,
         model,
         config,
-        selected,
+        ..
     } = outcome;
     output.elapsed = progress.elapsed();
-    // Gating is not reporting: with no flags everything is *reported*, but
-    // breakage gates the exit code only when `--broken` explicitly selected
-    // it (issue #60: advisory until asked).
-    let broken_gating = selected
-        .as_ref()
-        .is_some_and(|kinds| kinds.contains("broken_visual"));
-    // Under a lone `--broken` the findings list is empty by construction —
-    // the flag scopes the run to breakage — so the human modes' clean
-    // placeholder speaks for breakage, not for the filtered-out list.
-    let broken_only = selected.as_ref().is_some_and(|kinds| {
-        kinds.len() == 2 && kinds.contains("broken_visual") && kinds.contains("broken_artifact")
-    });
-
     // The header already named the model; the elapsed time rides on the
     // verdict line, so the ticker just clears.
     progress.finish(streams.err).map_err(ScanError::from)?;
@@ -246,28 +235,11 @@ fn scan(
         }
     }
 
-    if args.strict && !output.skips.is_empty() {
-        Ok(EXIT_ERROR)
-    } else if output.findings.is_empty()
-        // Breakage gates the exit code only under `--broken` (issue #60):
-        // a pipeline gating on unused findings must not start failing
-        // because DAX or a visual binding is broken, and a `--broken` gate must not fail
-        // on unused findings — the same reported-only rule type selection
-        // obeys, applied to breakage.
-        && (!broken_gating || (output.broken.is_empty() && output.broken_artifacts.is_empty()))
-        && output
-            .auto_date_time
-            .iter()
-            .all(|row| row.verdict == "in_use")
-    {
-        // Suppressed by [scan].ignore counts as handled; an in-use auto
-        // date/time table is informational advice, not a failure. Both the
-        // findings and the rows above are already type-flag-filtered, so
-        // the exit code describes what was reported.
-        Ok(EXIT_CLEAN)
-    } else {
-        Ok(EXIT_UNUSED)
-    }
+    Ok(match verdict {
+        Verdict::Clean => EXIT_CLEAN,
+        Verdict::Findings => EXIT_UNUSED,
+        Verdict::Incomplete => EXIT_ERROR,
+    })
 }
 
 /// The scan the flags ask for. `--compare-root` adds the same request with

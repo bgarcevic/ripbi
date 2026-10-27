@@ -7,7 +7,7 @@
 use std::io;
 use std::path::Path;
 
-use crate::render::ScanOutput;
+use crate::output::ScanOutput;
 use crate::sarif::{self, Existing, Issue, Locator};
 
 /// Writes the logging commands for one scan. Findings that already existed

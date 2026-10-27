@@ -18,12 +18,16 @@ pub mod glob;
 pub mod json;
 pub mod locate;
 pub mod manifest;
+pub mod markdown;
 pub mod output;
 pub mod report;
+pub mod sarif;
 pub mod scan;
+pub mod tx_rm;
+pub mod vso;
 
 #[cfg(test)]
 pub(crate) mod test_support;
 
 pub use error::ScanError;
-pub use scan::{Observer, Scan, ScanOutcome, ScanRequest};
+pub use scan::{Observer, Scan, ScanOutcome, ScanRequest, Verdict};

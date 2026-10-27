@@ -7,7 +7,7 @@ use std::io;
 use std::path::Path;
 
 use crate::compare::Coverage;
-use crate::render::{self, GROUPS, ScanOutput};
+use crate::output::{self, GROUPS, ScanOutput};
 
 /// Rows each findings list shows before it is cut short: a PR comment is
 /// capped at 65,536 characters, and nobody reads past a few dozen rows there.
@@ -123,7 +123,7 @@ fn rows(report: &ScanOutput) -> Vec<(String, String, String)> {
             let detail = finding
                 .storage
                 .and_then(|stats| stats.bytes)
-                .map(render::format_bytes)
+                .map(output::format_bytes)
                 .unwrap_or_default();
             rows.push((kind.replace('_', " "), code(&finding.id), detail));
         }
@@ -157,7 +157,7 @@ fn rows(report: &ScanOutput) -> Vec<(String, String, String)> {
             code(&binding.target),
             format!(
                 "{} — {}",
-                cell(&render::reason_phrase(binding)),
+                cell(&output::reason_phrase(binding)),
                 cell(&binding.location)
             ),
         ));
@@ -201,7 +201,7 @@ fn findings(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     more(out, rows.len())?;
     if report.compare.is_some() && !report.findings.is_empty() {
         writeln!(out)?;
-        writeln!(out, "> {}", render::KEEP_HINT)?;
+        writeln!(out, "> {}", output::KEEP_HINT)?;
     }
     writeln!(out)
 }
@@ -243,7 +243,7 @@ fn fixed(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
 
 /// The tables carrying the most unused findings, as `--summary` ranks them.
 fn worst_tables(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
-    let worst = render::worst_tables(&report.findings);
+    let worst = output::worst_tables(&report.findings);
     if worst.rows.is_empty() {
         return Ok(());
     }

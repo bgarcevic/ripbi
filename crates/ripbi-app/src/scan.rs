@@ -238,6 +238,62 @@ pub struct ScanOutcome {
     pub selected: Option<HashSet<&'static str>>,
 }
 
+/// What a finished scan means for a gate: the CLI's exit code, a GUI's
+/// pass/fail badge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// Nothing reported needs action.
+    Clean,
+    /// Reported findings need action.
+    Findings,
+    /// Under `strict`, ingestion or the report walk skipped something, so the
+    /// result cannot be trusted as complete.
+    Incomplete,
+}
+
+impl ScanOutcome {
+    /// The gate's verdict. `strict` fails on any skip notice. Breakage gates
+    /// only when the selection asked for it (issue #60): a pipeline gating on
+    /// unused findings must not start failing because DAX or a visual binding
+    /// is broken, and a `--broken` gate must not fail on unused findings — the
+    /// same reported-only rule type selection obeys, applied to breakage.
+    /// Suppressed by `[scan].ignore` counts as handled, and an in-use auto
+    /// date/time table is advice, not a failure. Everything here is already
+    /// type-filtered, so the verdict describes what was reported.
+    #[must_use]
+    pub fn verdict(&self, strict: bool) -> Verdict {
+        let output = &self.output;
+        let broken_gating = self
+            .selected
+            .as_ref()
+            .is_some_and(|kinds| kinds.contains("broken_visual"));
+        if strict && !output.skips.is_empty() {
+            Verdict::Incomplete
+        } else if output.findings.is_empty()
+            && (!broken_gating || (output.broken.is_empty() && output.broken_artifacts.is_empty()))
+            && output
+                .auto_date_time
+                .iter()
+                .all(|row| row.verdict == "in_use")
+        {
+            Verdict::Clean
+        } else {
+            Verdict::Findings
+        }
+    }
+
+    /// Whether the selection is breakage alone (a lone `--broken`). The
+    /// findings list is then empty by construction — the selection scopes the
+    /// run to breakage — so a clean placeholder should speak for breakage, not
+    /// for the filtered-out list.
+    #[must_use]
+    pub fn broken_only(&self) -> bool {
+        self.selected.as_ref().is_some_and(|kinds| {
+            kinds.len() == 2 && kinds.contains("broken_visual") && kinds.contains("broken_artifact")
+        })
+    }
+}
+
 /// Runs one scan.
 ///
 /// # Errors

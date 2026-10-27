@@ -3,51 +3,20 @@
 //! The full contract (shapes, examples, schema) lives in `docs/scan/` beside
 //! this crate: `human-output.md`, `text-formats.md`, and `json.md`.
 
-use std::collections::HashMap;
 use std::io;
 use std::time::Duration;
 
-use ripbi_core::{NameKey, SizeBasis};
+use ripbi_core::SizeBasis;
 
 use crate::compare::Coverage;
 use crate::style::Palette;
 
 pub use ripbi_app::json::write as json;
 pub use ripbi_app::output::{
-    AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, KINDS, ScanOutput,
-    SkipNoticeOut, UnusedStorage, UsedByOut, kind_of, power_query_labels, verdict_of,
+    AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, GROUPS, KEEP_HINT, KINDS,
+    ScanOutput, SkipNoticeOut, UnusedStorage, UsedByOut, WorstTables, format_bytes, kind_of,
+    power_query_labels, reason_phrase, verdict_of, worst_tables,
 };
-
-/// Group order and labels: the fixed section order of human output.
-pub(crate) const GROUPS: &[(&str, &str)] = &[
-    ("measure", "Measures"),
-    ("column", "Columns"),
-    ("hierarchy", "Hierarchies"),
-    ("table", "Tables"),
-    ("partition", "Partitions"),
-    ("relationship", "Relationships"),
-    ("calculation_item", "Calculation items"),
-    ("expression", "Expressions"),
-    ("function", "Functions"),
-    ("report_measure", "Report measures"),
-    ("bookmark", "Bookmarks"),
-    ("broken_visual", "Broken visual bindings"),
-];
-
-/// How many tables `--summary`'s worst-tables breakdown shows (issue #38). Fixed
-/// on purpose — the section answers "where do I start", which a top-10 list does
-/// without another flag.
-const WORST_TABLES_LIMIT: usize = 10;
-
-/// The worst-tables breakdown of `--summary` (issue #38).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WorstTables {
-    /// `(table display name, surviving finding count)`, count descending then
-    /// table name, capped at [`WORST_TABLES_LIMIT`] rows.
-    pub(crate) rows: Vec<(String, usize)>,
-    /// Tables with findings beyond the shown rows.
-    pub(crate) more: usize,
-}
 
 /// Writes the human-readable report: findings grouped by object type with `←`
 /// chain annotations, the breakage, auto date/time, and `Fixed since`
@@ -132,13 +101,6 @@ fn write_fixed(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput) 
 /// removed (issue #141).
 pub(crate) const FIXED_CAVEAT: &str = "(this scan skipped model objects it could not parse — some \
                             of these may be parse damage, not removals; see the notices below)";
-
-/// What to do about new unused findings under `--compare-root`: remove them,
-/// or keep one a consumer ripbi cannot see reads (issue #151). Stderr and the
-/// Markdown summary carry it; the gate is where authors meet the annotation.
-pub(crate) const KEEP_HINT: &str = "Remove the new unused objects, or if something outside \
-                            these reports reads one (an Excel pivot, another workspace's \
-                            report), mark it in the model: `annotation ripbi_keep = <reason>`";
 
 /// The count of unused findings a skipped baseline could not judge, worded
 /// as incomplete coverage rather than as findings.
@@ -242,23 +204,6 @@ fn write_broken(out: &mut dyn io::Write, palette: &Palette, report: &ScanOutput)
     writeln!(out)
 }
 
-/// The human phrase for one broken binding's reason: what the engine would
-/// render as an error state, said statically.
-pub(crate) fn reason_phrase(binding: &BrokenOut) -> String {
-    match (binding.reason, binding.bound_artifact.as_deref()) {
-        ("bound_artifact_broken", Some(artifact)) => {
-            format!("bound artifact {artifact} has unresolvable references")
-        }
-        (reason, _) => format!(
-            "{} not found in the model",
-            reason
-                .strip_suffix("_not_found")
-                .unwrap_or(reason)
-                .replace('_', " ")
-        ),
-    }
-}
-
 /// The auto date/time section, rendered in both human modes after the
 /// reachability findings: a different verdict (report bindings, not
 /// reachability), so it survives even a clean "No unused objects" scan.
@@ -321,29 +266,6 @@ fn write_auto_date_time(
         }
     }
     writeln!(out)
-}
-
-/// Groups findings by their model table: where does the bloat concentrate.
-/// Table-less findings (report measures, shared expressions, functions) belong to
-/// no table and are skipped; relationships count under their "from" side. Count
-/// descending, then table name folded (case-insensitively, like every other
-/// ordering), so the output is deterministic across runs.
-pub(crate) fn worst_tables(findings: &[Finding]) -> WorstTables {
-    let mut counts: HashMap<&NameKey, usize> = HashMap::new();
-    for finding in findings {
-        if let Some(table) = &finding.table {
-            *counts.entry(table).or_default() += 1;
-        }
-    }
-    let mut ranked: Vec<(&NameKey, usize)> = counts.into_iter().collect();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    let more = ranked.len().saturating_sub(WORST_TABLES_LIMIT);
-    let rows = ranked
-        .into_iter()
-        .take(WORST_TABLES_LIMIT)
-        .map(|(table, count)| (table.quoted().to_string(), count))
-        .collect();
-    WorstTables { rows, more }
 }
 
 /// Writes the `Worst tables:` block of `--summary` (issue #38): a bounded list of
@@ -630,22 +552,6 @@ fn size_suffix(palette: &Palette, finding: &Finding) -> String {
     )
 }
 
-/// Bytes in 1024-based units, the way VertiPaq Analyzer and DAX Studio show
-/// model sizes: `512 B`, `1.2 KB`, `4.2 MB`, `1.0 GB`.
-pub fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let mut value = bytes as f64 / 1024.0;
-    let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
-        value /= 1024.0;
-        unit += 1;
-    }
-    format!("{value:.1} {}", UNITS[unit])
-}
-
 fn write_annotations(
     out: &mut dyn io::Write,
     palette: &Palette,
@@ -742,7 +648,7 @@ mod tests {
         Finding {
             kind: "measure",
             id: String::new(),
-            table: table.map(NameKey::new),
+            table: table.map(ripbi_core::NameKey::new),
             used_by: Vec::new(),
             named_in_power_query: Vec::new(),
             storage: None,
@@ -814,13 +720,13 @@ mod tests {
 
     #[test]
     fn caps_the_rows_and_counts_the_rest() {
-        let findings: Vec<Finding> = (0..WORST_TABLES_LIMIT + 3)
+        let findings: Vec<Finding> = (0..ripbi_app::output::WORST_TABLES_LIMIT + 3)
             .map(|i| finding(Some(&format!("T{i:02}"))))
             .collect();
 
         let worst = worst_tables(&findings);
 
-        assert_eq!(worst.rows.len(), WORST_TABLES_LIMIT);
+        assert_eq!(worst.rows.len(), ripbi_app::output::WORST_TABLES_LIMIT);
         assert_eq!(worst.more, 3);
     }
 
@@ -879,7 +785,7 @@ mod tests {
 
     #[test]
     fn the_summary_announces_tables_beyond_the_top() {
-        let findings: Vec<Finding> = (0..WORST_TABLES_LIMIT + 2)
+        let findings: Vec<Finding> = (0..ripbi_app::output::WORST_TABLES_LIMIT + 2)
             .map(|i| finding(Some(&format!("T{i:02}"))))
             .collect();
 
