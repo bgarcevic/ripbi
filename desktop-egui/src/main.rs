@@ -233,11 +233,15 @@ impl eframe::App for App {
             });
 
         egui::CentralPanel::default().show(ui, |ui| {
-            if let Some(error) = &self.error {
-                banner(ui, Tone::Bad, error);
+            if let Some(error) = &self.error
+                && banner(ui, Tone::Bad, error)
+            {
+                self.error = None;
             }
-            if let Some(notice) = &self.notice {
-                banner(ui, Tone::Good, notice);
+            if let Some(notice) = &self.notice
+                && banner(ui, Tone::Good, notice)
+            {
+                self.notice = None;
             }
             if !self.fetch_log.is_empty() {
                 fetch_log(ui, &self.fetch_log);
@@ -1235,8 +1239,10 @@ fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-fn banner(ui: &mut egui::Ui, tone: Tone, text: &str) {
+/// A coloured message with a × to dismiss it; true once dismissed.
+fn banner(ui: &mut egui::Ui, tone: Tone, text: &str) -> bool {
     let color = hue(ui, tone);
+    let mut dismissed = false;
     egui::Frame::new()
         .fill(color.gamma_multiply(0.15))
         .stroke(egui::Stroke::new(1.0, color))
@@ -1244,9 +1250,21 @@ fn banner(ui: &mut egui::Ui, tone: Tone, text: &str) {
         .corner_radius(4.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(text).color(color));
+            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                let close = egui::Button::new(RichText::new("×").size(16.0).color(color))
+                    .frame(false)
+                    .min_size(egui::vec2(18.0, 18.0));
+                dismissed = ui.add(close).on_hover_text("Dismiss").clicked();
+                ui.with_layout(
+                    Layout::left_to_right(Align::Min).with_main_wrap(true),
+                    |ui| {
+                        ui.label(RichText::new(text).color(color));
+                    },
+                );
+            });
         });
     ui.add_space(6.0);
+    dismissed
 }
 
 fn path_label(ui: &mut egui::Ui, path: &Path) {
