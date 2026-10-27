@@ -24,7 +24,7 @@ toml = "1.1"
 zip = "9"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-rstest = "0.27"
+rstest = "0.28"
 assert_cmd = "2"
 predicates = "3"
 ureq = "3"
@@ -32,8 +32,8 @@ sha2 = "0.11"
 semver = "1"
 tar = "0.4"
 flate2 = "1"
-jsonschema = { version = "0.58", default-features = false }
-base64 = "0.22"
+jsonschema = { version = "0.59", default-features = false }
+base64 = "0.23"
 # `fetch` pickers: type to filter, arrows to move. No editor/password prompts.
 dialoguer = { version = "0.12", default-features = false, features = ["fuzzy-select"] }
 
