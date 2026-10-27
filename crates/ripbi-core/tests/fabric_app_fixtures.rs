@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use ripbi_core::graph::DependencyGraph;
 use ripbi_core::ingest::{is_fabric_app, report, semantic_model};
-use ripbi_core::{BindingSite, NameKey, ObjectId, Provenance};
+use ripbi_core::{BindingSite, BrokenReason, NameKey, ObjectId, Provenance};
 
 fn fixture(part: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -118,4 +118,44 @@ fn an_unmatched_literal_is_never_a_broken_binding() {
     let app = report(&fixture("app")).expect("reads the app").value;
     let graph = DependencyGraph::build(&model, &[&app]);
     assert!(graph.broken_bindings().is_empty());
+}
+
+/// Inside a DAX literal anchored to the model by a reference that resolves,
+/// a reference that does not is breakage. Names the app's queries introduce
+/// count wherever the app writes them; selectors and a literal with nothing
+/// left to anchor it are text.
+#[test]
+fn an_anchored_query_literal_reports_what_no_longer_resolves() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fabric-app-broken");
+    let model = semantic_model(&root.join("Books.SemanticModel"))
+        .expect("reads the model")
+        .value;
+    let app = report(&root.join("app")).expect("reads the app").value;
+    let graph = DependencyGraph::build(&model, &[&app]);
+    let mut broken: Vec<String> = graph
+        .broken_bindings()
+        .iter()
+        .map(|binding| {
+            let BindingSite::Code { file, line } = &binding.edge.kind else {
+                panic!("an app binding sits in code: {binding:?}");
+            };
+            let reason = match &binding.reason {
+                BrokenReason::BoundArtifactBroken { artifact, .. } => {
+                    format!("bound artifact {artifact}")
+                }
+                reason => format!("{reason:?}"),
+            };
+            format!("{file}:{line} {} {reason}", binding.target)
+        })
+        .collect();
+    broken.sort();
+    assert_eq!(
+        broken,
+        [
+            "src/queries.ts:11 'Budget'[Amount] TableNotFound",
+            "src/queries.ts:9 'Ledger'[Region] FieldNotFound",
+            "src/queries.ts:9 [Margin] MeasureNotFound",
+            "src/queries.ts:9 [Stale Margin] bound artifact 'Metrics'[Stale Margin]",
+        ]
+    );
 }

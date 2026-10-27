@@ -338,6 +338,10 @@ which literals name model objects (see `graph.md`).
   JavaScript. A quote it misreads — an apostrophe in JSX text — ends at the
   line break, as an unterminated JavaScript string does. A source that is not
   UTF-8 is a `MalformedValue` notice.
+- **Breakage.** A DAX literal with at least one reference that resolves is
+  checked for references that do not, and `scan --broken` reports them at the
+  literal's file and line (see `graph.md`). A literal in which nothing
+  resolves any more — every name it reads was renamed — is not reported.
 - **Known gap.** Names that never appear as a literal — read from an
   environment variable, a fetched config, or concatenated from fragments
   (`'Sa' + 'les'`) — are invisible. Query logs (`--queries-from`) cover what
