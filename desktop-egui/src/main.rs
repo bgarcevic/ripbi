@@ -183,8 +183,11 @@ impl App {
             ui.add_space(4.0);
             let mut remove = None;
             for (i, path) in self.reports.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    if ui.small_button("✖").on_hover_text("Remove").clicked() {
+                ui.horizontal_top(|ui| {
+                    let remove_button = egui::Button::new(RichText::new("×").size(16.0))
+                        .frame(false)
+                        .min_size(egui::vec2(18.0, 18.0));
+                    if ui.add(remove_button).on_hover_text("Remove").clicked() {
                         remove = Some(i);
                     }
                     path_label(ui, path);
@@ -196,8 +199,9 @@ impl App {
             if self.reports.is_empty() {
                 ui.label(
                     RichText::new(
-                        "Add .Report folders, .pbip projects, or a search folder. \
-                         Search folders are scanned recursively for reports bound to this model.",
+                        "Optional. Reports beside the model are found automatically. \
+                         For reports elsewhere, add their .pbip projects or a folder to \
+                         search for reports bound to this model.",
                     )
                     .weak(),
                 );
@@ -213,7 +217,7 @@ impl App {
         ui.add_space(16.0);
         ui.separator();
         ui.add_space(8.0);
-        let ready = self.model.is_some() && !self.reports.is_empty() && !self.busy();
+        let ready = self.model.is_some() && !self.busy();
         ui.horizontal(|ui| {
             let button = egui::Button::new(RichText::new("Analyze model  →").strong())
                 .min_size(egui::vec2(140.0, 30.0));
@@ -228,8 +232,8 @@ impl App {
         ui.add_space(8.0);
         ui.label(
             RichText::new(
-                "Only reports matched to this model are included. Objects used by \
-                 reports outside this selection may appear unused.",
+                "Only reports bound to this model are included. Objects used by \
+                 reports outside the searched folders may appear unused.",
             )
             .small()
             .weak(),
@@ -712,7 +716,7 @@ fn welcome(ui: &mut egui::Ui, busy: bool) {
         ui.label(RichText::new("A LEANER MODEL STARTS HERE").small().weak());
         ui.label(RichText::new("Make room for what matters.").size(28.0).strong());
         ui.add_space(6.0);
-        ui.label("Pick a semantic model and the reports that use it, then analyze to find unused objects.");
+        ui.label("Pick a semantic model, then analyze to find unused objects. Reports beside it are found automatically.");
         ui.add_space(20.0);
         ui.label(RichText::new("See what is really used  ·  Bring every report  ·  Find your next cleanup").weak());
     });

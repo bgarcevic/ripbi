@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--report` accepts a thin report's `.pbip`.** A report-only project that
+  connects to its model live (`byConnection`) and has no model folder beside it
+  failed with "no semantic model for project". It now counts as the report, like
+  its `.Report` folder.
 - **`scan --emit tx-rm` survives any shell's pipe.** Non-ASCII characters in the JSON
   lines are now `\uXXXX` escapes, so the output is pure ASCII. Windows PowerShell
   re-encodes text piped between native commands and mangled names like `Salg æøå` on

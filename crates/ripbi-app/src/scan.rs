@@ -1263,24 +1263,14 @@ pub fn partition_report_value(
 }
 
 /// The reports of a `.pbip` passed to `--report`, or `None` when `path` is
-/// not a `.pbip` file — the project's reports become direct anchors, its
-/// model is discarded (the model names itself, via `--model` or the anchors).
+/// not a `.pbip` file — the project's reports become direct anchors. Its
+/// model is never paired: the model names itself (via `--model` or the
+/// anchors), so a thin report project with no model beside it still counts.
 fn pbip_reports(path: &Path) -> Result<Option<Vec<PathBuf>>, ScanError> {
     if !path.is_file() || !file_name_lower(path).ends_with(".pbip") {
         return Ok(None);
     }
-    match discover::resolve_path(path)? {
-        Resolution::Paired(paired) => Ok(Some(paired.reports)),
-        Resolution::Ambiguous { dir, candidates } => Err(ambiguous_error(&dir, &candidates)),
-        Resolution::Archive(archive) => Err(discover::archive_error(&archive)),
-        Resolution::Unrecognized(unrecognized) => Err(ScanError::new(format!(
-            "not a Power BI project: {}",
-            unrecognized.display()
-        ))
-        .with_hint(
-            "point --report at a .pbip file, a .Report folder, or an existing folder to search",
-        )),
-    }
+    discover::report_items_without_model(path).map(Some)
 }
 
 /// The default search root when `--model` is given with no reports at all:
@@ -2008,7 +1998,28 @@ mod tests {
 
     use ripbi_core::{NameKey, ObjectId, SizeBasis, StorageStats};
 
-    use super::{SkipNoticeOut, UnusedStorage, dedupe_opaque_skips, unused_storage};
+    use super::{
+        SkipNoticeOut, UnusedStorage, dedupe_opaque_skips, partition_report_value, unused_storage,
+    };
+
+    /// A thin report project (`byConnection`, no model beside it) passed to
+    /// `--report` expands to its report, not a "no semantic model" error.
+    #[test]
+    fn a_thin_pbip_report_expands_without_a_model() {
+        let root = std::env::temp_dir().join(format!("ripbi-thin-pbip-{}", std::process::id()));
+        let report = root.join("Thin.Report");
+        std::fs::create_dir_all(report.join("definition")).unwrap();
+        std::fs::write(report.join("definition").join("report.json"), "{}").unwrap();
+        std::fs::write(root.join("Thin.pbip"), "{}").unwrap();
+
+        let (mut direct, mut search_roots) = (Vec::new(), Vec::new());
+        let result =
+            partition_report_value(&root.join("Thin.pbip"), &mut direct, &mut search_roots);
+        std::fs::remove_dir_all(&root).unwrap();
+        result.expect("a thin .pbip is a report anchor");
+        assert_eq!(direct, vec![report]);
+        assert!(search_roots.is_empty());
+    }
 
     fn size(bytes: u64, basis: SizeBasis) -> StorageStats {
         StorageStats {

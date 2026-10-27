@@ -73,9 +73,6 @@ pub fn run(model: &Path, reports: &[PathBuf]) -> Result<Analysis, String> {
     if !model.is_absolute() || !model.exists() {
         return Err("Select an existing model using its full path.".into());
     }
-    if reports.is_empty() {
-        return Err("Add at least one report or a folder containing reports.".into());
-    }
     if reports
         .iter()
         .any(|path| !path.is_absolute() || !path.exists())
@@ -106,7 +103,7 @@ pub fn run(model: &Path, reports: &[PathBuf]) -> Result<Analysis, String> {
             log: log.0,
         }),
         Scan::Skipped { model, .. } => Err(format!(
-            "No reports connected to {} were found.",
+            "No reports bound to {} were found. Add the reports' .pbip projects or a folder to search.",
             model.display()
         )),
     }
@@ -132,8 +129,13 @@ mod tests {
     }
 
     #[test]
-    fn refuses_empty_report_selection() {
-        let here = Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert!(run(here, &[]).unwrap_err().contains("at least one"));
+    fn discovers_reports_beside_the_model_when_none_are_listed() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../samples")
+            .canonicalize()
+            .unwrap();
+        let model = root.join("AdventureWorks Sales.SemanticModel");
+        let analysis = run(&model, &[]).unwrap();
+        assert!(!analysis.output.reports.is_empty());
     }
 }
