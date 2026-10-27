@@ -3160,6 +3160,7 @@ dependencies = [
  "egui_extras",
  "rfd",
  "ripbi-app",
+ "ripbi-service",
  "serde",
  "serde_json",
 ]

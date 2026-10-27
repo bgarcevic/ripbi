@@ -2,16 +2,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod analysis;
+mod fetching;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 
 use analysis::Analysis;
 use eframe::egui::{
     self, Align, Color32, ComboBox, Layout, ProgressBar, RichText, ScrollArea, Sense, TextEdit,
 };
 use egui_extras::{Column, TableBuilder};
+use fetching::{Answer, Event, Tone};
+use ripbi_app::fetch::AuthMode;
 use ripbi_app::output::Finding;
 
 const GREEN: Color32 = Color32::from_rgb(0x3f, 0xb9, 0x50);
@@ -38,8 +41,41 @@ enum Tab {
     Coverage,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Source {
+    #[default]
+    Local,
+    Service,
+}
+
+/// A fetch in flight, and the question it is waiting on.
+struct FetchJob {
+    events: Receiver<Event>,
+    answers: Sender<Answer>,
+    status: String,
+    prompt: Option<Prompt>,
+}
+
+enum Prompt {
+    Pick {
+        title: String,
+        prompt: String,
+        labels: Vec<String>,
+        filter: String,
+    },
+    Confirm {
+        unreadable: usize,
+        total: usize,
+    },
+}
+
 #[derive(Default)]
 struct App {
+    source: Source,
+    form: fetching::Form,
+    fetch: Option<FetchJob>,
+    /// The last forecast, then the fetch's closing notes.
+    fetch_log: Vec<(Tone, String)>,
     model: Option<PathBuf>,
     reports: Vec<PathBuf>,
     job: Option<Receiver<Result<Analysis, String>>>,
@@ -55,14 +91,11 @@ struct App {
 
 impl eframe::App for App {
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_fetch();
         let Some(job) = &self.job else { return };
         match job.try_recv() {
             Ok(Ok(analysis)) => {
-                self.analysis = Some(analysis);
-                self.tab = Tab::Unused;
-                self.query.clear();
-                self.kind = None;
-                self.selected = None;
+                self.show(analysis);
                 self.job = None;
             }
             Ok(Err(error)) => {
@@ -110,22 +143,43 @@ impl eframe::App for App {
             if let Some(notice) = &self.notice {
                 banner(ui, GREEN, notice);
             }
+            if !self.fetch_log.is_empty() {
+                fetch_log(ui, &self.fetch_log);
+            }
             if self.analysis.is_some() {
                 self.results(ui);
+            } else if let Some(fetch) = &self.fetch {
+                waiting(ui, &fetch.status);
             } else {
-                welcome(ui, self.job.is_some());
+                welcome(ui, self.job.is_some(), self.source);
             }
         });
+
+        self.prompt(ui.ctx());
     }
 }
 
 impl App {
     fn busy(&self) -> bool {
-        self.job.is_some()
+        self.job.is_some() || self.fetch.is_some()
     }
 
     fn inputs(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
+        ui.add_enabled_ui(!self.busy(), |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.source, Source::Local, "📁 Local files");
+                ui.selectable_value(&mut self.source, Source::Service, "☁ Power BI service");
+            });
+        });
+        ui.add_space(8.0);
+        match self.source {
+            Source::Local => self.local_inputs(ui),
+            Source::Service => self.service_inputs(ui),
+        }
+    }
+
+    fn local_inputs(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("01  SEMANTIC MODEL").small().strong());
         ui.add_space(4.0);
         match &self.model {
@@ -240,12 +294,287 @@ impl App {
         );
     }
 
+    fn service_inputs(&mut self, ui: &mut egui::Ui) {
+        let busy = self.busy();
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.label(RichText::new("01  WHICH MODEL").small().strong());
+            ui.add_space(4.0);
+            ui.label(RichText::new("Paste a link to the model or one of its reports:").weak());
+            ui.add(
+                TextEdit::singleline(&mut self.form.link)
+                    .hint_text("https://app.powerbi.com/groups/…")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add_space(4.0);
+            ui.label(RichText::new("…or name them (leave blank to pick from a list):").weak());
+            egui::Grid::new("fetch-names")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    ui.label("Workspace");
+                    ui.add(
+                        TextEdit::singleline(&mut self.form.workspace)
+                            .hint_text("name or id")
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.end_row();
+                    ui.label("Model");
+                    ui.add(
+                        TextEdit::singleline(&mut self.form.model)
+                            .hint_text("name or id")
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.end_row();
+                });
+
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(RichText::new("02  WHERE TO PUT IT").small().strong());
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("The project is written to a folder named after the model in:")
+                    .weak(),
+            );
+            match &self.form.parent {
+                Some(parent) => path_label(ui, parent),
+                None => {
+                    ui.label(RichText::new("No folder chosen").weak());
+                }
+            }
+            if ui.button("📁 Choose folder…").clicked()
+                && let Some(path) = rfd::FileDialog::new().set_title("Fetch into").pick_folder()
+            {
+                self.form.parent = Some(path);
+            }
+            ui.checkbox(&mut self.form.force, "Replace a folder fetch did not write");
+
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(RichText::new("03  SIGN-IN").small().strong());
+            ui.add_space(4.0);
+            ComboBox::from_id_salt("auth")
+                .selected_text(auth_label(self.form.auth))
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    for mode in [AuthMode::Auto, AuthMode::Az, AuthMode::Env, AuthMode::Sp] {
+                        ui.selectable_value(&mut self.form.auth, mode, auth_label(mode));
+                    }
+                });
+            ui.label(RichText::new(auth_hint(self.form.auth)).small().weak());
+            ui.checkbox(
+                &mut self.form.verify,
+                "Cross-check against each workspace's items",
+            );
+        });
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(8.0);
+        let ready = !busy && self.form.parent.is_some();
+        ui.horizontal(|ui| {
+            let button = egui::Button::new(RichText::new("Fetch & analyze  →").strong())
+                .min_size(egui::vec2(140.0, 30.0));
+            if ui.add_enabled(ready, button).clicked() {
+                self.start_fetch(ui.ctx(), false);
+            }
+            if ui
+                .add_enabled(ready, egui::Button::new("Forecast only"))
+                .on_hover_text("Check which reports you can read; download nothing")
+                .clicked()
+            {
+                self.start_fetch(ui.ctx(), true);
+            }
+        });
+        if let Some(fetch) = &self.fetch {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(&fetch.status);
+            });
+        }
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(
+                "Downloads the model and every downstream report you can read. \
+                 Reports you cannot read are listed first: objects only they use \
+                 would show as unused.",
+            )
+            .small()
+            .weak(),
+        );
+    }
+
+    fn start_fetch(&mut self, ctx: &egui::Context, dry_run: bool) {
+        let (events_tx, events) = channel();
+        let (answers, answers_rx) = channel();
+        let form = self.form.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            fetching::run(&form, dry_run, &events_tx, &answers_rx, &ctx);
+        });
+        self.fetch = Some(FetchJob {
+            events,
+            answers,
+            status: "Starting…".into(),
+            prompt: None,
+        });
+        self.fetch_log.clear();
+        self.analysis = None;
+        self.error = None;
+        self.notice = None;
+    }
+
+    fn poll_fetch(&mut self) {
+        let Some(fetch) = &mut self.fetch else { return };
+        loop {
+            match fetch.events.try_recv() {
+                Ok(Event::Status(status)) => fetch.status = status,
+                Ok(Event::Forecast(lines)) => self.fetch_log = lines,
+                Ok(Event::Pick {
+                    title,
+                    prompt,
+                    labels,
+                }) => {
+                    fetch.prompt = Some(Prompt::Pick {
+                        title,
+                        prompt,
+                        labels,
+                        filter: String::new(),
+                    });
+                }
+                Ok(Event::ConfirmIncomplete { unreadable, total }) => {
+                    fetch.prompt = Some(Prompt::Confirm { unreadable, total });
+                }
+                Ok(Event::Done(done)) => {
+                    self.fetch = None;
+                    self.finish_fetch(done);
+                    return;
+                }
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => {
+                    self.fetch = None;
+                    self.error = Some("Fetch worker stopped unexpectedly.".into());
+                    return;
+                }
+            }
+        }
+    }
+
+    fn finish_fetch(&mut self, done: Result<Box<fetching::Fetched>, String>) {
+        let fetched = match done {
+            Ok(fetched) => fetched,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        self.fetch_log.extend(fetched.summary);
+        let Some(analysis) = fetched.analysis else {
+            self.notice = Some("Forecast only: nothing was downloaded.".into());
+            return;
+        };
+        if let Some(model) = fetched.model {
+            self.model = Some(model);
+            self.reports.clear();
+        }
+        self.notice = Some(format!(
+            "Fetched into {}. Switch to Local files to re-analyze it later.",
+            fetched.root.display()
+        ));
+        self.show(analysis);
+    }
+
+    /// The fetch's open question, as a modal; the answer unblocks the worker.
+    fn prompt(&mut self, ctx: &egui::Context) {
+        let Some(fetch) = &mut self.fetch else { return };
+        let Some(prompt) = &mut fetch.prompt else {
+            return;
+        };
+        let mut answer = None;
+        let modal = egui::Modal::new(egui::Id::unique("fetch-prompt")).show(ctx, |ui| {
+            ui.set_width(460.0);
+            match prompt {
+                Prompt::Pick {
+                    title,
+                    prompt,
+                    labels,
+                    filter,
+                } => {
+                    ui.heading(title.as_str());
+                    ui.label(prompt.as_str());
+                    ui.add_space(4.0);
+                    ui.add(
+                        TextEdit::singleline(filter)
+                            .hint_text("Filter…")
+                            .desired_width(f32::INFINITY),
+                    )
+                    .request_focus();
+                    let needle = filter.to_lowercase();
+                    ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                        for (i, text) in labels.iter().enumerate() {
+                            if (needle.is_empty() || text.to_lowercase().contains(&needle))
+                                && ui
+                                    .add(
+                                        egui::Button::selectable(false, text.as_str())
+                                            .min_size(egui::vec2(ui.available_width(), 0.0)),
+                                    )
+                                    .clicked()
+                            {
+                                answer = Some(Answer::Pick(Some(i)));
+                            }
+                        }
+                    });
+                    ui.add_space(8.0);
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(Answer::Pick(None));
+                    }
+                }
+                Prompt::Confirm { unreadable, total } => {
+                    ui.heading("Some reports can't be read");
+                    ui.label(format!(
+                        "{unreadable} of {total} downstream reports can't be read. \
+                         Objects only they use will show as unused."
+                    ));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Fetch the readable reports").clicked() {
+                            answer = Some(Answer::Confirm(true));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            answer = Some(Answer::Confirm(false));
+                        }
+                    });
+                }
+            }
+        });
+        if answer.is_none() && modal.should_close() {
+            answer = Some(match prompt {
+                Prompt::Pick { .. } => Answer::Pick(None),
+                Prompt::Confirm { .. } => Answer::Confirm(false),
+            });
+        }
+        if let Some(answer) = answer {
+            _ = fetch.answers.send(answer);
+            fetch.prompt = None;
+        }
+    }
+
     fn set_model(&mut self, path: PathBuf) {
         self.model = Some(path);
         self.reports.clear();
         self.analysis = None;
         self.error = None;
         self.notice = None;
+    }
+
+    fn show(&mut self, analysis: Analysis) {
+        self.analysis = Some(analysis);
+        self.tab = Tab::Unused;
+        self.query.clear();
+        self.kind = None;
+        self.selected = None;
     }
 
     fn add_reports(&mut self, paths: Vec<PathBuf>) {
@@ -269,6 +598,9 @@ impl App {
                 .filter(|p| !p.as_os_str().is_empty())
                 .collect()
         });
+        if !dropped.is_empty() {
+            self.source = Source::Local;
+        }
         let mut paths = dropped.into_iter();
         if self.model.is_none()
             && let Some(first) = paths.next()
@@ -289,6 +621,7 @@ impl App {
             ctx.request_repaint();
         });
         self.job = Some(rx);
+        self.fetch_log.clear();
         self.error = None;
         self.notice = None;
     }
@@ -704,7 +1037,52 @@ fn coverage_tab(ui: &mut egui::Ui, analysis: &Analysis) {
     });
 }
 
-fn welcome(ui: &mut egui::Ui, busy: bool) {
+fn waiting(ui: &mut egui::Ui, status: &str) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(ui.available_height() * 0.25);
+        ui.spinner();
+        ui.add_space(8.0);
+        ui.label(status);
+    });
+}
+
+fn fetch_log(ui: &mut egui::Ui, lines: &[(Tone, String)]) {
+    card(ui, |ui| {
+        for (tone, text) in lines {
+            let text = RichText::new(text);
+            ui.label(match tone {
+                Tone::Plain => text.strong(),
+                Tone::Good => text.color(GREEN),
+                Tone::Warn => text.color(AMBER),
+                Tone::Bad => text.color(RED),
+            });
+        }
+    });
+    ui.add_space(8.0);
+}
+
+fn auth_label(mode: AuthMode) -> &'static str {
+    match mode {
+        AuthMode::Auto => "Automatic",
+        AuthMode::Az => "Azure CLI (az login)",
+        AuthMode::Env => "Token from environment",
+        AuthMode::Sp => "Service principal",
+    }
+}
+
+fn auth_hint(mode: AuthMode) -> &'static str {
+    match mode {
+        AuthMode::Auto => {
+            "RIPBI_FABRIC_TOKEN if set, else a service principal from AZURE_* variables, \
+             else your `az login`."
+        }
+        AuthMode::Az => "Uses the account you signed in with `az login`.",
+        AuthMode::Env => "Reads RIPBI_FABRIC_TOKEN (and RIPBI_POWERBI_TOKEN, if set).",
+        AuthMode::Sp => "Reads AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET.",
+    }
+}
+
+fn welcome(ui: &mut egui::Ui, busy: bool, source: Source) {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() * 0.25);
         if busy {
@@ -716,7 +1094,10 @@ fn welcome(ui: &mut egui::Ui, busy: bool) {
         ui.label(RichText::new("A LEANER MODEL STARTS HERE").small().weak());
         ui.label(RichText::new("Make room for what matters.").size(28.0).strong());
         ui.add_space(6.0);
-        ui.label("Pick a semantic model, then analyze to find unused objects. Reports beside it are found automatically.");
+        ui.label(match source {
+            Source::Local => "Pick a semantic model, then analyze to find unused objects. Reports beside it are found automatically.",
+            Source::Service => "Point at a model in the Power BI service. ripbi downloads it with every report you can read, then analyzes it.",
+        });
         ui.add_space(20.0);
         ui.label(RichText::new("See what is really used  ·  Bring every report  ·  Find your next cleanup").weak());
     });

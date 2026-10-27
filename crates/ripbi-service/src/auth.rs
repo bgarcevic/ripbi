@@ -86,7 +86,15 @@ impl TokenSource for AzureCli {
         // `az` is a batch file on Windows, which `Command` only runs when the
         // extension is spelled out.
         let program = if cfg!(windows) { "az.cmd" } else { "az" };
-        let output = Command::new(program)
+        let mut command = Command::new(program);
+        // A GUI host has no console; without this, Windows opens one for az.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let output = command
             .args([
                 "account",
                 "get-access-token",

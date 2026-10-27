@@ -86,15 +86,33 @@ pub fn run(model: &Path, reports: &[PathBuf]) -> Result<Analysis, String> {
     } else {
         model.parent().ok_or("The model has no parent folder.")?
     };
-    let request = ScanRequest {
+    scan_with(ScanRequest {
         cwd: cwd.to_path_buf(),
         model: Some(model.to_path_buf()),
         reports: reports.to_vec(),
+        ..request()
+    })
+}
+
+/// A bare `ripbi scan` inside `root`: its `ripbi.toml` names the model and
+/// reports, as in a fetched project.
+pub fn run_project(root: &Path) -> Result<Analysis, String> {
+    scan_with(ScanRequest {
+        cwd: root.to_path_buf(),
+        ..request()
+    })
+}
+
+fn request() -> ScanRequest {
+    ScanRequest {
         no_input: true,
         verbose: true,
         with_tables: true,
         ..ScanRequest::default()
-    };
+    }
+}
+
+fn scan_with(request: ScanRequest) -> Result<Analysis, String> {
     let mut log = Log::default();
     let scanned = scan::run(&request, &mut log).map_err(|error| error.to_string())?;
     match scanned {
@@ -137,5 +155,28 @@ mod tests {
         let model = root.join("AdventureWorks Sales.SemanticModel");
         let analysis = run(&model, &[]).unwrap();
         assert!(!analysis.output.reports.is_empty());
+    }
+
+    #[test]
+    fn scans_a_project_its_config_names() {
+        let samples = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../samples")
+            .canonicalize()
+            .unwrap();
+        let root = std::env::temp_dir().join(format!("ripbi-egui-project-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
+        std::fs::write(
+            root.join("ripbi.toml"),
+            format!(
+                "target = {}\nreports = [{}]\n",
+                quote(&samples.join("AdventureWorks Sales.SemanticModel")),
+                quote(&samples)
+            ),
+        )
+        .unwrap();
+        let analysis = run_project(&root);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(!analysis.unwrap().output.reports.is_empty());
     }
 }

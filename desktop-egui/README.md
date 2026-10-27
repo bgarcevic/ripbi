@@ -14,6 +14,12 @@ cargo run --manifest-path desktop-egui/Cargo.toml
 3. Analyze, then browse unused objects, broken references, date tables, and coverage.
    Export JSON writes `{ result, diagnostics }`.
 
+Or switch to **Power BI service**: paste a link to a model or report (or name the
+workspace and model, or leave both blank to pick from lists), choose a folder, and
+Fetch & analyze. This is `ripbi fetch --scan`: it signs in (Azure CLI, a token, or a
+service principal; see the CLI's `--auth`), shows the downstream forecast, asks before
+downloading an incomplete report set, writes the project, and analyzes it.
+
 ## Design
 
 `src/analysis.rs` calls `ripbi_app::scan::run` on a worker thread: the same
@@ -21,6 +27,9 @@ pipeline `ripbi scan` runs, with a typed `ScanRequest` in and a typed
 `ScanOutput` out — no CLI crate, no JSON round-trip. Its notes are collected
 for the coverage tab, and Export JSON writes `ripbi_app::json` (schema v1,
 exactly what `ripbi scan --json` prints) under `result`.
+`src/fetching.rs` runs `ripbi_app::fetch::run` on a worker thread; the fetch's
+questions (workspace and model pickers, the incomplete-set confirmation) arrive
+as events and block the worker until the UI answers from a modal.
 `src/main.rs` is the immediate-mode UI. The package is
 standalone (its own `[workspace]`) so GUI dependencies stay out of CLI builds
 and CI.
