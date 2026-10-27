@@ -17,9 +17,20 @@ use fetching::{Answer, Event, Tone};
 use ripbi_app::fetch::AuthMode;
 use ripbi_app::output::Finding;
 
-const GREEN: Color32 = Color32::from_rgb(0x3f, 0xb9, 0x50);
-const AMBER: Color32 = Color32::from_rgb(0xd2, 0x99, 0x22);
-const RED: Color32 = Color32::from_rgb(0xe5, 0x53, 0x4b);
+/// A tone's colour in the current theme: darker on a light background so
+/// coloured text stays legible.
+fn hue(ui: &egui::Ui, tone: Tone) -> Color32 {
+    let dark = ui.visuals().dark_mode;
+    match tone {
+        Tone::Plain => ui.visuals().text_color(),
+        Tone::Good if dark => Color32::from_rgb(0x3f, 0xb9, 0x50),
+        Tone::Good => Color32::from_rgb(0x1a, 0x7f, 0x37),
+        Tone::Warn if dark => Color32::from_rgb(0xd2, 0x99, 0x22),
+        Tone::Warn => Color32::from_rgb(0x9a, 0x67, 0x00),
+        Tone::Bad if dark => Color32::from_rgb(0xe5, 0x53, 0x4b),
+        Tone::Bad => Color32::from_rgb(0xcf, 0x22, 0x2e),
+    }
+}
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -119,6 +130,9 @@ impl eframe::App for App {
                 ui.heading(RichText::new("ripbi").strong());
                 ui.label(RichText::new("DESKTOP").small().weak());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // Dark, light or follow the system; remembered across runs.
+                    egui::widgets::global_theme_preference_buttons(ui);
+                    ui.separator();
                     ui.label(
                         RichText::new("✔ Read-only analysis · Your model stays on your machine")
                             .weak(),
@@ -138,10 +152,10 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ui, |ui| {
             if let Some(error) = &self.error {
-                banner(ui, RED, error);
+                banner(ui, Tone::Bad, error);
             }
             if let Some(notice) = &self.notice {
-                banner(ui, GREEN, notice);
+                banner(ui, Tone::Good, notice);
             }
             if !self.fetch_log.is_empty() {
                 fetch_log(ui, &self.fetch_log);
@@ -661,7 +675,7 @@ impl App {
         let mut export = false;
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new("●").color(GREEN));
+            ui.label(RichText::new("●").color(hue(ui, Tone::Good)));
             ui.label(RichText::new("Analysis complete").strong());
             ui.label(RichText::new(file_name(Path::new(&r.target))).weak());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -683,14 +697,14 @@ impl App {
                 "Reachable",
                 s.reachable,
                 &format!("{:.0}% of the dependency graph", reachable * 100.0),
-                Some(GREEN),
+                Some(Tone::Good),
             );
             metric(
                 &mut cols[2],
                 "Unused",
                 s.unused_raw,
                 "Includes hidden date machinery",
-                Some(AMBER),
+                Some(Tone::Warn),
             );
             metric(
                 &mut cols[3],
@@ -715,7 +729,7 @@ impl App {
                 ui.add_space(4.0);
                 ui.add(
                     ProgressBar::new(reachable)
-                        .fill(GREEN)
+                        .fill(hue(ui, Tone::Good))
                         .text(format!("{:.0}% reachable", reachable * 100.0)),
                 );
                 ui.add_space(4.0);
@@ -737,7 +751,7 @@ impl App {
                 for (kind, count) in by_count.into_iter().take(5) {
                     ui.add(
                         ProgressBar::new(*count as f32 / max as f32)
-                            .fill(AMBER)
+                            .fill(hue(ui, Tone::Warn))
                             .text(format!("{}  ·  {count}", label(kind))),
                     );
                 }
@@ -881,7 +895,11 @@ fn unused_tab(
                 let f = &unused[index];
                 row.set_selected(*selected == Some(index));
                 row.col(|ui| {
-                    ui.label(RichText::new(label(f.kind)).small().color(AMBER));
+                    ui.label(
+                        RichText::new(label(f.kind))
+                            .small()
+                            .color(hue(ui, Tone::Warn)),
+                    );
                 });
                 row.col(|ui| {
                     ui.label(&f.id);
@@ -900,7 +918,11 @@ fn unused_tab(
 }
 
 fn finding_detail(ui: &mut egui::Ui, f: &Finding) {
-    ui.label(RichText::new(label(f.kind)).small().color(AMBER));
+    ui.label(
+        RichText::new(label(f.kind))
+            .small()
+            .color(hue(ui, Tone::Warn)),
+    );
     ui.label(RichText::new(&f.id).strong().size(16.0));
     if let Some(table) = &f.table {
         ui.label(RichText::new(format!("in {table}")).weak());
@@ -915,7 +937,11 @@ fn finding_detail(ui: &mut egui::Ui, f: &Finding) {
             ui.monospace(&u.id);
             ui.label(RichText::new(&u.provenance).weak());
             if u.also_unused {
-                ui.label(RichText::new("ALSO UNUSED").small().color(AMBER));
+                ui.label(
+                    RichText::new("ALSO UNUSED")
+                        .small()
+                        .color(hue(ui, Tone::Warn)),
+                );
             }
         });
     }
@@ -945,7 +971,7 @@ fn broken_tab(ui: &mut egui::Ui, analysis: &Analysis) {
         }
         for b in &r.broken {
             card(ui, |ui| {
-                ui.label(RichText::new(&b.target).strong().color(RED));
+                ui.label(RichText::new(&b.target).strong().color(hue(ui, Tone::Bad)));
                 ui.label(
                     RichText::new(format!(
                         "{} · {} · {}",
@@ -959,7 +985,7 @@ fn broken_tab(ui: &mut egui::Ui, analysis: &Analysis) {
         }
         for b in &r.broken_artifacts {
             card(ui, |ui| {
-                ui.label(RichText::new(&b.id).strong().color(RED));
+                ui.label(RichText::new(&b.id).strong().color(hue(ui, Tone::Bad)));
                 ui.label(
                     RichText::new(format!(
                         "{} · unresolved: {}",
@@ -982,7 +1008,11 @@ fn dates_tab(ui: &mut egui::Ui, analysis: &Analysis) {
         for d in &r.auto_date_time {
             card(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(label(d.verdict)).small().color(AMBER));
+                    ui.label(
+                        RichText::new(label(d.verdict))
+                            .small()
+                            .color(hue(ui, Tone::Warn)),
+                    );
                     ui.label(RichText::new(&d.id).strong());
                 });
                 let mut detail = d
@@ -1052,9 +1082,7 @@ fn fetch_log(ui: &mut egui::Ui, lines: &[(Tone, String)]) {
             let text = RichText::new(text);
             ui.label(match tone {
                 Tone::Plain => text.strong(),
-                Tone::Good => text.color(GREEN),
-                Tone::Warn => text.color(AMBER),
-                Tone::Bad => text.color(RED),
+                Tone::Good | Tone::Warn | Tone::Bad => text.color(hue(ui, *tone)),
             });
         }
     });
@@ -1103,12 +1131,12 @@ fn welcome(ui: &mut egui::Ui, busy: bool, source: Source) {
     });
 }
 
-fn metric(ui: &mut egui::Ui, title: &str, value: usize, detail: &str, accent: Option<Color32>) {
+fn metric(ui: &mut egui::Ui, title: &str, value: usize, detail: &str, accent: Option<Tone>) {
     card(ui, |ui| {
         ui.label(RichText::new(title).small().weak());
         let mut number = RichText::new(value.to_string()).size(26.0).strong();
-        if let Some(color) = accent {
-            number = number.color(color);
+        if let Some(tone) = accent {
+            number = number.color(hue(ui, tone));
         }
         ui.label(number);
         ui.label(RichText::new(detail).small().weak());
@@ -1125,7 +1153,8 @@ fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-fn banner(ui: &mut egui::Ui, color: Color32, text: &str) {
+fn banner(ui: &mut egui::Ui, tone: Tone, text: &str) {
+    let color = hue(ui, tone);
     egui::Frame::new()
         .fill(color.gamma_multiply(0.15))
         .stroke(egui::Stroke::new(1.0, color))

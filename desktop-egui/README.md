@@ -20,6 +20,9 @@ Fetch & analyze. This is `ripbi fetch --scan`: it signs in (Azure CLI, a token, 
 service principal; see the CLI's `--auth`), shows the downstream forecast, asks before
 downloading an incomplete report set, writes the project, and analyzes it.
 
+The header's theme buttons switch between dark, light and following the system theme.
+The choice, like the window size, is remembered across runs.
+
 ## Design
 
 `src/analysis.rs` calls `ripbi_app::scan::run` on a worker thread: the same

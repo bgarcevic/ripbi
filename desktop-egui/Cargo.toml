@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-eframe = "0.37"
+eframe = { version = "0.37", features = ["persistence"] }
 egui_extras = "0.37"
 rfd = "0.17"
 ripbi-app = { path = "../crates/ripbi-app" }
