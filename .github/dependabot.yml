@@ -2,8 +2,12 @@ version: 2
 # PR titles must be conventional commits (pr-checks.yml), so every entry sets a
 # commit-message prefix: "build(deps): bump ..." / "ci(deps): bump ...".
 updates:
+  # One entry for both lock files: desktop-egui/Cargo.toml is a standalone package
+  # that path-depends on the workspace crates, so a shared crate (rusqlite via
+  # ripbi-core) must bump in both lock files in the same PR, or its --locked
+  # build breaks.
   - package-ecosystem: cargo
-    directory: /
+    directories: ["/", "/desktop-egui"]
     schedule:
       interval: weekly
     commit-message:
@@ -11,17 +15,6 @@ updates:
       include: scope
     groups:
       cargo-dependencies:
-        patterns: ["*"]
-  # Standalone package with its own lock file (desktop-egui/Cargo.toml).
-  - package-ecosystem: cargo
-    directory: /desktop-egui
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: build
-      include: scope
-    groups:
-      desktop-cargo-dependencies:
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
