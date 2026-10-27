@@ -88,7 +88,7 @@ pub fn prepare(root: &Path, model: &ModelRef, force: bool) -> Result<Plan, ScanE
     })
 }
 
-/// What [`write`] put on disk.
+/// What [`write()`] put on disk.
 #[derive(Debug, Clone)]
 pub struct Written {
     /// The manifest as written, paths and statuses final.
@@ -98,7 +98,7 @@ pub struct Written {
 }
 
 /// Builds the manifest from the forecast and the download results; paths
-/// are filled in by [`write`].
+/// are filled in by [`write()`].
 #[must_use]
 pub fn manifest(
     found: &Downstream,
