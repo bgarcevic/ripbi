@@ -62,6 +62,55 @@ fn legible_light(style: &mut egui::Style) {
     visuals.disabled_alpha = 0.7;
 }
 
+/// One quiet icon that cycles system → light → dark: a half-filled circle, a
+/// sun, a crescent. Painted rather than taken from a font, so it is the same
+/// thin line weight as the text around it.
+fn theme_toggle(ui: &mut egui::Ui) {
+    use egui::ThemePreference::{Dark, Light, System};
+    use egui::{Shape, Stroke, Vec2, vec2};
+    use std::f32::consts::{PI, TAU};
+
+    let preference = ui.options(|options| options.theme_preference);
+    let (next, tip) = match preference {
+        System => (Light, "Theme follows the system. Click for light."),
+        Light => (Dark, "Light theme. Click for dark."),
+        Dark => (System, "Dark theme. Click to follow the system."),
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
+    let color = if response.hovered() {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    let painter = ui.painter();
+    let center = rect.center();
+    let stroke = Stroke::new(1.2, color);
+    match preference {
+        System => {
+            let radius = 5.5;
+            painter.circle_stroke(center, radius, stroke);
+            let half = (0..=16)
+                .map(|i| center + Vec2::angled(-PI / 2.0 + PI * i as f32 / 16.0) * radius)
+                .collect();
+            painter.add(Shape::convex_polygon(half, color, Stroke::NONE));
+        }
+        Light => {
+            painter.circle_stroke(center, 3.2, stroke);
+            for i in 0..8 {
+                let direction = Vec2::angled(TAU * i as f32 / 8.0);
+                painter.line_segment([center + direction * 5.3, center + direction * 7.3], stroke);
+            }
+        }
+        Dark => {
+            painter.circle_filled(center, 6.0, color);
+            painter.circle_filled(center + vec2(2.6, -2.2), 5.0, ui.visuals().panel_fill);
+        }
+    }
+    if response.on_hover_text(tip).clicked() {
+        ui.ctx().set_theme(next);
+    }
+}
+
 fn legible_dark(style: &mut egui::Style) {
     let visuals = &mut style.visuals;
     visuals.widgets.noninteractive.fg_stroke.color = Color32::from_gray(190);
@@ -83,7 +132,7 @@ enum Tab {
 enum Source {
     #[default]
     Local,
-    Service,
+    Tenant,
 }
 
 /// A fetch in flight, and the question it is waiting on.
@@ -158,7 +207,7 @@ impl eframe::App for App {
                 ui.label(RichText::new("DESKTOP").small().weak());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     // Dark, light or follow the system; remembered across runs.
-                    egui::widgets::global_theme_preference_buttons(ui);
+                    theme_toggle(ui);
                     ui.separator();
                     ui.label(
                         RichText::new("✔ Read-only analysis · Your model stays on your machine")
@@ -210,13 +259,13 @@ impl App {
         ui.add_enabled_ui(!self.busy(), |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.source, Source::Local, "📁 Local files");
-                ui.selectable_value(&mut self.source, Source::Service, "☁ Power BI service");
+                ui.selectable_value(&mut self.source, Source::Tenant, "☁ Tenant");
             });
         });
         ui.add_space(8.0);
         match self.source {
             Source::Local => self.local_inputs(ui),
-            Source::Service => self.service_inputs(ui),
+            Source::Tenant => self.tenant_inputs(ui),
         }
     }
 
@@ -335,7 +384,7 @@ impl App {
         );
     }
 
-    fn service_inputs(&mut self, ui: &mut egui::Ui) {
+    fn tenant_inputs(&mut self, ui: &mut egui::Ui) {
         let busy = self.busy();
         ui.add_enabled_ui(!busy, |ui| {
             ui.label(RichText::new("01  WHICH MODEL").small().strong());
@@ -1151,7 +1200,7 @@ fn welcome(ui: &mut egui::Ui, busy: bool, source: Source) {
         ui.add_space(6.0);
         ui.label(match source {
             Source::Local => "Pick a semantic model, then analyze to find unused objects. Reports beside it are found automatically.",
-            Source::Service => "Point at a model in the Power BI service. ripbi downloads it with every report you can read, then analyzes it.",
+            Source::Tenant => "Point at a model in your Fabric or Power BI tenant. ripbi downloads it with every report you can read, then analyzes it.",
         });
         ui.add_space(20.0);
         ui.label(RichText::new("See what is really used  ·  Bring every report  ·  Find your next cleanup").weak());

@@ -14,13 +14,13 @@ cargo run --manifest-path desktop-egui/Cargo.toml
 3. Analyze, then browse unused objects, broken references, date tables, and coverage.
    Export JSON writes `{ result, diagnostics }`.
 
-Or switch to **Power BI service**: paste a link to a model or report (or name the
+Or switch to **Tenant**: paste a link to a model or report (or name the
 workspace and model, or leave both blank to pick from lists), choose a folder, and
 Fetch & analyze. This is `ripbi fetch --scan`: it signs in (Azure CLI, a token, or a
 service principal; see the CLI's `--auth`), shows the downstream forecast, asks before
 downloading an incomplete report set, writes the project, and analyzes it.
 
-The header's theme buttons switch between dark, light and following the system theme.
+The header's theme icon cycles through system, light and dark.
 The choice, like the window size, is remembered across runs.
 
 ## Design
