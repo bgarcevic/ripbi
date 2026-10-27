@@ -48,8 +48,17 @@ fn main() -> eframe::Result {
         "ripbi",
         options,
         Box::new(|cc| {
+            // Earlier builds saved egui's memory, which eframe still loads:
+            // drop its widget state so panels open at their default sizes.
+            cc.egui_ctx.data_mut(|data| data.clear());
             cc.egui_ctx.style_mut_of(egui::Theme::Light, legible_light);
             cc.egui_ctx.style_mut_of(egui::Theme::Dark, legible_dark);
+            if let Some(theme) = cc
+                .storage
+                .and_then(|storage| eframe::get_value::<egui::ThemePreference>(storage, THEME))
+            {
+                cc.egui_ctx.set_theme(theme);
+            }
             Ok(Box::<App>::default())
         }),
     )
@@ -162,6 +171,8 @@ enum Prompt {
 
 #[derive(Default)]
 struct App {
+    /// Mirrors egui's preference so `save` can store it.
+    theme: egui::ThemePreference,
     source: Source,
     form: fetching::Form,
     fetch: Option<FetchJob>,
@@ -180,7 +191,20 @@ struct App {
     selected: Option<usize>,
 }
 
+/// Storage key for the theme preference, the one setting kept across runs.
+const THEME: &str = "theme";
+
 impl eframe::App for App {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, THEME, &self.theme);
+    }
+
+    /// egui's memory would also keep panel widths, so a panel that once grew
+    /// to fit wide content would open that wide every time after.
+    fn persist_egui_memory(&self) -> bool {
+        false
+    }
+
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_fetch();
         let Some(job) = &self.job else { return };
@@ -202,6 +226,7 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.theme = ui.options(|options| options.theme_preference);
         self.accept_dropped_files(ui.ctx());
 
         egui::Panel::top("header").show(ui, |ui| {
@@ -1250,17 +1275,18 @@ fn banner(ui: &mut egui::Ui, tone: Tone, text: &str) -> bool {
         .corner_radius(4.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            // A top-aligned row: the text wraps in what the × leaves. (A
+            // right-to-left layout here would claim the panel's full height.)
+            ui.horizontal_top(|ui| {
                 let close = egui::Button::new(RichText::new("×").size(16.0).color(color))
                     .frame(false)
                     .min_size(egui::vec2(18.0, 18.0));
+                let room = ui.available_width() - 18.0 - ui.spacing().item_spacing.x;
+                ui.allocate_ui(egui::vec2(room, 0.0), |ui| {
+                    ui.set_width(room);
+                    ui.add(egui::Label::new(RichText::new(text).color(color)).wrap());
+                });
                 dismissed = ui.add(close).on_hover_text("Dismiss").clicked();
-                ui.with_layout(
-                    Layout::left_to_right(Align::Min).with_main_wrap(true),
-                    |ui| {
-                        ui.label(RichText::new(text).color(color));
-                    },
-                );
             });
         });
     ui.add_space(6.0);
