@@ -1,0 +1,21 @@
+table Ledger
+
+	column Year
+		dataType: int64
+		sourceColumn: Year
+
+	column Account
+		dataType: string
+		sourceColumn: Account
+
+	column Value
+		dataType: double
+		sourceColumn: Value
+
+	partition Ledger = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Year", "Account", "Value"}, {})
+				in
+				    Source

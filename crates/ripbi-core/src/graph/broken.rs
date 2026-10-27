@@ -198,6 +198,120 @@ pub(super) fn broken_artifacts(
     out
 }
 
+/// Whether a Fabric-app literal reads as DAX: it carries a field reference
+/// (`[`) or an `EVALUATE`.
+pub(super) fn looks_like_dax(text: &str) -> bool {
+    text.contains('[') || text.to_ascii_uppercase().contains("EVALUATE")
+}
+
+/// One field reference in a Fabric app's DAX literal that names nothing, or
+/// lands on a broken artifact.
+pub(super) struct CodeBreakage {
+    /// Position of the literal in [`ReportModel::code`].
+    pub position: usize,
+    pub target: FieldTarget,
+    pub reason: BrokenReason,
+}
+
+/// The breakage in a Fabric app's DAX literals. An app's literals are mostly
+/// not DAX — labels, routes, CSS selectors like `[data-id]` — so only an
+/// *anchored* literal is read: one in which at least one field reference
+/// resolves against the model, which is what says the literal is a query
+/// against this model at all. Inside one, every field reference that does not
+/// resolve is breakage.
+///
+/// An app composes its queries at run time, so a query splits into several
+/// literals at its `${…}` interpolations and a name it introduces
+/// (`SELECTCOLUMNS(t, "Total", …)`) is often read in another literal
+/// (`ORDER BY [Total]`), or another file. The query-time names are therefore
+/// the app's: every DAX string in every literal of the app. A literal
+/// whose references all fail has nothing to anchor it and is not read — the
+/// rule under-claims there, as breakage must.
+pub(super) fn code_breakage(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    report: &ReportModel,
+    broken_artifacts: &HashMap<ArtifactKey, Vec<String>>,
+) -> Vec<CodeBreakage> {
+    let mut query_time: HashSet<String> = report
+        .code
+        .iter()
+        .flat_map(|literal| dax::quoted_names(&literal.text))
+        .map(|name| fold_name(name.as_ref()))
+        .collect();
+    query_time.extend(constructors::COLUMN_NAMES.map(str::to_string));
+    let mut out = Vec::new();
+    for (position, literal) in report.code.iter().enumerate() {
+        if !looks_like_dax(&literal.text) {
+            continue;
+        }
+        let fields: Vec<RawRef<'_>> = dax::references(&literal.text)
+            .into_iter()
+            .filter(|raw| matches!(raw, RawRef::Field { .. }))
+            .collect();
+        let bindings: Vec<_> = fields
+            .iter()
+            .map(|raw| dax::bind(db, index, None, raw.clone()))
+            .collect();
+        if bindings.iter().all(dax::Binding::is_unresolved) {
+            continue;
+        }
+        let mut seen = HashSet::new();
+        for (raw, binding) in fields.iter().zip(&bindings) {
+            let RawRef::Field { table, name, .. } = raw else {
+                continue;
+            };
+            let name = NameKey::new(unescape_name(name).as_ref());
+            let table = table.map(|table| NameKey::new(unescape_name(table).as_ref()));
+            let target = match &table {
+                Some(table) => FieldTarget::Column {
+                    table: table.clone(),
+                    column: name.clone(),
+                },
+                None => FieldTarget::Measure {
+                    home_table: None,
+                    measure: name.clone(),
+                },
+            };
+            let mut reasons = Vec::new();
+            if !field_resolves(db, index, None, raw, &HashSet::new(), &query_time) {
+                reasons.push(match &table {
+                    None => BrokenReason::MeasureNotFound,
+                    Some(table) if index.resolve_table(table.as_str()).is_none() => {
+                        BrokenReason::TableNotFound
+                    }
+                    Some(_) => BrokenReason::FieldNotFound,
+                });
+            } else {
+                // The reference resolves, but onto an artifact whose own DAX
+                // does not: the query inherits its error state.
+                for id in binding.targets() {
+                    let key = ArtifactKey {
+                        id: id.clone(),
+                        report_index: None,
+                    };
+                    if broken_artifacts.contains_key(&key) {
+                        reasons.push(BrokenReason::BoundArtifactBroken {
+                            artifact: Box::new(id.clone()),
+                            report_index: None,
+                        });
+                    }
+                }
+            }
+            for reason in reasons {
+                if seen.insert((target.to_string(), reason.clone())) {
+                    out.push(CodeBreakage {
+                        position,
+                        target: target.clone(),
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Whether one field reference resolves, for breakage purposes: the binder's
 /// answer, plus everything the binder cannot know that the engine still
 /// resolves — the extended candidates (a qualified reference may name a
@@ -529,6 +643,23 @@ mod tests {
             model.tables[0].measures.push(Measure {
                 name: "Fine".to_string(),
                 expression: "COUNTROWS(Missing) + SUM('Sales'[Amount])".to_string(),
+                ..Default::default()
+            });
+            let index = ModelIndex::build(&model);
+
+            assert!(broken_artifacts(&model, &[], &index).is_empty());
+        }
+
+        /// `RETURN [Region]` reads the row context's column; the keyword is
+        /// not a table qualifier that fails to resolve.
+        #[test]
+        fn a_column_after_return_is_not_breakage() {
+            let mut model = db();
+            model.tables[0].columns.push(Column {
+                name: "Label".to_string(),
+                kind: ColumnKind::Calculated {
+                    expression: "VAR x = 1 RETURN [Region]".to_string(),
+                },
                 ..Default::default()
             });
             let index = ModelIndex::build(&model);

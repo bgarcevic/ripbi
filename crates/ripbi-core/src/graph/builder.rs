@@ -748,22 +748,44 @@ impl Builder {
     ///   binds the same-named columns of every table the app names; when none
     ///   of those has it, every same-named column in the model.
     ///
-    /// Text is not a binding: a literal that resolves to nothing is a UI
-    /// label, never a broken binding. Everything here over-keeps, never
-    /// under-keeps — an app's literals are the only record of what it reads.
+    /// Everything here over-keeps, never under-keeps — an app's literals are
+    /// the only record of what it reads. Text is not a binding: a literal that
+    /// resolves to nothing is a UI label, never a broken binding. Breakage is
+    /// claimed only inside a DAX literal anchored to the model by a reference
+    /// that does resolve ([`broken::code_breakage`]).
     fn add_code_roots(&mut self, db: &TabularDatabase, index: &ModelIndex, report: &ReportModel) {
         if report.code.is_empty() {
             return;
         }
         let report_name = report.name.as_ref().map(NameKey::new);
+        let code_edge = |position: usize| {
+            let literal = &report.code[position];
+            BindingEdge {
+                kind: BindingSite::Code {
+                    file: literal.file.clone(),
+                    line: literal.line,
+                },
+                report: report_name.clone(),
+                page: None,
+                visual: None,
+                bookmark: None,
+                mobile: false,
+                labels: SiteLabels::default(),
+            }
+        };
+        for breakage in broken::code_breakage(db, index, report, &self.broken_artifacts) {
+            self.broken.push(BrokenBinding {
+                edge: code_edge(breakage.position),
+                target: breakage.target,
+                reason: breakage.reason,
+            });
+        }
         let mut found: Vec<(usize, ObjectId)> = Vec::new();
         let mut named_tables: HashSet<NameKey> = HashSet::new();
         let mut bare_columns: Vec<(usize, &str)> = Vec::new();
         for (position, literal) in report.code.iter().enumerate() {
             let text = literal.text.as_str();
-            let looks_like_dax =
-                text.contains('[') || text.to_ascii_uppercase().contains("EVALUATE");
-            if looks_like_dax {
+            if broken::looks_like_dax(text) {
                 for id in crate::usage::dax_references(db, index, text) {
                     found.push((position, id));
                 }
@@ -813,19 +835,7 @@ impl Builder {
             }
         }
         for (position, target) in found {
-            let literal = &report.code[position];
-            let provenance = Provenance::Binding(Box::new(BindingEdge {
-                kind: BindingSite::Code {
-                    file: literal.file.clone(),
-                    line: literal.line,
-                },
-                report: report_name.clone(),
-                page: None,
-                visual: None,
-                bookmark: None,
-                mobile: false,
-                labels: SiteLabels::default(),
-            }));
+            let provenance = Provenance::Binding(Box::new(code_edge(position)));
             self.root(target.clone(), provenance.clone());
             self.add_selection_edges(db, &target, provenance);
         }

@@ -152,8 +152,10 @@ fn extract<'a>(tokens: &[Token<'a>]) -> Vec<RawRef<'a>> {
             }
             TokenKind::Identifier => {
                 match tokens.get(index + 1).map(|t| t.kind) {
-                    // Sales[Name] — an unquoted table qualifier.
-                    Some(TokenKind::BracketName) => {
+                    // Sales[Name] — an unquoted table qualifier. A keyword
+                    // never qualifies (`RETURN [Total]`, `ORDER BY [Year]`):
+                    // DAX requires a table named like one to be quoted.
+                    Some(TokenKind::BracketName) if !is_keyword(token.text) => {
                         let bracket = &tokens[index + 1];
                         out.push(RawRef::Field {
                             table: Some(token.text),
@@ -197,6 +199,18 @@ fn extract<'a>(tokens: &[Token<'a>]) -> Vec<RawRef<'a>> {
     }
 
     out
+}
+
+/// The reserved words that can stand directly before a bracketed name without
+/// qualifying it.
+const KEYWORDS: [&str; 10] = [
+    "AND", "ASC", "BY", "DEFINE", "DESC", "EVALUATE", "IN", "NOT", "OR", "RETURN",
+];
+
+fn is_keyword(text: &str) -> bool {
+    KEYWORDS
+        .iter()
+        .any(|keyword| keyword.eq_ignore_ascii_case(text))
 }
 
 /// The bracketed token directly after `index`, if there is one.
@@ -333,6 +347,19 @@ mod tests {
         assert_eq!(
             fields("'Sales' [Amount] + Dato [Måned]"),
             [(Some("Sales"), "Amount"), (Some("Dato"), "Måned"),]
+        );
+    }
+
+    #[test]
+    fn a_keyword_before_a_bracketed_name_does_not_qualify_it() {
+        assert_eq!(
+            fields("VAR x = 1 RETURN [Total] EVALUATE T ORDER BY [Year] desc, [Month] ASC"),
+            [(None, "Total"), (None, "Year"), (None, "Month")]
+        );
+        assert_eq!(tables("return [Total]"), ["return"]);
+        assert_eq!(
+            fields("'BY'[X] + Byte[Y]"),
+            [(Some("BY"), "X"), (Some("Byte"), "Y")]
         );
     }
 
