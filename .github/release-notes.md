@@ -6,6 +6,6 @@
   - macOS (Apple silicon): `.zip` with `ripbi.app`. It is not notarized: the first time, right-click it and choose Open, or allow it under System Settings → Privacy & Security.
   - Linux x64: `.tar.gz` with `ripbi-desktop`, plus `ripbi.desktop` and `ripbi.png` for a launcher entry.
 
-  Desktop updates are manual: `ripbi update` updates only the CLI.
+  The desktop app updates itself: it downloads and verifies a newer release in the background, then offers "Restart to update". `ripbi update` updates only the CLI.
 
 `sha256sums.txt` covers every archive.

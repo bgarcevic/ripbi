@@ -67,8 +67,11 @@ jobs:
       - run: cargo clippy --manifest-path desktop-egui/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path desktop-egui/Cargo.toml --locked
 
+      # Only these builds update themselves (desktop-egui/src/update.rs).
       - name: Build release binary
         if: inputs.release
+        env:
+          RIPBI_DESKTOP_RELEASE: "1"
         run: cargo build --manifest-path desktop-egui/Cargo.toml --release --locked --target ${{ matrix.target }}
 
       - name: Package (Linux)

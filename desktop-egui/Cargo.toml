@@ -18,6 +18,13 @@ ripbi-app = { path = "../crates/ripbi-app" }
 ripbi-service = { path = "../crates/ripbi-service" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Self-update (src/update.rs), the same stack as `ripbi update`.
+flate2 = "1"
+semver = "1"
+sha2 = "0.11"
+tar = "0.4"
+ureq = "3"
+zip = "9"
 
 [build-dependencies]
 embed-resource = "3"
@@ -25,6 +32,7 @@ embed-resource = "3"
 [dev-dependencies]
 # Encodes the generated icon files; see brand.rs.
 png = "0.18"
+tempfile = "3"
 
 # `cargo bundle --release` on macOS builds ripbi.app with this icon.
 [package.metadata.bundle]

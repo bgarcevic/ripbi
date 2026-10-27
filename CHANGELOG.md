@@ -46,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   egui app as `ripbi-desktop-<version>-<target>` archives: `ripbi-desktop.exe` for
   Windows x64, `ripbi.app` for macOS on Apple silicon, and `ripbi-desktop` for Linux
   x64. It analyzes local files or fetches a model and its reports from a tenant, like
-  `ripbi fetch --scan`. The builds are unsigned, and updates are manual.
+  `ripbi fetch --scan`. The builds are unsigned. Like `ripbi update`, the app checks
+  for newer releases, downloads and verifies one in the background, and offers
+  "Restart to update"; `RIPBI_NO_UPDATE_CHECK` turns the check off.
 
 ### Fixed
 

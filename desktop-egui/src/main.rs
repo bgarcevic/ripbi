@@ -4,6 +4,7 @@
 mod analysis;
 mod brand;
 mod fetching;
+mod update;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -59,7 +60,10 @@ fn main() -> eframe::Result {
             {
                 cc.egui_ctx.set_theme(theme);
             }
-            Ok(Box::<App>::default())
+            Ok(Box::new(App {
+                updates: update::spawn(cc.egui_ctx.clone()),
+                ..App::default()
+            }))
         }),
     )
 }
@@ -189,6 +193,10 @@ struct App {
     kind: Option<String>,
     /// Index into `analysis.output.findings`.
     selected: Option<usize>,
+    /// The background update check, until it stages an update.
+    updates: Option<Receiver<update::Staged>>,
+    /// A verified update waiting for "Restart to update".
+    staged: Option<update::Staged>,
 }
 
 /// Storage key for the theme preference, the one setting kept across runs.
@@ -207,6 +215,14 @@ impl eframe::App for App {
 
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_fetch();
+        if let Some(staged) = self
+            .updates
+            .as_ref()
+            .and_then(|updates| updates.try_recv().ok())
+        {
+            self.staged = Some(staged);
+            self.updates = None;
+        }
         let Some(job) = &self.job else { return };
         match job.try_recv() {
             Ok(Ok(analysis)) => {
@@ -281,12 +297,51 @@ impl eframe::App for App {
         });
 
         self.prompt(ui.ctx());
+        self.update_ready(ui.ctx());
     }
 }
 
 impl App {
     fn busy(&self) -> bool {
         self.job.is_some() || self.fetch.is_some()
+    }
+
+    /// A small card in the bottom-left corner once an update is downloaded
+    /// and verified: "Restart to update" installs it and reopens ripbi.
+    fn update_ready(&mut self, ctx: &egui::Context) {
+        let Some(staged) = &self.staged else { return };
+        let busy = self.busy();
+        let mut restart = false;
+        let mut later = false;
+        egui::Area::new(egui::Id::unique("update-ready"))
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(12.0, -12.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let (dot, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), Sense::hover());
+                        ui.painter()
+                            .circle_filled(dot.center(), 4.0, hue(ui, Tone::Good));
+                        ui.label(format!("ripbi {} is ready", staged.version));
+                        restart = ui
+                            .add_enabled(!busy, egui::Button::new("Restart to update"))
+                            .on_disabled_hover_text("Available when the current job finishes")
+                            .clicked();
+                        later = ui
+                            .add(egui::Button::new(RichText::new("×").weak()).frame(false))
+                            .on_hover_text("Later: ripbi asks again next time it starts")
+                            .clicked();
+                    });
+                });
+            });
+        if restart {
+            match staged.apply() {
+                Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Err(error) => self.error = Some(error),
+            }
+            self.staged = None;
+        } else if later {
+            self.staged = None;
+        }
     }
 
     fn inputs(&mut self, ui: &mut egui::Ui) {

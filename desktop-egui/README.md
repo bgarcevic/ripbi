@@ -23,6 +23,11 @@ Fetch & analyze. This is `ripbi fetch --scan`: it signs in (Azure CLI, a token, 
 service principal; see the CLI's `--auth`), shows the downstream forecast, asks before
 downloading an incomplete report set, writes the project, and analyzes it.
 
+Release builds update themselves, like `ripbi update`: `src/update.rs` checks
+GitHub for a newer release, downloads and verifies (sha256) its archive in the
+background, and a card in the bottom-left corner offers "Restart to update".
+Builds from source never update; `RIPBI_NO_UPDATE_CHECK` turns the check off.
+
 The header's theme icon cycles through system, light and dark.
 The choice, like the window size, is remembered across runs.
 
