@@ -2,8 +2,7 @@
 //! discovery), ingest through `ripbi-core`, build the dependency graph, and
 //! bucket what it finds into a [`ScanOutput`]. Nothing here prints: progress,
 //! notes, and the project picker go through an [`Observer`] the caller
-//! supplies, so the CLI, a desktop UI, or a web page each present them their
-//! own way.
+//! supplies, so the CLI and a desktop UI each present them their own way.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

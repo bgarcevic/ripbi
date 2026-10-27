@@ -4,6 +4,14 @@ Pure library crate: format ingestion, DAX/M lexing, and dependency-graph analysi
 No I/O to stdout/stderr, no `std::process::exit` — everything returns
 `Result<T, ripbi_core::Error>`. `#![forbid(unsafe_code)]`.
 
+Keep it portable: core is the only crate a browser (wasm) build could reuse, so
+it stays free of network calls, processes, threads it depends on, and
+OS-specific code. Its I/O is reading the inputs it is handed (plus the ABF
+reader's temp file); new file access goes through those entry points. The
+XPress9 C codec and `rusqlite` are the known blockers today — gating them is
+the first step if a browser build is ever wanted. Orchestration that needs the
+OS belongs in `ripbi-app`, which is native only.
+
 ## Responsibilities
 
 - **Semantic model** (`src/model.rs`, `src/identity.rs`): the normalized `TabularDatabase`

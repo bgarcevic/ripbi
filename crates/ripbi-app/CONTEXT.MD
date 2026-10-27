@@ -6,8 +6,7 @@ its reports, reads `ripbi.toml`, runs ingestion and the dependency graph
 through core, and shapes what the graph finds into a `ScanOutput` (`scan`), an
 `Inventory` (`report`), or a `DepsOutput` (`deps`), and writes the machine
 formats (JSON, SARIF, `##vso`, Markdown, tx-rm). The CLI (`ripbi-cli`) adds
-the human renderings and exit codes; the desktop UIs render them as widgets; a
-future web build would do the same.
+the human renderings and exit codes; the desktop UIs render them as widgets.
 
 ## Rules
 
@@ -24,6 +23,10 @@ future web build would do the same.
 - **No analysis logic here either.** Ingestion, lexing, and graph work stay in
   `ripbi-core`; this crate decides which folders to feed it and how to bucket
   what it returns.
+- **Native only.** This crate targets native front ends (CLI, desktop), not
+  wasm: it may use `std::fs`, threads, processes, and `ripbi-service` freely,
+  with no filesystem abstraction or wasm feature gates. A browser build, if one
+  ever comes, starts from `ripbi-core` (see its CONTEXT), not from here.
 - `#![forbid(unsafe_code)]`.
 
 ## Entry point
