@@ -34,7 +34,9 @@ use std::path::{Path, PathBuf};
 use ripbi_core::DatasetReference;
 use ripbi_core::ingest::{self, SkipNotice};
 
+use crate::config::AppMapping;
 use crate::error::ScanError;
+use crate::manifest::Manifest;
 
 /// A model and the reports one scan runs against.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -376,11 +378,13 @@ pub struct BoundReports {
     /// The connected reports matched by `byConnection`'s `initial catalog`
     /// rather than by path or stem, each with the catalog that matched.
     pub name_matched: Vec<(PathBuf, String)>,
-    /// The connected Fabric app folders (`fabric.yaml`). An app names its
-    /// models by service workspace and item ID, which no local model folder
-    /// records, so an app found under a search folder is included unpaired —
-    /// over-keeping beats missing a consumer — and announced as such.
-    pub apps: Vec<PathBuf>,
+    /// The connected Fabric app folders (`fabric.yaml`), each with how it
+    /// paired. Also listed in `reports`.
+    pub apps: Vec<(PathBuf, AppPairing)>,
+    /// Fabric apps whose `fabric.yaml` names models, none of them this one,
+    /// each with the `semanticModels` keys it names. Like
+    /// `ignored_elsewhere`, never fatal.
+    pub apps_elsewhere: Vec<(PathBuf, Vec<String>)>,
     /// Report items bound to a different existing model — informational, and
     /// deliberately never fatal, so a healthy multi-model folder can be
     /// scanned with `--strict`.
@@ -397,6 +401,25 @@ pub struct BoundReports {
     /// A filesystem error during the search. An incomplete walk cannot
     /// establish the full set of report roots.
     pub walk_error: Option<ScanError>,
+}
+
+/// How a Fabric app found under a search folder paired with the model.
+///
+/// `fabric.yaml` names its models by service workspace and item ID, which a
+/// local model folder records only when `ripbi fetch` wrote it. So the
+/// tiers, first to speak wins: an `[apps]` entry in `ripbi.toml`; an `itemId`
+/// equal to the fetched model's ID; a `semanticModels` key equal to the
+/// model's stem or display name. An app none of them pair with this model is
+/// never included — attaching it would check its queries against a model it
+/// does not read and invent broken bindings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppPairing {
+    /// A `ripbi.toml` `[apps]` entry names this model.
+    Mapped,
+    /// An `itemId` in `fabric.yaml` is the fetched model's service ID.
+    ServiceId,
+    /// The `semanticModels` key that matched the model's name.
+    Name(String),
 }
 
 /// The shapes `--model` accepts, listed whenever resolution fails.
@@ -484,6 +507,18 @@ pub fn discover_bound_reports(
     roots: &[PathBuf],
     exclude: &HashSet<PathBuf>,
 ) -> BoundReports {
+    discover_bound_reports_with(model, roots, exclude, &[])
+}
+
+/// [`discover_bound_reports`] with the `ripbi.toml` `[apps]` entries that
+/// pair Fabric apps explicitly (see [`AppPairing`]).
+#[must_use]
+pub fn discover_bound_reports_with(
+    model: &ModelTarget,
+    roots: &[PathBuf],
+    exclude: &HashSet<PathBuf>,
+    app_mappings: &[AppMapping],
+) -> BoundReports {
     let mut items = Vec::new();
     let mut malformed = Vec::new();
     let mut visited = exclude.clone();
@@ -501,11 +536,25 @@ pub fn discover_bound_reports(
     let model_root = canonical_key(&model.item_root);
     let model_definition = canonical_key(&model.definition);
 
+    let service_id = fetched_model_id(model);
     let mut bound = BoundReports::default();
     for item in items {
         if ingest::is_fabric_app(&item) {
-            bound.apps.push(item.clone());
-            bound.reports.push(item);
+            match classify_app(
+                model,
+                &item,
+                service_id.as_deref(),
+                app_mappings,
+                &model_root,
+                &model_definition,
+            ) {
+                AppBinding::Connected(pairing) => {
+                    bound.apps.push((item.clone(), pairing));
+                    bound.reports.push(item);
+                }
+                AppBinding::Elsewhere(aliases) => bound.apps_elsewhere.push((item, aliases)),
+                AppBinding::Unresolved(detail) => bound.unresolved.push((item, detail)),
+            }
             continue;
         }
         let (dataset, skips) = ingest::dataset_reference(&item);
@@ -598,6 +647,125 @@ fn classify_binding(
             Binding::Unresolved("definition.pbir carries no usable datasetReference".to_string())
         }
     }
+}
+
+/// What one Fabric app's `fabric.yaml` says about its binding to the model.
+enum AppBinding {
+    Connected(AppPairing),
+    /// It names models, none of them this one: the names it gives.
+    Elsewhere(Vec<String>),
+    /// Nothing to pair by; the one-sentence reason.
+    Unresolved(String),
+}
+
+/// The [`AppPairing`] tiers, in order.
+fn classify_app(
+    model: &ModelTarget,
+    app: &Path,
+    service_id: Option<&str>,
+    app_mappings: &[AppMapping],
+    model_root: &Path,
+    model_definition: &Path,
+) -> AppBinding {
+    let app_key = canonical_key(app);
+    let mapped: Vec<&AppMapping> = app_mappings
+        .iter()
+        .filter(|mapping| canonical_key(&mapping.app) == app_key)
+        .collect();
+    let named = ingest::fabric_app_models(app);
+    if !mapped.is_empty() {
+        let connected = mapped
+            .iter()
+            .flat_map(|mapping| &mapping.models)
+            .any(|path| {
+                let key = resolve_model(path)
+                    .map(|target| canonical_key(&target.item_root))
+                    .unwrap_or_else(|_| canonical_key(path));
+                key == model_root || key == model_definition
+            });
+        return if connected {
+            AppBinding::Connected(AppPairing::Mapped)
+        } else {
+            AppBinding::Elsewhere(named.aliases)
+        };
+    }
+    if let Some(id) = service_id
+        && named
+            .item_ids
+            .iter()
+            .any(|item| item.eq_ignore_ascii_case(id))
+    {
+        return AppBinding::Connected(AppPairing::ServiceId);
+    }
+    if let Some(alias) = named
+        .aliases
+        .iter()
+        .find(|alias| app_name_matches(model, alias))
+    {
+        return AppBinding::Connected(AppPairing::Name(alias.clone()));
+    }
+    if named.aliases.is_empty() {
+        return AppBinding::Unresolved(
+            "fabric.yaml names no semanticModels to pair the app with — \
+             map it to its model in ripbi.toml [apps]"
+                .to_string(),
+        );
+    }
+    if model.stem.is_none() && model.display_name.is_none() && service_id.is_none() {
+        return AppBinding::Unresolved(format!(
+            "fabric.yaml names model(s) {}, which the unnamed model cannot be matched against — \
+             map the app to its model in ripbi.toml [apps]",
+            quoted_list(&named.aliases)
+        ));
+    }
+    AppBinding::Elsewhere(named.aliases)
+}
+
+/// Whether a `semanticModels` key names this model. Keys are identifiers an
+/// app author picks (`salesModel` for `Sales Model`), so case, spaces, and
+/// punctuation are ignored.
+fn app_name_matches(model: &ModelTarget, alias: &str) -> bool {
+    let fold = |text: &str| -> String {
+        text.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let alias = fold(alias);
+    !alias.is_empty()
+        && [model.stem.as_deref(), model.display_name.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|name| fold(name) == alias)
+}
+
+/// The service ID `ripbi fetch` recorded for this model, when it fetched it.
+fn fetched_model_id(model: &ModelTarget) -> Option<String> {
+    let folder = model.item_root.file_name()?.to_str()?;
+    let manifest = Manifest::load(model.item_root.parent()?)?;
+    (manifest.model.path.eq_ignore_ascii_case(folder) && !manifest.model.id.is_empty())
+        .then_some(manifest.model.id)
+}
+
+/// The skip-notice kind for an item in [`BoundReports::unresolved`]: a
+/// Fabric app whose `fabric.yaml` gave nothing to pair by is
+/// `unresolved_app_binding`, a report item `unresolved_dataset_reference`.
+#[must_use]
+pub fn unresolved_kind(item: &Path) -> &'static str {
+    if ingest::is_fabric_app(item) {
+        "unresolved_app_binding"
+    } else {
+        "unresolved_dataset_reference"
+    }
+}
+
+/// `'a', 'b'`.
+pub fn quoted_list(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Whether the dataset `catalog` names this model, by item stem or display name.

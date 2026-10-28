@@ -45,6 +45,126 @@ pub(super) fn is_app(path: &Path) -> bool {
     path.is_dir() && MANIFESTS.iter().any(|name| path.join(name).is_file())
 }
 
+/// The semantic models an app's `fabric.yaml` names, across every profile.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AppModels {
+    /// The keys under `semanticModels:` — the app's own names for the models
+    /// it reads, e.g. `sales` — deduplicated, in first-seen order.
+    pub aliases: Vec<String>,
+    /// The `itemId` GUIDs under those keys, lowercased and deduplicated.
+    /// Placeholders (the nil GUID, `${…}` substitutions, anything not
+    /// GUID-shaped) are left out: they name no model.
+    pub item_ids: Vec<String>,
+}
+
+/// Reads the models an app's `fabric.yaml` names. Missing, unreadable, or
+/// unexpected YAML yields what could be read — never an error: pairing
+/// treats an empty result as unresolved.
+pub(super) fn models(path: &Path) -> AppModels {
+    let text = MANIFESTS
+        .iter()
+        .find_map(|name| fs::read_to_string(path.join(name)).ok())
+        .unwrap_or_default();
+    manifest_models(&text)
+}
+
+/// The block-mapping walk behind [`models`]. It reads only the YAML
+/// `fabric.yaml` is written in — `key:` lines nested by indentation — and
+/// collects the children of any `semanticModels:` key with their `itemId`s,
+/// wherever it sits (top level or under a profile).
+fn manifest_models(text: &str) -> AppModels {
+    let mut found = AppModels::default();
+    // The open keys, innermost last, with their indentation.
+    let mut stack: Vec<(usize, String)> = Vec::new();
+    for raw in text.lines() {
+        let line = strip_comment(raw);
+        let content = line.trim_start();
+        if content.is_empty() || content.starts_with("---") {
+            continue;
+        }
+        let mut indent = line.len() - content.len();
+        let content = match content.strip_prefix("- ") {
+            Some(rest) => {
+                indent += 2;
+                rest.trim_start()
+            }
+            None => content,
+        };
+        let Some((key, value)) = content.split_once(':') else {
+            continue;
+        };
+        let key = unquote(key.trim());
+        let value = unquote(value.trim());
+        while stack.last().is_some_and(|(open, _)| *open >= indent) {
+            stack.pop();
+        }
+        let parent = stack.last().map(|(_, key)| key.as_str());
+        let grandparent = stack
+            .len()
+            .checked_sub(2)
+            .map(|index| stack[index].1.as_str());
+        if parent.is_some_and(|parent| parent.eq_ignore_ascii_case("semanticModels"))
+            && !found.aliases.iter().any(|alias| alias == key)
+        {
+            found.aliases.push(key.to_string());
+        }
+        if grandparent.is_some_and(|key| key.eq_ignore_ascii_case("semanticModels"))
+            && key.eq_ignore_ascii_case("itemId")
+            && is_guid(value)
+        {
+            let id = value.to_ascii_lowercase();
+            if !found.item_ids.contains(&id) {
+                found.item_ids.push(id);
+            }
+        }
+        if value.is_empty() {
+            stack.push((indent, key.to_string()));
+        }
+    }
+    found
+}
+
+/// `line` without a trailing `# comment` outside quotes.
+fn strip_comment(line: &str) -> &str {
+    let mut quote = None;
+    let mut previous = ' ';
+    for (index, c) in line.char_indices() {
+        match quote {
+            Some(open) if c == open => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == '#' && previous.is_whitespace() => return &line[..index],
+            None => {}
+        }
+        previous = c;
+    }
+    line
+}
+
+fn unquote(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|rest| rest.strip_suffix('\''))
+        })
+        .unwrap_or(value)
+}
+
+/// A real item GUID: `8-4-4-4-12` hex digits, not the nil GUID templates
+/// ship as a placeholder.
+fn is_guid(value: &str) -> bool {
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(group, len)| group.len() == len && group.chars().all(|c| c.is_ascii_hexdigit()))
+        && value.chars().any(|c| c != '0' && c != '-')
+}
+
 /// Reads a Fabric app folder into a [`ReportModel`] carrying only
 /// [`ReportModel::code`].
 pub(super) fn load(path: &Path) -> Result<Ingested<ReportModel>> {
@@ -465,7 +585,55 @@ impl Lexer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::literals;
+    use super::{AppModels, literals, manifest_models};
+
+    #[test]
+    fn manifest_models_span_profiles_and_skip_placeholder_ids() {
+        let yaml = "\
+activeProfile: DEV # the local one
+profiles:
+  DEV:
+    semanticModels:
+      sales:
+        workspaceId: 00000000-0000-0000-0000-000000000000
+        itemId: 00000000-0000-0000-0000-000000000000
+  TEST:
+    semanticModels:
+      sales:
+        itemId: '${SALES_ITEM_ID}'
+      \"hr\":
+        itemId: 11111111-2222-3333-4444-555555555555
+  PROD:
+    semanticModels:
+      sales:
+        workspaceId: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+        itemId: ABCDEF01-2345-6789-ABCD-EF0123456789
+";
+        assert_eq!(
+            manifest_models(yaml),
+            AppModels {
+                aliases: vec!["sales".to_string(), "hr".to_string()],
+                item_ids: vec![
+                    "11111111-2222-3333-4444-555555555555".to_string(),
+                    "abcdef01-2345-6789-abcd-ef0123456789".to_string(),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn manifest_models_read_a_top_level_section() {
+        let yaml = "semanticModels:\n  finance:\n    itemId: 11111111-2222-3333-4444-555555555555\nother:\n  semantic: x\n";
+        let found = manifest_models(yaml);
+        assert_eq!(found.aliases, ["finance"]);
+        assert_eq!(found.item_ids, ["11111111-2222-3333-4444-555555555555"]);
+    }
+
+    #[test]
+    fn manifest_without_models_reads_empty() {
+        assert_eq!(manifest_models("name: app\n"), AppModels::default());
+        assert_eq!(manifest_models(""), AppModels::default());
+    }
 
     fn texts(source: &str) -> Vec<(String, bool)> {
         literals(source, "a.ts")

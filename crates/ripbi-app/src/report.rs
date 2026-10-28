@@ -105,6 +105,7 @@ pub fn run(
             model: request.model.as_deref(),
             path: request.path.as_deref(),
             config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            app_mappings: config.as_ref().map_or(&[], |config| config.apps.as_slice()),
             extras: &extras,
             no_input: request.no_input,
             quiet: request.quiet,

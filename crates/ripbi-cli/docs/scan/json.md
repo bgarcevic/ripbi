@@ -209,7 +209,9 @@ Pretty-printed JSON, stable field order, additive schema:
   fetched by `ripbi fetch` and its `.ripbi/source.json` lists downstream reports that
   could not be downloaded; see [fetch](../fetch.md)), and — when reports are discovered by walking search folders —
   `unresolved_dataset_reference` (a report item
-  under a search folder with no usable `datasetReference`) and `malformed_report_item`
+  under a search folder with no usable `datasetReference`), `unresolved_app_binding` (a
+  Fabric app under a search folder whose `fabric.yaml` names no model to pair it with),
+  and `malformed_report_item`
   (an anchor-less `.Report` folder the search walk pruned). Under `--strict`,
   `count > 0` corresponds to exit code `2`.
   Each affected partition contributes one `opaque_source` notice; exact duplicate

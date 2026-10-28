@@ -137,6 +137,23 @@ Sales.SemanticModel · 3 reports
   must stay scannable. Report items whose reference resolves to nothing become
   `unresolved_dataset_reference` skip notices instead, and a `*.Report` folder with no
   `report.json` anchor becomes a `malformed_report_item` notice; both *do* fail `--strict`.
+- Fabric apps under a search folder pair by what `fabric.yaml` and `ripbi.toml` say, never
+  by being there: an `[apps]` entry in `ripbi.toml` first, then an `itemId` equal to the
+  model's service ID (recorded only for a model `ripbi fetch` wrote), then a
+  `semanticModels` key equal to the model's stem or display name, ignoring case, spaces,
+  and punctuation (`sales_model` matches `Sales Model`). Placeholder IDs (the nil GUID,
+  `${…}` substitutions) name nothing; every profile counts. A paired app is named in the
+  `· included … Fabric app(s)` line with how it paired. An app whose `fabric.yaml` names
+  only other models is listed in a `· ignored … Fabric app(s)` line and, like a report
+  bound elsewhere, never fails `--strict`. An app that names no models — or names models
+  an unnamed model cannot be matched against — is not checked and becomes an
+  `unresolved_app_binding` notice, which *does* fail `--strict`. Either way its queries
+  are never checked against a model it may not read. Pair it in `ripbi.toml`:
+
+  ```toml
+  [apps]
+  "apps/sales-dashboard" = "models/Sales.SemanticModel"
+  ```
 - Reports passed explicitly with `--report` are taken at face value: they are never
   binding-checked and produce none of these notices. Under a model-naming PATH the
   convention siblings count as explicit in the same sense.
