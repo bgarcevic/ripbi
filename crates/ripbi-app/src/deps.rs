@@ -89,6 +89,79 @@ pub struct DepsOutcome {
 /// Config, discovery, lookup, and ingestion failures, and contradictory or
 /// unknown selectors.
 pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOutcome, ScanError> {
+    // A bad --depth fails before any ingestion work.
+    parse_depth(request.depth.as_deref())?;
+    let explorer = load(request, observer)?;
+    observer.stage(Stage::Findings);
+    let output = explorer.view(request)?;
+    Ok(DepsOutcome {
+        output,
+        skips: explorer.skips,
+        query_logged: explorer.query_logged,
+        workbooks: explorer.workbooks,
+    })
+}
+
+/// A loaded exploration: the graph built once, so an interactive front end
+/// can ask for one view after another without ingesting again.
+#[derive(Debug)]
+pub struct Explorer {
+    graph: DependencyGraph,
+    /// Skip notices from ingestion and the bound-report walk.
+    pub skips: Vec<SkipNoticeOut>,
+    /// Whether a query log was read.
+    pub query_logged: bool,
+    /// Whether an Excel workbook was among the reports read.
+    pub workbooks: bool,
+}
+
+impl Explorer {
+    /// The view `request`'s object operand and selectors ask for — the
+    /// overview when it names none. Only the view fields are read: the
+    /// target fields were spent by [`load`].
+    ///
+    /// # Errors
+    /// Lookup failures, and contradictory or unknown selectors.
+    pub fn view(&self, request: &DepsRequest) -> Result<DepsOutput, ScanError> {
+        let depth = parse_depth(request.depth.as_deref())?;
+        if request.object.is_some() || request.table.is_some() || !request.types.is_empty() {
+            selection_view(&self.graph, request, depth)
+        } else {
+            Ok(overview_view(&self.graph))
+        }
+    }
+
+    /// Every model and report object in the graph, in no particular order.
+    pub fn object_ids(&self) -> impl Iterator<Item = &ObjectId> {
+        self.graph.object_ids()
+    }
+
+    /// The objects `id` uses directly, with the kind of use each edge records.
+    pub fn uses(&self, id: &ObjectId) -> Vec<(ObjectId, Provenance)> {
+        self.graph.producers_of(id)
+    }
+
+    /// Every report binding, with the model object it binds, in report
+    /// order — what an inventory of the reports' pages and visuals is built on.
+    pub fn bindings(&self) -> impl Iterator<Item = (&ObjectId, &BindingEdge)> {
+        self.graph
+            .roots()
+            .iter()
+            .filter_map(|(id, provenance)| match provenance {
+                Provenance::Binding(edge) => Some((id, &**edge)),
+                _ => None,
+            })
+    }
+}
+
+/// Resolves the target and builds its graph — everything [`run`] does
+/// before choosing a view. Observer calls, in order: `pick` (discovery),
+/// `stage(Model)`, `resolved`, `stage(Reports)`, query-log notes,
+/// `stage(Graph)`.
+///
+/// # Errors
+/// Config, discovery, and ingestion failures.
+pub fn load(request: &DepsRequest, observer: &mut dyn Observer) -> Result<Explorer, ScanError> {
     let cwd = request.cwd.as_path();
     let loaded = config::find_in(cwd)?;
     let config = loaded.map(|loaded| loaded.config);
@@ -103,7 +176,6 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
     } else {
         request.reports.clone()
     };
-    let depth = parse_depth(request.depth.as_deref())?;
     let queries_path = query_log_path(request.queries_from.as_deref(), config.as_ref());
     let query_logged = queries_path.is_some();
 
@@ -192,16 +264,8 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
     observer.stage(Stage::Graph);
     let report_refs: Vec<&ReportModel> = reports.iter().collect();
     let graph = DependencyGraph::build_with_queries(&model.value, &report_refs, &query_log);
-    observer.stage(Stage::Findings);
-
-    let output = if request.object.is_some() || request.table.is_some() || !request.types.is_empty()
-    {
-        selection_view(&graph, request, depth)?
-    } else {
-        overview_view(&graph)
-    };
-    Ok(DepsOutcome {
-        output,
+    Ok(Explorer {
+        graph,
         skips,
         query_logged,
         workbooks,

@@ -86,16 +86,6 @@ impl Staged {
             .map_err(|error| format!("Updated, but cannot restart ripbi: {error}"))
     }
 
-    /// A staged update that only shows the card (the demo GIF).
-    #[cfg(test)]
-    pub fn preview() -> Self {
-        Self {
-            version: Version::new(0, 12, 0),
-            staged: PathBuf::new(),
-            installed: PathBuf::new(),
-        }
-    }
-
     fn swap(&self) -> Result<(), String> {
         let aside = sibling(&self.installed, ASIDE);
         remove(&aside);

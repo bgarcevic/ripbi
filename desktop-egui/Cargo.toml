@@ -15,6 +15,7 @@ eframe = { version = "0.37", features = ["persistence"] }
 egui_extras = "0.37"
 rfd = "0.17"
 ripbi-app = { path = "../crates/ripbi-app" }
+ripbi-core = { path = "../crates/ripbi-core" }
 ripbi-service = { path = "../crates/ripbi-service" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

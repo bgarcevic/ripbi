@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use ripbi_app::ScanError;
+use ripbi_app::deps::DepsRequest;
 use ripbi_app::output::ScanOutput;
 use ripbi_app::scan::{self, Note, NoteLevel, Observer, Scan, ScanRequest, Target};
 
@@ -13,6 +14,8 @@ pub struct Analysis {
     pub output: ScanOutput,
     /// The pairing header and every note, in the order the scan made them.
     pub log: Vec<String>,
+    /// The same target as a `ripbi deps` request, for the lineage view.
+    pub deps: DepsRequest,
 }
 
 impl Analysis {
@@ -70,6 +73,20 @@ impl Observer for Log {
 }
 
 pub fn run(model: &Path, reports: &[PathBuf]) -> Result<Analysis, String> {
+    let deps = deps_request(model, reports)?;
+    scan_with(
+        ScanRequest {
+            cwd: deps.cwd.clone(),
+            model: Some(model.to_path_buf()),
+            reports: reports.to_vec(),
+            ..request()
+        },
+        deps,
+    )
+}
+
+/// The `ripbi deps` target matching [`run`]'s scan, for the lineage view.
+pub fn deps_request(model: &Path, reports: &[PathBuf]) -> Result<DepsRequest, String> {
     if !model.is_absolute() || !model.exists() {
         return Err("Select an existing model using its full path.".into());
     }
@@ -86,21 +103,29 @@ pub fn run(model: &Path, reports: &[PathBuf]) -> Result<Analysis, String> {
     } else {
         model.parent().ok_or("The model has no parent folder.")?
     };
-    scan_with(ScanRequest {
+    Ok(DepsRequest {
         cwd: cwd.to_path_buf(),
         model: Some(model.to_path_buf()),
         reports: reports.to_vec(),
-        ..request()
+        no_input: true,
+        ..DepsRequest::default()
     })
 }
 
 /// A bare `ripbi scan` inside `root`: its `ripbi.toml` names the model and
 /// reports, as in a fetched project.
 pub fn run_project(root: &Path) -> Result<Analysis, String> {
-    scan_with(ScanRequest {
-        cwd: root.to_path_buf(),
-        ..request()
-    })
+    scan_with(
+        ScanRequest {
+            cwd: root.to_path_buf(),
+            ..request()
+        },
+        DepsRequest {
+            cwd: root.to_path_buf(),
+            no_input: true,
+            ..DepsRequest::default()
+        },
+    )
 }
 
 fn request() -> ScanRequest {
@@ -112,13 +137,14 @@ fn request() -> ScanRequest {
     }
 }
 
-fn scan_with(request: ScanRequest) -> Result<Analysis, String> {
+fn scan_with(request: ScanRequest, deps: DepsRequest) -> Result<Analysis, String> {
     let mut log = Log::default();
     let scanned = scan::run(&request, &mut log).map_err(|error| error.to_string())?;
     match scanned {
         Scan::Done(outcome) => Ok(Analysis {
             output: outcome.output,
             log: log.0,
+            deps,
         }),
         Scan::Skipped { model, .. } => Err(format!(
             "No reports bound to {} were found. Add the reports' .pbip projects or a folder to search.",
