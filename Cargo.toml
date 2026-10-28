@@ -4,16 +4,16 @@ members = ["crates/ripbi-core", "crates/ripbi-app", "crates/ripbi-cli", "crates/
 exclude = ["desktop-egui"]
 
 [workspace.package]
-version = "0.11.1"
+version = "0.12.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/bgarcevic/ripbi"
 
 [workspace.dependencies]
-ripbi-core = { path = "crates/ripbi-core", version = "0.11.1" }
-ripbi-app = { path = "crates/ripbi-app", version = "0.11.1" }
-ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.11.1" }
-ripbi-service = { path = "crates/ripbi-service", version = "0.11.1" }
+ripbi-core = { path = "crates/ripbi-core", version = "0.12.0" }
+ripbi-app = { path = "crates/ripbi-app", version = "0.12.0" }
+ripbi-xpress9 = { path = "crates/ripbi-xpress9", version = "0.12.0" }
+ripbi-service = { path = "crates/ripbi-service", version = "0.12.0" }
 rusqlite = { version = "0.41", default-features = false, features = ["bundled", "serialize"] }
 quick-xml = "0.42"
 tempfile = "3"
