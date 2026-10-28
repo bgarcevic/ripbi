@@ -32,9 +32,13 @@ fn native_measure_pbip() -> PathBuf {
 }
 
 /// Rewrites one file under `root`, replacing `from` with `to` exactly once.
+/// Line endings are normalized first: a Windows checkout writes the fixture
+/// with CRLF, and the patterns span lines with `\n`.
 fn edit(root: &Path, relative: &str, from: &str, to: &str) {
     let path = root.join(relative);
-    let text = fs::read_to_string(&path).expect("read fixture file");
+    let text = fs::read_to_string(&path)
+        .expect("read fixture file")
+        .replace("\r\n", "\n");
     assert_eq!(text.matches(from).count(), 1, "{from:?} in {relative}");
     fs::write(&path, text.replace(from, to)).expect("write fixture file");
 }
