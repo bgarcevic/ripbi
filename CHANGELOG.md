@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.1] - 2026-10-28
-
 ### Fixed
 
 - **PBIR native measures are read as DAX, not skipped.** A `NativeMeasure` field
@@ -22,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other than DAX, or text that is not whole DAX, such as unbalanced parentheses) is
   still a `malformed_value` skip, so `--strict` still fails on it. `ripbi report`
   lists these fields with kind `native_measure`.
+
+## [0.12.1] - 2026-10-28
+
+### Fixed
 
 - **A search folder no longer attaches every Fabric app to every model.** 0.12.0
   included each app found under a `--report` search folder in every scan, so a
