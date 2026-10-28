@@ -1232,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1257,7 +1257,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-app"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "ripbi-core",
  "ripbi-service",
@@ -1270,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-core"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "flate2",
  "petgraph",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-service"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "base64",
  "serde",
@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "ripbi-xpress9"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "cc",
 ]
