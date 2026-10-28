@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other than DAX, or text that is not whole DAX, such as unbalanced parentheses) is
   still a `malformed_value` skip, so `--strict` still fails on it. `ripbi report`
   lists these fields with kind `native_measure`.
+- **The desktop app's left pane keeps its width during a tenant fetch.** The fetch
+  status beside the spinner did not wrap, so a long status (such as the sign-in
+  line with its tenant id) stretched the pane wide for the rest of the session. It
+  now wraps inside the pane.
 
 ## [0.12.1] - 2026-10-28
 
