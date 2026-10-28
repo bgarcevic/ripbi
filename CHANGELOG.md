@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-28
+
 ### Fixed
 
 - **A search folder no longer attaches every Fabric app to every model.** 0.12.0
@@ -978,7 +980,8 @@ that exposes it.
 - **README** — install instructions, a 30-second quickstart with real
   AdventureWorks output, the exit-code table, and CI/release/crates.io badges.
 
-[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/bgarcevic/ripbi/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/bgarcevic/ripbi/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/bgarcevic/ripbi/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/bgarcevic/ripbi/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/bgarcevic/ripbi/compare/v0.10.1...v0.11.0
