@@ -98,7 +98,12 @@ are kept alive by ordinary DAX (`SELECTEDVALUE`) and report references.
 its provenance. Measure targets resolve report-first: within its report, a report
 measure shadows a model measure of the same name. `Aggregation` unwraps to its inner
 field; `HierarchyLevel` keeps the hierarchy and the level's underlying column;
-`Written` falls through the same ladder as a written qualified reference. The phone
+`Written` falls through the same ladder as a written qualified reference. A
+`NativeMeasure` roots every object its DAX names (report measures first for an
+unqualified name, plus any model column of that name, since an iterator may
+read it in row context); each reference that names nothing is its own broken
+binding, written as the column or measure it names, while columns of a `VAR`
+table and query-time names never break. The phone
 layout's pages (`ReportModel::mobile_pages`, issue #49) enumerate like any other
 page's: a field bound only by a `definition.mobile/` visual is live, because phone
 users see it, and its roots carry the `mobile` marker so an audit can tell the two

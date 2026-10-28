@@ -198,6 +198,119 @@ pub fn bind<'a>(
     }
 }
 
+/// Why `source` cannot be a whole DAX expression, judged lexically: it is
+/// empty (comments only), a delimited token runs off the end (`"…`, `'…`,
+/// `[…`, `/* …`), or its parentheses and braces do not pair up. `None` says
+/// only that nothing structural is wrong — this is not a parser.
+///
+/// The lexer itself is tolerance-first and never fails; this is the check for
+/// callers that must not silently read a broken expression as a smaller one.
+///
+/// ```
+/// use ripbi_core::dax;
+///
+/// assert_eq!(dax::structural_error("SUM('Sales'[Amount])"), None);
+/// assert!(dax::structural_error("SUM('Sales'[Amount]").is_some());
+/// assert!(dax::structural_error("[Total").is_some());
+/// ```
+#[must_use]
+pub fn structural_error(source: &str) -> Option<&'static str> {
+    let mut open: Vec<TokenKind> = Vec::new();
+    let mut empty = true;
+    for token in tokenize(source) {
+        let text = token.text;
+        match token.kind {
+            TokenKind::Eof => break,
+            TokenKind::Comment => {
+                if text.starts_with("/*") && (text.len() < 4 || !text.ends_with("*/")) {
+                    return Some("unterminated block comment");
+                }
+                continue;
+            }
+            TokenKind::String if !closes(text, 0, b'"') => {
+                return Some("unterminated string literal");
+            }
+            TokenKind::DateTime if !closes(text, 2, b'"') => {
+                return Some("unterminated date-time literal");
+            }
+            TokenKind::QuotedTable if !closes(text, 0, b'\'') => {
+                return Some("unterminated quoted table name");
+            }
+            TokenKind::BracketName if text.len() < 2 || !text.ends_with(']') => {
+                return Some("unterminated bracketed name");
+            }
+            TokenKind::OpenParen | TokenKind::OpenBrace => open.push(token.kind),
+            TokenKind::CloseParen if open.pop() != Some(TokenKind::OpenParen) => {
+                return Some("unbalanced parentheses");
+            }
+            TokenKind::CloseBrace if open.pop() != Some(TokenKind::OpenBrace) => {
+                return Some("unbalanced braces");
+            }
+            _ => {}
+        }
+        empty = false;
+    }
+    if empty {
+        return Some("expression is empty");
+    }
+    match open.last() {
+        Some(TokenKind::OpenBrace) => Some("unbalanced braces"),
+        Some(_) => Some("unbalanced parentheses"),
+        None => None,
+    }
+}
+
+/// Whether a delimited token (`"…"`, `'…'`), whose opening delimiter sits at
+/// `start`, is closed by a lone delimiter at its very end — a doubled
+/// delimiter is an escape, not a close.
+fn closes(text: &str, start: usize, delimiter: u8) -> bool {
+    let bytes = text.as_bytes();
+    let mut index = start + 1;
+    while index < bytes.len() {
+        if bytes[index] == delimiter {
+            if bytes.get(index + 1) == Some(&delimiter) {
+                index += 2;
+                continue;
+            }
+            return index + 1 == bytes.len();
+        }
+        index += 1;
+    }
+    false
+}
+
+#[cfg(test)]
+mod structural_error_tests {
+    use super::structural_error;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::measure("SUM('Example Table'[Amount])")]
+    #[case::escapes("\"say \"\"hi\"\"\" & 'It''s'[A]]B]")]
+    #[case::constructor("{(1, 2), (3, 4)}")]
+    #[case::variables("VAR _x = [Example Total] -- note (\nRETURN _x /* ) */")]
+    #[case::datetime("dt\"2024-01-01\"")]
+    fn well_formed_expressions_pass(#[case] source: &str) {
+        assert_eq!(structural_error(source), None);
+    }
+
+    #[rstest]
+    #[case::empty("", "expression is empty")]
+    #[case::comment_only("// nothing", "expression is empty")]
+    #[case::open_paren("SUM(T[A]", "unbalanced parentheses")]
+    #[case::extra_paren("SUM(T[A]))", "unbalanced parentheses")]
+    #[case::crossed("{ ( }", "unbalanced braces")]
+    #[case::open_brace("{1, 2", "unbalanced braces")]
+    #[case::string("\"open", "unterminated string literal")]
+    #[case::escaped_string("\"a\"\"", "unterminated string literal")]
+    #[case::quoted_table("'Example", "unterminated quoted table name")]
+    #[case::bracket("[Example Total", "unterminated bracketed name")]
+    #[case::block_comment("1 /* open", "unterminated block comment")]
+    fn broken_expressions_are_named(#[case] source: &str, #[case] problem: &str) {
+        assert_eq!(structural_error(source), Some(problem));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

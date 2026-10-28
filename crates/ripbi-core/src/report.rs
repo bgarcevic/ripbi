@@ -319,6 +319,25 @@ pub struct CodeLiteral {
     pub whole: bool,
 }
 
+/// A report-scoped measure written inline into a binding (PBIR
+/// `NativeMeasure`): a DAX expression the visual evaluates in place of a model
+/// field. It has no name in the model or the report's extensions — the
+/// `ProposedName` is the column header the author typed — so it is a binding,
+/// not an artifact: the model objects its DAX names are the reachability
+/// roots, and a name among them the model lacks breaks the visual.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NativeMeasure {
+    /// The expression language as written (`Language`); only DAX is parsed,
+    /// so ingestion only produces this for `dax`.
+    pub language: String,
+    /// The DAX expression as written (`Expression`).
+    pub expression: String,
+    /// The engine's result data type code (`DataType`), carried as written.
+    pub data_type: Option<i64>,
+    /// The display name the author proposed (`ProposedName`).
+    pub proposed_name: Option<String>,
+}
+
 /// One query a consumer sends the model, by the connection that sends it
 /// (an Excel workbook connection whose command is DAX or MDX).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -409,6 +428,9 @@ pub enum FieldTarget {
         /// model lacks is never claimed broken.
         exact: bool,
     },
+    /// An inline report-scoped DAX measure (PBIR `NativeMeasure`). Boxed: the
+    /// expression text would otherwise widen every target.
+    NativeMeasure(Box<NativeMeasure>),
 }
 
 impl fmt::Display for FieldTarget {
@@ -457,6 +479,12 @@ impl fmt::Display for FieldTarget {
                 }
                 Ok(())
             }
+            // The expression itself is report content, possibly long; the
+            // author's proposed name is what a reader recognizes.
+            FieldTarget::NativeMeasure(native) => match &native.proposed_name {
+                Some(name) => write!(f, "native measure [{}]", name.replace(']', "]]")),
+                None => f.write_str("native measure"),
+            },
         }
     }
 }

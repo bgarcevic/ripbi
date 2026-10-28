@@ -705,6 +705,25 @@ impl Builder {
                 self.root(target.clone(), provenance.clone());
                 self.add_selection_edges(db, target, provenance.clone());
             }
+            // An inline native measure is many references in one binding:
+            // each one that breaks is its own finding, named as written.
+            if let FieldTarget::NativeMeasure(native) = binding.target {
+                for (target, reason) in broken::native_measure_breakage(
+                    db,
+                    index,
+                    report,
+                    report_index,
+                    &native.expression,
+                    &self.broken_artifacts,
+                ) {
+                    self.broken.push(BrokenBinding {
+                        edge: edge.clone(),
+                        target,
+                        reason,
+                    });
+                }
+                continue;
+            }
             match &outcome.broken {
                 Some(reason) => self.broken.push(BrokenBinding {
                     edge,
@@ -1042,6 +1061,15 @@ impl Builder {
                 level.as_ref(),
                 *exact,
             ),
+            // Breakage inside the expression is per reference
+            // ([`broken::native_measure_breakage`]); the outcome carries
+            // liveness only.
+            FieldTarget::NativeMeasure(native) => TargetOutcome::resolved(native_measure_targets(
+                db,
+                index,
+                report,
+                &native.expression,
+            )),
         }
     }
 
@@ -1477,6 +1505,40 @@ fn model_measure(db: &TabularDatabase, index: &ModelIndex, name: &NameKey) -> Ve
 }
 
 /// The report measure of that name — a distinct node from any model measure.
+/// Every object an inline native measure's DAX keeps alive: what a DAX query
+/// references ([`crate::usage::dax_references`]), the report's own measures
+/// it names unqualified, and — since an unqualified name may be a row-context
+/// column of whatever table an iterator walks — every model column of that
+/// name. Over-keeping, never under-keeping.
+fn native_measure_targets(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    report: &ReportModel,
+    text: &str,
+) -> Vec<ObjectId> {
+    let mut targets = crate::usage::dax_references(db, index, text);
+    for raw in dax::references(text) {
+        if let RawRef::Field {
+            table: None, name, ..
+        } = raw
+        {
+            let name = unescape_name(name);
+            if let Some(id) = report_measure(report, &NameKey::new(name.as_ref())) {
+                targets.push(id);
+            }
+            targets.extend(
+                index
+                    .resolve_columns(&name)
+                    .into_iter()
+                    .filter_map(|h| db.object_id(Resolved::Column(h))),
+            );
+        }
+    }
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
 fn report_measure(report: &ReportModel, name: &NameKey) -> Option<ObjectId> {
     report
         .measures

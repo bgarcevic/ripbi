@@ -1,0 +1,59 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "name": "V1",
+  "position": {
+    "x": 100,
+    "y": 80,
+    "z": 0,
+    "height": 200,
+    "width": 300,
+    "tabOrder": 10
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "NativeMeasure": {
+                  "Language": "dax",
+                  "Expression": "VAR _rows = FILTER(ExampleTable, ExampleTable[Category] <> \"\")\nRETURN DIVIDE(SUMX(_rows, _rows[Amount]), [Example Total])",
+                  "DataType": 3,
+                  "ProposedName": "Example Share"
+                }
+              },
+              "queryRef": "Example Share",
+              "nativeQueryRef": "Example Share",
+              "active": true
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "NativeMeasure": {
+                      "Language": "dax",
+                      "Expression": "IF([Example Total] >= [Example Target], \"#107C10\", \"#A4262C\")",
+                      "DataType": 1,
+                      "ProposedName": "Example Color"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

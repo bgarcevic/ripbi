@@ -312,6 +312,132 @@ pub(super) fn code_breakage(
     out
 }
 
+/// The breakage inside one inline native measure (PBIR `NativeMeasure`): each
+/// field reference its DAX writes that names nothing, as the column or
+/// measure it was written as, or that lands on a broken artifact. Unlike a
+/// Fabric-app literal, the expression is DAX by declaration and evaluated
+/// against this model, so every reference is read — no anchoring.
+///
+/// Names the expression introduces itself never break: the query-time
+/// columns of [`broken_artifacts`], the report's own measures, and the
+/// columns of a `VAR` table (`_rows[Amount]`) — the binder only knows model
+/// tables, and a variable qualifier is lexically visible.
+pub(super) fn native_measure_breakage(
+    db: &TabularDatabase,
+    index: &ModelIndex,
+    report: &ReportModel,
+    report_index: usize,
+    text: &str,
+    broken_artifacts: &HashMap<ArtifactKey, Vec<String>>,
+) -> Vec<(FieldTarget, BrokenReason)> {
+    let report_measures: HashSet<String> = report
+        .measures
+        .iter()
+        .map(|measure| fold_name(measure.name.as_str()))
+        .collect();
+    let mut query_time: HashSet<String> = dax::quoted_names(text)
+        .into_iter()
+        .map(|name| fold_name(name.as_ref()))
+        .collect();
+    query_time.extend(constructors::COLUMN_NAMES.map(str::to_string));
+    let variables = variable_names(text);
+    let mut out: Vec<(FieldTarget, BrokenReason)> = Vec::new();
+    for raw in dax::references(text) {
+        let RawRef::Field { table, name, .. } = &raw else {
+            continue;
+        };
+        let name = NameKey::new(unescape_name(name).as_ref());
+        let table = table.map(|table| unescape_name(table).into_owned());
+        if table
+            .as_deref()
+            .is_some_and(|table| variables.contains(&fold_name(table)))
+        {
+            continue;
+        }
+        let target = match &table {
+            Some(table) => FieldTarget::Column {
+                table: NameKey::new(table),
+                column: name.clone(),
+            },
+            None => FieldTarget::Measure {
+                home_table: None,
+                measure: name.clone(),
+            },
+        };
+        // An unqualified name in a row context (`SUMX(t, [Amount])`) is a
+        // column of whichever table the iterator walks — unknowable
+        // lexically, so any model column of that name resolves it.
+        let row_context_column =
+            table.is_none() && !index.resolve_columns(name.as_str()).is_empty();
+        let mut reasons = Vec::new();
+        if !row_context_column
+            && !field_resolves(db, index, None, &raw, &report_measures, &query_time)
+        {
+            reasons.push(match &table {
+                None => BrokenReason::MeasureNotFound,
+                Some(table) if index.resolve_table(table).is_none() => BrokenReason::TableNotFound,
+                Some(_) => BrokenReason::FieldNotFound,
+            });
+        } else {
+            // A report measure shadows a model measure of the same name in
+            // its own report, as for any other binding.
+            let report_measure = table
+                .is_none()
+                .then(|| report.measures.iter().find(|measure| measure.name == name))
+                .flatten();
+            let landed: Vec<ArtifactKey> = match report_measure {
+                Some(measure) => vec![ArtifactKey {
+                    id: ObjectId::ReportMeasure {
+                        measure: measure.name.clone(),
+                    },
+                    report_index: Some(report_index),
+                }],
+                None => dax::bind(db, index, None, raw.clone())
+                    .targets()
+                    .iter()
+                    .map(|id| ArtifactKey {
+                        id: id.clone(),
+                        report_index: None,
+                    })
+                    .collect(),
+            };
+            for key in landed {
+                if broken_artifacts.contains_key(&key) {
+                    reasons.push(BrokenReason::BoundArtifactBroken {
+                        artifact: Box::new(key.id),
+                        report_index: key.report_index,
+                    });
+                }
+            }
+        }
+        for reason in reasons {
+            let finding = (target.clone(), reason);
+            if !out.contains(&finding) {
+                out.push(finding);
+            }
+        }
+    }
+    out
+}
+
+/// The folded names an expression declares with `VAR` — the variables a
+/// qualified reference may use as its table.
+fn variable_names(text: &str) -> HashSet<String> {
+    let tokens: Vec<dax::Token<'_>> = dax::tokenize(text)
+        .into_iter()
+        .filter(|token| token.kind != dax::TokenKind::Comment)
+        .collect();
+    tokens
+        .windows(2)
+        .filter(|pair| {
+            pair[0].kind == dax::TokenKind::Identifier
+                && pair[0].text.eq_ignore_ascii_case("VAR")
+                && pair[1].kind == dax::TokenKind::Identifier
+        })
+        .map(|pair| fold_name(pair[1].text))
+        .collect()
+}
+
 /// Whether one field reference resolves, for breakage purposes: the binder's
 /// answer, plus everything the binder cannot know that the engine still
 /// resolves — the extended candidates (a qualified reference may name a

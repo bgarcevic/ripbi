@@ -272,6 +272,16 @@ non-drift shapes that yield no reference: `ScopedEval` wrappers (unwrapped
 transparently), `RangePercent` bounds in formatting rules (they reuse the
 `Min`/`Max` keys for gradient ends), and visual-calculation sources (below).
 
+**Native measures.** A `NativeMeasure` container (`Language`, `Expression`,
+`DataType`, `ProposedName`) is report-scoped DAX written inline wherever a field
+is accepted — a projection, a sort, a filter, a formatting rule — and becomes
+`FieldTarget::NativeMeasure`. Only `Expression` is required; a missing language
+means DAX. A missing or non-string expression, any language other than DAX, or
+an expression that is not lexically whole (empty, unterminated string or name,
+unbalanced parentheses or braces) is a `MalformedValue` notice and binds
+nothing. An unreadable `DataType` or `ProposedName` is noticed but the binding
+stays.
+
 **Bookmark staleness.** Power BI leaves a deleted page's section inside every
 bookmark that captured it — the saved state survives, but nothing can ever
 navigate to or re-apply it. A bookmark section therefore counts as a binding

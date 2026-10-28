@@ -1,0 +1,16 @@
+table ExampleBudget
+	lineageTag: 99999999-9999-9999-9999-999999999b01
+
+	/// Live only through V2's native measure (projection and sort).
+	column Budget
+		dataType: double
+		sourceColumn: Budget
+		lineageTag: 99999999-9999-9999-9999-999999999b02
+
+	partition ExampleBudget = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Budget"}, {})
+				in
+				    Source

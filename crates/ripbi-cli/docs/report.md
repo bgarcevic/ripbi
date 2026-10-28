@@ -139,7 +139,7 @@ output mode.
 | `--page <GLOB>` | page object name or display name | |
 | `--visual <GLOB>` | visual object name or **type** | a visual's only author-visible identity is its type — PBIR assigns folder names as object names — so `--visual donut*` matches the donut chart and `--visual <hash>` pins one; both are visible in the `--visuals` table |
 | `--site <GLOB>` | binding site: `field_well:<role>`, `sort`, `conditional_formatting`, `alt_text`, `filter`, `drillthrough`, `app_code:<file>:<line>`, `query:<connection>` | |
-| `--kind <GLOB>` | row kind: `column`, `measure`, `hierarchy_level`, `aggregation`, `written`, `mdx` (an Excel unique name), `filter`, `filter_ref`, `unresolved` | |
+| `--kind <GLOB>` | row kind: `column`, `measure`, `hierarchy_level`, `aggregation`, `written`, `mdx` (an Excel unique name), `native_measure` (inline report DAX), `filter`, `filter_ref`, `unresolved` | |
 | `--match <GLOB>` | the written target — `--match "'Sales'[Sales]"` lists every visual and site that touches the field | |
 | `--broken` | only the unresolved bindings | scan's selector; the precise form of `--kind unresolved` |
 
@@ -366,7 +366,7 @@ Field rules:
 - `reports[]` follows ingestion order; `pages[]` desktop pages in source order, then
   phone-layout pages with `"mobile": true`.
 - `fields[].kind` is the binding's own claim: `column`, `measure`, `hierarchy_level`,
-  `aggregation`, or `written`. `binding_site` is `field_well:<role>`, `sort`,
+  `aggregation`, `written`, `mdx`, or `native_measure` (inline report DAX). `binding_site` is `field_well:<role>`, `sort`,
   `conditional_formatting`, or `alt_text`. `active` appears on field-well projections
   only and is `false` for inactive ones — which still bind.
 - `filters[]` appears at report, page, and visual level with the same shape. `name` is

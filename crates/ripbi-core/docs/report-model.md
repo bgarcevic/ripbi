@@ -54,7 +54,7 @@ all reports' bindings, so the graph core does not care — but provenance does. 
 literal values (data), not references.
 
 **Bindings are written-form, never resolved.** PBIR binds structured JSON entity trees
-(`Column`/`Measure`/`HierarchyLevel`/`Aggregation`); legacy Layout binds written names.
+(`Column`/`Measure`/`HierarchyLevel`/`Aggregation`, plus inline `NativeMeasure` DAX); legacy Layout binds written names.
 Both normalize into `FieldTarget`, which keeps the column-vs-measure discrimination the
 entity states outright. Resolution against `ModelIndex` is the graph layer's job; a
 `Measure` target should resolve against *report* measures first — within its report, a

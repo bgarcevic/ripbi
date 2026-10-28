@@ -32,8 +32,8 @@ use crate::identity::{FieldRef, NameKey, fold_name};
 use crate::ingest::{SkipKind, SkipNotice};
 use crate::report::{
     Bookmark, BookmarkSection, BookmarkVisual, DatasetReference, DrillthroughParameter,
-    FieldTarget, FieldWell, Filter, Page, PageBinding, PageBindingKind, Projection, ReportMeasure,
-    ReportModel, Visual,
+    FieldTarget, FieldWell, Filter, NativeMeasure, Page, PageBinding, PageBindingKind, Projection,
+    ReportMeasure, ReportModel, Visual,
 };
 use crate::stub::STUB_ANNOTATION;
 
@@ -128,6 +128,7 @@ const FIELD_VARIANTS: &[&str] = &[
     "Min",
     "Max",
     "Percentile",
+    "NativeMeasure",
 ];
 
 /// Parses a report's `definition/` folder into a [`ReportModel`].
@@ -1151,8 +1152,70 @@ fn parse_field(container: &Value, aliases: &Aliases, ctx: &mut Ctx, location: &s
                 FieldParse::NotAField => FieldParse::NotAField,
             }
         }
+        "NativeMeasure" => native_measure(inner, ctx, &format!("{location}/NativeMeasure")),
         _ => FieldParse::NotAField,
     }
+}
+
+/// Parses a `NativeMeasure`: report-scoped DAX written inline where a field
+/// would be. Its `Expression` is the binding, so anything that keeps it from
+/// being read as DAX — a missing or non-string expression, another language,
+/// text that does not lex as a whole expression — is noticed and leaves the
+/// slot empty rather than binding nothing silently. `DataType` and
+/// `ProposedName` are display metadata: unreadable values degrade, the
+/// binding does not.
+fn native_measure(inner: &Value, ctx: &mut Ctx, location: &str) -> FieldParse {
+    let Some(expression) = inner.get("Expression").and_then(Value::as_str) else {
+        ctx.notice(
+            location,
+            SkipKind::MalformedValue,
+            "NativeMeasure carries no Expression string",
+        );
+        return FieldParse::Malformed;
+    };
+    // Power BI writes `dax`; an absent language is the only one it has.
+    let language = match inner.get("Language") {
+        None => "dax".to_string(),
+        Some(Value::String(language)) if language.eq_ignore_ascii_case("dax") => language.clone(),
+        Some(other) => {
+            ctx.notice(
+                format!("{location}/Language"),
+                SkipKind::MalformedValue,
+                format!("NativeMeasure language {other} is not DAX"),
+            );
+            return FieldParse::Malformed;
+        }
+    };
+    if let Some(problem) = dax::structural_error(expression) {
+        ctx.notice(
+            format!("{location}/Expression"),
+            SkipKind::MalformedValue,
+            format!("NativeMeasure expression is not well-formed DAX: {problem}"),
+        );
+        return FieldParse::Malformed;
+    }
+    let data_type = match inner.get("DataType") {
+        None => None,
+        Some(value) => match value.as_i64() {
+            Some(code) => Some(code),
+            None => {
+                ctx.notice(
+                    format!("{location}/DataType"),
+                    SkipKind::MalformedValue,
+                    "value is not an integer",
+                );
+                None
+            }
+        },
+    };
+    FieldParse::Target(Box::new(FieldTarget::NativeMeasure(Box::new(
+        NativeMeasure {
+            language,
+            expression: expression.to_string(),
+            data_type,
+            proposed_name: optional_string(inner, "ProposedName", ctx, location),
+        },
+    ))))
 }
 
 /// Parses a `Column` or `Measure` reference: a `Property` over a table source.
@@ -2234,6 +2297,95 @@ mod tests {
         FieldTarget::Column {
             table: NameKey::new("Product"),
             column: NameKey::new("Category"),
+        }
+    }
+
+    mod native_measure {
+        use super::*;
+
+        fn native(expression: &str, data_type: Option<i64>, name: Option<&str>) -> FieldParse {
+            FieldParse::Target(Box::new(FieldTarget::NativeMeasure(Box::new(
+                NativeMeasure {
+                    language: "dax".to_string(),
+                    expression: expression.to_string(),
+                    data_type,
+                    proposed_name: name.map(str::to_string),
+                },
+            ))))
+        }
+
+        #[test]
+        fn every_part_is_read() {
+            let (outcome, skips) = parse_field_json(
+                r#"{"NativeMeasure": {"Language": "dax", "Expression": "SUM(ExampleTable[Amount])", "DataType": 3, "ProposedName": "Example Total"}}"#,
+            );
+
+            assert_eq!(
+                outcome,
+                native("SUM(ExampleTable[Amount])", Some(3), Some("Example Total"))
+            );
+            assert!(skips.is_empty());
+        }
+
+        /// Display metadata is optional; the language defaults to the only one
+        /// Power BI writes.
+        #[test]
+        fn only_the_expression_is_required() {
+            let (outcome, skips) = parse_field_json(r#"{"NativeMeasure": {"Expression": "1"}}"#);
+
+            assert_eq!(outcome, native("1", None, None));
+            assert!(skips.is_empty());
+        }
+
+        #[rstest]
+        #[case::no_expression(r#"{"Language": "dax"}"#, "carries no Expression")]
+        #[case::expression_not_text(r#"{"Expression": 1}"#, "carries no Expression")]
+        #[case::other_language(r#"{"Language": "m", "Expression": "1"}"#, "is not DAX")]
+        #[case::unbalanced(r#"{"Expression": "SUM(ExampleTable[Amount]"}"#, "unbalanced")]
+        #[case::unterminated(r#"{"Expression": "[Example Total"}"#, "unterminated")]
+        #[case::empty(r#"{"Expression": "  "}"#, "empty")]
+        fn an_unreadable_expression_is_noticed_and_binds_nothing(
+            #[case] inner: &str,
+            #[case] detail: &str,
+        ) {
+            let (outcome, skips) = parse_field_json(&format!(r#"{{"NativeMeasure": {inner}}}"#));
+
+            assert_eq!(outcome, FieldParse::Malformed);
+            assert_eq!(skips.len(), 1);
+            assert_eq!(skips[0].kind, SkipKind::MalformedValue);
+            assert!(skips[0].detail.contains(detail), "{:?}", skips[0].detail);
+        }
+
+        #[test]
+        fn unreadable_metadata_degrades_but_still_binds() {
+            let (outcome, skips) = parse_field_json(
+                r#"{"NativeMeasure": {"Expression": "1", "DataType": "x", "ProposedName": 7}}"#,
+            );
+
+            assert_eq!(outcome, native("1", None, None));
+            assert_eq!(skips.len(), 2);
+            assert!(skips.iter().all(|s| s.kind == SkipKind::MalformedValue));
+        }
+
+        /// Formatting rules carry expressions anywhere in their tree, so the
+        /// structural walk must pick a native measure up like any field.
+        #[test]
+        fn the_structural_walk_collects_it() {
+            let tree: Value = serde_json::from_str(
+                r#"{"solid": {"color": {"expr": {"NativeMeasure": {"Language": "dax", "Expression": "[Example Total]"}}}}}"#,
+            )
+            .unwrap();
+            let mut skips = Vec::new();
+            let mut out = Vec::new();
+            let mut ctx = Ctx {
+                path: Path::new("test/visual.json"),
+                skips: &mut skips,
+            };
+            collect_fields(&tree, &Aliases::new(), &mut ctx, "", &mut out);
+
+            assert_eq!(out.len(), 1);
+            assert!(matches!(out[0], FieldTarget::NativeMeasure(_)));
+            assert!(skips.is_empty());
         }
     }
 

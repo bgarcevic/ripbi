@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PBIR native measures are read as DAX, not skipped.** A `NativeMeasure` field
+  (report-scoped DAX a visual writes inline, with `Language`, `Expression`,
+  `DataType`, and `ProposedName`) was a `malformed_value` skip, so valid reports
+  failed `scan --strict`, with or without `--compare-root`, and the model objects the
+  expression used looked unused. It is now a binding wherever a field is accepted
+  (projections, sorts, filters, formatting rules): every table, column, and measure
+  its DAX names stays reachable, and each name the model lacks is its own
+  `broken_visual` finding. An expression ripbi cannot read (no expression, a language
+  other than DAX, or text that is not whole DAX, such as unbalanced parentheses) is
+  still a `malformed_value` skip, so `--strict` still fails on it. `ripbi report`
+  lists these fields with kind `native_measure`.
+
 - **A search folder no longer attaches every Fabric app to every model.** 0.12.0
   included each app found under a `--report` search folder in every scan, so a
   multi-model folder checked one app's queries against unrelated models and
