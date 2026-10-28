@@ -329,11 +329,13 @@ which literals name model objects (see `graph.md`).
   interpolation-free template is `whole`.
 - **Name.** `rayfin/rayfin.yml`'s top-level `name:`, else `package.json`
   `name`, else the folder name.
-- **Model pairing.** None: `fabric.yaml` names models by workspace and item
-  GUID, which a local scan cannot match, so the app's `dataset` is
-  `Unresolved` and it binds only when passed with `--model` (or a model PATH).
-  The CLI's search-folder walk includes every app it finds without pairing
-  and announces them: over-keeping beats missing a consumer.
+- **Model pairing.** The app's `dataset` is `Unresolved`: `fabric.yaml` names
+  models by workspace and item GUID under app-chosen keys
+  (`profiles.<P>.semanticModels.<key>.itemId`). `ingest::fabric_app_models`
+  reads every profile's keys and real item GUIDs (placeholders dropped), and
+  the app layer pairs a search-folder app from them — or from `ripbi.toml`
+  `[apps]` — and never otherwise (CLI `docs/scan/overview.md`). Passed with
+  `--model` (or a model PATH), an app binds as given.
 - **Drift.** The lexer separates literals from code without parsing
   JavaScript. A quote it misreads — an apostrophe in JSX text — ends at the
   line break, as an unterminated JavaScript string does. A source that is not

@@ -389,6 +389,7 @@ fn analyze(
             model: request.model.as_deref(),
             path: request.path.as_deref(),
             config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            app_mappings: config.as_ref().map_or(&[], |config| config.apps.as_slice()),
             extras: &extras,
             no_input: request.no_input,
             quiet: request.quiet,
@@ -508,7 +509,7 @@ fn analyze(
                 .map(|(path, detail)| SkipNoticeOut {
                     path: path.display().to_string(),
                     location: None,
-                    kind: "unresolved_dataset_reference",
+                    kind: discover::unresolved_kind(path),
                     detail: detail.clone(),
                 }),
         );
@@ -976,6 +977,8 @@ pub struct TargetInput<'a> {
     pub path: Option<&'a Path>,
     /// The `ripbi.toml` `target`, already resolved against the config dir.
     pub config_target: Option<&'a Path>,
+    /// The `ripbi.toml` `[apps]` entries pairing Fabric apps with models.
+    pub app_mappings: &'a [crate::config::AppMapping],
     /// The `--report` values (or the config `reports`).
     pub extras: &'a [PathBuf],
     /// Never prompt; fail where a picker would appear.
@@ -1017,20 +1020,25 @@ pub fn resolve_target(
         discovered: None,
     };
     if let Some(model_path) = input.model {
-        let (paired, walk) = resolve_model_mode(model_path, input.extras)?;
+        let (paired, walk) = resolve_model_mode(model_path, input.extras, input.app_mappings)?;
         return Ok(resolved((paired, Some(walk))));
     }
     if let Some(explicit) = input.path.or(input.config_target) {
         let model_named = names_semantic_model(explicit);
         let paired = resolve_explicit(explicit)?;
-        return Ok(resolved(attach_extras(paired, input.extras, model_named)?));
+        return Ok(resolved(attach_extras(
+            paired,
+            input.extras,
+            model_named,
+            input.app_mappings,
+        )?));
     }
     if !input.extras.is_empty() {
         let paired = derive_model_from_reports(input.extras)?;
         return Ok(resolved((paired, None)));
     }
     let (paired, discovered) = discover_target(input.no_input, input.quiet, input.cwd, observer)?;
-    let (paired, walk) = attach_extras(paired, input.extras, false)?;
+    let (paired, walk) = attach_extras(paired, input.extras, false, input.app_mappings)?;
     Ok(Resolved {
         paired,
         walk,
@@ -1122,6 +1130,7 @@ fn unify_derived_model(
 fn resolve_model_mode(
     model_path: &Path,
     extras: &[PathBuf],
+    app_mappings: &[crate::config::AppMapping],
 ) -> Result<(discover::Paired, ModelScan), ScanError> {
     let target = discover::resolve_model(model_path)?;
     let mut direct = Vec::new();
@@ -1143,7 +1152,8 @@ fn resolve_model_mode(
         .iter()
         .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
         .collect();
-    let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    let bound =
+        discover::discover_bound_reports_with(&target, &search_roots, &excluded, app_mappings);
     if let Some(error) = &bound.walk_error {
         return Err(error.clone());
     }
@@ -1169,6 +1179,7 @@ fn attach_extras(
     paired: discover::Paired,
     extras: &[PathBuf],
     model_named: bool,
+    app_mappings: &[crate::config::AppMapping],
 ) -> Result<(discover::Paired, Option<ModelScan>), ScanError> {
     let mut report_paths = paired.reports.clone();
     let mut direct = Vec::new();
@@ -1229,7 +1240,8 @@ fn attach_extras(
             .iter()
             .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone())),
     );
-    let bound = discover::discover_bound_reports(&target, &search_roots, &excluded);
+    let bound =
+        discover::discover_bound_reports_with(&target, &search_roots, &excluded, app_mappings);
     if let Some(error) = &bound.walk_error {
         return Err(error.clone());
     }
@@ -1333,12 +1345,12 @@ fn no_bound_reports_detail(scan: &ModelScan) -> String {
         .map(|root| root.display().to_string())
         .collect();
     let roots = roots.join(", ");
-    if scan.bound.ignored_elsewhere.is_empty() && scan.bound.unresolved.is_empty() {
+    let elsewhere = scan.bound.ignored_elsewhere.len() + scan.bound.apps_elsewhere.len();
+    if elsewhere == 0 && scan.bound.unresolved.is_empty() {
         format!("no report items found under {roots}")
     } else {
         format!(
-            "{} bound to other models, {} unresolved dataset references under {roots}",
-            scan.bound.ignored_elsewhere.len(),
+            "{elsewhere} bound to other models, {} unresolved dataset references under {roots}",
             scan.bound.unresolved.len()
         )
     }

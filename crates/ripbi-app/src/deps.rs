@@ -18,6 +18,7 @@ use ripbi_core::{
 };
 
 use crate::config;
+use crate::discover;
 use crate::error::ScanError;
 use crate::output::{KINDS, SkipNoticeOut, kind_of};
 use crate::scan::{
@@ -116,6 +117,7 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
             model: request.model.as_deref(),
             path: None,
             config_target: config.as_ref().and_then(|config| config.target.as_deref()),
+            app_mappings: config.as_ref().map_or(&[], |config| config.apps.as_slice()),
             extras: &extras,
             no_input: request.no_input,
             quiet: request.quiet,
@@ -164,7 +166,7 @@ pub fn run(request: &DepsRequest, observer: &mut dyn Observer) -> Result<DepsOut
                 .map(|(path, detail)| SkipNoticeOut {
                     path: path.display().to_string(),
                     location: None,
-                    kind: "unresolved_dataset_reference",
+                    kind: discover::unresolved_kind(path),
                     detail: detail.clone(),
                 }),
         );

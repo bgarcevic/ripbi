@@ -21,8 +21,14 @@
 //! # "none" when nothing outside these reports reads the model (no thin
 //! # reports, Excel, or XMLA clients): drops the check-before-removing hint.
 //! external_consumers = "none"
+//!
+//! # A Fabric app's fabric.yaml names its models by service ID, which a local
+//! # model folder does not record: pair the app with the model(s) it reads.
+//! [apps]
+//! "apps/sales-dashboard" = "models/Sales.SemanticModel"
 //! ```
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -52,6 +58,19 @@ pub struct Config {
     /// outside the ingested reports reads the model, so findings carry no
     /// check-before-removing hint.
     pub no_external_consumers: bool,
+    /// `[apps]`: Fabric app folders paired with the models they read.
+    pub apps: Vec<AppMapping>,
+}
+
+/// One `[apps]` entry: a Fabric app folder and the models it reads, both
+/// resolved against the config directory. A search-folder walk includes the
+/// app in scans of these models and in no others.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppMapping {
+    /// The app folder (the one holding `fabric.yaml`).
+    pub app: PathBuf,
+    /// The models it reads, in any shape `--model` accepts.
+    pub models: Vec<PathBuf>,
 }
 
 /// A `--stats-from` or `[scan].stats_from` value.
@@ -97,6 +116,16 @@ struct FileFormat {
     queries_from: Option<String>,
     queries_item: Option<String>,
     scan: Option<ScanSection>,
+    #[serde(default)]
+    apps: BTreeMap<String, OneOrMany>,
+}
+
+/// An `[apps]` value: one model path or several.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OneOrMany {
+    One(String),
+    Many(Vec<String>),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -133,6 +162,17 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
         let target = file.target.as_ref().map(resolve);
         let reports: Vec<PathBuf> = file.reports.iter().map(&resolve).collect();
         let queries_from = file.queries_from.as_ref().map(resolve);
+        let apps = file
+            .apps
+            .iter()
+            .map(|(app, models)| AppMapping {
+                app: resolve(app),
+                models: match models {
+                    OneOrMany::One(model) => vec![resolve(model)],
+                    OneOrMany::Many(models) => models.iter().map(&resolve).collect(),
+                },
+            })
+            .collect();
         let scan = file.scan.unwrap_or_default();
         let stats_from = scan
             .stats_from
@@ -162,6 +202,7 @@ pub fn find_in(start: &Path) -> Result<Option<Loaded>, ScanError> {
                 queries_from,
                 queries_item: file.queries_item,
                 no_external_consumers,
+                apps,
             },
         }));
     }
@@ -273,6 +314,32 @@ stats_from = \"None\"
         );
         let loaded = find_in(&temp.0).expect("no error").expect("config found");
         assert_eq!(loaded.config.stats_from, Some(StatsSetting::Off));
+    }
+
+    #[test]
+    fn apps_map_one_or_several_models_relatively() {
+        let temp = TempDir::new("apps");
+        temp.write(
+            "ripbi.toml",
+            "[apps]\n\"apps/a\" = \"A.SemanticModel\"\n\"apps/b\" = [\"A.SemanticModel\", \"B.SemanticModel\"]\n",
+        );
+        let loaded = find_in(&temp.0).expect("no error").expect("config found");
+        assert_eq!(
+            loaded.config.apps,
+            vec![
+                AppMapping {
+                    app: temp.0.join("apps/a"),
+                    models: vec![temp.0.join("A.SemanticModel")],
+                },
+                AppMapping {
+                    app: temp.0.join("apps/b"),
+                    models: vec![
+                        temp.0.join("A.SemanticModel"),
+                        temp.0.join("B.SemanticModel")
+                    ],
+                },
+            ]
+        );
     }
 
     #[test]

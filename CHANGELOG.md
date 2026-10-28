@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A search folder no longer attaches every Fabric app to every model.** 0.12.0
+  included each app found under a `--report` search folder in every scan, so a
+  multi-model folder checked one app's queries against unrelated models and
+  `--broken` reported fields that exist in the app's real model. A discovered app is
+  now included only when it pairs with the scanned model: by a new `ripbi.toml`
+  `[apps]` entry (`"apps/sales" = "Sales.SemanticModel"`), by a `fabric.yaml`
+  `itemId` equal to a fetched model's service ID, or by a `semanticModels` key equal
+  to the model's name (ignoring case and punctuation). Every profile is read;
+  placeholder IDs are ignored. An app naming only other models is listed as ignored
+  and never fails `--strict`; an app naming no models is an `unresolved_app_binding`
+  notice, which does. An app passed directly with `--report` still pairs with the
+  named model as before.
+
 ## [0.12.0] - 2026-10-27
 
 ### Added

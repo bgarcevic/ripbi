@@ -26,6 +26,245 @@ fn model_args(model: impl Into<PathBuf>, reports: Vec<PathBuf>) -> ScanArgs {
     }
 }
 
+/// Writes a Fabric app folder: `fabric.yaml` plus one source file.
+fn fabric_app_into(dir: &Path, relative: &str, yaml: &str, source: &str) -> PathBuf {
+    let app = dir.join(relative);
+    fs::create_dir_all(app.join("src")).unwrap();
+    fs::write(app.join("fabric.yaml"), yaml).unwrap();
+    fs::write(app.join("src/query.ts"), source).unwrap();
+    app
+}
+
+/// The service ID the PROD profile of [`fabric_yaml`] names.
+const PROD_ITEM_ID: &str = "3f2a9c41-7d0e-4b6a-9e15-c8d4a2b7f603";
+
+/// A `fabric.yaml` naming one model under `alias` in three profiles, the way
+/// the app template writes it: a nil-GUID placeholder for local development,
+/// a substitution for test, a real ID for production.
+fn fabric_yaml(alias: &str) -> String {
+    format!(
+        "activeProfile: DEV\n\
+         profiles:\n\
+         \x20 DEV:\n\
+         \x20   semanticModels:\n\
+         \x20     {alias}:\n\
+         \x20       workspaceId: 00000000-0000-0000-0000-000000000000\n\
+         \x20       itemId: 00000000-0000-0000-0000-000000000000\n\
+         \x20 TEST:\n\
+         \x20   semanticModels:\n\
+         \x20     {alias}:\n\
+         \x20       itemId: ${{MODEL_ITEM_ID}}\n\
+         \x20 PROD:\n\
+         \x20   semanticModels:\n\
+         \x20     {alias}:\n\
+         \x20       workspaceId: 9b1d4e72-0c3f-4a85-b6e9-2f7c1a8d5e40\n\
+         \x20       itemId: {PROD_ITEM_ID}\n"
+    )
+}
+
+/// A query that reads one live measure and one column no mini model has.
+const APP_QUERY: &str =
+    "export const q = `EVALUATE SUMMARIZECOLUMNS('Sales'[Region], \"t\", [Total])`;\n";
+
+/// Discovered Fabric apps pair with a model only when `fabric.yaml` (or
+/// `ripbi.toml`) says they read it — never by being in the search folder.
+mod fabric_app_pairing {
+    use super::*;
+
+    /// Models X and Y, each with a report bound by path, and one app under
+    /// the shared search folder that names its model `alias`.
+    fn two_models(name: &str, alias: &str) -> TempDir {
+        let temp = TempDir::new(name);
+        model_into(&temp.0, "X");
+        model_into(&temp.0, "Y");
+        report_into(
+            &temp.0,
+            "reports/X.Report",
+            Some(&by_path("../../X.SemanticModel")),
+        );
+        report_into(
+            &temp.0,
+            "reports/Y.Report",
+            Some(&by_path("../../Y.SemanticModel")),
+        );
+        fabric_app_into(
+            &temp.0,
+            "reports/apps/billing",
+            &fabric_yaml(alias),
+            APP_QUERY,
+        );
+        temp
+    }
+
+    fn broken_strict(model: PathBuf, reports: PathBuf) -> ScanArgs {
+        ScanArgs {
+            broken: true,
+            strict: true,
+            ..model_args(model, vec![reports])
+        }
+    }
+
+    #[test]
+    fn an_app_bound_to_another_model_is_ignored_not_checked() {
+        let temp = two_models("app-pair-other", "x");
+        let args = broken_strict(temp.0.join("Y.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 0, "no invented breakage:\n{stdout}\n{stderr}");
+        assert!(!stdout.contains("Region"), "findings:\n{stdout}");
+        assert!(stderr.contains("1 report"), "header:\n{stderr}");
+        assert!(
+            stderr.contains(
+                "ignored 1 Fabric app(s) whose fabric.yaml names other models: billing ('x')"
+            ),
+            "the exclusion is announced:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_correctly_paired_app_still_fails_on_a_missing_field() {
+        let temp = two_models("app-pair-broken", "x");
+        let args = broken_strict(temp.0.join("X.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "breakage gates:\n{stdout}\n{stderr}");
+        assert!(
+            stdout.contains("'Sales'[Region]\n    ← field not found in the model"),
+            "findings:\n{stdout}"
+        );
+        assert!(
+            stderr.contains("billing (fabric.yaml model name 'x')"),
+            "pairing:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn a_model_name_matches_ignoring_case_and_punctuation() {
+        let temp = TempDir::new("app-pair-fold");
+        model_into(&temp.0, "Sales Model");
+        report_into(
+            &temp.0,
+            "reports/A.Report",
+            Some(&by_path("../../Sales Model.SemanticModel")),
+        );
+        fabric_app_into(
+            &temp.0,
+            "reports/app",
+            &fabric_yaml("sales_model"),
+            APP_QUERY,
+        );
+        let args = broken_strict(
+            temp.0.join("Sales Model.SemanticModel"),
+            temp.0.join("reports"),
+        );
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "{stdout}");
+        assert!(stdout.contains("'Sales'[Region]"), "findings:\n{stdout}");
+    }
+
+    #[test]
+    fn an_app_naming_no_models_is_a_notice_not_findings() {
+        let temp = two_models("app-pair-unresolved", "x");
+        fs::write(
+            temp.0.join("reports/apps/billing/fabric.yaml"),
+            "activeProfile: DEV\nprofiles: {}\n",
+        )
+        .unwrap();
+        let json = ScanArgs {
+            broken: true,
+            json: true,
+            ..model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")])
+        };
+        let (code, stdout, _) = run_scan(&json, &temp.0, "");
+
+        assert_eq!(code, 0, "nothing invented:\n{stdout}");
+        assert!(!stdout.contains("Region"), "findings:\n{stdout}");
+        let payload = json_payload(&stdout);
+        let skips = payload["skips"]["notices"].as_array().expect("notices");
+        assert!(
+            skips
+                .iter()
+                .any(|skip| skip["kind"] == "unresolved_app_binding"
+                    && skip["detail"]
+                        .as_str()
+                        .is_some_and(|detail| detail.contains("ripbi.toml [apps]"))),
+            "the uncertainty is a notice: {payload}"
+        );
+
+        let strict = broken_strict(temp.0.join("X.SemanticModel"), temp.0.join("reports"));
+        let (code, _, stderr) = run_scan(&strict, &temp.0, "");
+        assert_eq!(code, 2, "--strict fails on the notice:\n{stderr}");
+    }
+
+    #[test]
+    fn ripbi_toml_pairs_an_app_whose_names_match_nothing() {
+        let temp = two_models("app-pair-mapped", "billing");
+        fs::write(
+            temp.0.join("ripbi.toml"),
+            "[apps]\n\"reports/apps/billing\" = \"Y.SemanticModel\"\n",
+        )
+        .unwrap();
+
+        let args = broken_strict(temp.0.join("Y.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "mapped and checked:\n{stdout}\n{stderr}");
+        assert!(stdout.contains("'Sales'[Region]"), "findings:\n{stdout}");
+        assert!(
+            stderr.contains("billing (ripbi.toml [apps])"),
+            "pairing:\n{stderr}"
+        );
+
+        let args = broken_strict(temp.0.join("X.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "mapped elsewhere:\n{stdout}\n{stderr}");
+        assert!(stderr.contains("ignored 1 Fabric app(s)"), "{stderr}");
+    }
+
+    #[test]
+    fn a_fetched_models_service_id_pairs_the_app() {
+        let temp = two_models("app-pair-id", "billing");
+        fs::create_dir_all(temp.0.join(".ripbi")).unwrap();
+        fs::write(
+            temp.0.join(".ripbi/source.json"),
+            format!(
+                "{{\"schema_version\": 1, \"model\": {{\"id\": \"{}\", \"name\": \"X\", \
+                 \"path\": \"X.SemanticModel\"}}, \"complete\": true}}",
+                PROD_ITEM_ID.to_uppercase()
+            ),
+        )
+        .unwrap();
+
+        let args = broken_strict(temp.0.join("X.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 1, "{stdout}\n{stderr}");
+        assert!(
+            stderr.contains("billing (fabric.yaml itemId)"),
+            "pairing:\n{stderr}"
+        );
+
+        let args = broken_strict(temp.0.join("Y.SemanticModel"), temp.0.join("reports"));
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+        assert_eq!(code, 0, "the ID names X only:\n{stdout}");
+    }
+
+    #[test]
+    fn an_explicit_app_path_pairs_with_the_named_model() {
+        let temp = two_models("app-pair-explicit", "x");
+        let args = ScanArgs {
+            broken: true,
+            ..model_args(
+                temp.0.join("Y.SemanticModel"),
+                vec![temp.0.join("reports/apps/billing")],
+            )
+        };
+        let (code, stdout, _) = run_scan(&args, &temp.0, "");
+
+        assert_eq!(code, 1, "the user's pairing stands:\n{stdout}");
+        assert!(stdout.contains("'Sales'[Region]"), "findings:\n{stdout}");
+    }
+}
+
 mod happy_path {
     use super::*;
 
@@ -112,17 +351,12 @@ mod happy_path {
             "reports/A.Report",
             Some(&by_path("../../X.SemanticModel")),
         );
-        temp.mkdir("reports/ledger-app/src");
-        fs::write(
-            temp.0.join("reports/ledger-app/fabric.yaml"),
-            "profiles: {}\n",
-        )
-        .unwrap();
-        fs::write(
-            temp.0.join("reports/ledger-app/src/query.ts"),
+        fabric_app_into(
+            &temp.0,
+            "reports/ledger-app",
+            &fabric_yaml("x"),
             "export const q = `EVALUATE ROW(\"t\", [Legacy Total])`;\n",
-        )
-        .unwrap();
+        );
 
         let args = model_args(temp.0.join("X.SemanticModel"), vec![temp.0.join("reports")]);
         let (code, stdout, stderr) = run_scan(&args, &temp.0, "");
@@ -131,9 +365,10 @@ mod happy_path {
         assert!(stderr.contains("2 reports"), "header:\n{stderr}");
         assert!(
             stderr.contains(
-                "included 1 Fabric app(s) from the search folder without pairing: ledger-app"
+                "included 1 Fabric app(s) from the search folder: \
+                 ledger-app (fabric.yaml model name 'x')"
             ),
-            "the unpaired app is announced:\n{stderr}"
+            "the paired app is announced:\n{stderr}"
         );
     }
 

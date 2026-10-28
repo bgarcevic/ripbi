@@ -14,6 +14,9 @@ queries_item = "AdventureWorks Sales"                   # the log's model, when 
 ignore = ["'*Time Intelligence'[*]", "*Legacy*"]       # object-name globs, never reported unused
 stats_from = "exports/AdventureWorks Sales.abf"        # sizes for a PBIP/TMDL model, or "none"
 external_consumers = "none"                            # nothing outside these reports reads the model
+
+[apps]
+"apps/sales-dashboard" = "models/Sales.SemanticModel"  # a Fabric app and the model(s) it reads
 ```
 
 | Key | Flag it stands in for | Read by |
@@ -25,6 +28,7 @@ external_consumers = "none"                            # nothing outside these r
 | `[scan].ignore` | — | `scan` |
 | `[scan].stats_from` | `--stats-from` | `scan` |
 | `[scan].external_consumers` | — | `scan` |
+| `[apps]` | — | `scan`, `deps`, `report` |
 
 `target` and `reports` feed the input ladder every command shares: see
 [inputs and pairing](scan/overview.md#inputs-and-pairing). `--model` disables
@@ -42,6 +46,14 @@ pivots and CUBE formulas then count as consumers, as with `--report book.xlsx`.
 model — no thin reports in other workspaces, Analyze in Excel, or XMLA clients — and
 drops the check-before-removing hint a scan with findings prints under its verdict.
 It changes no finding and no exit code. `none` is the only value.
+
+`[apps]` pairs Fabric app folders found under a search folder with the models they
+read: each key is an app folder, each value a model path or a list of them, both
+resolved against the file's directory. `fabric.yaml` names its models by service ID,
+which a local model folder does not record, so without an entry an app pairs only by
+a `semanticModels` key matching the model's name (see
+[inputs and pairing](scan/overview.md#inputs-and-pairing)). An entry is final: the app
+is included in scans of the listed models and ignored in every other.
 
 `queries_from` is the config form of `--queries-from`, resolved against the file's
 directory; it sits at the top level because `deps` reads it too. `queries_item` picks

@@ -32,6 +32,7 @@ use crate::identity::ObjectId;
 use crate::model::TabularDatabase;
 use crate::report::{DatasetReference, ReportModel};
 use crate::{Error, Result};
+pub use app::AppModels;
 
 /// Power BI writes some JSON archive members as UTF-16 even without a BOM.
 fn decode_json_text(bytes: &[u8], label: &str) -> Result<String> {
@@ -286,6 +287,14 @@ pub fn is_workbook(path: &Path) -> bool {
 #[must_use]
 pub fn is_fabric_app(path: &Path) -> bool {
     app::is_app(path)
+}
+
+/// The semantic models a Fabric app's `fabric.yaml` names, across every
+/// profile: the app's own keys for them and their real item GUIDs. Never
+/// fails; an app with no readable `semanticModels` reads empty.
+#[must_use]
+pub fn fabric_app_models(path: &Path) -> AppModels {
+    app::models(path)
 }
 
 /// Whether a ZIP archive embeds a semantic model: a TMSL `DataModelSchema`

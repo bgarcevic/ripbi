@@ -567,10 +567,45 @@ pub(crate) fn pairing_announce(
         ));
     }
     if !bound.apps.is_empty() {
-        let names: Vec<String> = bound.apps.iter().map(|path| report_name(path)).collect();
+        let names: Vec<String> = bound
+            .apps
+            .iter()
+            .map(|(path, pairing)| {
+                let how = match pairing {
+                    discover::AppPairing::Mapped => "ripbi.toml [apps]".to_string(),
+                    discover::AppPairing::ServiceId => "fabric.yaml itemId".to_string(),
+                    discover::AppPairing::Name(alias) => {
+                        format!("fabric.yaml model name '{alias}'")
+                    }
+                };
+                format!("{} ({how})", report_name(path))
+            })
+            .collect();
         lines.push(notes.info(&format!(
-            "included {} Fabric app(s) from the search folder without pairing: {} — \
-             fabric.yaml names models by service ID, which a local model does not record",
+            "included {} Fabric app(s) from the search folder: {}",
+            names.len(),
+            if full {
+                names.join(", ")
+            } else {
+                capped_names(&names)
+            }
+        )));
+    }
+    if !bound.apps_elsewhere.is_empty() {
+        let names: Vec<String> = bound
+            .apps_elsewhere
+            .iter()
+            .map(|(path, aliases)| {
+                if aliases.is_empty() {
+                    report_name(path)
+                } else {
+                    format!("{} ({})", report_name(path), discover::quoted_list(aliases))
+                }
+            })
+            .collect();
+        lines.push(notes.info(&format!(
+            "ignored {} Fabric app(s) whose fabric.yaml names other models: {} — \
+             if one reads this model, pair it in ripbi.toml [apps]",
             names.len(),
             if full {
                 names.join(", ")
