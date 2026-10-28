@@ -138,6 +138,55 @@ fn missing_model_references_in_a_native_measure_are_broken_visuals() {
     assert_eq!(rows.len(), 3, "valid references stay unflagged: {rows:?}");
 }
 
+/// Report measures (`reportExtensions.json`) are live only when something the
+/// report renders reaches them — here, V1's formatting native measure. One
+/// that nothing reaches is an unused finding, and the model objects only it
+/// names are unused with it; the used one keeps what it names alive.
+#[test]
+fn report_measures_are_live_only_through_what_the_report_uses() {
+    let temp = copy("native-report-measures");
+    temp.write(
+        "Native.Report/definition/reportExtensions.json",
+        r#"{"name": "extension", "entities": [{"name": "ExampleTable", "measures": [
+            {"name": "Report Unused", "dataType": "Double",
+             "expression": "SUM(ExampleBudget[Budget]) + [Example Unused]"},
+            {"name": "Report Used", "dataType": "Double",
+             "expression": "[Example Target] * 2"}]}]}"#,
+    );
+    // V1's formatting now reaches Example Target only through Report Used,
+    // and V2 stops naming ExampleBudget, leaving Report Unused its only user.
+    edit(&temp.0, V1, "[Example Target], ", "[Report Used], ");
+    edit(
+        &temp.0,
+        V2,
+        "\"SUM('ExampleBudget'[Budget]) - SUM(ExampleTable[Amount])\",\n                  \"DataType\": 3",
+        "\"SUM(ExampleTable[Amount])\",\n                  \"DataType\": 3",
+    );
+    edit(
+        &temp.0,
+        V2,
+        "\"SUM('ExampleBudget'[Budget]) - SUM(ExampleTable[Amount])\",\n                \"DataType\": 3",
+        "\"SUM(ExampleTable[Amount])\",\n                \"DataType\": 3",
+    );
+
+    let (code, stdout, _) = run_scan(&scan_args(&temp.0), &temp.0, "");
+    assert_eq!(code, 1, "{stdout}");
+    let payload = json_payload(&stdout);
+    let mut unused = targets(&payload, "unused", "id");
+    unused.sort();
+    assert_eq!(
+        unused,
+        vec![
+            "'ExampleBudget'[Budget]",
+            "'ExampleTable'[Example Unused]",
+            "partition 'ExampleBudget'[ExampleBudget]",
+            "report measure 'Report Unused'",
+            "table 'ExampleBudget'",
+        ],
+        "Report Used and Example Target stay live:\n{stdout}"
+    );
+}
+
 #[test]
 fn a_native_measure_on_a_broken_model_measure_inherits_it() {
     let temp = copy("native-inherited");
