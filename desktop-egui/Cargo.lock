@@ -3256,6 +3256,7 @@ dependencies = [
  "png",
  "rfd",
  "ripbi-app",
+ "ripbi-core",
  "ripbi-service",
  "semver",
  "serde",

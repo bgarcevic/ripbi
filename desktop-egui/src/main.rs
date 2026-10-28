@@ -6,6 +6,8 @@ mod brand;
 #[cfg(test)]
 mod demo;
 mod fetching;
+mod inventory;
+mod lineage;
 mod update;
 
 use std::collections::BTreeMap;
@@ -149,6 +151,8 @@ enum Tab {
     Broken,
     Dates,
     Coverage,
+    Inventory,
+    Lineage,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -199,6 +203,8 @@ struct App {
     kind: Option<String>,
     /// Index into `analysis.output.findings`.
     selected: Option<usize>,
+    /// The Lineage tab for the current analysis.
+    lineage: Option<lineage::Lineage>,
     /// The background update check, until it stages an update.
     updates: Option<Receiver<update::Staged>>,
     /// A verified update waiting for "Restart to update".
@@ -221,6 +227,9 @@ impl eframe::App for App {
 
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_fetch();
+        if let Some(lineage) = &mut self.lineage {
+            lineage.poll();
+        }
         if let Some(staged) = self
             .updates
             .as_ref()
@@ -758,6 +767,13 @@ impl App {
     }
 
     fn show(&mut self, analysis: Analysis) {
+        let unused = analysis
+            .output
+            .findings
+            .iter()
+            .map(|finding| finding.id.clone())
+            .collect();
+        self.lineage = Some(lineage::Lineage::new(analysis.deps.clone(), unused));
         self.analysis = Some(analysis);
         self.tab = Tab::Unused;
         self.query.clear();
@@ -841,11 +857,6 @@ impl App {
         };
         let r = &analysis.output;
         let s = r;
-        let reachable = if s.objects > 0 {
-            s.reachable as f32 / s.objects as f32
-        } else {
-            0.0
-        };
         let mut export = false;
 
         ui.horizontal(|ui| {
@@ -858,90 +869,14 @@ impl App {
         });
         ui.add_space(8.0);
 
-        ui.columns(4, |cols| {
-            metric(
-                &mut cols[0],
-                "Model objects",
-                s.objects,
-                &format!("{} report binding roots", s.roots),
-                None,
-            );
-            metric(
-                &mut cols[1],
-                "Reachable",
-                s.reachable,
-                &format!("{:.0}% of the dependency graph", reachable * 100.0),
-                Some(Tone::Good),
-            );
-            metric(
-                &mut cols[2],
-                "Unused",
-                s.unused_raw,
-                "Includes hidden date machinery",
-                Some(Tone::Warn),
-            );
-            metric(
-                &mut cols[3],
-                "Connected reports",
-                r.reports.len(),
-                &format!(
-                    "{} broken references",
-                    s.broken.len() + s.broken_artifacts.len()
-                ),
-                None,
-            );
-        });
-        ui.add_space(8.0);
-
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
         for f in &r.findings {
             *counts.entry(f.kind).or_default() += 1;
         }
-        ui.columns(2, |cols| {
-            card(&mut cols[0], |ui| {
-                ui.label(RichText::new("Usage at a glance").strong());
-                ui.add_space(4.0);
-                bar(
-                    ui,
-                    reachable,
-                    Tone::Good,
-                    format!("{:.0}% reachable", reachable * 100.0),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(
-                        "Reachability includes indirect dependencies and engine-required objects. \
-                         It does not measure memory or file size.",
-                    )
-                    .small()
-                    .weak(),
-                );
-            });
-            card(&mut cols[1], |ui| {
-                ui.label(RichText::new("Cleanup candidates by type").strong());
-                ui.add_space(4.0);
-                let max = counts.values().copied().max().unwrap_or(1).max(1);
-                let mut by_count: Vec<_> = counts.iter().collect();
-                by_count.sort_by(|a, b| b.1.cmp(a.1));
-                for (kind, count) in by_count.into_iter().take(5) {
-                    bar(
-                        ui,
-                        *count as f32 / max as f32,
-                        Tone::Warn,
-                        format!("{}  ·  {count}", label(kind)),
-                    );
-                }
-                if counts.is_empty() {
-                    ui.label("No unused object findings in this selection.");
-                }
-                ui.label(
-                    RichText::new(format!("{} ignored by project configuration.", s.ignored))
-                        .small()
-                        .weak(),
-                );
-            });
-        });
-        ui.add_space(8.0);
+        // The graph and the tree want the height; their tabs keep only the header and tabs.
+        if !matches!(self.tab, Tab::Lineage | Tab::Inventory) {
+            summary(ui, analysis, &counts);
+        }
 
         ui.horizontal(|ui| {
             for (tab, text) in [
@@ -964,6 +899,8 @@ impl App {
                     Tab::Coverage,
                     format!("Coverage & notices ({})", r.skips.len()),
                 ),
+                (Tab::Inventory, "Inventory".to_owned()),
+                (Tab::Lineage, "Lineage".to_owned()),
             ] {
                 ui.selectable_value(&mut self.tab, tab, text);
             }
@@ -971,18 +908,37 @@ impl App {
         ui.separator();
 
         let kinds: Vec<&str> = counts.keys().copied().collect();
+        let mut trace = None;
         match self.tab {
-            Tab::Unused => unused_tab(
-                ui,
-                &r.findings,
-                &kinds,
-                &mut self.query,
-                &mut self.kind,
-                &mut self.selected,
-            ),
+            Tab::Unused => {
+                trace = unused_tab(
+                    ui,
+                    &r.findings,
+                    &kinds,
+                    &mut self.query,
+                    &mut self.kind,
+                    &mut self.selected,
+                );
+            }
             Tab::Broken => broken_tab(ui, analysis),
             Tab::Dates => dates_tab(ui, analysis),
             Tab::Coverage => coverage_tab(ui, analysis),
+            Tab::Inventory => {
+                if let Some(lineage) = &mut self.lineage
+                    && lineage.inventory_ui(ui)
+                {
+                    self.tab = Tab::Lineage;
+                }
+            }
+            Tab::Lineage => {
+                if let Some(lineage) = &mut self.lineage {
+                    lineage.ui(ui);
+                }
+            }
+        }
+        if let (Some(id), Some(lineage)) = (trace, &mut self.lineage) {
+            lineage.show(ui.ctx(), &id);
+            self.tab = Tab::Lineage;
         }
 
         if export {
@@ -998,7 +954,8 @@ fn unused_tab(
     query: &mut String,
     kind: &mut Option<String>,
     selected: &mut Option<usize>,
-) {
+) -> Option<String> {
+    let mut trace = None;
     ui.horizontal(|ui| {
         ui.add(
             TextEdit::singleline(query)
@@ -1030,7 +987,7 @@ fn unused_tab(
         .collect();
     ui.label(
         RichText::new(format!(
-            "{} matching objects · select one to inspect dependencies",
+            "{} matching objects · select one to inspect it, double-click for its lineage",
             rows.len()
         ))
         .weak(),
@@ -1042,7 +999,11 @@ fn unused_tab(
         .min_size(240.0)
         .show(ui, |ui| {
             ScrollArea::vertical().show(ui, |ui| match selected.and_then(|i| unused.get(i)) {
-                Some(f) => finding_detail(ui, f),
+                Some(f) => {
+                    if finding_detail(ui, f) {
+                        trace = Some(f.id.clone());
+                    }
+                }
                 None => {
                     ui.label(RichText::new("Select an object to see what references it.").weak());
                 }
@@ -1089,11 +1050,16 @@ fn unused_tab(
                 if row.response().clicked() {
                     *selected = Some(index);
                 }
+                if row.response().double_clicked() {
+                    trace = Some(f.id.clone());
+                }
             });
         });
+    trace
 }
 
-fn finding_detail(ui: &mut egui::Ui, f: &Finding) {
+/// True when "Show lineage" was clicked.
+fn finding_detail(ui: &mut egui::Ui, f: &Finding) -> bool {
     ui.label(
         RichText::new(label(f.kind))
             .small()
@@ -1103,6 +1069,11 @@ fn finding_detail(ui: &mut egui::Ui, f: &Finding) {
     if let Some(table) = &f.table {
         ui.label(RichText::new(format!("in {table}")).weak());
     }
+    ui.add_space(4.0);
+    let trace = ui
+        .button("Show lineage  →")
+        .on_hover_text("See what this object uses and what uses it, as a graph")
+        .clicked();
     ui.add_space(8.0);
     ui.label(RichText::new("Referenced by").strong());
     if f.used_by.is_empty() {
@@ -1135,6 +1106,7 @@ fn finding_detail(ui: &mut egui::Ui, f: &Finding) {
             ui.monospace(p);
         }
     }
+    trace
 }
 
 fn broken_tab(ui: &mut egui::Ui, analysis: &Analysis) {
@@ -1389,6 +1361,97 @@ fn file_name(path: &Path) -> String {
 
 fn label(value: &str) -> String {
     value.replace('_', " ")
+}
+
+/// The metric cards and charts above the tabs.
+fn summary(ui: &mut egui::Ui, analysis: &Analysis, counts: &BTreeMap<&str, usize>) {
+    let r = &analysis.output;
+    let s = r;
+    let reachable = if s.objects > 0 {
+        s.reachable as f32 / s.objects as f32
+    } else {
+        0.0
+    };
+    ui.columns(4, |cols| {
+        metric(
+            &mut cols[0],
+            "Model objects",
+            s.objects,
+            &format!("{} report binding roots", s.roots),
+            None,
+        );
+        metric(
+            &mut cols[1],
+            "Reachable",
+            s.reachable,
+            &format!("{:.0}% of the dependency graph", reachable * 100.0),
+            Some(Tone::Good),
+        );
+        metric(
+            &mut cols[2],
+            "Unused",
+            s.unused_raw,
+            "Includes hidden date machinery",
+            Some(Tone::Warn),
+        );
+        metric(
+            &mut cols[3],
+            "Connected reports",
+            r.reports.len(),
+            &format!(
+                "{} broken references",
+                s.broken.len() + s.broken_artifacts.len()
+            ),
+            None,
+        );
+    });
+    ui.add_space(8.0);
+
+    ui.columns(2, |cols| {
+        card(&mut cols[0], |ui| {
+            ui.label(RichText::new("Usage at a glance").strong());
+            ui.add_space(4.0);
+            bar(
+                ui,
+                reachable,
+                Tone::Good,
+                format!("{:.0}% reachable", reachable * 100.0),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(
+                    "Reachability includes indirect dependencies and engine-required objects. \
+                         It does not measure memory or file size.",
+                )
+                .small()
+                .weak(),
+            );
+        });
+        card(&mut cols[1], |ui| {
+            ui.label(RichText::new("Cleanup candidates by type").strong());
+            ui.add_space(4.0);
+            let max = counts.values().copied().max().unwrap_or(1).max(1);
+            let mut by_count: Vec<_> = counts.iter().collect();
+            by_count.sort_by(|a, b| b.1.cmp(a.1));
+            for (kind, count) in by_count.into_iter().take(5) {
+                bar(
+                    ui,
+                    *count as f32 / max as f32,
+                    Tone::Warn,
+                    format!("{}  ·  {count}", label(kind)),
+                );
+            }
+            if counts.is_empty() {
+                ui.label("No unused object findings in this selection.");
+            }
+            ui.label(
+                RichText::new(format!("{} ignored by project configuration.", s.ignored))
+                    .small()
+                    .weak(),
+            );
+        });
+    });
+    ui.add_space(8.0);
 }
 
 #[cfg(test)]

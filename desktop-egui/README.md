@@ -21,6 +21,17 @@ cargo run --manifest-path desktop-egui/Cargo.toml
 2. Add `.pbip` projects, `.Report` folders, or search folders (or drop them).
 3. Analyze, then browse unused objects, broken references, date tables, and coverage.
    Export JSON writes `{ result, diagnostics }`.
+4. **Inventory** lists everything the analysis read, two ways round.
+   *Model → reports* lists tables and their members; expand an object to see
+   the visuals it reaches, directly or through what uses it. *Reports → model*
+   lists pages and visuals; expand a visual to its fields, and a field on
+   through what it uses. Filter either, or show unused objects only; select an
+   object to see what it uses, what uses it, and where reports bind it.
+5. **Lineage** draws one object's dependencies as a graph: what it uses on the
+   left, what uses it on the right, out to the report visuals. Pick the object
+   from the inventory beside it (Objects hides it to widen the graph), search
+   for it, or choose "Show lineage" on an unused one or in Inventory (or
+   double-click its row); click any node to move the focus there.
 
 Or switch to **Tenant**: paste a link to a model or report (or name the
 workspace and model, or leave both blank to pick from lists), choose a folder, and
@@ -46,6 +57,12 @@ exactly what `ripbi scan --json` prints) under `result`.
 `src/fetching.rs` runs `ripbi_app::fetch::run` on a worker thread; the fetch's
 questions (workspace and model pickers, the incomplete-set confirmation) arrive
 as events and block the worker until the UI answers from a modal.
+`src/lineage.rs` loads `ripbi_app::deps::load` once per analysis (the graph
+`ripbi deps` explores), asks its `Explorer` for each focused view, and lays the
+slices out in columns by edge distance, painted with egui's painter.
+`src/inventory.rs` builds the object tree from the same `Explorer` (on the
+same worker): objects grouped by table, report bindings grouped by report,
+page and visual, and for every object the visuals that reach it.
 `src/main.rs` is the immediate-mode UI. The package is
 standalone (its own `[workspace]` and `Cargo.lock`) so GUI dependencies stay
 out of CLI builds; `.github/workflows/desktop.yml` checks it on Windows, macOS

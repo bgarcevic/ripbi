@@ -23,7 +23,7 @@ use egui_kittest::kittest::Queryable;
 use egui_system_font_provider::SystemFontProvider;
 use image::RgbaImage;
 
-use super::{App, update};
+use super::App;
 
 const SIZE: egui::Vec2 = vec2(1200.0, 740.0);
 
@@ -113,6 +113,49 @@ impl Demo<'_> {
         let target = self.harness.get_by_label_contains(label).rect().center();
         self.glide(target);
         self.click(true);
+    }
+
+    /// Clicks the topmost element labelled `label`.
+    fn click_first(&mut self, label: &str) {
+        let target = self.first(label).center();
+        self.glide(target);
+        self.click(true);
+    }
+
+    /// Opens the tree row labelled `label` with its disclosure arrow, which
+    /// sits left of the row's kind dot.
+    fn expand(&mut self, label: &str) {
+        let row = self.first(label);
+        self.glide(pos2(row.left() - 30.0, row.center().y));
+        self.click(true);
+    }
+
+    fn first(&self, label: &str) -> egui::Rect {
+        self.harness
+            .query_all_by_label(label)
+            .map(|node| node.rect())
+            // The tree, not the detail panel on its right.
+            .filter(|rect| rect.left() < SIZE.x * 0.7)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("nothing labelled {label:?}"))
+    }
+
+    /// Records frames until the inventory, built on a worker, appears.
+    fn wait_for_inventory(&mut self) {
+        let started = Instant::now();
+        while self
+            .harness
+            .query_all_by_label_contains("Model → reports")
+            .next()
+            .is_none()
+        {
+            assert!(
+                started.elapsed() < Duration::from_secs(60),
+                "inventory timed out"
+            );
+            std::thread::sleep(Duration::from_millis(80));
+            self.shoot(8, None);
+        }
     }
 
     fn type_text(&mut self, text: &str) {
@@ -211,21 +254,40 @@ fn demo() {
     demo.click(true);
     demo.hold(2.6);
 
+    // Browse the inventory: find a measure, then follow it out
+    // to the visuals it reaches.
+    demo.click_label("Inventory");
+    demo.wait_for_inventory();
+    demo.hold(1.2);
+    // Filter to the cost objects: matching groups open on their own.
+    let filter = demo.harness.get_by_role(Role::TextInput).rect().center();
+    demo.glide(filter);
+    demo.click(true);
+    demo.type_text("cost");
+    demo.hold(1.0);
+    demo.expand("Cost");
+    demo.hold(0.6);
+    demo.click_first("Cost");
+    demo.hold(2.2);
+
+    // Jump from a visual to Reports → model, and drill into what it binds.
+    demo.click_first("donutChart");
+    demo.hold(1.4);
+    demo.expand("Cost");
+    demo.hold(2.2);
+
+    // The measure's lineage, then hide the tree to widen the graph.
+    let lineage = demo.harness.get_by_label("Show lineage  →").rect().center();
+    demo.glide(lineage);
+    demo.click(true);
+    demo.hold(2.4);
+    demo.click_first("Objects");
+    demo.hold(2.6);
+
     // Switch to the light theme with the header's toggle.
     demo.glide(pos2(SIZE.x - 17.0, 17.0));
     demo.click(true);
-    demo.hold(1.8);
-
-    // A newer release has been downloaded and verified.
-    demo.harness.state_mut().staged = Some(update::Staged::preview());
-    demo.harness.run_ok();
-    let restart = demo
-        .harness
-        .get_by_label("Restart to update")
-        .rect()
-        .center();
-    demo.glide(restart);
-    demo.hold(2.6);
+    demo.hold(2.4);
 
     let out = std::env::var_os("RIPBI_DEMO_OUT")
         .map_or_else(|| root.join("docs/media/ripbi-desktop.gif"), PathBuf::from);

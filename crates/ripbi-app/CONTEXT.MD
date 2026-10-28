@@ -50,7 +50,10 @@ The other two commands follow the same shape, on the same `Observer`:
 - `deps::run(&DepsRequest, …) -> DepsOutcome` — the overview or the focused
   slices (`DepsOutput`), the skip notices (the deps JSON documents the graph,
   not the run, so the front end shows them), and whether a query log was
-  read.
+  read. Interactive front ends split it: `deps::load` builds the graph once
+  into an `Explorer`, whose `view(&DepsRequest)` answers each object operand
+  or selector from memory, and whose `uses` and `bindings` list the raw
+  edges and report bindings (the desktop Lineage and Inventory tabs).
 
 `ScanOutcome::verdict(strict)` is the gate every front end shares: `Clean`,
 `Findings`, or `Incomplete` (`strict` with skip notices); breakage gates only

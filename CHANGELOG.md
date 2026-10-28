@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The desktop app shows inventory and lineage.** An **Inventory** tab lists
+  everything an analysis read, two ways round: *Model → reports* lists tables
+  and their members, and each object expands to the visuals it reaches,
+  directly or through the measures built on it; *Reports → model* lists pages
+  and visuals, and each visual expands to its fields and on through what they
+  use. A filter and an "Unused only" switch narrow either view, and a detail
+  panel shows what the selected object uses, what uses it, and where reports
+  bind it. A **Lineage** tab draws one object's dependencies as a graph, what
+  it uses on the left and what uses it on the right, out to the report visuals.
+  Pick the object from the tree beside it, search for it, or choose "Show
+  lineage" on an unused object. Click a node to focus it, and set the depth and
+  direction.
+
 ## [0.12.2] - 2026-10-28
 
 ### Fixed
