@@ -575,9 +575,11 @@ impl App {
         });
         if let Some(fetch) = &self.fetch {
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            // The status wraps in what the spinner leaves: an unwrapped row
+            // would widen the resizable panel to fit, and it keeps that width.
+            ui.horizontal_top(|ui| {
                 ui.spinner();
-                ui.label(&fetch.status);
+                ui.add(egui::Label::new(fetch.status.as_str()).wrap());
             });
         }
         ui.add_space(8.0);
@@ -1387,4 +1389,53 @@ fn file_name(path: &Path) -> String {
 
 fn label(value: &str) -> String {
     value.replace('_', " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+
+    /// A long fetch status wraps instead of widening the inputs panel.
+    #[test]
+    fn fetch_status_keeps_the_inputs_panel_width() {
+        let status = "Signed in with az login (tenant 00000000-0000-0000-0000-000000000000); \
+                      resolving every downstream report of the model";
+        let (_events_tx, events) = channel();
+        let (answers, _answers_rx) = channel();
+        let app = App {
+            source: Source::Tenant,
+            fetch: Some(FetchJob {
+                events,
+                answers,
+                status: status.into(),
+                prompt: None,
+            }),
+            ..App::default()
+        };
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1200.0, 740.0))
+            .with_context_setup(|ctx| {
+                // As eframe does for the real window: emoji and symbols.
+                ctx.add_font_provider(std::sync::Arc::new(
+                    egui_system_font_provider::SystemFontProvider::new(),
+                ));
+                styled(ctx);
+            })
+            .build_eframe(|_| app);
+        // A spinner repaints forever, so step rather than run to rest.
+        for _ in 0..5 {
+            harness.step();
+        }
+        // The central pane's waiting screen shows it too; take the panel's.
+        let right = harness
+            .get_all_by_label(status)
+            .map(|node| node.rect())
+            .min_by(|a, b| a.left().total_cmp(&b.left()))
+            .expect("the status shows")
+            .right();
+        assert!(right < 340.0, "status reaches x = {right}");
+    }
 }
