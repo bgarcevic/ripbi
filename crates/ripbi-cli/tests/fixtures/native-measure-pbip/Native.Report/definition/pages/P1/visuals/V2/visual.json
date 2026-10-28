@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.13.0/schema.json",
+  "name": "V2",
+  "position": {
+    "x": 420,
+    "y": 80,
+    "z": 0,
+    "height": 200,
+    "width": 300,
+    "tabOrder": 20
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "ExampleTable"
+                    }
+                  },
+                  "Property": "Category"
+                }
+              },
+              "queryRef": "ExampleTable.Category",
+              "active": true
+            },
+            {
+              "field": {
+                "NativeMeasure": {
+                  "Language": "dax",
+                  "Expression": "SUM('ExampleBudget'[Budget]) - SUM(ExampleTable[Amount])",
+                  "DataType": 3,
+                  "ProposedName": "Example Gap"
+                }
+              },
+              "queryRef": "Example Gap",
+              "nativeQueryRef": "Example Gap"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "NativeMeasure": {
+                "Language": "dax",
+                "Expression": "SUM('ExampleBudget'[Budget]) - SUM(ExampleTable[Amount])",
+                "DataType": 3,
+                "ProposedName": "Example Gap"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

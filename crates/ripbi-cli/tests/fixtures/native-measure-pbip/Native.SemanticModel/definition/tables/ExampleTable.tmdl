@@ -1,0 +1,32 @@
+table ExampleTable
+	lineageTag: 99999999-9999-9999-9999-999999999a01
+
+	/// Live only through V1's native measure (projection and formatting).
+	measure 'Example Total' = SUM(ExampleTable[Amount])
+		lineageTag: 99999999-9999-9999-9999-999999999a02
+
+	/// Live only through V1's conditional-formatting native measure.
+	measure 'Example Target' = 100
+		lineageTag: 99999999-9999-9999-9999-999999999a03
+
+	/// Dead: nothing binds or names it.
+	measure 'Example Unused' = 1
+		lineageTag: 99999999-9999-9999-9999-999999999a04
+
+	column Amount
+		dataType: double
+		sourceColumn: Amount
+		lineageTag: 99999999-9999-9999-9999-999999999a05
+
+	column Category
+		dataType: string
+		sourceColumn: Category
+		lineageTag: 99999999-9999-9999-9999-999999999a06
+
+	partition ExampleTable = m
+		mode: import
+		source =
+				let
+				    Source = #table({"Amount", "Category"}, {})
+				in
+				    Source

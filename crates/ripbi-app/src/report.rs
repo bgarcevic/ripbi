@@ -667,6 +667,7 @@ fn kind_of(target: &FieldTarget) -> &'static str {
         FieldTarget::Aggregation { .. } => "aggregation",
         FieldTarget::Written(_) => "written",
         FieldTarget::Mdx { .. } => "mdx",
+        FieldTarget::NativeMeasure(_) => "native_measure",
     }
 }
 
