@@ -8,6 +8,7 @@ mod demo;
 mod fetching;
 mod inventory;
 mod lineage;
+mod search;
 mod update;
 
 use std::collections::BTreeMap;
@@ -152,6 +153,7 @@ enum Tab {
     Dates,
     Coverage,
     Inventory,
+    Search,
     Lineage,
 }
 
@@ -205,6 +207,8 @@ struct App {
     selected: Option<usize>,
     /// The Lineage tab for the current analysis.
     lineage: Option<lineage::Lineage>,
+    /// The Search tab for the current analysis.
+    search: Option<search::Search>,
     /// The background update check, until it stages an update.
     updates: Option<Receiver<update::Staged>>,
     /// A verified update waiting for "Restart to update".
@@ -229,6 +233,9 @@ impl eframe::App for App {
         self.poll_fetch();
         if let Some(lineage) = &mut self.lineage {
             lineage.poll();
+        }
+        if let Some(search) = &mut self.search {
+            search.poll();
         }
         if let Some(staged) = self
             .updates
@@ -774,6 +781,7 @@ impl App {
             .map(|finding| finding.id.clone())
             .collect();
         self.lineage = Some(lineage::Lineage::new(analysis.deps.clone(), unused));
+        self.search = Some(search::Search::new(&analysis.deps));
         self.analysis = Some(analysis);
         self.tab = Tab::Unused;
         self.query.clear();
@@ -874,7 +882,7 @@ impl App {
             *counts.entry(f.kind).or_default() += 1;
         }
         // The graph and the tree want the height; their tabs keep only the header and tabs.
-        if !matches!(self.tab, Tab::Lineage | Tab::Inventory) {
+        if !matches!(self.tab, Tab::Lineage | Tab::Inventory | Tab::Search) {
             summary(ui, analysis, &counts);
         }
 
@@ -900,6 +908,7 @@ impl App {
                     format!("Coverage & notices ({})", r.skips.len()),
                 ),
                 (Tab::Inventory, "Inventory".to_owned()),
+                (Tab::Search, "Search".to_owned()),
                 (Tab::Lineage, "Lineage".to_owned()),
             ] {
                 ui.selectable_value(&mut self.tab, tab, text);
@@ -928,6 +937,11 @@ impl App {
                     && lineage.inventory_ui(ui)
                 {
                     self.tab = Tab::Lineage;
+                }
+            }
+            Tab::Search => {
+                if let Some(search) = &mut self.search {
+                    trace = search.ui(ui);
                 }
             }
             Tab::Lineage => {

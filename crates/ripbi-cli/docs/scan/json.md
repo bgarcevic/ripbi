@@ -23,6 +23,8 @@ Pretty-printed JSON, stable field order, additive schema:
     "broken_total": 2,
     "broken_artifacts": 1,
     "broken_artifacts_total": 1,
+    "duplicates": 1,
+    "duplicates_total": 1,
     "auto_date_time": {
       "hidden_tables": 6,
       "date_columns": 5,
@@ -73,6 +75,15 @@ Pretty-printed JSON, stable field order, additive schema:
       "unresolved_references": ["'Sales'[Nope]"]
     }
   ],
+  "duplicates": [
+    {
+      "members": [
+        { "id": "'Sales'[Total]", "type": "measure", "report": null },
+        { "id": "'KPIs'[Revenue]", "type": "measure", "report": null }
+      ],
+      "expression": "SUM('Sales'[Amount])"
+    }
+  ],
   "auto_date_time": [
     {
       "verdict": "in_use",
@@ -115,6 +126,10 @@ Pretty-printed JSON, stable field order, additive schema:
   `unknown_object` suppression, and type selection. `broken_artifacts_total`
   counts all detected artifact owners before those steps. Each owner counts once,
   even when several expressions or references are broken.
+- `summary.duplicates` is the length of `duplicates`; `duplicates_total` counts
+  every duplicate-measure group detected, before `[scan].ignore`, a type flag,
+  or `--compare-root` left some out. Duplicates are advice: they are not part of
+  `summary.findings` and never change the exit code.
 - `summary.auto_date_time` counts the section's rows by verdict, plus
   `hidden_tables` (every row, all verdicts together), `date_columns` (the distinct
   user date columns the machinery serves — the shared template serves none), and
@@ -148,6 +163,14 @@ Pretty-printed JSON, stable field order, additive schema:
 - `broken_artifacts` carries one row per DAX owner: `id`, object `type`, nullable
   report path, and sorted `unresolved_references`. Report paths distinguish
   equally named report measures in different reports.
+- `duplicates` carries one row per group of measures whose DAX is the same once
+  whitespace, comments, name casing, and table-name quoting are ignored.
+  `members` lists the measures, model measures first: `id`, `type` (`measure` or
+  `report_measure`), and the report path of a report-level measure. `expression`
+  is the shared DAX as the first member wrote it. Expressions shorter than four
+  tokens (`[Total]`, `BLANK()`) never group. The array is empty under any type
+  selection, and under `--compare-root` it holds only groups the other checkout
+  did not have.
 - `auto_date_time` carries one row per `LocalDateTable_*`/`DateTableTemplate_*` table:
   `verdict` is `in_use`, `unused_by_reports`, or `dead`; `source_column` names the
   varied user column the machinery serves (`null` when none resolves, e.g. the

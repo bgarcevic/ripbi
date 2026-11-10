@@ -18,7 +18,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Entry {
     /// The finding's machine kind: an object kind (`measure`, `column`, …),
-    /// `broken_visual`, `broken_artifact`, or `auto_date_time`.
+    /// `broken_visual`, `broken_artifact`, `duplicate_measure`, or
+    /// `auto_date_time`.
     #[serde(rename = "type")]
     pub kind: String,
     /// The display id (`'Sales'[Amount]`), or a broken binding's written target.
@@ -93,6 +94,13 @@ impl Entry {
         }
     }
 
+    /// A group of measures sharing one expression; `label` names every
+    /// member, so a group that gains a member is a new finding.
+    #[must_use]
+    pub fn duplicate_measure(label: &str) -> Self {
+        Self::new("duplicate_measure", label)
+    }
+
     /// An auto date/time table whose verdict gates the exit code.
     #[must_use]
     pub fn auto_date_time(id: &str, verdict: &str) -> Self {
@@ -131,7 +139,10 @@ impl Entry {
     /// alone decides. Only usage findings need connected reports to be judged.
     #[must_use]
     pub fn about_usage(&self) -> bool {
-        !matches!(self.kind.as_str(), "broken_visual" | "broken_artifact")
+        !matches!(
+            self.kind.as_str(),
+            "broken_visual" | "broken_artifact" | "duplicate_measure"
+        )
     }
 
     /// The object a usage finding is about — kind and id, folded, without the
@@ -242,11 +253,13 @@ impl Baseline {
     /// The findings the baseline detected that `after` no longer detects at
     /// all, in key order. A skipped baseline's usage findings are left out:
     /// with no reports there, every object read as unused, and an object a
-    /// report now binds was never a finding to fix.
+    /// report now binds was never a finding to fix. Duplicate-measure groups
+    /// are advice, not findings, so a group that is gone is never "fixed".
     #[must_use]
     pub fn fixed(&self, after: &Detected) -> Vec<Entry> {
         self.detected
             .iter()
+            .filter(|(_, entry)| entry.kind != "duplicate_measure")
             .filter(|(_, entry)| self.coverage != Coverage::Skipped || !entry.about_usage())
             .filter(|(key, _)| !after.contains_key(key))
             .map(|(_, entry)| entry.clone())
