@@ -51,6 +51,17 @@ OS belongs in `ripbi-app`, which is native only.
 - **DAX lexing** (`src/dax/`): tokenize DAX expressions to extract object references
   (fields, bare table uses, function calls) and resolve them against the model as data.
   Zero-copy `&str` tokens; a conservative port of SQLBI Whiteboard's lexer.
+  `dax/duplicates.rs` reuses the tokens for `fingerprint` (comments and
+  whitespace dropped, names case-folded, quoted and bare table names equal) and
+  `duplicate_measures`, which groups model and report-level measures sharing a
+  fingerprint. It resolves nothing and under-claims: expressions shorter than
+  four tokens never group.
+- **Expression search** (`src/search.rs`): `search` walks every DAX and M
+  expression (`dax_expressions`, `m_expressions`, and each report's
+  `dax_expressions`) line by line with a caller-supplied matcher and returns
+  `SearchHit`s (owner, property, line, column). `literal` is the
+  case-insensitive substring matcher; regular expressions live in `ripbi-app`,
+  so core takes no regex dependency.
 - **M lexing** (`src/m/`): tokenize Power Query (M) expressions — table partitions and
   shared expressions — to extract the columns, tables, and shared expressions they
   name. A column named in M is that column's supply chain, never a consumer (unloading

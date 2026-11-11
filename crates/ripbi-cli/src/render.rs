@@ -60,8 +60,42 @@ pub fn human(
     write_broken_artifacts(out, palette, report)?;
     write_broken(out, palette, report)?;
     write_auto_date_time(out, palette, report, show_power_query)?;
+    write_duplicates(out, palette, report)?;
     write_fixed(out, palette, report)?;
     write_verdict(out, palette, report, broken_only)
+}
+
+/// The duplicate-measures section: each group's first measure, the measures
+/// repeating it, and the expression they share. Advice — the verdict below
+/// does not count it.
+fn write_duplicates(
+    out: &mut dyn io::Write,
+    palette: &Palette,
+    report: &ScanOutput,
+) -> io::Result<()> {
+    if report.duplicates.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{}",
+        palette.bold(&format!("Duplicate measures ({})", report.duplicates.len()))
+    )?;
+    for group in &report.duplicates {
+        for (position, member) in group.members.iter().enumerate() {
+            let lead = if position == 0 { "  " } else { "    = " };
+            match &member.report {
+                Some(path) => writeln!(out, "{lead}{} — in report {path}", member.id)?,
+                None => writeln!(out, "{lead}{}", member.id)?,
+            }
+        }
+        writeln!(
+            out,
+            "{}",
+            palette.dim(&format!("    ← {}", group.preview(100)))
+        )?;
+    }
+    writeln!(out)
 }
 
 /// The `Fixed since <root>` section: findings of the other checkout that are
@@ -344,6 +378,14 @@ pub fn human_summary(
             report.broken_artifacts.len()
         )?;
     }
+    if !report.duplicates.is_empty() {
+        writeln!(
+            out,
+            "{}: {}",
+            palette.bold("Duplicate measures"),
+            report.duplicates.len()
+        )?;
+    }
     if let Some(compare) = report.compare.as_ref().filter(|c| !c.fixed.is_empty()) {
         writeln!(
             out,
@@ -363,6 +405,7 @@ pub fn human_summary(
     let has_counts = !report.findings.is_empty()
         || !report.broken.is_empty()
         || !report.broken_artifacts.is_empty()
+        || !report.duplicates.is_empty()
         || report.compare.as_ref().is_some_and(|c| !c.fixed.is_empty())
         || !report.auto_date_time.is_empty();
     if has_counts {
@@ -603,7 +646,8 @@ fn write_annotations(
 /// Writes `--plain` output: one `<type>\t<id>` record per finding, one
 /// `broken_visual:<reason>\t<target>` record per reported broken binding, a
 /// `broken_artifact\t<id>` record per DAX owner (with a report-path field for
-/// report measures), then
+/// report measures), a `duplicate_measure` record per group with one field per
+/// measure, then
 /// one `auto_date_time:<verdict>\t<id>` record per auto date/time table.
 ///
 /// # Errors
@@ -623,6 +667,13 @@ pub fn plain(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             Some(path) => writeln!(out, "broken_artifact\t{}\t{path}", artifact.id)?,
             None => writeln!(out, "broken_artifact\t{}", artifact.id)?,
         }
+    }
+    for group in &report.duplicates {
+        write!(out, "duplicate_measure")?;
+        for member in &group.members {
+            write!(out, "\t{}", member.id)?;
+        }
+        writeln!(out)?;
     }
     for row in &report.auto_date_time {
         writeln!(out, "auto_date_time:{}\t{}", row.verdict, row.id)?;
@@ -751,6 +802,8 @@ mod tests {
             broken_artifacts_hidden: 0,
             broken_artifacts_suppressed: 0,
             broken_artifacts_raw: 0,
+            duplicates: Vec::new(),
+            duplicates_raw: 0,
             findings,
             auto_date_time: Vec::new(),
             skips: Vec::new(),

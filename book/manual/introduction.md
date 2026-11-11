@@ -34,6 +34,7 @@ book is organized by what you want to do:
 - **Reference** documents each command in full:
   [`scan`](scan/overview.md) finds candidates for review,
   [`deps`](deps.md) follows an object's dependencies and impact,
+  [`search`](search.md) finds text in DAX and Power Query,
   [`report`](report.md) shows what ripbi read from a report, and
   [`ripbi.toml`](config.md) holds project settings.
 - **Internals** specify the graph, the parsers, and the lexers, for people

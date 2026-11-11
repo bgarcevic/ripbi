@@ -69,6 +69,15 @@ pub struct ScanOutput {
     pub broken_artifacts_suppressed: usize,
     /// Artifact findings before filtering and suppression.
     pub broken_artifacts_raw: usize,
+    /// Groups of measures sharing one expression, layout aside. Advice, like
+    /// an in-use auto date/time table: never counted in
+    /// [`ScanOutput::reported`], never gating. Empty under any type
+    /// selection, and under `--compare-root` holds only groups the other
+    /// checkout did not have.
+    pub duplicates: Vec<DuplicateOut>,
+    /// Duplicate groups before `[scan].ignore`, type selection, and the
+    /// comparison — the JSON summary's `duplicates_total`.
+    pub duplicates_raw: usize,
     /// The unused objects that survive ignore filtering, sorted by identity.
     /// A dead auto date/time table's own finding lives in
     /// [`ScanOutput::auto_date_time`] instead, under its verdict, and the
@@ -258,6 +267,63 @@ pub struct BrokenArtifactOut {
     pub kind: &'static str,
     pub report: Option<String>,
     pub unresolved_references: Vec<String>,
+}
+
+/// Two or more measures whose DAX is the same once whitespace, comments,
+/// name casing, and table-name quoting are ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateOut {
+    /// The measures, model measures first.
+    pub members: Vec<DuplicateMemberOut>,
+    /// The shared expression as the first member wrote it.
+    pub expression: String,
+}
+
+/// One measure of a [`DuplicateOut`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateMemberOut {
+    /// The display id, e.g. `'Sales'[Total]`.
+    pub id: String,
+    /// `measure` or `report_measure`.
+    pub kind: &'static str,
+    /// Report path of a report-level measure.
+    pub report: Option<String>,
+}
+
+impl DuplicateOut {
+    /// The members as one phrase: `'Sales'[Total] = 'KPIs'[Revenue]`, a
+    /// report measure followed by its report's name in parentheses.
+    #[must_use]
+    pub fn label(&self) -> String {
+        self.members
+            .iter()
+            .map(|member| match &member.report {
+                Some(path) => format!(
+                    "{} ({})",
+                    member.id,
+                    crate::scan::report_name(std::path::Path::new(path))
+                ),
+                None => member.id.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(" = ")
+    }
+
+    /// The expression on one line, cut to `max` characters with an ellipsis.
+    #[must_use]
+    pub fn preview(&self, max: usize) -> String {
+        let flat = self
+            .expression
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if flat.chars().count() <= max {
+            flat
+        } else {
+            let cut: String = flat.chars().take(max.saturating_sub(1)).collect();
+            format!("{cut}\u{2026}")
+        }
+    }
 }
 
 /// One parser skip notice, shaped for output.

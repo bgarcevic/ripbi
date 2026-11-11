@@ -32,6 +32,11 @@ cargo run --manifest-path desktop-egui/Cargo.toml
    from the inventory beside it (Objects hides it to widen the graph), search
    for it, or choose "Show lineage" on an unused one or in Inventory (or
    double-click its row); click any node to move the focus there.
+6. **Search** finds text in every DAX and Power Query expression of the
+   model and its reports, as you type: each object with a match, then its
+   matching lines as `line:column`, the match highlighted. Match case, read the
+   pattern as a regular expression, or keep to DAX or Power Query; double-click
+   a row for that object's lineage. This is `ripbi search`.
 
 Or switch to **Tenant**: paste a link to a model or report (or name the
 workspace and model, or leave both blank to pick from lists), choose a folder, and

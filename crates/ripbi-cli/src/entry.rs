@@ -7,7 +7,7 @@ use clap::{CommandFactory, Parser};
 
 use crate::deps;
 use crate::scan::{self, Streams};
-use crate::{Cli, Command, fetch, notify, report, stub, update};
+use crate::{Cli, Command, fetch, notify, report, search, stub, update};
 
 /// Parse argv, run one command, produce the process exit code, and then give
 /// the ambient update notifier its post-command turn (every command except
@@ -25,6 +25,7 @@ pub fn run() -> std::process::ExitCode {
     let quiet = match &cli.command {
         Command::Scan(args) => args.quiet,
         Command::Deps(args) => args.quiet,
+        Command::Search(args) => args.quiet,
         Command::Report(args) => args.quiet,
         Command::Fetch(args) => args.quiet,
         Command::StubReport(args) => args.quiet,
@@ -47,6 +48,7 @@ pub fn run() -> std::process::ExitCode {
     let code = match &cli.command {
         Command::Scan(args) => scan::run(args, &mut streams),
         Command::Deps(args) => deps::run(args, &mut streams),
+        Command::Search(args) => search::run(args, &mut streams),
         Command::Report(args) => report::run(args, &mut streams),
         Command::Fetch(args) => fetch::run(args, &mut streams),
         Command::StubReport(args) => stub::run(args, &mut streams),

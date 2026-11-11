@@ -34,9 +34,11 @@
 //! assert_eq!(field.to_string(), "'Sales Header'[Net Price]");
 //! ```
 
+pub mod duplicates;
 pub mod lexer;
 pub mod refs;
 
+pub use duplicates::{DuplicateGroup, DuplicateMember, duplicate_measures, fingerprint};
 pub use lexer::{Token, TokenKind, tokenize};
 pub use refs::{RawRef, quoted_names, references, unescape_name};
 

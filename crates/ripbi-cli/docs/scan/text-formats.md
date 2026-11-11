@@ -44,7 +44,9 @@ Rules:
 
 One record per finding on stdout, tab-separated, greppable — one
 `broken_visual:<reason>` record per reported broken binding (issue #60), one
-`broken_artifact` record per DAX owner (issue #84) — followed by one
+`broken_artifact` record per DAX owner (issue #84), one `duplicate_measure`
+record per group of measures sharing an expression (one field per measure; none
+under a type selection) — followed by one
 `auto_date_time:<verdict>` record per auto date/time table. Type flags filter the
 finding records (`--broken` selects the broken ones the same way); the
 `auto_date_time:` records print only when the section does (no
@@ -58,6 +60,7 @@ bookmark	bookmark 'FY24 view'
 broken_visual:field_not_found	'Sales'[Color]
 broken_visual:bound_artifact_broken	'Sales'[Broken Total]
 broken_artifact	'Sales'[Broken Total]
+duplicate_measure	'Sales'[Total]	'KPIs'[Revenue]
 auto_date_time:in_use	table 'LocalDateTable_9e0bbdfc-…'
 auto_date_time:dead	table 'DateTableTemplate_0039983e-…'
 ```
