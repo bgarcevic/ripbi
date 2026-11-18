@@ -3272,7 +3272,6 @@ dependencies = [
  "quick-xml 0.42.0",
  "ripbi-xpress9",
  "rusqlite",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

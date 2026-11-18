@@ -1280,7 +1280,6 @@ dependencies = [
  "ripbi-xpress9",
  "rstest",
  "rusqlite",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror",
