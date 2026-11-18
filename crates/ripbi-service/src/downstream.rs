@@ -388,7 +388,7 @@ pub fn verify(service: &Service, found: &Downstream) -> Result<Verification> {
             if !known.contains(&id) {
                 verification.only_in_listing.push(ItemRef {
                     id: report.id.clone(),
-                    name: report.name.clone(),
+                    name: report.name,
                     kind: "Report".to_string(),
                     workspace_id: workspace.id.clone(),
                     workspace_name: workspace.display_name.clone(),

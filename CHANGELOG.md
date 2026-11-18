@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--compare-root` lists only groups the other checkout did not have. SARIF and
   Azure DevOps output do not carry duplicates.
 
+### Changed
+
+- **Dependency updates** (#227): rusqlite 0.42 (bundled SQLite 3.54.1 used to
+  read `.abf` model metadata), zip 9.6, ureq 3.5.2, flate2 1.1.11, jsonschema
+  0.61, and cc 1.11.2, plus their transitive updates. No behavior change.
+
 ## [0.13.0] - 2026-10-28
 
 ### Added
