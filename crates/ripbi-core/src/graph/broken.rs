@@ -266,11 +266,11 @@ pub(super) fn code_breakage(
             let target = match &table {
                 Some(table) => FieldTarget::Column {
                     table: table.clone(),
-                    column: name.clone(),
+                    column: name,
                 },
                 None => FieldTarget::Measure {
                     home_table: None,
-                    measure: name.clone(),
+                    measure: name,
                 },
             };
             let mut reasons = Vec::new();
