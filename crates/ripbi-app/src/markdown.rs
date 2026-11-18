@@ -29,7 +29,34 @@ pub fn write(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
     findings(out, report)?;
     fixed(out, report)?;
     worst_tables(out, report)?;
+    duplicates(out, report)?;
     notes(out, report)
+}
+
+/// Measures sharing one expression: advice, apart from the findings.
+fn duplicates(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
+    if report.duplicates.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "#### Duplicate measures ({})", report.duplicates.len())?;
+    writeln!(out)?;
+    writeln!(out, "| Measures | Expression |")?;
+    writeln!(out, "|---|---|")?;
+    for group in report.duplicates.iter().take(MAX_ROWS) {
+        let members: Vec<String> = group
+            .members
+            .iter()
+            .map(|member| code(&member.id))
+            .collect();
+        writeln!(
+            out,
+            "| {} | {} |",
+            members.join("<br>"),
+            code(&group.preview(80))
+        )?;
+    }
+    more(out, report.duplicates.len())?;
+    writeln!(out)
 }
 
 /// `**2 new findings** · 1 fixed · 56 already in `../base``, or the plain

@@ -31,6 +31,7 @@
   - [SARIF, Markdown, Azure DevOps](scan/ci-formats.md)
   - [Validation and known boundaries](scan/boundaries.md)
 - [ripbi deps](deps.md)
+- [ripbi search](search.md)
 - [ripbi report](report.md)
 - [ripbi fetch](fetch.md)
 - [ripbi.toml](config.md)

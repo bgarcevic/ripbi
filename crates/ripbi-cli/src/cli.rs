@@ -31,6 +31,10 @@ pub enum Command {
     #[command(after_help = DEPS_EXAMPLES)]
     Deps(DepsArgs),
 
+    /// Find text in every DAX and Power Query expression of a model and its reports.
+    #[command(after_help = SEARCH_EXAMPLES)]
+    Search(SearchArgs),
+
     /// Download a semantic model and every report built on it from a Power BI tenant.
     #[command(after_help = FETCH_EXAMPLES)]
     Fetch(FetchArgs),
@@ -175,6 +179,76 @@ pub struct DepsArgs {
     pub json: bool,
 
     /// One typed record per line, for grep/awk.
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Print nothing; the exit code is the only output.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
+
+    /// List every pairing note and skipped item on stderr.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+
+    /// Never color output (also honors NO_COLOR, TERM=dumb).
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Never prompt; fail where a picker would appear.
+    #[arg(long)]
+    pub no_input: bool,
+}
+
+/// Trailing examples for both `-h` and `--help` (clap falls back).
+const SEARCH_EXAMPLES: &str = "\
+Examples:
+  ripbi search CALCULATE             # discover a project; case-insensitive substring
+  ripbi search \"Sales[Amount]\" --model models/Sales.SemanticModel
+  ripbi search TODO --type measure   # only in measures
+  ripbi search Sql.Database --m      # only in Power Query
+  ripbi search --regex \"SUMX?\\(\"     # a regular expression
+  ripbi search USERELATIONSHIP --plain | cut -f2 | sort -u  # the objects, once each
+  ripbi search DIVIDE --json";
+
+/// `ripbi search` arguments.
+#[derive(Args, Debug, Default)]
+pub struct SearchArgs {
+    /// The text to find; a regular expression with --regex.
+    pub pattern: String,
+
+    /// Search one named semantic model; disables discovery.
+    #[arg(long, value_name = "PATH")]
+    pub model: Option<PathBuf>,
+
+    /// Report whose report-level measures are searched too; repeatable.
+    #[arg(long = "report", value_name = "PATH")]
+    pub reports: Vec<PathBuf>,
+
+    /// Read PATTERN as a regular expression.
+    #[arg(long)]
+    pub regex: bool,
+
+    /// Match case exactly; the default ignores case, as DAX does.
+    #[arg(long)]
+    pub case_sensitive: bool,
+
+    /// Search DAX expressions only.
+    #[arg(long)]
+    pub dax: bool,
+
+    /// Search Power Query (M) expressions only.
+    #[arg(long, conflicts_with = "dax")]
+    pub m: bool,
+
+    /// Only search objects of this type (e.g. measure, column); repeatable or comma-separated.
+    #[arg(long = "type", value_name = "TYPE", value_delimiter = ',')]
+    pub types: Vec<String>,
+
+    /// Machine-readable JSON (schema: docs/search.md).
+    #[arg(long, conflicts_with = "plain")]
+    pub json: bool,
+
+    /// One tab-separated record per matching line, for grep/awk.
     #[arg(long)]
     pub plain: bool,
 

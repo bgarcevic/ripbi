@@ -55,11 +55,13 @@ pub mod lookup;
 pub mod m;
 pub mod model;
 pub mod report;
+pub mod search;
 pub mod stub;
 pub mod usage;
 
 pub use dax::{
-    Binding, RawRef, Token, TokenKind, bind, quoted_names, references, tokenize, unescape_name,
+    Binding, DuplicateGroup, DuplicateMember, RawRef, Token, TokenKind, bind, duplicate_measures,
+    quoted_names, references, tokenize, unescape_name,
 };
 pub use graph::{
     AutoDateTimeStatus, AutoDateTimeVerdict, BindingEdge, BindingSite, BrokenArtifact,
@@ -85,6 +87,7 @@ pub use report::{
     DatasetReference, DrillthroughParameter, FieldTarget, FieldWell, Filter, NativeMeasure, Page,
     PageBinding, PageBindingKind, Projection, ReportMeasure, ReportModel, ReportQuery, Visual,
 };
+pub use search::{Language, SearchHit};
 pub use stub::{STUB_ANNOTATION, StubFile, report_stub};
 pub use usage::{LoggedQuery, QueriedObject, QueryLanguage, QueryLog, QuerySource};
 

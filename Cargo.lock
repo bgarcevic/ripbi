@@ -1260,6 +1260,7 @@ dependencies = [
 name = "ripbi-app"
 version = "0.13.0"
 dependencies = [
+ "regex",
  "ripbi-core",
  "ripbi-service",
  "rstest",

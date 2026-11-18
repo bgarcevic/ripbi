@@ -67,7 +67,10 @@ ripbi scan --compare-root ../base
       `results` and records the gap as a run-level
       `invocations[0].toolExecutionNotifications` warning.
     - Breakage (`broken_visual`, `broken_artifact`) does not depend on usage and
-      compares exactly.
+      compares exactly. So do duplicate-measure groups, which compare by their
+      member list: a group that gains a measure is new. They are advice, so an
+      existing group is not counted in "already in", and one that is gone is
+      not listed as fixed.
   - `unavailable`: the scan could not run in `DIR` at all (a model this change
     adds, say). A `! nothing to compare in …` note on stderr says why, and every
     finding is new. SARIF records it as a run-level notification too.

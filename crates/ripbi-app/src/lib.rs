@@ -24,6 +24,7 @@ pub mod output;
 pub mod report;
 pub mod sarif;
 pub mod scan;
+pub mod search;
 pub mod tx_rm;
 pub mod vso;
 

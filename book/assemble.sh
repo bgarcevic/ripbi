@@ -43,6 +43,7 @@ for f in \
   crates/ripbi-cli/docs/scan/storage.md \
   crates/ripbi-cli/docs/scan/tx-rm.md \
   crates/ripbi-cli/docs/deps.md \
+  crates/ripbi-cli/docs/search.md \
   crates/ripbi-cli/docs/report.md \
   crates/ripbi-cli/docs/fetch.md \
   crates/ripbi-cli/docs/config.md \

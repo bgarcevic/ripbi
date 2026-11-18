@@ -157,6 +157,9 @@ GitHub job summary (`$GITHUB_STEP_SUMMARY`), an Azure DevOps build summary
   scan no longer detects, also capped at 50 rows, with the parse-damage caveat when it
   applies.
 - **Worst tables.** The tables with the most unused findings, as `--summary` ranks them.
+- **Duplicate measures.** One row per group of measures sharing an expression, with
+  the expression cut to 80 characters; capped at 50 rows. Advice: not part of the
+  headline count. SARIF and `##vso` do not carry duplicates.
 - **Notes.** `[scan].ignore` suppressions and parser skips, as counts. The skips
   themselves are on stderr.
 

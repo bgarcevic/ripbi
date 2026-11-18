@@ -33,6 +33,8 @@ pub fn write(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
             broken_total: report.broken_raw,
             broken_artifacts: report.broken_artifacts.len(),
             broken_artifacts_total: report.broken_artifacts_raw,
+            duplicates: report.duplicates.len(),
+            duplicates_total: report.duplicates_raw,
             unused_bytes: report.unused_storage.map(|storage| storage.bytes),
             unused_bytes_lower_bound: report
                 .unused_storage
@@ -69,6 +71,22 @@ pub fn write(out: &mut dyn io::Write, report: &ScanOutput) -> io::Result<()> {
                 kind: artifact.kind,
                 report: artifact.report.clone(),
                 unresolved_references: artifact.unresolved_references.clone(),
+            })
+            .collect(),
+        duplicates: report
+            .duplicates
+            .iter()
+            .map(|group| JsonDuplicate {
+                members: group
+                    .members
+                    .iter()
+                    .map(|member| JsonDuplicateMember {
+                        id: member.id.clone(),
+                        kind: member.kind,
+                        report: member.report.clone(),
+                    })
+                    .collect(),
+                expression: group.expression.clone(),
             })
             .collect(),
         auto_date_time: report
@@ -120,6 +138,9 @@ struct JsonReport {
     /// type selection. Empty — but present — when the scan found none.
     broken: Vec<JsonBroken>,
     broken_artifacts: Vec<JsonBrokenArtifact>,
+    /// Groups of measures sharing one expression. Advice: not counted in
+    /// `summary.findings`, never gating.
+    duplicates: Vec<JsonDuplicate>,
     auto_date_time: Vec<JsonAutoDateTimeRow>,
     skips: JsonSkips,
     /// The `--compare-root` comparison (issue #141); absent without the flag,
@@ -180,6 +201,23 @@ struct JsonBrokenArtifact {
 }
 
 #[derive(Serialize)]
+struct JsonDuplicate {
+    members: Vec<JsonDuplicateMember>,
+    /// The shared expression as the first member wrote it.
+    expression: String,
+}
+
+#[derive(Serialize)]
+struct JsonDuplicateMember {
+    id: String,
+    /// `measure` or `report_measure`.
+    #[serde(rename = "type")]
+    kind: &'static str,
+    /// Report path of a report-level measure; `null` for a model measure.
+    report: Option<String>,
+}
+
+#[derive(Serialize)]
 struct JsonSummary {
     /// Every reported finding: `unused`, the auto date/time rows that are not
     /// `in_use`, `broken`, and `broken_artifacts` — the unsuppressed SARIF
@@ -212,6 +250,12 @@ struct JsonSummary {
     broken_total: usize,
     broken_artifacts: usize,
     broken_artifacts_total: usize,
+    /// Duplicate-measure groups listed — the length of `duplicates`. Not part
+    /// of `findings`.
+    duplicates: usize,
+    /// Every duplicate-measure group detected, before `[scan].ignore`, a type
+    /// flag, or `--compare-root` left some out.
+    duplicates_total: usize,
     /// Bytes on disk across `unused`, each file counted once (issue #122).
     /// Present only for `.abf`/PBIX models.
     #[serde(skip_serializing_if = "Option::is_none")]

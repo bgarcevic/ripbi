@@ -22,8 +22,8 @@ use crate::glob;
 use crate::locate::{Existing, Locator};
 use crate::manifest::{MANIFEST_PATH, Manifest, ReportStatus};
 use crate::output::{
-    self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, Finding, ScanOutput,
-    SkipNoticeOut, UnusedStorage, UsedByOut,
+    self, AutoDateTimeRow, BrokenArtifactOut, BrokenOut, CompareOut, DuplicateMemberOut,
+    DuplicateOut, Finding, ScanOutput, SkipNoticeOut, UnusedStorage, UsedByOut,
 };
 
 /// The pipeline stages a scan passes through after target resolution, in
@@ -886,6 +886,41 @@ fn analyze(
         }
     }
 
+    // Duplicate measures: advice, not findings. They never gate and never
+    // count as reported; a type selection asks about something else, so it
+    // hides them. A group the other checkout already had is dropped like any
+    // existing finding, but not counted — `existing` counts findings.
+    let duplicate_groups = ripbi_core::duplicate_measures(&model.value, &report_refs);
+    let duplicates_raw = duplicate_groups.len();
+    let mut duplicates = Vec::new();
+    for group in duplicate_groups {
+        let members: Vec<DuplicateMemberOut> = group
+            .members
+            .iter()
+            .filter(|member| !is_ignored(&member.id, patterns))
+            .map(|member| DuplicateMemberOut {
+                id: member.id.to_string(),
+                kind: output::kind_of(&member.id),
+                report: member
+                    .report_index
+                    .map(|index| report_paths[index].display().to_string()),
+            })
+            .collect();
+        if members.len() < 2 {
+            continue;
+        }
+        let out = DuplicateOut {
+            members,
+            expression: group.expression,
+        };
+        let entry = Entry::duplicate_measure(&out.label());
+        compare::insert(&mut detected, &entry);
+        if selected.is_some() || existed(&entry) {
+            continue;
+        }
+        duplicates.push(out);
+    }
+
     if let Some(probe) = probe {
         *probe = match uncovered {
             Some(detail) => Baseline::skipped(detected, detail),
@@ -917,6 +952,8 @@ fn analyze(
         broken_artifacts_hidden,
         broken_artifacts_suppressed,
         broken_artifacts_raw: graph.broken_artifacts().len(),
+        duplicates,
+        duplicates_raw,
         findings,
         auto_date_time,
         skips,

@@ -199,6 +199,24 @@ topology diagram; `--plain` and `--json` never truncate. The full contract is
 documented in the user guide's
 [deps chapter](https://bgarcevic.github.io/ripbi/deps.html).
 
+## Where is this used in the code?
+
+`ripbi search` finds text in every DAX and Power Query expression of a model
+and its reports: measures, calculated columns and tables, calculation items,
+RLS filters, partitions, and report-level measures. It matches a
+case-insensitive substring by default, or a regular expression with `--regex`.
+
+```sh
+ripbi search DIVIDE --model "samples/AdventureWorks Sales.SemanticModel"
+ripbi search "'Sales'[Sales Amount]" --model "samples/AdventureWorks Sales.SemanticModel" --type measure
+ripbi search --regex "Table\.\w+" --model "samples/AdventureWorks Sales.SemanticModel" --m
+```
+
+`scan` also lists **duplicate measures**: measures whose DAX is the same once
+whitespace, comments, and name casing are ignored. They are advice and never
+change the exit code. The full contract is in the user guide's
+[search chapter](https://bgarcevic.github.io/ripbi/search.html).
+
 ## Desktop app (experimental)
 
 The same analysis in a window, for Windows, macOS and Linux: pick a model (or

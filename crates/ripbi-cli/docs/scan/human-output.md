@@ -75,6 +75,25 @@ one a terminal leaves in view:
   (calculated columns, auto date/time machinery) never carry it, because an M step can
   only name a column it produces. `--json` always carries the underlying
   `named_in_power_query` field regardless of the flag.
+- The **Duplicate measures** section lists measures that repeat another
+  measure's DAX: the same expression once whitespace, comments, name casing, and
+  table-name quoting are ignored. Each group shows its first measure, the
+  measures repeating it on `=` lines, and the shared expression on one line.
+  Report-level measures take part and carry their report path. Expressions
+  shorter than four tokens (`[Total]`, `BLANK()`) never group, and nothing is
+  resolved: `[Amount]` and `Sales[Amount]` are different text. The section is
+  advice. It is not counted in the verdict line, never changes the exit code,
+  and is left out under any type selection (`--type`, `--broken`). Under
+  `--compare-root` it lists only groups the other checkout did not have. A
+  measure matching `[scan].ignore` is left out of its group. `--summary` prints
+  the group count.
+
+  ```
+  Duplicate measures (1)
+    'Sales'[Total]
+      = 'KPIs'[Revenue]
+      ← SUM('Sales'[Amount])
+  ```
 - The **Broken artifacts** section follows unused findings (issue #84): one row per
   DAX owner with unresolved field references, whether or not a visual binds it.
   Indented lines list the distinct written references. Report-level measures

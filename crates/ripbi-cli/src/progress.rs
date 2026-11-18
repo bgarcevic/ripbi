@@ -48,6 +48,11 @@ pub const REPORT: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "inventory"],
 };
 
+/// `ripbi search`: no graph, so the last stage is the search itself.
+pub const SEARCH: Pipeline = Pipeline {
+    stages: &["discover", "model", "reports", "search"],
+};
+
 /// `ripbi deps`.
 pub const DEPS: Pipeline = Pipeline {
     stages: &["discover", "model", "reports", "graph", "slice"],

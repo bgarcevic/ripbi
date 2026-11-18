@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ripbi search` finds text in DAX and Power Query.** `ripbi search PATTERN`
+  lists every matching line of every expression in a model and its reports:
+  measures (with their format strings, detail rows, and KPIs), calculated
+  columns and tables, calculation items, RLS filters, functions, partitions,
+  shared expressions, and report-level measures. Each hit shows the owning
+  object and the line and column. The pattern is a case-insensitive substring;
+  `--regex` reads it as a regular expression and `--case-sensitive` matches
+  case. `--dax`, `--m`, and `--type` narrow the search, and `--plain` and
+  `--json` are the machine formats. The command exits `0` with or without
+  matches and `2` on an error.
+- **The desktop app has a Search tab.** It runs the same search as you type,
+  over the analyzed model and its reports: each object with a match, then its
+  matching lines with the match highlighted. "Match case", "Regex", and a
+  DAX / Power Query choice narrow it, and double-clicking a row opens that
+  object's lineage.
+- **`scan` lists duplicate measures.** Measures whose DAX is the same once
+  whitespace, comments, name casing, and table-name quoting are ignored are
+  grouped in a **Duplicate measures** section, with the expression they share.
+  Report-level measures take part, so a report measure that copies a model
+  measure shows up. The section is advice: it is not counted as a finding and
+  never changes the exit code. `--json` adds a `duplicates` array and
+  `summary.duplicates` / `summary.duplicates_total`, `--plain` adds one
+  `duplicate_measure` record per group, and the Markdown summary adds a table.
+  A type selection (`--type`, `--broken`) leaves the section out, and
+  `--compare-root` lists only groups the other checkout did not have. SARIF and
+  Azure DevOps output do not carry duplicates.
+
 ## [0.13.0] - 2026-10-28
 
 ### Added

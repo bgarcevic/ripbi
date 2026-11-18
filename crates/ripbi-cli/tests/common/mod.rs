@@ -12,7 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ripbi_cli::cli::{DepsArgs, ReportArgs, ScanArgs};
+use ripbi_cli::cli::{DepsArgs, ReportArgs, ScanArgs, SearchArgs};
 use ripbi_cli::deps;
 use ripbi_cli::report;
 use ripbi_cli::scan::{self, Streams};
@@ -274,4 +274,26 @@ pub fn deps_object(object: &str, cwd: &Path) -> (i32, String, String) {
         ..DepsArgs::default()
     };
     run_deps(&args, cwd, "")
+}
+
+/// Runs `search` with in-memory streams and returns (exit code, stdout,
+/// stderr). Stdin is non-interactive.
+pub fn run_search(args: &SearchArgs, cwd: &Path) -> (i32, String, String) {
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let mut input = "".as_bytes();
+    let mut streams = Streams {
+        out: &mut out,
+        err: &mut err,
+        input: &mut input,
+        stdin_is_tty: false,
+        stdout_is_tty: false,
+        stderr_is_tty: false,
+    };
+    let code = ripbi_cli::search::run_in(args, cwd, &mut streams);
+    (
+        code,
+        String::from_utf8(out).expect("stdout is utf-8"),
+        String::from_utf8(err).expect("stderr is utf-8"),
+    )
 }
