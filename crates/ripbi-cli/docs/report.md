@@ -383,3 +383,9 @@ Field rules:
   names.
 - `skips` mirrors scan's: every parser notice, so a half-parsed report is visible in
   the machine-readable output.
+
+## Paginated inventory
+
+`ripbi report Invoice.rdl` lists the data sources, datasets, scoped fields and report parameters
+with their declaration lines. JSON adds a `declarations` array to paginated report entries.
+`--broken` shows statically unresolved filter references, including without a local semantic model.

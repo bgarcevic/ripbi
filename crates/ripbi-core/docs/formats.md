@@ -572,3 +572,20 @@ golden fixture is held to the same standard — it loads clean in the engine:
   (depth+1) after a non-empty `=` value is indistinguishable from properties
   and reads as a sibling; TMDL serialization keeps expression bodies below
   the property level, so this has not been observed.
+
+## Paginated reports
+
+RDL ingestion reads XML report definitions, including older single-body layouts and
+ReportSections. It collects declarations before resolving expression references. Dataset fields
+are scoped to the declaring dataset. Data regions, lookup functions and explicit aggregate scopes
+determine where each expression reads its fields. Named report parameters can also receive values
+from external callers. Designer metadata and embedded data rows contribute no bindings.
+
+The source connection determines which dataset commands are eligible for model lineage.
+Semantic model IDs, initial catalogs and explicit report anchors supply pairing evidence.
+Model queries reuse the query-log DAX and MDX binders. Report Builder's RSCustomDaxFilter
+column argument also contributes a model dependency. Static analysis reads the RDL locally,
+including for reports downloaded by fetch.
+
+Run `python3 scripts/check_paginated_samples.py` after `cargo build` to exercise Microsoft's
+seven sample definitions at the pinned revision. Pass `--sample-dir DIR` to use a local copy.

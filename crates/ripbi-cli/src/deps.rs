@@ -138,11 +138,20 @@ fn explore(
 
 /// The flags as a [`DepsRequest`]; the output-mode flags stay here.
 fn request(args: &DepsArgs, cwd: &Path) -> DepsRequest {
+    let report_file = args
+        .object
+        .as_deref()
+        .map(Path::new)
+        .filter(|p| ripbi_core::ingest::is_rdl(p) && cwd.join(p).is_file());
+    let mut reports = args.reports.clone();
+    if let Some(path) = report_file {
+        reports.push(cwd.join(path));
+    }
     DepsRequest {
         cwd: cwd.to_path_buf(),
-        object: args.object.clone(),
+        object: args.object.clone().filter(|_| report_file.is_none()),
         model: args.model.clone(),
-        reports: args.reports.clone(),
+        reports,
         queries_from: args.queries_from.clone(),
         queries_item: args.queries_item.clone(),
         dependencies: args.dependencies,

@@ -109,8 +109,7 @@ Examples:
 /// `ripbi deps` arguments.
 #[derive(Args, Debug, Default)]
 pub struct DepsArgs {
-    /// The model object to explore — a reference like `'Table'[Name]`, never
-    /// a filesystem path.
+    /// The object to explore, such as `'Table'[Name]`, or a local RDL for a report overview.
     pub object: Option<String>,
 
     /// Explore one named semantic model; disables discovery.

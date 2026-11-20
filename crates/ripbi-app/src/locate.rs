@@ -79,6 +79,16 @@ impl Locator {
         self.sites.insert(entry.key(), site);
     }
 
+    pub(crate) fn line(&mut self, entry: &Entry, path: &Path, line: usize) {
+        self.sites.insert(
+            entry.key(),
+            Site {
+                path: path.into(),
+                line: Some(line),
+            },
+        );
+    }
+
     fn model_site(&self, id: &ObjectId) -> Site {
         match self.declared.get(id) {
             Some(location) => Site {

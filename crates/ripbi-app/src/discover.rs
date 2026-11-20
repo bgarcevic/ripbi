@@ -539,6 +539,35 @@ pub fn discover_bound_reports_with(
     let service_id = fetched_model_id(model);
     let mut bound = BoundReports::default();
     for item in items {
+        if ingest::is_rdl(&item) {
+            match ingest::report(&item) {
+                Ok(report) => {
+                    if let Some(rdl) = report.value.paginated {
+                        let names: Vec<_> = [model.display_name.as_deref(), model.stem.as_deref()]
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                        let matches = rdl
+                            .sources
+                            .iter()
+                            .any(|s| s.semantic && s.matches(&names, service_id.as_deref()));
+                        if matches {
+                            bound.reports.push(item);
+                        } else if rdl
+                            .sources
+                            .iter()
+                            .any(|s| s.semantic && s.catalog.is_none())
+                        {
+                            bound
+                                .unresolved
+                                .push((item, "RDL semantic data source has no catalog".into()));
+                        }
+                    }
+                }
+                Err(e) => bound.unresolved.push((item, e.to_string())),
+            }
+            continue;
+        }
         if ingest::is_fabric_app(&item) {
             match classify_app(
                 model,
@@ -821,10 +850,14 @@ fn walk_report_items(
                 entry.path().display()
             ))
         })?;
+        let path = entry.path();
+        if file_type.is_file() && ingest::is_rdl(&path) && visited.insert(canonical_key(&path)) {
+            out.push(path);
+            continue;
+        }
         if !file_type.is_dir() {
             continue;
         }
-        let path = entry.path();
         if is_report_item(&path) {
             if visited.insert(canonical_key(&path)) {
                 out.push(path);

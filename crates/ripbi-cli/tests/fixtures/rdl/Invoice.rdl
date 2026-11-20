@@ -1,0 +1,26 @@
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition">
+  <DataSources>
+    <DataSource Name="Sales"><ConnectionProperties><DataProvider>PBIDATASET</DataProvider><ConnectString>Initial Catalog=Mini</ConnectString></ConnectionProperties></DataSource>
+    <DataSource Name="Other"><ConnectionProperties><DataProvider>PBIDATASET</DataProvider><ConnectString>Initial Catalog=Other</ConnectString></ConnectionProperties></DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="Invoices">
+      <Query><DataSourceName>Sales</DataSourceName><CommandText>EVALUATE ROW("Amount", [Legacy Total])</CommandText></Query>
+      <Fields><Field Name="Amount"><DataField>Amount</DataField></Field><Field Name="Draft"><DataField>Draft</DataField></Field></Fields>
+    </DataSet>
+    <DataSet Name="OtherInvoices">
+      <Query><DataSourceName>Other</DataSourceName><CommandText>EVALUATE ROW("Amount", [Other Measure])</CommandText></Query>
+      <Fields><Field Name="Amount"><DataField>Amount</DataField></Field></Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections><ReportSection><Body><ReportItems>
+    <Tablix Name="InvoiceRows">
+      <DataSetName>Invoices</DataSetName>
+      <Filters><Filter>
+        <FilterExpression>=Fields!Amount.Value</FilterExpression>
+        <FilterOperator>Equal</FilterOperator>
+        <FilterValues><FilterValue>=Fields!Missing.Value</FilterValue></FilterValues>
+      </Filter></Filters>
+    </Tablix>
+  </ReportItems></Body></ReportSection></ReportSections>
+</Report>

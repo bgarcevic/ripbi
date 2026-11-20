@@ -111,6 +111,9 @@ pub fn forecast(
     }
     if let Some(verification) = verification {
         verification_lines(err, palette, verification)?;
+        if found.reports.iter().any(|r| r.paginated) {
+            writeln!(err,"{}",palette.info_note("--verify: paginated report coverage relies on downstream relations; the workspace listing omits their dataset IDs"))?;
+        }
     }
     if !unreadable.is_empty() {
         writeln!(

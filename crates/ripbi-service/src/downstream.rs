@@ -77,6 +77,8 @@ pub struct ItemRef {
 /// A workspace report bound to the model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportRef {
+    /// This item exports as a paginated report definition.
+    pub paginated: bool,
     /// The report GUID.
     pub id: String,
     /// The report name.
@@ -181,6 +183,7 @@ pub fn discover(service: &Service, model: &ModelRef) -> Result<Downstream> {
     let mut seen = HashSet::new();
     let mut candidates: BTreeMap<String, Vec<&Item>> = BTreeMap::new();
     let mut other_items = Vec::new();
+    let mut reports = Vec::new();
     for item in &relations.items {
         if item.id.eq_ignore_ascii_case(&model.id) || !seen.insert(item.id.to_ascii_lowercase()) {
             continue;
@@ -188,7 +191,13 @@ pub fn discover(service: &Service, model: &ModelRef) -> Result<Downstream> {
         let bound = direct
             .as_ref()
             .is_none_or(|direct| direct.contains(item.id.as_str()));
-        if item.is_report() && bound {
+        if item.kind.eq_ignore_ascii_case("PaginatedReport") && direct.is_some() && bound {
+            reports.push(report_ref(
+                item,
+                name_of(&item.workspace_id),
+                access(&item.workspace_id),
+            ));
+        } else if item.is_report() && bound {
             candidates
                 .entry(item.workspace_id.clone())
                 .or_default()
@@ -199,7 +208,6 @@ pub fn discover(service: &Service, model: &ModelRef) -> Result<Downstream> {
     }
 
     let mut notes = Vec::new();
-    let mut reports = Vec::new();
     let mut app_copies = Vec::new();
     let mut unlisted: Vec<(&String, Vec<&Item>)> = Vec::new();
     for (workspace_id, items) in &candidates {
@@ -295,6 +303,7 @@ pub fn discover(service: &Service, model: &ModelRef) -> Result<Downstream> {
 
 fn report_ref(item: &Item, workspace_name: String, access: Access) -> ReportRef {
     ReportRef {
+        paginated: item.kind.eq_ignore_ascii_case("PaginatedReport"),
         id: item.id.clone(),
         name: item.display_name.clone(),
         workspace_id: item.workspace_id.clone(),
@@ -397,7 +406,7 @@ pub fn verify(service: &Service, found: &Downstream) -> Result<Verification> {
             listed.insert(id);
         }
     }
-    for report in &found.reports {
+    for report in found.reports.iter().filter(|r| !r.paginated) {
         let id = report.id.to_ascii_lowercase();
         if member.contains(&report.workspace_id.to_ascii_lowercase()) && !listed.contains(&id) {
             verification.only_in_downstream.push(ItemRef {

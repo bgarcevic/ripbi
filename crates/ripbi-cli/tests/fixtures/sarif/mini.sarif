@@ -235,6 +235,50 @@
               "shortDescription": {
                 "text": "Auto date/time table no report needs"
               }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
+              "id": "RIPBI-UNUSED-RDL-FIELD",
+              "name": "UnusedRdlField",
+              "shortDescription": {
+                "text": "Unused paginated report field"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
+              "id": "RIPBI-UNUSED-RDL-DATASET",
+              "name": "UnusedRdlDataset",
+              "shortDescription": {
+                "text": "Unused paginated report dataset"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
+              "id": "RIPBI-UNUSED-RDL-SOURCE",
+              "name": "UnusedRdlSource",
+              "shortDescription": {
+                "text": "Unused paginated report source"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://bgarcevic.github.io/ripbi/scan/ci-formats.html#sarif",
+              "id": "RIPBI-UNUSED-RDL-PARAMETER",
+              "name": "UnusedRdlParameter",
+              "shortDescription": {
+                "text": "Unused paginated report parameter"
+              }
             }
           ],
           "version": "<version>"

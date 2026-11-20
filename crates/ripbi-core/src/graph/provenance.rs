@@ -268,6 +268,7 @@ impl BindingSite {
             BindingSite::ConditionalFormatting => "conditional_formatting",
             BindingSite::AltText => "alt_text",
             BindingSite::Code { .. } => "app_code",
+            BindingSite::Paginated { .. } => "rdl",
             BindingSite::Query { .. } => "query",
         }
     }
@@ -357,6 +358,13 @@ pub enum BindingSite {
         /// 1-based line of the literal.
         line: usize,
     },
+    /// A paginated report expression or declaration.
+    Paginated {
+        /// Owning item or declaration.
+        owner: String,
+        /// Expression or property containing a reference.
+        property: String,
+    },
     /// A query a consumer sends the model — an Excel workbook connection's
     /// DAX or MDX command.
     Query {
@@ -376,6 +384,7 @@ fn write_site(f: &mut fmt::Formatter<'_>, site: &BindingSite) -> fmt::Result {
         BindingSite::ConditionalFormatting => f.write_str("conditional formatting"),
         BindingSite::AltText => f.write_str("alt text"),
         BindingSite::Code { file, line } => write!(f, "code at {file}:{line}"),
+        BindingSite::Paginated { owner, property } => write!(f, "{property} of {owner}"),
         BindingSite::Query { connection } => {
             write!(f, "query of connection {}", Quoted(connection.as_str()))
         }

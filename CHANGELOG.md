@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Paginated report analysis.** `ripbi scan Invoice.rdl` finds unused dataset
+  fields, datasets, and data sources, and points broken filters to their RDL
+  lines. Pair a report with `--model` to trace its DAX and MDX queries to model
+  objects in `deps`. `ripbi fetch` downloads directly related paginated reports
+  for analysis alongside other Power BI reports.
 - **`ripbi search` finds text in DAX and Power Query.** `ripbi search PATTERN`
   lists every matching line of every expression in a model and its reports:
   measures (with their format strings, detail rows, and KPIs), calculated

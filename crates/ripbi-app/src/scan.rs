@@ -384,7 +384,7 @@ fn analyze(
 
     // Target: the shared ladder — `--model`, else PATH/config `target`, else
     // derivation from the `--report` anchors, else folder discovery.
-    let resolved = resolve_target(
+    let resolved = analysis_inputs(
         TargetInput {
             model: request.model.as_deref(),
             path: request.path.as_deref(),
@@ -398,10 +398,10 @@ fn analyze(
         observer,
     )?;
     observer.stage(Stage::Model);
-    let paired = resolved.paired;
-    let model_scan = resolved.walk;
-    let report_paths = dedupe(paired.reports);
-    let workbooks = has_workbooks(&report_paths);
+    let target = resolved.anchor.path();
+    let model_scan = resolved.walk.as_ref();
+    let report_paths = &resolved.reports;
+    let workbooks = has_workbooks(report_paths);
 
     // The "before" pass when the model had no connected reports: why its
     // usage is unknown. Outside a probe this is the refusal or the skip.
@@ -409,7 +409,7 @@ fn analyze(
     if report_paths.is_empty() && probe.is_some() {
         uncovered = Some(format!(
             "{} had no connected reports there",
-            paired.model.display()
+            target.display()
         ));
     } else if report_paths.is_empty() {
         if request.allow_no_reports {
@@ -417,18 +417,18 @@ fn analyze(
             // the refusal: "no reports" is a fact about the folder, and the
             // notice must explain itself the same way the error would have.
             return Ok(Some(Scan::Skipped {
-                model: paired.model,
+                model: target.to_owned(),
                 reason: SkipReason::NoReports {
-                    detail: model_scan.as_ref().map(no_bound_reports_detail),
+                    detail: model_scan.map(no_bound_reports_detail),
                 },
             }));
         }
         if let Some(scan) = &model_scan {
-            return Err(no_bound_reports_error(&paired.model, scan));
+            return Err(no_bound_reports_error(target, scan));
         }
         return Err(ScanError::new(format!(
             "nothing to scan against: {} has no reports",
-            paired.model.display()
+            target.display()
         ))
         .with_hint(
             "reachability starts from report bindings — pass one with --report <path>, \
@@ -436,35 +436,36 @@ fn analyze(
         ));
     }
 
-    observer.resolved(&Target {
-        model: &paired.model,
-        reports: &report_paths,
-        bound: model_scan.as_ref().map(|scan| &scan.bound),
-        discovered: resolved.discovered.as_ref(),
-    })?;
-
-    // Ingest: the model, then every report as a root.
-    let mut model = ingest::semantic_model(&paired.model).map_err(|error| {
-        ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
-    })?;
+    resolved.announce(observer)?;
+    let mut model = resolved.anchor.read_model()?;
     let setting = match &request.stats_from {
         // Like `--model`, a relative flag path is taken as written.
         Some(written) => Some(config::StatsSetting::parse(Path::new(""), written)),
         None => config.as_ref().and_then(|config| config.stats_from.clone()),
     };
-    let stats_source = attach_storage(
-        &mut model.value,
-        &paired.model,
-        setting,
-        request.stats_from.is_some(),
-        request.verbose,
-        observer,
-    )?;
+    let stats_source = if resolved.anchor.model().is_some() {
+        attach_storage(
+            &mut model.value,
+            target,
+            setting,
+            request.stats_from.is_some(),
+            request.verbose,
+            observer,
+        )?
+    } else {
+        None
+    };
     observer.stage(Stage::Reports);
     let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
     let mut reports = Vec::new();
-    for path in &report_paths {
-        let ingested = ingest::report(path).map_err(|error| {
+    for path in report_paths {
+        let ingested = crate::scan::read_report(
+            path,
+            cwd,
+            resolved.anchor.model().map(|p| (p, &model.value)),
+            extras.contains(path),
+        )
+        .map_err(|error| {
             ScanError::new(format!("cannot ingest report {}: {error}", path.display()))
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
@@ -482,18 +483,18 @@ fn analyze(
     if uncovered.is_none() && reports.iter().all(|report| report.stub) && probe.is_some() {
         uncovered = Some(format!(
             "{} had only ripbi stub reports there",
-            paired.model.display()
+            target.display()
         ));
     } else if uncovered.is_none() && reports.iter().all(|report| report.stub) {
         if request.allow_no_reports {
             return Ok(Some(Scan::Skipped {
-                model: paired.model,
+                model: target.to_owned(),
                 reason: SkipReason::OnlyStubs,
             }));
         }
         return Err(ScanError::new(format!(
             "nothing to scan against: {} has only ripbi stub reports, which bind nothing",
-            paired.model.display()
+            target.display()
         ))
         .with_hint("pass the reports that consume the model with --report <path>"));
     }
@@ -524,11 +525,13 @@ fn analyze(
     let query_log = load_query_log(
         query_log_path(request.queries_from.as_deref(), config.as_ref()),
         query_log_item(request.queries_item.as_deref(), config.as_ref()),
-        &paired.model,
+        target,
         observer,
         &mut skips,
     )?;
-    skips.extend(fetch_completeness(&cwd.join(&paired.model)));
+    if let Some(model_path) = resolved.anchor.model() {
+        skips.extend(fetch_completeness(&cwd.join(model_path)));
+    }
     dedupe_opaque_skips(&mut skips);
 
     // Analysis: entirely core's job.
@@ -614,13 +617,25 @@ fn analyze(
     let sarif_mode = request.keep_existing && probe.is_none();
     let mut kept_existing = Existing::default();
     let mut locator = if request.locate && probe.is_none() {
-        let declared = ingest::source_locations(&paired.model).map_err(|error| {
+        let mut declared = ingest::source_locations(target).map_err(|error| {
             ScanError::new(format!(
                 "cannot read source positions of {}: {error}",
-                paired.model.display()
+                target.display()
             ))
         })?;
-        Some(Locator::new(&paired.model, declared, &report_paths))
+        for (path, report) in report_paths.iter().zip(&reports) {
+            if let Some(rdl) = &report.paginated {
+                declared.extend(rdl.objects.iter().map(|d| ingest::SourceLocation {
+                    id: ObjectId::Paginated {
+                        report: report.name.clone().unwrap_or_default(),
+                        object: d.object.clone(),
+                    },
+                    path: path.clone(),
+                    line: d.line,
+                }));
+            }
+        }
+        Some(Locator::new(target, declared, report_paths))
     } else {
         None
     };
@@ -770,7 +785,7 @@ fn analyze(
             observer.note(Note::info(format!(
                 "{} has no storage statistics (pass --stats-from with an .abf or \
                  .pbix export); --sort size keeps name order",
-                report_name(&paired.model)
+                report_name(target)
             )))?;
         }
     }
@@ -782,6 +797,58 @@ fn analyze(
     let mut broken = Vec::new();
     let mut broken_hidden = 0;
     let mut broken_suppressed = 0;
+    let mut broken_raw = graph.broken_bindings().len();
+    for (path, report) in report_paths.iter().zip(&reports) {
+        let Some(rdl) = &report.paginated else {
+            continue;
+        };
+        for r in rdl.references.iter().filter(|r| r.broken_filter) {
+            broken_raw += 1;
+            let target = r.target.label();
+            let provenance = format!(
+                "{} of {} in {}",
+                r.property,
+                r.owner,
+                report.name.as_deref().unwrap_or("")
+            );
+            let reason = r.missing_reason();
+            let entry = Entry::broken_visual(&target, reason, &provenance);
+            compare::insert(&mut detected, &entry);
+            if is_ignored_display(&target, patterns) {
+                ignored += 1;
+                continue;
+            }
+            if !broken_selected {
+                broken_hidden += 1;
+                continue;
+            }
+            if let Some(locator) = &mut locator {
+                locator.line(&entry, path, r.line);
+            }
+            let out = BrokenOut {
+                target,
+                reason,
+                bound_artifact: None,
+                bound_artifact_report: None,
+                provenance,
+                location: format!(
+                    "{} of {} at {}:{}",
+                    r.property,
+                    r.owner,
+                    path.display(),
+                    r.line
+                ),
+            };
+            if existed(&entry) {
+                existing += 1;
+                if sarif_mode {
+                    kept_existing.broken.push(out);
+                }
+            } else {
+                broken.push(out);
+            }
+        }
+    }
     for binding in graph.broken_bindings() {
         let target = binding.target.to_string();
         let provenance = binding.edge.to_string();
@@ -930,7 +997,7 @@ fn analyze(
     }
 
     let output = ScanOutput {
-        target: paired.model.display().to_string(),
+        target: target.display().to_string(),
         reports: report_paths
             .iter()
             .map(|path| path.display().to_string())
@@ -947,7 +1014,7 @@ fn analyze(
         broken,
         broken_hidden,
         broken_suppressed,
-        broken_raw: graph.broken_bindings().len(),
+        broken_raw,
         broken_artifacts,
         broken_artifacts_hidden,
         broken_artifacts_suppressed,
@@ -1101,6 +1168,10 @@ fn derive_model_from_reports(extras: &[PathBuf]) -> Result<discover::Paired, Sca
     let mut model: Option<PathBuf> = None;
     let mut reports = Vec::new();
     for extra in extras {
+        if extra.is_file() && ingest::is_rdl(extra) {
+            reports.push(extra.clone());
+            continue;
+        }
         if is_binary_workbook(extra) {
             return Err(binary_workbook_error(extra));
         }
@@ -1134,7 +1205,8 @@ fn derive_model_from_reports(extras: &[PathBuf]) -> Result<discover::Paired, Sca
         reports.extend(paired.reports);
     }
     Ok(discover::Paired {
-        model: model.expect("at least one anchor resolved to a model"),
+        model: model
+            .ok_or_else(|| ScanError::no_model("no semantic model among the report anchors"))?,
         reports,
     })
 }
@@ -1529,6 +1601,133 @@ fn ambiguous_error(dir: &Path, candidates: &[Candidate]) -> ScanError {
         .with_hint("pass a PATH to scan one project; --no-input keeps this non-interactive")
 }
 
+pub(crate) enum AnalysisAnchor {
+    Model(PathBuf),
+    Report(PathBuf),
+}
+impl AnalysisAnchor {
+    pub(crate) fn model(&self) -> Option<&Path> {
+        match self {
+            Self::Model(path) => Some(path),
+            Self::Report(_) => None,
+        }
+    }
+    pub(crate) fn path(&self) -> &Path {
+        match self {
+            Self::Model(path) | Self::Report(path) => path,
+        }
+    }
+    pub(crate) fn read_model(
+        &self,
+    ) -> Result<ingest::Ingested<ripbi_core::TabularDatabase>, ScanError> {
+        match self.model() {
+            Some(path) => ingest::semantic_model(path)
+                .map_err(|e| ScanError::new(format!("cannot ingest {}: {e}", path.display()))),
+            None => Ok(ingest::Ingested {
+                value: Default::default(),
+                skips: Vec::new(),
+            }),
+        }
+    }
+}
+
+pub(crate) struct AnalysisInputs {
+    pub(crate) anchor: AnalysisAnchor,
+    pub(crate) reports: Vec<PathBuf>,
+    pub(crate) walk: Option<ModelScan>,
+    discovered: Option<Discovered>,
+}
+
+impl AnalysisInputs {
+    pub(crate) fn announce(&self, observer: &mut dyn Observer) -> Result<(), ScanError> {
+        match self.anchor.model() {
+            None => observer.unpaired(&self.reports),
+            Some(path) => observer.resolved(&Target {
+                model: path,
+                reports: &self.reports,
+                bound: self.walk.as_ref().map(|w| &w.bound),
+                discovered: self.discovered.as_ref(),
+            }),
+        }
+    }
+}
+
+pub(crate) fn analysis_inputs(
+    input: TargetInput<'_>,
+    observer: &mut dyn Observer,
+) -> Result<AnalysisInputs, ScanError> {
+    let anchor = input.path.or(input.config_target);
+    let standalone = anchor.or_else(|| {
+        input
+            .extras
+            .first()
+            .filter(|_| input.extras.iter().all(|p| ingest::is_rdl(p)))
+            .map(PathBuf::as_path)
+    });
+    if let Some(path) = standalone.filter(|p| input.model.is_none() && ingest::is_rdl(p)) {
+        let reports: Vec<_> = anchor
+            .into_iter()
+            .map(Path::to_path_buf)
+            .chain(input.extras.iter().cloned())
+            .collect();
+        if let Some(invalid) = reports.iter().find(|p| !ingest::is_rdl(p) || !p.is_file()) {
+            return Err(ScanError::new(format!(
+                "expected a local RDL file: {}",
+                invalid.display()
+            )));
+        }
+        return Ok(AnalysisInputs {
+            anchor: AnalysisAnchor::Report(path.into()),
+            reports: dedupe(reports),
+            walk: None,
+            discovered: None,
+        });
+    }
+    let resolved = resolve_target(input, observer)?;
+    Ok(AnalysisInputs {
+        anchor: AnalysisAnchor::Model(resolved.paired.model),
+        reports: dedupe(resolved.paired.reports),
+        walk: resolved.walk,
+        discovered: resolved.discovered,
+    })
+}
+
+/// Attach only queries issued against this model, keeping names relative to
+/// the analysis root so comparison keys survive a second checkout.
+pub(crate) fn read_report(
+    path: &Path,
+    cwd: &Path,
+    model: Option<(&Path, &ripbi_core::TabularDatabase)>,
+    explicit: bool,
+) -> ripbi_core::Result<ingest::Ingested<ReportModel>> {
+    let mut input = ingest::report(path)?;
+    if let Some(rdl) = &mut input.value.paginated {
+        input.value.name = Some(
+            path.strip_prefix(cwd)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/"),
+        );
+        if let Some((target, db)) = model {
+            let stem = target.file_stem().and_then(|s| s.to_str());
+            let service_id = target
+                .parent()
+                .and_then(crate::manifest::Manifest::load)
+                .filter(|m| target.ends_with(&m.model.path))
+                .map(|m| m.model.id);
+            let names: Vec<_> = [db.name.as_deref(), stem].into_iter().flatten().collect();
+            let (queries, unknown) = rdl.model_queries(&names, service_id.as_deref(), explicit);
+            input.value.queries = queries;
+            let incomplete = !unknown.is_empty();
+            for query in unknown {
+                input.skips.push(SkipNotice{path:path.into(),location:Some(format!("line {}",query.line)),kind:SkipKind::NotAnalyzed,detail:format!("dataset {} on source {} has ambiguous model attribution or a dynamic query",query.dataset,query.source)});
+            }
+            rdl.incomplete_model = incomplete;
+        }
+    }
+    Ok(input)
+}
+
 /// Whether any scanned report is an Excel workbook.
 pub fn has_workbooks(reports: &[PathBuf]) -> bool {
     reports
@@ -1597,7 +1796,9 @@ fn file_name_lower(path: &Path) -> String {
 /// whatever it is named), or a Fabric app folder (`fabric.yaml`), which core
 /// reads as a code-first consumer.
 fn is_report_item(path: &Path) -> bool {
-    if ingest::is_fabric_app(path) || path.is_file() && ingest::is_workbook(path) {
+    if ingest::is_fabric_app(path)
+        || path.is_file() && (ingest::is_workbook(path) || ingest::is_rdl(path))
+    {
         return true;
     }
     if path.is_file() {
@@ -2017,6 +2218,7 @@ fn bare_names(id: &ObjectId) -> Vec<&str> {
         ObjectId::Expression { name } => vec![name.as_str()],
         ObjectId::Function { name } => vec![name.as_str()],
         ObjectId::ReportMeasure { measure } => vec![measure.as_str()],
+        ObjectId::Paginated { .. } => vec![],
         ObjectId::Bookmark { bookmark, .. } => vec![bookmark.label()],
     }
 }

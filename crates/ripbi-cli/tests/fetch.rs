@@ -94,6 +94,10 @@ fn report_parts() -> Vec<(String, Vec<u8>)> {
 /// The tenant: Contributor in Data and Marketing; with `viewer_report`, a
 /// second report lives in Operations, where the caller is only a Viewer.
 fn tenant(viewer_report: bool) -> Rc<FakeTransport> {
+    tenant_with_rdl(viewer_report, None)
+}
+
+fn tenant_with_rdl(viewer_report: bool, rdl: Option<&[u8]>) -> Rc<FakeTransport> {
     let transport = FakeTransport::new();
     let mut items = vec![
         item(REPORT, "Report", "Mini", MARKETING),
@@ -102,6 +106,31 @@ fn tenant(viewer_report: bool) -> Rc<FakeTransport> {
         item(MODEL, "Model", "Mini", DATA),
     ];
     let mut edges = vec![(REPORT, MODEL), (REPORT_APP, MODEL), (DASHBOARD, REPORT)];
+    if let Some(bytes) = rdl {
+        // Two paginated reports with the same display name as the PBIR.
+        for id in ["rdl-1", "rdl-2"] {
+            items.push(item(id, "PaginatedReport", "Mini", MARKETING));
+            edges.push((id, MODEL));
+            let op = format!("{REGIONAL}/{id}");
+            transport.reply_with(
+                "POST",
+                &format!("{FABRIC}/workspaces/{MARKETING}/paginatedReports/{id}/getDefinition"),
+                202,
+                &[("Location", &op)],
+                "",
+            );
+            transport.reply("GET", &op, 200, r#"{"status":"Succeeded"}"#);
+            transport.reply(
+                "GET",
+                &format!("{op}/result"),
+                200,
+                &definition_json(
+                    "PaginatedReportDefinition",
+                    &[("Mini.rdl".into(), bytes.to_vec())],
+                ),
+            );
+        }
+    }
     if viewer_report {
         items.push(item(ROTA, "Report", "Rota", OPERATIONS));
         edges.push((ROTA, MODEL));
@@ -689,4 +718,51 @@ fn the_token_source_follows_flag_then_environment() {
     );
     assert!(describe(AuthMode::Env, SP).is_err());
     assert!(describe(AuthMode::Sp, &[("AZURE_CLIENT_ID", "c")]).is_err());
+}
+
+#[test]
+fn paginated_definitions_fetch_then_scan_without_report_dataset_ids() {
+    let dir = TempDir::new("fetch-paginated");
+    let transport = tenant_with_rdl(false, Some(include_bytes!("fixtures/rdl/Invoice.rdl")));
+    let run = run(
+        &FetchArgs {
+            scan: true,
+            ..args()
+        },
+        &transport,
+        &dir.0,
+        "",
+        false,
+    );
+    assert_eq!(run.code, 1, "{}", run.err);
+    assert!(run.out.contains("Invoices.Draft"), "{}", run.out);
+    assert!(!run.out.contains("Legacy Total"), "{}", run.out);
+    let root = dir.0.join("Mini");
+    let manifest = Manifest::load(&root).unwrap();
+    assert!(manifest.complete);
+    let paths: std::collections::HashSet<_> = manifest
+        .reports
+        .iter()
+        .filter_map(|r| r.path.as_ref())
+        .collect();
+    assert_eq!(paths.len(), 3);
+    assert!(paths.iter().all(|path| root.join(path).exists()));
+}
+
+#[test]
+fn invalid_paginated_definition_marks_fetch_incomplete() {
+    let dir = TempDir::new("fetch-invalid-rdl");
+    let transport = tenant_with_rdl(false, Some(b"<Report>"));
+    let run = run(&args(), &transport, &dir.0, "", false);
+    assert_eq!(run.code, 2, "{}", run.err);
+    let manifest = Manifest::load(&dir.0.join("Mini")).unwrap();
+    assert!(!manifest.complete);
+    assert_eq!(
+        manifest
+            .reports
+            .iter()
+            .filter(|r| r.status == ReportStatus::Failed && r.path.is_none())
+            .count(),
+        2
+    );
 }

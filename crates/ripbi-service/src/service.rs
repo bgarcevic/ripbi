@@ -72,6 +72,8 @@ pub enum Direction {
 /// The item types with a definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefinitionKind {
+    /// A paginated RDL report.
+    PaginatedReport,
     /// A report (`/reports/{id}/getDefinition`).
     Report,
     /// A semantic model (`/semanticModels/{id}/getDefinition`).
@@ -375,6 +377,7 @@ impl Service {
     /// read (Viewer, no access, or an org-app copy).
     pub fn start_definition(&self, request: &DefinitionRequest) -> Result<Started> {
         let segment = match request.kind {
+            DefinitionKind::PaginatedReport => "paginatedReports",
             DefinitionKind::Report => "reports",
             DefinitionKind::SemanticModel => "semanticModels",
         };

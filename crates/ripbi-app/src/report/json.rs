@@ -33,6 +33,7 @@ pub fn write(out: &mut dyn io::Write, inventory: &Inventory) -> io::Result<()> {
                     })
                     .collect(),
                 bookmarks: report.bookmarks,
+                declarations: report.declarations.clone(),
                 report_measures: report.report_measures.clone(),
                 unresolved_count: report.unresolved_count,
             })
@@ -116,6 +117,8 @@ struct JsonReport {
     pages: Vec<JsonPage>,
     /// v1 lists the count only — saved bookmark state is not itemized.
     bookmarks: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    declarations: Vec<super::RdlObject>,
     report_measures: Vec<String>,
     /// The itemized unresolved bindings: every visual-, page-, and
     /// report-level row this report carries.
@@ -236,6 +239,7 @@ mod tests {
                     }],
                 }],
                 bookmarks: 1,
+                declarations: vec![],
                 report_measures: vec!["Budget %".to_string()],
                 unresolved_count: 1,
             }],

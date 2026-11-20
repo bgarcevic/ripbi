@@ -144,7 +144,7 @@ Pretty-printed JSON, stable field order, additive schema:
 - `broken` (issue #60) carries one row per reported broken visual binding:
   `target` is the written field reference; `reason` is one of `table_not_found`,
   `field_not_found`, `measure_not_found`, `hierarchy_not_found`, `level_not_found`,
-  or `bound_artifact_broken`; `bound_artifact` names the broken artifact the binding
+  `rdl_field_not_found`, `rdl_parameter_not_found`, or `bound_artifact_broken`; `bound_artifact` names the broken artifact the binding
   lands on (present exactly when the reason is `bound_artifact_broken`);
   `bound_artifact_report` is the report path for a report-level measure and null
   for model artifacts or other reasons; `provenance`

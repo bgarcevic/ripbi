@@ -41,8 +41,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use quick_xml::events::Event;
-use quick_xml::{Reader, XmlVersion};
+use super::xml::{Element, parse_xml};
 use zip::ZipArchive;
 
 use super::{Ingested, SkipKind, SkipNotice};
@@ -664,6 +663,7 @@ impl Workbook {
             let is_mdx = usage::sniff_language(command) == QueryLanguage::Mdx;
             if is_dax || is_mdx {
                 queries.push(ReportQuery {
+                    dataset: None,
                     connection: connection.name.clone(),
                     text: command.to_string(),
                 });
@@ -1211,121 +1211,6 @@ fn resolve_target(source: &str, target: &str) -> String {
         }
     }
     parts.join("/")
-}
-
-/// An XML element by local name — namespace prefixes dropped, so the Strict
-/// and transitional schemas read alike.
-#[derive(Debug, Default)]
-struct Element {
-    name: String,
-    attributes: Vec<(String, String)>,
-    children: Vec<Element>,
-    text: String,
-}
-
-impl Element {
-    fn attr(&self, name: &str) -> Option<&str> {
-        self.attributes
-            .iter()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.as_str())
-    }
-
-    fn child(&self, name: &str) -> Option<&Element> {
-        self.children.iter().find(|child| child.name == name)
-    }
-
-    fn descendants<'a>(&'a self, name: &str, out: &mut Vec<&'a Element>) {
-        for child in &self.children {
-            if child.name == name {
-                out.push(child);
-            }
-            child.descendants(name, out);
-        }
-    }
-}
-
-fn element(start: &quick_xml::events::BytesStart<'_>) -> Element {
-    let attributes = start
-        .attributes()
-        .flatten()
-        .filter_map(|attribute| {
-            let value = attribute.normalized_value(XmlVersion::Implicit1_0).ok()?;
-            Some((
-                attribute.key.local_name().as_ref().to_string(),
-                value.into_owned(),
-            ))
-        })
-        .collect();
-    Element {
-        name: start.local_name().as_ref().to_string(),
-        attributes,
-        ..Element::default()
-    }
-}
-
-/// Parses one part into its root element.
-fn parse_xml(bytes: &[u8]) -> std::result::Result<Element, String> {
-    let text = std::str::from_utf8(bytes).map_err(|_| "not UTF-8".to_string())?;
-    let text = text.trim_start_matches('\u{feff}');
-    let mut reader = Reader::from_str(text);
-    let mut stack = vec![Element::default()];
-    loop {
-        match reader.read_event().map_err(|error| error.to_string())? {
-            Event::Start(start) => stack.push(element(&start)),
-            Event::Empty(empty) => {
-                let element = element(&empty);
-                if let Some(parent) = stack.last_mut() {
-                    parent.children.push(element);
-                }
-            }
-            Event::End(_) => {
-                let element = stack
-                    .pop()
-                    .filter(|_| !stack.is_empty())
-                    .ok_or("unbalanced end tag")?;
-                if let Some(parent) = stack.last_mut() {
-                    parent.children.push(element);
-                }
-            }
-            Event::Text(text) => {
-                if let Some(current) = stack.last_mut() {
-                    current.text.push_str(&text);
-                }
-            }
-            Event::CData(data) => {
-                if let Some(current) = stack.last_mut() {
-                    current.text.push_str(&data);
-                }
-            }
-            Event::GeneralRef(reference) => {
-                let resolved = match reference.resolve_char_ref() {
-                    Ok(Some(ch)) => Some(ch),
-                    _ => match &*reference {
-                        "amp" => Some('&'),
-                        "lt" => Some('<'),
-                        "gt" => Some('>'),
-                        "quot" => Some('"'),
-                        "apos" => Some('\''),
-                        _ => None,
-                    },
-                };
-                if let (Some(ch), Some(current)) = (resolved, stack.last_mut()) {
-                    current.text.push(ch);
-                }
-            }
-            Event::Eof => break,
-            _ => {}
-        }
-    }
-    let mut document = stack
-        .pop()
-        .filter(|_| stack.is_empty())
-        .ok_or("ends before its root element closes")?;
-    if document.children.len() != 1 {
-        return Err("no single root element".to_string());
-    }
-    Ok(document.children.remove(0))
 }
 
 #[cfg(test)]

@@ -70,6 +70,9 @@ pub(crate) fn human(
                 palette.dim(&plural(report.bookmarks, "bookmark"))
             )?;
         }
+        for d in &report.declarations {
+            writeln!(out, "  {}  {} (line {})", d.kind, d.name, d.line)?;
+        }
         if !report.report_measures.is_empty() {
             writeln!(
                 out,
@@ -595,6 +598,9 @@ fn write_table(out: &mut dyn io::Write, header: &[&str], rows: &[Vec<String>]) -
 pub(crate) fn plain(out: &mut dyn io::Write, inventory: &Inventory) -> io::Result<()> {
     for report in &inventory.reports {
         writeln!(out, "report\t{}", report.name)?;
+        for d in &report.declarations {
+            writeln!(out, "{}\t{}\t{}\t{}", d.kind, report.name, d.name, d.line)?;
+        }
         for measure in &report.report_measures {
             writeln!(out, "report-measure\t{}\t{}", report.name, measure)?;
         }
@@ -735,6 +741,7 @@ mod tests {
                     }],
                 }],
                 bookmarks: 1,
+                declarations: vec![],
                 report_measures: vec!["Budget %".to_string()],
                 unresolved_count: 1,
             }],

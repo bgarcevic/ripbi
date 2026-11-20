@@ -26,7 +26,8 @@ are a contract: they are never renamed.
 | `RIPBI-UNUSED-FUNCTION` | unused `function` | warning |
 | `RIPBI-UNUSED-REPORT-MEASURE` | unused `report_measure` | warning |
 | `RIPBI-STALE-BOOKMARK` | stale `bookmark` | warning |
-| `RIPBI-BROKEN-VISUAL` | broken visual binding | error |
+| `RIPBI-UNUSED-RDL-FIELD`, `RIPBI-UNUSED-RDL-DATASET`, `RIPBI-UNUSED-RDL-SOURCE` | unused paginated report declaration | warning |
+| `RIPBI-BROKEN-VISUAL` | broken visual binding or paginated filter | error |
 | `RIPBI-BROKEN-ARTIFACT` | DAX artifact with unresolved references | error |
 | `RIPBI-AUTO-DATE-TIME` | auto date/time table, `unused_by_reports` or `dead` (an `in_use` row is advice and emits no result) | warning |
 
