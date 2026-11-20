@@ -357,6 +357,10 @@ pub const KINDS: &[&str] = &[
     "function",
     "report_measure",
     "bookmark",
+    "rdl_field",
+    "rdl_dataset",
+    "rdl_source",
+    "rdl_parameter",
 ];
 
 /// The object kind of an id, as used in `--plain`, JSON, and grouping.
@@ -374,6 +378,7 @@ pub fn kind_of(id: &ObjectId) -> &'static str {
         ObjectId::Expression { .. } => "expression",
         ObjectId::Function { .. } => "function",
         ObjectId::ReportMeasure { .. } => "report_measure",
+        ObjectId::Paginated { object, .. } => object.kind(),
         ObjectId::Bookmark { .. } => "bookmark",
     }
 }
@@ -410,6 +415,10 @@ pub fn power_query_labels(ids: &[ObjectId]) -> Vec<String> {
 
 /// Group order and labels: the fixed section order of human output.
 pub const GROUPS: &[(&str, &str)] = &[
+    ("rdl_field", "Dataset fields"),
+    ("rdl_dataset", "Report datasets"),
+    ("rdl_source", "Report data sources"),
+    ("rdl_parameter", "Report parameters"),
     ("measure", "Measures"),
     ("column", "Columns"),
     ("hierarchy", "Hierarchies"),
@@ -453,6 +462,8 @@ pub fn reason_phrase(binding: &BrokenOut) -> String {
         ("bound_artifact_broken", Some(artifact)) => {
             format!("bound artifact {artifact} has unresolvable references")
         }
+        ("rdl_field_not_found", _) => "field not found in the report dataset".into(),
+        ("rdl_parameter_not_found", _) => "parameter not found in the report".into(),
         (reason, _) => format!(
             "{} not found in the model",
             reason
@@ -569,6 +580,18 @@ mod tests {
         let mut sorted = KINDS.to_vec();
         sorted.sort_unstable();
         let mut expected = every_kind.to_vec();
+        use ripbi_core::report::paginated::LocalObject::*;
+        for object in [
+            Source(String::new()),
+            Dataset(String::new()),
+            Field(String::new(), String::new()),
+            Parameter(String::new()),
+        ] {
+            expected.push(kind_of(&ObjectId::Paginated {
+                report: String::new(),
+                object,
+            }));
+        }
         expected.sort_unstable();
         assert_eq!(sorted, expected, "KINDS and kind_of must stay in lockstep");
     }

@@ -43,7 +43,8 @@ OS belongs in `ripbi-app`, which is native only.
   soft roots), plus Excel workbooks (`.xlsx`/`.xlsm`, issue #172; `ingest/xlsx.rs`
   reads PivotTables, slicers, timelines, and CUBE formula literals over OLAP
   connections as pages/visuals binding `FieldTarget::Mdx` unique names, and DAX
-  query tables into `ReportModel::queries`; binary `.xls`/`.xlsb` are refused). All
+  query tables into `ReportModel::queries`; binary `.xls`/`.xlsb` are refused). Paginated definitions (`.rdl`) add report-scoped datasets, fields, parameters,
+  source connections and expression sites through `ingest/rdl.rs`. All
   normalize into `TabularDatabase` + `ReportModel`. Source positions
   are not on the AST: `ingest::source_locations` is a separate pass that maps each TMDL
   declaration to its file and header line (issue #142; empty for single-file formats). The XPress9

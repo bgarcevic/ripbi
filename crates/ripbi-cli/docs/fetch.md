@@ -80,11 +80,14 @@ Scan will be incomplete: 17 reports can't be read.
   and the app copy can never be exported. Copies are told apart by the workspace's
   report listing, or, in a workspace you cannot list, by the org-app listings you can
   see; when neither works, a note says that a name appearing twice is likely a copy.
-- Dashboards, paginated reports, other models, and reports bound to a model
+- Paginated reports with a direct relation to the selected model are downloaded as RDL.
+  The generated config names the RDL file and the manifest retains the relation.
+- Dashboards, other models, and reports bound to a model
   downstream of this one are counted in the `·` line and recorded in the manifest,
   but not downloaded.
 - `--verify` cross-checks the list against every workspace's own report listing (the
-  relations API is beta) and prints any difference as a `!` note.
+  relations API is beta) and prints any difference as a `!` note. Paginated report coverage
+  relies on direct relations because workspace listings omit their dataset IDs.
 
 If the model itself is not exportable, `fetch` stops with exit `2`. If some reports
 are not, an interactive run asks `Continue with the readable reports? [y/N]`; a
@@ -111,6 +114,7 @@ permissions) is recorded as `no_access`, and the run exits `2` unless
   .ripbi/source.json                  # provenance and completeness
   <Model>.SemanticModel/              # TMDL, definition.pbism, .platform
   reports/<Workspace>/<Report>.Report/
+  reports/<Workspace>/<Report>.PaginatedReport/<Report>.rdl
 ```
 
 - Names are made safe for every OS (`/ \ : * ? " < > |` become `_`); two reports with

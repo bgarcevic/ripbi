@@ -19,10 +19,18 @@ mod app;
 mod archive;
 mod legacy;
 mod pbir;
+mod rdl;
 mod tmdl;
 mod tmsl;
 mod vpax;
 mod xlsx;
+mod xml;
+
+/// Whether a path names a paginated report definition.
+pub fn is_rdl(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rdl"))
+}
 
 use std::fs;
 use std::io::Read;
@@ -34,15 +42,15 @@ use crate::report::{DatasetReference, ReportModel};
 use crate::{Error, Result};
 pub use app::AppModels;
 
-/// Power BI writes some JSON archive members as UTF-16 even without a BOM.
+/// Power BI writes some text definitions as UTF-16 even without a BOM.
 fn decode_json_text(bytes: &[u8], label: &str) -> Result<String> {
     let (bytes, endian) = if let Some(rest) = bytes.strip_prefix(&[0xff, 0xfe]) {
         (rest, Some(false))
     } else if let Some(rest) = bytes.strip_prefix(&[0xfe, 0xff]) {
         (rest, Some(true))
-    } else if bytes.starts_with(b"{\0") || bytes.starts_with(b"[\0") {
+    } else if bytes.starts_with(b"{\0") || bytes.starts_with(b"[\0") || bytes.starts_with(b"<\0") {
         (bytes, Some(false))
-    } else if bytes.starts_with(b"\0{") || bytes.starts_with(b"\0[") {
+    } else if bytes.starts_with(b"\0{") || bytes.starts_with(b"\0[") || bytes.starts_with(b"\0<") {
         (bytes, Some(true))
     } else {
         (
@@ -246,6 +254,9 @@ pub fn source_locations(path: &Path) -> Result<Vec<SourceLocation>> {
 /// tables become [`ReportModel::queries`]. A binary workbook (`.xls`,
 /// `.xlsb`) is refused with [`Error::UnsupportedFormat`].
 pub fn report(path: &Path) -> Result<Ingested<ReportModel>> {
+    if is_rdl(path) {
+        return rdl::load(path);
+    }
     if xlsx::is_workbook(path) || xlsx::is_binary_workbook(path) {
         return xlsx::load(path);
     }

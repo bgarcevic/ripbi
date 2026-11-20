@@ -35,6 +35,7 @@ fn obscured_model() -> TabularDatabase {
 /// A visual on one page projecting one column.
 fn report_binding(table: &str, column: &str) -> ReportModel {
     ReportModel {
+        paginated: None,
         name: Some("Obscured".to_string()),
         dataset: Default::default(),
         filters: Vec::new(),

@@ -195,7 +195,7 @@ fn single_name(id: &ObjectId) -> Option<&NameKey> {
         ObjectId::Hierarchy { hierarchy, .. } => Some(hierarchy),
         ObjectId::CalculationItem { item, .. } => Some(item),
         ObjectId::Partition { partition, .. } => Some(partition),
-        ObjectId::Relationship { .. } => None,
+        ObjectId::Paginated { .. } | ObjectId::Relationship { .. } => None,
     }
 }
 
@@ -264,6 +264,7 @@ fn match_keys(id: &ObjectId) -> Vec<String> {
             keys.push(format!("[{}]", measure.as_str()));
             keys.push(measure.as_str().to_string());
         }
+        ObjectId::Paginated { object, .. } => keys.push(object.label()),
         ObjectId::Partition { .. } | ObjectId::Relationship { .. } | ObjectId::Bookmark { .. } => {}
     }
     keys

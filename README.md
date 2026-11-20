@@ -23,7 +23,8 @@ Desktop or similar.
 It reads local PBIP projects, TMSL `model.bim` files, PBIT templates, PBIX
 files (the embedded model is decoded from its compressed `DataModel`; only
 metadata is read, never the data), and standalone `.abf` backups. A thin PBIX
-report pairs with a separate model. I plan to implement guided
+report pairs with a separate model. Paginated reports (`.rdl`) can be scanned alone for
+unused dataset fields and broken filters, or paired with a model to trace DAX and MDX queries. I plan to implement guided
 automated cleanup and tenant scanning.
 
 ## Install

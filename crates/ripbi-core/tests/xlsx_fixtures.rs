@@ -391,6 +391,7 @@ fn a_dax_query_table_keeps_what_it_queries() {
     let book = ReportModel {
         name: Some("Book.xlsx".to_string()),
         queries: vec![ripbi_core::ReportQuery {
+            dataset:None,
             connection: "Sales Query".to_string(),
             text: "DEFINE MEASURE Sales[Local] = 1\nEVALUATE SUMMARIZECOLUMNS('Product'[Size], \"x\", [Order Count], \"y\", [Local])".to_string(),
         }],

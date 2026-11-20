@@ -301,7 +301,11 @@ fn download(
         format: Some("TMDL".to_string()),
     }];
     requests.extend(readable.iter().map(|report| DefinitionRequest {
-        kind: DefinitionKind::Report,
+        kind: if report.paginated {
+            DefinitionKind::PaginatedReport
+        } else {
+            DefinitionKind::Report
+        },
         workspace_id: report.workspace_id.clone(),
         item_id: report.id.clone(),
         format: None,

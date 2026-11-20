@@ -58,6 +58,7 @@ fn filter_on(name: &str, filter_type: &str, target: FieldTarget) -> Filter {
 /// field for field.
 fn golden_report() -> ReportModel {
     ReportModel {
+        paginated: None,
         name: Some("Mini".to_string()),
         dataset: DatasetReference::ByPath {
             // Points at the TMDL golden model, so the report is a complete,

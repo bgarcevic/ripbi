@@ -10,12 +10,12 @@ use std::path::PathBuf;
 use regex::RegexBuilder;
 use serde::Serialize;
 
-use ripbi_core::{ReportModel, TabularDatabase, ingest, search};
+use ripbi_core::{ReportModel, TabularDatabase, search};
 
 use crate::config;
 use crate::error::ScanError;
 use crate::output::{KINDS, SkipNoticeOut, kind_of};
-use crate::scan::{Observer, Stage, Target, TargetInput, dedupe, resolve_target, skip_notice_out};
+use crate::scan::{Observer, Stage, TargetInput, analysis_inputs, skip_notice_out};
 
 /// Everything one search is asked to do.
 #[derive(Debug, Clone, Default)]
@@ -160,7 +160,7 @@ pub fn load(request: &SearchRequest, observer: &mut dyn Observer) -> Result<Sear
     };
     // The shared ladder, without scan's zero-report refusal: a model's own
     // expressions are searchable with no report at all.
-    let resolved = resolve_target(
+    let resolved = analysis_inputs(
         TargetInput {
             model: request.model.as_deref(),
             path: None,
@@ -174,23 +174,20 @@ pub fn load(request: &SearchRequest, observer: &mut dyn Observer) -> Result<Sear
         observer,
     )?;
     observer.stage(Stage::Model);
-    let paired = resolved.paired;
-    let report_paths = dedupe(paired.reports);
-    observer.resolved(&Target {
-        model: &paired.model,
-        reports: &report_paths,
-        bound: resolved.walk.as_ref().map(|walk| &walk.bound),
-        discovered: resolved.discovered.as_ref(),
-    })?;
-
-    let model = ingest::semantic_model(&paired.model).map_err(|error| {
-        ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
-    })?;
+    resolved.announce(observer)?;
+    let model = resolved.anchor.read_model()?;
+    let report_paths = resolved.reports;
     observer.stage(Stage::Reports);
     let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
     let mut reports = Vec::new();
     for path in &report_paths {
-        let ingested = ingest::report(path).map_err(|error| {
+        let ingested = crate::scan::read_report(
+            path,
+            cwd,
+            resolved.anchor.model().map(|p| (p, &model.value)),
+            extras.contains(path),
+        )
+        .map_err(|error| {
             ScanError::new(format!("cannot ingest report {}: {error}", path.display()))
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
@@ -201,7 +198,7 @@ pub fn load(request: &SearchRequest, observer: &mut dyn Observer) -> Result<Sear
         model: model.value,
         reports,
         report_paths,
-        target: paired.model.display().to_string(),
+        target: resolved.anchor.path().display().to_string(),
         skips,
     })
 }

@@ -247,6 +247,13 @@ impl fmt::Display for FieldRef {
 /// the folded names, never the original casing.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectId {
+    /// A declaration local to a single paginated report.
+    Paginated {
+        /// Report path relative to the scan root.
+        report: String,
+        /// Report-local declaration.
+        object: crate::report::paginated::LocalObject,
+    },
     /// A table.
     Table {
         /// Table name.
@@ -398,6 +405,9 @@ impl fmt::Display for ObjectId {
             ObjectId::ReportMeasure { measure } => {
                 write!(f, "report measure {}", Quoted(measure.as_str()))
             }
+            ObjectId::Paginated { report, object } => {
+                write!(f, "{} {} / {}", object.kind(), report, object.label())
+            }
             ObjectId::Bookmark { bookmark, .. } => {
                 write!(f, "bookmark {}", Quoted(bookmark.label()))
             }
@@ -424,6 +434,7 @@ impl ObjectId {
             | ObjectId::Expression { .. }
             | ObjectId::Function { .. }
             | ObjectId::ReportMeasure { .. }
+            | ObjectId::Paginated { .. }
             | ObjectId::Bookmark { .. } => None,
         }
     }

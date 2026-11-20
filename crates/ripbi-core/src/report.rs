@@ -19,12 +19,16 @@ use std::fmt;
 use crate::identity::{FieldRef, NameKey, Quoted};
 use crate::model::{DaxExpressionKind, DaxExpressionRef, ExpressionOwner};
 
+pub mod paginated;
+
 /// Normalized report definition, regardless of source format (PBIR, PBIR-Legacy
 /// Layout). One instance per report: an analysis runs one
 /// [`TabularDatabase`](crate::TabularDatabase) against the reports that share it,
 /// and each report's `name` completes its bindings' provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReportModel {
+    /// Report-local declarations and expression references in a paginated report.
+    pub paginated: Option<paginated::PaginatedReport>,
     /// Report identity for provenance: the `.platform` display name, or the report
     /// folder's name when the source records none.
     pub name: Option<String>,
@@ -342,6 +346,8 @@ pub struct NativeMeasure {
 /// (an Excel workbook connection whose command is DAX or MDX).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReportQuery {
+    /// Paginated dataset issuing this query, if present.
+    pub dataset: Option<String>,
     /// The connection's name as the consumer shows it.
     pub connection: String,
     /// The query text as written.

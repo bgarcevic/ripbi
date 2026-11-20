@@ -62,6 +62,7 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
     builder.add_dax_edges(db, &index, reports);
     builder.add_m_edges(db, &index);
     for (report_index, report) in reports.iter().enumerate() {
+        builder.add_paginated_objects(report);
         builder.add_roots(db, &index, report, report_index);
         builder.add_code_roots(db, &index, report);
         builder.add_query_roots(db, &index, report);
@@ -70,6 +71,8 @@ pub(in crate::graph) fn build(db: &TabularDatabase, reports: &[&ReportModel]) ->
 
     builder.finish()
 }
+
+mod paginated;
 
 /// One in-progress graph: the petgraph itself, the node-key index, the dedup
 /// set, and the reachability roots.
@@ -878,6 +881,9 @@ impl Builder {
                     crate::usage::mdx_references(db, index, &query.text)
                 }
             };
+            if query.dataset.is_some() {
+                targets.extend(paginated::filter_columns(db, index, &query.text));
+            }
             let columns: Vec<ObjectId> = targets
                 .iter()
                 .filter_map(|id| match id {
@@ -896,7 +902,10 @@ impl Builder {
             targets.dedup();
             let provenance = Provenance::Binding(Box::new(BindingEdge {
                 kind: BindingSite::Query {
-                    connection: query.connection.clone(),
+                    connection: query.dataset.as_ref().map_or_else(
+                        || query.connection.clone(),
+                        |d| format!("{} / {d}", query.connection),
+                    ),
                 },
                 report: report_name.clone(),
                 page: None,
@@ -905,6 +914,7 @@ impl Builder {
                 mobile: false,
                 labels: SiteLabels::default(),
             }));
+            self.add_dataset_lineage(db, index, report, query, &targets, &provenance);
             for target in targets {
                 self.root(target.clone(), provenance.clone());
                 self.add_selection_edges(db, &target, provenance.clone());

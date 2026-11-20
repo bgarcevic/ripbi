@@ -136,7 +136,9 @@ fn tx_target<'a>(id: &'a ObjectId, db: &'a TabularDatabase) -> Option<Target<'a>
                 },
             }
         }
-        ObjectId::ReportMeasure { .. } | ObjectId::Bookmark { .. } => return None,
+        ObjectId::Paginated { .. } | ObjectId::ReportMeasure { .. } | ObjectId::Bookmark { .. } => {
+            return None;
+        }
     })
 }
 

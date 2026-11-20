@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use ripbi_core::graph::DependencyGraph;
-use ripbi_core::ingest;
 use ripbi_core::lookup::ReferenceError;
 use ripbi_core::{
     BindingEdge, DepSlice, KeptObject, ObjectId, Provenance, QueriedObject, ReportModel,
@@ -22,8 +21,8 @@ use crate::discover;
 use crate::error::ScanError;
 use crate::output::{KINDS, SkipNoticeOut, kind_of};
 use crate::scan::{
-    Observer, Stage, Target, TargetInput, dedupe, load_query_log, query_log_item, query_log_path,
-    resolve_target, skip_notice_out,
+    Observer, Stage, TargetInput, analysis_inputs, load_query_log, query_log_item, query_log_path,
+    skip_notice_out,
 };
 
 /// Everything one exploration is asked to do. `Default` is the overview of
@@ -184,7 +183,7 @@ pub fn load(request: &DepsRequest, observer: &mut dyn Observer) -> Result<Explor
     // else derivation from the --report anchors, else cwd discovery. Unlike
     // scan there is no zero-connected-report refusal: model-only exploration
     // is valid, and the intra-model graph stays fully explorable.
-    let resolved = resolve_target(
+    let resolved = analysis_inputs(
         TargetInput {
             model: request.model.as_deref(),
             path: None,
@@ -198,26 +197,22 @@ pub fn load(request: &DepsRequest, observer: &mut dyn Observer) -> Result<Explor
         observer,
     )?;
     observer.stage(Stage::Model);
-    let paired = resolved.paired;
+    resolved.announce(observer)?;
+    let model = resolved.anchor.read_model()?;
+    let report_paths = resolved.reports;
     let walk = resolved.walk;
-    let report_paths = dedupe(paired.reports);
     let workbooks = crate::scan::has_workbooks(&report_paths);
-    observer.resolved(&Target {
-        model: &paired.model,
-        reports: &report_paths,
-        bound: walk.as_ref().map(|walk| &walk.bound),
-        discovered: resolved.discovered.as_ref(),
-    })?;
-
-    // Ingest: the model, then every report as a binding source.
-    let model = ingest::semantic_model(&paired.model).map_err(|error| {
-        ScanError::new(format!("cannot ingest {}: {error}", paired.model.display()))
-    })?;
     observer.stage(Stage::Reports);
     let mut skips: Vec<SkipNoticeOut> = model.skips.iter().map(skip_notice_out).collect();
     let mut reports = Vec::new();
     for path in &report_paths {
-        let ingested = ingest::report(path).map_err(|error| {
+        let ingested = crate::scan::read_report(
+            path,
+            cwd,
+            resolved.anchor.model().map(|p| (p, &model.value)),
+            extras.contains(path),
+        )
+        .map_err(|error| {
             ScanError::new(format!("cannot ingest report {}: {error}", path.display()))
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
@@ -254,7 +249,7 @@ pub fn load(request: &DepsRequest, observer: &mut dyn Observer) -> Result<Explor
     let query_log = load_query_log(
         queries_path,
         query_log_item(request.queries_item.as_deref(), config.as_ref()),
-        &paired.model,
+        resolved.anchor.path(),
         observer,
         &mut skips,
     )?;

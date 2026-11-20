@@ -177,3 +177,25 @@ run. Broken visual bindings and DAX artifacts (issues #60/#84) are advisory kind
 an unused-only gate must not start failing because one visual is broken, and a
 `--broken` gate must not fail on unused findings. `--strict` and `-q/--quiet` are
 unaffected.
+
+## Paginated reports
+
+```sh
+ripbi scan Invoice.rdl
+ripbi scan Invoice.rdl --broken --sarif
+ripbi scan --model Sales.SemanticModel --report Invoice.rdl
+ripbi scan --model Sales.SemanticModel --report reports/
+```
+
+A standalone RDL scan finds unused fields, datasets and data sources. Filter diagnostics name the
+missing field or parameter, the owning report item, the property and its RDL line.
+Use `--type rdl_field`, `rdl_dataset` or `rdl_source` to narrow unused findings. Parameters are
+external inputs. The existing `--broken`, `--compare-root` and `--strict` controls apply.
+Report-local findings are skipped comments in `--emit tx-rm`.
+
+With a paired model, each dataset's static DAX or MDX command keeps its verified dependencies
+alive, including columns used only by the query. Directory discovery matches a semantic source's
+catalog or service identity. An explicit report anchor can pair one semantic source by itself.
+SQL and embedded data contribute local report lineage. Dynamic field access, custom code and
+missing shared definitions produce coverage notices. A model query with indeterminate dependencies
+retains potential model objects. Use `--strict` to gate CI on these coverage gaps.

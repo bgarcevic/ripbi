@@ -137,6 +137,30 @@ const RULES: &[Rule] = &[
         description: "Auto date/time table no report needs",
         level: "warning",
     },
+    unused(
+        "RIPBI-UNUSED-RDL-FIELD",
+        "UnusedRdlField",
+        "rdl_field",
+        "Unused paginated report field",
+    ),
+    unused(
+        "RIPBI-UNUSED-RDL-DATASET",
+        "UnusedRdlDataset",
+        "rdl_dataset",
+        "Unused paginated report dataset",
+    ),
+    unused(
+        "RIPBI-UNUSED-RDL-SOURCE",
+        "UnusedRdlSource",
+        "rdl_source",
+        "Unused paginated report source",
+    ),
+    unused(
+        "RIPBI-UNUSED-RDL-PARAMETER",
+        "UnusedRdlParameter",
+        "rdl_parameter",
+        "Unused paginated report parameter",
+    ),
 ];
 
 const fn unused(

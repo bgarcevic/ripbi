@@ -238,10 +238,43 @@ pub fn write(
         let Some(Ok(definition)) = downloads.reports.get(&entry.id) else {
             continue;
         };
-        let relative = unique_report_dir(entry, &mut taken);
+        let paginated = found
+            .reports
+            .iter()
+            .any(|r| r.id == entry.id && r.paginated);
+        let relative = unique_report_dir(
+            entry,
+            if paginated {
+                "PaginatedReport"
+            } else {
+                "Report"
+            },
+            &mut taken,
+        );
         let dir = root.join(&relative);
-        match write_parts(&dir, definition, Some(SKIPPED_REPORT_PREFIX)) {
-            Ok(()) => {
+        let written = write_parts(&dir, definition, Some(SKIPPED_REPORT_PREFIX)).and_then(|()| {
+            if !paginated {
+                return Ok(relative);
+            }
+            let mut parts = definition
+                .parts
+                .iter()
+                .filter(|part| ripbi_core::ingest::is_rdl(Path::new(&part.path)));
+            let part = parts
+                .next()
+                .filter(|_| parts.next().is_none())
+                .ok_or_else(|| ScanError::new("expected one RDL definition part"))?;
+            if part.path.contains('/') {
+                return Err(ScanError::new("expected a root-level RDL definition part"));
+            }
+            let path = safe_join(&dir, &part.path)
+                .ok_or_else(|| ScanError::new("invalid RDL part name"))?;
+            ripbi_core::ingest::report(&path)
+                .map_err(|e| ScanError::new(format!("invalid paginated report: {e}")))?;
+            Ok(format!("{relative}/{}", part.path))
+        });
+        match written {
+            Ok(relative) => {
                 entry.path = Some(relative.clone());
                 report_paths.push(relative);
             }
@@ -270,17 +303,25 @@ pub fn write(
 
 /// `reports/<Workspace>/<Report>.Report`, suffixed with the id's first
 /// block when two reports share a workspace and a name.
-fn unique_report_dir(entry: &ManifestReport, taken: &mut HashSet<String>) -> String {
+fn unique_report_dir(
+    entry: &ManifestReport,
+    extension: &str,
+    taken: &mut HashSet<String>,
+) -> String {
     let base = format!(
         "{REPORTS_DIR}/{}/{}",
         file_name(&entry.workspace_name),
         file_name(&entry.name)
     );
-    let mut relative = format!("{base}.Report");
+    let mut relative = format!("{base}.{extension}");
     if !taken.insert(relative.to_lowercase()) {
-        let short = entry.id.split('-').next().unwrap_or(&entry.id);
-        relative = format!("{base} ({short}).Report");
-        taken.insert(relative.to_lowercase());
+        let short = file_name(entry.id.split('-').next().unwrap_or(&entry.id));
+        relative = format!("{base} ({short}).{extension}");
+        let mut suffix = 2;
+        while !taken.insert(relative.to_lowercase()) {
+            relative = format!("{base} ({short}-{suffix}).{extension}");
+            suffix += 1;
+        }
     }
     relative
 }
@@ -486,11 +527,11 @@ mod tests {
         };
         let mut taken = HashSet::new();
         assert_eq!(
-            unique_report_dir(&entry("aaaa-1"), &mut taken),
+            unique_report_dir(&entry("aaaa-1"), "Report", &mut taken),
             "reports/Marketing/Prices.Report"
         );
         assert_eq!(
-            unique_report_dir(&entry("bbbb-2"), &mut taken),
+            unique_report_dir(&entry("bbbb-2"), "Report", &mut taken),
             "reports/Marketing/Prices (bbbb).Report"
         );
     }

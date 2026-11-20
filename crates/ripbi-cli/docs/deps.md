@@ -406,3 +406,13 @@ ripbi deps "'Sales'[Legacy Total]" --dependencies   # what it pulls in
 
 The `used_by` annotation on a finding shows one hop; the impact view shows the whole
 chain at once — the deletion-planning view of the same graph.
+
+## Paginated lineage
+
+`ripbi deps Invoice.rdl` gives a report overview. Use `--report Invoice.rdl` with an object
+operand or type selector for focused lineage. For example,
+`ripbi deps --report Invoice.rdl --type rdl_field` shows report-local fields.
+Add `--model Sales.SemanticModel` to follow dataset queries into the model. A model object's
+impact identifies the report, source and dataset that query it. Explicit output aliases in
+top-level DAX ROW and SELECTCOLUMNS projections and verified MDX unique names also provide
+field-level lineage. Other query shapes retain dataset-level attribution.

@@ -102,6 +102,7 @@ fn dead_chain() -> (TabularDatabase, ReportModel) {
     // one live report filter on `Status`, and one deliberately unbound report
     // measure.
     let report = ReportModel {
+        paginated: None,
         name: Some("Chain Report".to_string()),
         dataset: DatasetReference::Unresolved,
         filters: vec![Filter {

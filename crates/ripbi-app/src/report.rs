@@ -20,9 +20,7 @@ use crate::discover;
 use crate::error::ScanError;
 use crate::glob;
 use crate::output::SkipNoticeOut;
-use crate::scan::{
-    Note, Observer, Stage, Target, TargetInput, dedupe, resolve_target, skip_notice_out,
-};
+use crate::scan::{Note, Observer, Stage, TargetInput, analysis_inputs, dedupe, skip_notice_out};
 
 /// Everything one inventory is asked to do. `Default` inventories the
 /// project cwd discovery finds.
@@ -100,7 +98,7 @@ pub fn run(
     // model pairs and `allow_no_model` says so, the named reports are listed
     // as written, with nothing to resolve them against; every other failure
     // (a mistyped path, an unreadable model) stays an error.
-    let resolved = resolve_target(
+    let resolved = analysis_inputs(
         TargetInput {
             model: request.model.as_deref(),
             path: request.path.as_deref(),
@@ -116,21 +114,18 @@ pub fn run(
     observer.stage(Stage::Model);
     let (model_item, report_paths) = match resolved {
         Ok(resolved) => {
-            let report_paths = dedupe(resolved.paired.reports);
-            if report_paths.is_empty() {
+            if resolved.reports.is_empty() {
                 return Err(ScanError::new(format!(
                     "nothing to inventory: {} has no reports",
-                    resolved.paired.model.display()
+                    resolved.anchor.path().display()
                 ))
                 .with_hint("pass a .pbip project, a .Report folder, or a project folder"));
             }
-            observer.resolved(&Target {
-                model: &resolved.paired.model,
-                reports: &report_paths,
-                bound: resolved.walk.as_ref().map(|walk| &walk.bound),
-                discovered: resolved.discovered.as_ref(),
-            })?;
-            (Some(resolved.paired.model), report_paths)
+            resolved.announce(observer)?;
+            (
+                resolved.anchor.model().map(Path::to_path_buf),
+                resolved.reports,
+            )
         }
         Err(error) if request.allow_no_model && error.is_no_model() => {
             let explicit = request
@@ -199,7 +194,13 @@ pub fn run(
     }
     let mut reports = Vec::new();
     for path in &report_paths {
-        let ingested = ingest::report(path).map_err(|error| {
+        let ingested = crate::scan::read_report(
+            path,
+            cwd,
+            model_item.as_deref().zip(model.as_ref().map(|m| &m.value)),
+            extras.contains(path),
+        )
+        .map_err(|error| {
             ScanError::new(format!("cannot ingest report {}: {error}", path.display()))
         })?;
         skips.extend(ingested.skips.iter().map(skip_notice_out));
@@ -222,6 +223,13 @@ pub fn run(
                 hides_a_name,
             )
         }
+        None if reports.iter().any(|r| r.paginated.is_some()) => (
+            Some(DependencyGraph::build(
+                &Default::default(),
+                &reports.iter().collect::<Vec<_>>(),
+            )),
+            false,
+        ),
         None => (None, false),
     };
 
@@ -295,6 +303,7 @@ pub fn empty_note(request: &ReportRequest, output: &Inventory) -> Option<String>
         .iter()
         .map(|report| {
             report.unresolved_count
+                + report.declarations.len()
                 + report.filters.len()
                 + report
                     .pages
@@ -385,6 +394,12 @@ fn apply_filters(inventory: &mut Inventory, request: &ReportRequest) {
     let filtering = prune_rows || !request.page.is_empty() || !request.visual.is_empty();
 
     for report in &mut inventory.reports {
+        report.declarations.retain(|d| {
+            !request.broken
+                && request.visual.is_empty()
+                && request.page.is_empty()
+                && row_selected(&d.name, d.kind, "declaration")
+        });
         if request.broken {
             report.filters.clear();
         } else if prune_rows {
@@ -475,7 +490,10 @@ fn apply_filters(inventory: &mut Inventory, request: &ReportRequest) {
     // nothing is dropped entirely — the stderr note names the empty result.
     if filtering {
         inventory.reports.retain(|report| {
-            !report.pages.is_empty() || !report.filters.is_empty() || !report.unresolved.is_empty()
+            !report.declarations.is_empty()
+                || !report.pages.is_empty()
+                || !report.filters.is_empty()
+                || !report.unresolved.is_empty()
         });
     }
 }
@@ -511,11 +529,27 @@ fn report_node(path: &Path, report: &ReportModel, broken: &[&BrokenBinding]) -> 
     }
     // Report-level: a broken binding on no page and no visual (a report
     // filter, a report-measure reference).
-    let report_unresolved: Vec<UnresolvedNode> = broken
+    let mut report_unresolved: Vec<UnresolvedNode> = broken
         .iter()
         .filter(|binding| binding.edge.page.is_none() && binding.edge.visual.is_none())
         .map(|binding| unresolved_node(binding))
         .collect();
+    let mut declarations = Vec::new();
+    if let Some(rdl) = &report.paginated {
+        declarations.extend(rdl.objects.iter().map(|d| RdlObject {
+            kind: d.object.kind(),
+            name: d.object.label(),
+            line: d.line,
+        }));
+        report_unresolved.extend(rdl.references.iter().filter(|r| r.broken_filter).map(|r| {
+            UnresolvedNode {
+                target: r.target.label(),
+                reason: r.missing_reason(),
+                artifact: None,
+                binding_site: format!("{} of {} at line {}", r.property, r.owner, r.line),
+            }
+        }));
+    }
     let unresolved_count = report_unresolved.len()
         + pages
             .iter()
@@ -530,6 +564,7 @@ fn report_node(path: &Path, report: &ReportModel, broken: &[&BrokenBinding]) -> 
             .sum::<usize>();
 
     ReportNode {
+        declarations,
         path: path.display().to_string(),
         name,
         filters: report.filters.iter().map(filter_node).collect(),
@@ -683,6 +718,7 @@ fn site_of(site: &BindingSite) -> String {
         BindingSite::ConditionalFormatting => "conditional_formatting".to_string(),
         BindingSite::AltText => "alt_text".to_string(),
         BindingSite::Code { file, line } => format!("app_code:{file}:{line}"),
+        BindingSite::Paginated { owner, property } => format!("{owner}/{property}"),
         BindingSite::Query { connection } => format!("query:{connection}"),
     }
 }
@@ -733,6 +769,8 @@ pub struct UsedRow {
 /// One report's inventory: its filters, pages, bookmarks, and report measures.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReportNode {
+    /// Report-local paginated declarations.
+    pub declarations: Vec<RdlObject>,
     /// The report item's path, as given.
     pub path: String,
     /// The report's display name (`ReportModel::name`), or its folder name.
@@ -751,6 +789,13 @@ pub struct ReportNode {
     /// The itemized unresolved bindings: every visual-, page-, and
     /// report-level row this report carries.
     pub unresolved_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RdlObject {
+    pub kind: &'static str,
+    pub name: String,
+    pub line: usize,
 }
 
 /// One page.
